@@ -30,7 +30,8 @@ const VIDEO_EXT = ['.mp4', '.mov', '.m4v', '.mkv', '.webm'];
 const IMAGE_EXT = ['.jpg', '.jpeg', '.png', '.heic', '.webp'];
 
 const log = (...a) => console.log('[regista]', ...a);
-const run = (cmd, args, opts = {}) => execFileSync(cmd, args, { stdio: ['ignore', 'pipe', 'inherit'], maxBuffer: 1 << 28, ...opts }).toString();
+// con stdio 'inherit' execFileSync restituisce null: non va trattato come errore
+const run = (cmd, args, opts = {}) => String(execFileSync(cmd, args, { stdio: ['ignore', 'pipe', 'inherit'], maxBuffer: 1 << 28, ...opts }) ?? '');
 const rclone = (...args) => run('rclone', args);
 const remote = (...parts) => `${REMOTE}:${parts.join('/')}`;
 const isVai = (name) => path.parse(name).name.toUpperCase() === 'VAI';
