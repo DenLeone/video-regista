@@ -34,11 +34,10 @@ Vyra NON viene toccato: resta per il montaggio a mano (la sua automazione `vyra-
 - [x] Bot creato da Denis con BotFather, `TELEGRAM_BOT_TOKEN` caricato, webhook collegato (`/setup`), `ALLOWED_CHAT_ID` = 8332006597 (16/10)
 - [x] **Repo GitHub privato** `DenLeone/video-regista` creato e codice caricato (16/10). Da casa: `git clone https://github.com/DenLeone/video-regista` in una cartella su C: (fonte di verità = GitHub; la cartella Drive ha anche lei il `.git`, tenerle allineate con push/pull).
 - [x] Secret repo impostati: `NOTIFY_TOKEN`, `NOTIFY_URL`. Secret worker: `GITHUB_REPO`.
-- [ ] **Workflow `regista` DISATTIVATO** finché mancano i secret (riattivare: `gh workflow enable regista.yml -R DenLeone/video-regista`).
-- [ ] Secret che deve inserire Denis: worker `GITHUB_TOKEN`; repo `CLAUDE_CODE_OAUTH_TOKEN`, `GROQ_API_KEY`, `RCLONE_CONF` (comandi in fondo).
-- [ ] Test pipeline completa in locale (serve rclone)
-- [ ] Account/repo GitHub + secrets — **serve Denis**
-- [ ] Primo giro reale su GitHub
+- [x] **Tutti i secret impostati** (16/10, ~14:27): repo `CLAUDE_CODE_OAUTH_TOKEN`, `GROQ_API_KEY`, `RCLONE_CONF`, `NOTIFY_TOKEN`, `NOTIFY_URL`; worker `TELEGRAM_BOT_TOKEN`, `TELEGRAM_SECRET`, `ALLOWED_CHAT_ID`, `GITHUB_TOKEN`, `GITHUB_REPO`, `NOTIFY_TOKEN`. rclone installato sul PC ufficio (remote `gdrive`, funziona).
+- [x] Workflow `regista` **riattivato** (cron ogni 30 min 7–23 + /monta).
+- [ ] ⏳ **Primo giro reale su GitHub** lanciato 16/10 14:28 su `97 - Editare/_TEST_GH` (video in macchina, con parlato): run 38900694099 — esito da registrare qui.
+- [ ] ⚠️ **rclone usa il client_id condiviso** che Google/rclone ritirano "durante il 2026" → può smettere di funzionare all'improvviso. Da sistemare: creare client OAuth proprio (Google Cloud progetto `regista`, Drive API, app **pubblicata** non in test, client "App desktop") e rifare `rclone config` → aggiornare secret `RCLONE_CONF`. Denis ha scelto di rimandarlo (16/10).
 - [ ] Contenitori (PNG caldo/freddo) come inserti — asset in `03 · Social — Risorse/Contenitori — setup video 9 16`
 - [ ] Bot: chat libera con Claude (via API a consumo o via abbonamento passando da GitHub Actions ~1 min/risposta). Da verificare se esiste un'integrazione Telegram ufficiale di Claude Code.
 - [ ] (opzionale) Worker che controlla Drive e avvia GitHub solo quando serve (risparmia minuti)
@@ -46,7 +45,7 @@ Vyra NON viene toccato: resta per il montaggio a mano (la sua automazione `vyra-
 ## Cose che deve fare Denis (una volta sola)
 Fatti (16/10): ✅ bot BotFather + token · ✅ chat id · ✅ `gh auth login` (account DenLeone).
 
-Mancano (comandi PowerShell, uno alla volta; quando chiedono il valore, incollarlo):
+✅ Tutto fatto il 16/10 (A–D). Riferimento per rifarli (comandi PowerShell, uno alla volta; quando chiedono il valore, incollarlo):
 A. ✅ FATTO 16/10 — **Token GitHub per il bot** (fine-grained `regista-telegram`, solo video-regista, Actions R/W): github.com → Settings → Developer settings → Fine-grained tokens → Generate → Repository access: solo `video-regista` → Permissions: **Actions: Read and write** → genera e copia. Poi:
    `cd C:\temp\regista-telegram` e `npx wrangler secret put GITHUB_TOKEN`
 B. **Token Claude**: `claude setup-token` (si apre il browser, conferma) → copia il token → `gh secret set CLAUDE_CODE_OAUTH_TOKEN -R DenLeone/video-regista`
