@@ -47,7 +47,7 @@ Vyra NON viene toccato: resta per il montaggio a mano (la sua automazione `vyra-
 Fatti (16/10): ✅ bot BotFather + token · ✅ chat id · ✅ `gh auth login` (account DenLeone).
 
 Mancano (comandi PowerShell, uno alla volta; quando chiedono il valore, incollarlo):
-A. **Token GitHub per il bot**: github.com → Settings → Developer settings → Fine-grained tokens → Generate → Repository access: solo `video-regista` → Permissions: **Actions: Read and write** → genera e copia. Poi:
+A. ✅ FATTO 16/10 — **Token GitHub per il bot** (fine-grained `regista-telegram`, solo video-regista, Actions R/W): github.com → Settings → Developer settings → Fine-grained tokens → Generate → Repository access: solo `video-regista` → Permissions: **Actions: Read and write** → genera e copia. Poi:
    `cd C:\temp\regista-telegram` e `npx wrangler secret put GITHUB_TOKEN`
 B. **Token Claude**: `claude setup-token` (si apre il browser, conferma) → copia il token → `gh secret set CLAUDE_CODE_OAUTH_TOKEN -R DenLeone/video-regista`
 C. **Groq**: apri `C:\Users\Utente\.config\watch\.env`, copia il valore di GROQ_API_KEY → `gh secret set GROQ_API_KEY -R DenLeone/video-regista`
