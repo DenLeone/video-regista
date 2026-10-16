@@ -32,7 +32,10 @@ Vyra NON viene toccato: resta per il montaggio a mano (la sua automazione `vyra-
 - [x] **Test render locale riuscito** (16/10): `98 - Fatti/_TEST/_TEST - FINALE (Remotion).mp4`, 38,5 s, 1080×1920, identico al test Vyra. Tempi su PC ufficio: proxy 1080p di 116 s 4K = 5 min 16 s; render 38,5 s = ~8 min. Il primo tentativo di render è fallito con un errore transitorio del compositor → aggiunti 3 tentativi.
 - [x] **Bot Telegram pubblicato**: `https://regista-telegram.denisnusinovic.workers.dev` (Worker `regista-telegram`, account Cloudflare denisnusinovic). Secret già impostati: `TELEGRAM_SECRET`, `NOTIFY_TOKEN` (valori in `C:\Users\Utente\.config\regista\interni.env` sul PC ufficio — non su Drive).
 - [x] Bot creato da Denis con BotFather, `TELEGRAM_BOT_TOKEN` caricato, webhook collegato (`/setup`), `ALLOWED_CHAT_ID` = 8332006597 (16/10)
-- [ ] Bot: `GITHUB_TOKEN`, `GITHUB_REPO` (dopo il repo GitHub) — finché mancano, /monta e /stato rispondono con errore GitHub
+- [x] **Repo GitHub privato** `DenLeone/video-regista` creato e codice caricato (16/10). Da casa: `git clone https://github.com/DenLeone/video-regista` in una cartella su C: (fonte di verità = GitHub; la cartella Drive ha anche lei il `.git`, tenerle allineate con push/pull).
+- [x] Secret repo impostati: `NOTIFY_TOKEN`, `NOTIFY_URL`. Secret worker: `GITHUB_REPO`.
+- [ ] **Workflow `regista` DISATTIVATO** finché mancano i secret (riattivare: `gh workflow enable regista.yml -R DenLeone/video-regista`).
+- [ ] Secret che deve inserire Denis: worker `GITHUB_TOKEN`; repo `CLAUDE_CODE_OAUTH_TOKEN`, `GROQ_API_KEY`, `RCLONE_CONF` (comandi in fondo).
 - [ ] Test pipeline completa in locale (serve rclone)
 - [ ] Account/repo GitHub + secrets — **serve Denis**
 - [ ] Primo giro reale su GitHub
@@ -41,12 +44,15 @@ Vyra NON viene toccato: resta per il montaggio a mano (la sua automazione `vyra-
 - [ ] (opzionale) Worker che controlla Drive e avvia GitHub solo quando serve (risparmia minuti)
 
 ## Cose che deve fare Denis (una volta sola)
-1. **Bot Telegram** (2 min, da telefono): apri Telegram → cerca **@BotFather** → `/newbot` → nome "Regista" → username tipo `regista_denis_bot` → copia il token. Poi sul PC ufficio, in `C:\temp\regista-telegram`: `npx wrangler secret put TELEGRAM_BOT_TOKEN` e incolla il token. Dillo a Claude: collega il webhook da sé (`/setup`).
-2. **Chat id**: scrivi `/start` al bot → ti risponde col tuo chat id → dillo a Claude (non è un segreto).
-3. **GitHub**: account (se non c'è) → sul PC `gh auth login`. Repo privato `video-regista`.
-4. **Token Claude**: sul PC `claude setup-token` → secret `CLAUDE_CODE_OAUTH_TOKEN` nel repo.
-5. **Drive per rclone**: `rclone config` → remote `gdrive` (tipo drive, account denisnusinovic) → contenuto di `rclone.conf` → secret `RCLONE_CONF`.
-6. **Groq**: la chiave già in `~/.config/watch/.env` → secret `GROQ_API_KEY`.
+Fatti (16/10): ✅ bot BotFather + token · ✅ chat id · ✅ `gh auth login` (account DenLeone).
+
+Mancano (comandi PowerShell, uno alla volta; quando chiedono il valore, incollarlo):
+A. **Token GitHub per il bot**: github.com → Settings → Developer settings → Fine-grained tokens → Generate → Repository access: solo `video-regista` → Permissions: **Actions: Read and write** → genera e copia. Poi:
+   `cd C:\temp\regista-telegram` e `npx wrangler secret put GITHUB_TOKEN`
+B. **Token Claude**: `claude setup-token` (si apre il browser, conferma) → copia il token → `gh secret set CLAUDE_CODE_OAUTH_TOKEN -R DenLeone/video-regista`
+C. **Groq**: apri `C:\Users\Utente\.config\watch\.env`, copia il valore di GROQ_API_KEY → `gh secret set GROQ_API_KEY -R DenLeone/video-regista`
+D. **Drive (rclone)**: `winget install Rclone.Rclone` → riapri PowerShell → `rclone config` → n (new) → nome `gdrive` → storage `drive` → client id/secret vuoti → scope `1` (full) → root folder vuoto → service account vuoto → advanced `n` → auto config `y` (login nel browser con **denisnusinovic**) → shared drive `n` → `y` → `q`. Poi: `Get-Content -Raw "$env:APPDATA\rclone\rclone.conf" | gh secret set RCLONE_CONF -R DenLeone/video-regista`
+Poi Claude riattiva il workflow e lancia il primo giro.
 
 ## Decisioni prese
 - Opzione A (Remotion + GitHub Actions) invece di mini PC: gratis, nessun browser da tenere sveglio.
