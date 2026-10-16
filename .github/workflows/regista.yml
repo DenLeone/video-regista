@@ -1,0 +1,84 @@
+name: regista
+
+on:
+  schedule:
+    # ogni 30 min dalle 7 alle 23 ora italiana (cron in UTC); GitHub può ritardare di qualche minuto.
+    # Ogni giro costa almeno 1 minuto di Actions anche se non c'è niente da fare.
+    - cron: '*/30 5-21 * * *'
+  workflow_dispatch:          # avvio manuale dal tab Actions o dal bot Telegram
+    inputs:
+      cartella:
+        description: 'Cartella in 97 - Editare (vuoto = la prima con VAI)'
+        required: false
+        default: ''
+      brief:
+        description: 'Brief al volo (aggiunto a brief.txt)'
+        required: false
+        default: ''
+
+concurrency:
+  group: regista              # un solo montaggio alla volta, gli altri aspettano
+  cancel-in-progress: false
+
+jobs:
+  monta:
+    runs-on: ubuntu-latest
+    timeout-minutes: 240
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Strumenti (rclone, ffmpeg)
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq ffmpeg rclone
+          mkdir -p ~/.config/rclone
+          echo "${{ secrets.RCLONE_CONF }}" > ~/.config/rclone/rclone.conf
+
+      - name: C'è qualcosa da fare?
+        id: check
+        env:
+          CARTELLA: ${{ inputs.cartella }}
+        run: |
+          trovato="$CARTELLA"
+          [ -z "$trovato" ] && while IFS= read -r d; do
+            if rclone lsf "gdrive:97 - Editare/$d" --files-only | grep -qiE '^vai(\.[^.]+)?$'; then trovato="$d"; break; fi
+          done < <(rclone lsf "gdrive:97 - Editare" --dirs-only | sed 's:/$::')
+          echo "cartella=$trovato" >> "$GITHUB_OUTPUT"
+          if [ -n "$trovato" ]; then echo "Da montare: $trovato"; else echo "Niente da fare"; fi
+
+      - uses: actions/setup-node@v4
+        if: steps.check.outputs.cartella != ''
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Dipendenze
+        if: steps.check.outputs.cartella != ''
+        run: |
+          npm ci || npm install
+          npm install -g @anthropic-ai/claude-code
+          sudo apt-get install -y -qq fonts-noto-color-emoji
+
+      - name: Monta
+        if: steps.check.outputs.cartella != ''
+        env:
+          GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+          CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          NOTIFY_URL: ${{ secrets.NOTIFY_URL }}
+          NOTIFY_TOKEN: ${{ secrets.NOTIFY_TOKEN }}
+          CARTELLA: ${{ steps.check.outputs.cartella }}
+          BRIEF_EXTRA: ${{ inputs.brief }}
+        run: node scripts/regista.mjs
+
+      - name: Conserva piano e note (debug)
+        if: always() && steps.check.outputs.cartella != ''
+        uses: actions/upload-artifact@v4
+        with:
+          name: lavoro
+          path: |
+            work/piano.json
+            work/materiale.json
+            work/NOTE.txt
+            work/ERRORE.txt
+          if-no-files-found: ignore
+          retention-days: 7

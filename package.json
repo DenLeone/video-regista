@@ -1,0 +1,25 @@
+{
+  "name": "video-regista",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Montaggio automatico 9:16 in stile Blueprint: Drive -> Claude -> Remotion -> Drive",
+  "type": "module",
+  "scripts": {
+    "studio": "remotion studio src/index.ts",
+    "render": "remotion render src/index.ts Blueprint out/video.mp4 --props=work/piano.json",
+    "regista": "node scripts/regista.mjs"
+  },
+  "dependencies": {
+    "@remotion/cli": "4.0.520",
+    "@remotion/google-fonts": "4.0.520",
+    "@remotion/renderer": "4.0.520",
+    "@remotion/bundler": "4.0.520",
+    "react": "19.2.1",
+    "react-dom": "19.2.1",
+    "remotion": "4.0.520"
+  },
+  "devDependencies": {
+    "@types/react": "19.2.2",
+    "typescript": "5.9.3"
+  }
+}

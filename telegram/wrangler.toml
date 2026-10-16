@@ -1,0 +1,7 @@
+name = "regista-telegram"
+main = "src/index.ts"
+compatibility_date = "2026-09-01"
+
+# Segreti (wrangler secret put <NOME>):
+#   TELEGRAM_BOT_TOKEN, TELEGRAM_SECRET, ALLOWED_CHAT_ID,
+#   GITHUB_TOKEN, GITHUB_REPO, NOTIFY_TOKEN
