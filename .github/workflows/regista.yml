@@ -24,8 +24,11 @@ on:
         required: false
         default: ''
 
+# Una coda PER CARTELLA: GitHub tiene un solo giro "in attesa" per gruppo e scarta
+# quelli in attesa più vecchi. Con un gruppo unico, tre avvii di fila ne perdevano uno.
+# Cartelle diverse girano in parallelo; i controlli automatici hanno la loro coda.
 concurrency:
-  group: regista              # un solo montaggio alla volta, gli altri aspettano
+  group: regista-${{ inputs.cartella || 'auto' }}
   cancel-in-progress: false
 
 jobs:
