@@ -6,7 +6,7 @@
 //   POST /video    multipart da scripts/regista.mjs: anteprima video finale
 //   GET  /setup?k= collega webhook e menu comandi (protetto da TELEGRAM_SECRET)
 //
-// Comandi (solo dalla chat di Denis, ALLOWED_CHAT_ID):
+// Comandi (solo dalle chat in ALLOWED_CHAT_ID, separati da virgola; le notifiche vanno a tutte):
 //   /nuovo                 brief guidato a domande, poi avvia
 //   /monta                 monta la prima cartella con VAI
 //   /monta Nome | brief    monta "Nome" (anche senza VAI) con un brief al volo
@@ -19,7 +19,7 @@ import { DurableObject } from 'cloudflare:workers';
 export interface Env {
   TELEGRAM_BOT_TOKEN: string;
   TELEGRAM_SECRET: string;
-  ALLOWED_CHAT_ID: string;
+  ALLOWED_CHAT_ID: string;  // uno o più chat id separati da virgola
   GITHUB_TOKEN: string;      // fine-grained, Actions read & write sul repo
   GITHUB_REPO: string;       // "DenLeone/video-regista"
   NOTIFY_TOKEN: string;      // condiviso con il workflow
@@ -33,6 +33,9 @@ export class Memoria extends DurableObject {
   async cancella(k: string) { await this.ctx.storage.delete(k); }
 }
 const mem = (env: Env) => env.MEMORIA.get(env.MEMORIA.idFromName('denis'));
+const autorizzati = (env: Env) => env.ALLOWED_CHAT_ID.split(',').map((s) => s.trim()).filter(Boolean);
+const ok = (env: Env, chat: string) => autorizzati(env).includes(chat);
+const kAttesa = (chat: string) => `attesa:${chat}`;
 
 type Attesa =
   | { tipo: 'correzione'; nome: string }
@@ -154,7 +157,7 @@ function componiBrief(d: Brief) {
 }
 
 async function chiedi(env: Env, chat: string, a: Extract<Attesa, { tipo: 'nuovo' }>) {
-  await mem(env).scrivi('attesa', a);
+  await mem(env).scrivi(kAttesa(chat), a);
   if (a.passo === 'conferma') {
     const d = a.dati;
     return say(env, chat, [
@@ -186,7 +189,7 @@ async function avanza(env: Env, chat: string, a: Extract<Attesa, { tipo: 'nuovo'
 }
 
 async function onMonta(env: Env, chat: string, i: Inputs) {
-  await mem(env).cancella('attesa');
+  await mem(env).cancella(kAttesa(chat));
   const err = await avvia(env, i);
   const cosa = i.correzione ? `✏️ Correzione avviata su <b>${esc(i.cartella || '')}</b>\n<i>${esc(i.correzione)}</i>`
     : `🎬 Avviato${i.cartella ? ` su <b>${esc(i.cartella)}</b>` : ' (prima cartella con VAI)'}${i.brief ? `\n📝 <i>${esc(i.brief)}</i>` : ''}`;
@@ -198,11 +201,11 @@ async function onMonta(env: Env, chat: string, i: Inputs) {
 async function onMessage(env: Env, msg: { chat: { id: number }; text?: string }) {
   const chat = String(msg.chat.id);
   const text = (msg.text || '').trim();
-  if (chat !== env.ALLOWED_CHAT_ID) {
+  if (!ok(env, chat)) {
     if (text.startsWith('/start')) return say(env, chat, `Il tuo chat id è ${chat} (non autorizzato).`);
     return;
   }
-  if (text.startsWith('/annulla')) { await mem(env).cancella('attesa'); return say(env, chat, 'Ok, annullato.', MENU); }
+  if (text.startsWith('/annulla')) { await mem(env).cancella(kAttesa(chat)); return say(env, chat, 'Ok, annullato.', MENU); }
   if (text.startsWith('/stato')) return say(env, chat, await stato(env), MENU);
   if (text.startsWith('/nuovo')) return chiedi(env, chat, { tipo: 'nuovo', passo: 'cartella', dati: {} });
   if (text.startsWith('/monta')) {
@@ -212,7 +215,7 @@ async function onMessage(env: Env, msg: { chat: { id: number }; text?: string })
   if (text.startsWith('/')) return say(env, chat, AIUTO, MENU);
 
   // testo libero: risposta a una domanda in sospeso?
-  const attesa = await mem(env).leggi<Attesa>('attesa');
+  const attesa = await mem(env).leggi<Attesa>(kAttesa(chat));
   if (attesa?.tipo === 'correzione') return onMonta(env, chat, { cartella: attesa.nome, origine: '98', correzione: text });
   if (attesa?.tipo === 'nuovo' && ['cartella', 'sponsor_testo', 'tavola', 'note'].includes(attesa.passo)) return avanza(env, chat, attesa, text);
   return say(env, chat, AIUTO, MENU);
@@ -221,17 +224,17 @@ async function onMessage(env: Env, msg: { chat: { id: number }; text?: string })
 async function onCallback(env: Env, cb: { id: string; data?: string; message?: { chat: { id: number } } }) {
   const chat = String(cb.message?.chat.id ?? '');
   await tg(env, 'answerCallbackQuery', { callback_query_id: cb.id });
-  if (chat !== env.ALLOWED_CHAT_ID) return;
+  if (!ok(env, chat)) return;
   const data = cb.data || '';
   if (data === 'stato') return say(env, chat, await stato(env), MENU);
   if (data === 'monta') return onMonta(env, chat, {});
   if (data === 'nuovo') return chiedi(env, chat, { tipo: 'nuovo', passo: 'cartella', dati: {} });
-  if (data === 'annulla') { await mem(env).cancella('attesa'); return say(env, chat, 'Ok, annullato.', MENU); }
+  if (data === 'annulla') { await mem(env).cancella(kAttesa(chat)); return say(env, chat, 'Ok, annullato.', MENU); }
   if (data.startsWith('riprova:')) return onMonta(env, chat, { cartella: data.slice(8) });
 
   if (data.startsWith('n:')) {
     const [, passo, valore = ''] = data.split(':');
-    const attesa = await mem(env).leggi<Attesa>('attesa');
+    const attesa = await mem(env).leggi<Attesa>(kAttesa(chat));
     if (passo === 'avvia' && attesa?.tipo === 'nuovo') {
       return onMonta(env, chat, { cartella: attesa.dati.cartella, brief: componiBrief(attesa.dati) });
     }
@@ -244,7 +247,7 @@ async function onCallback(env: Env, cb: { id: string; data?: string; message?: {
     const nome = await mem(env).leggi<string>(`run:${runId}`);
     if (!nome) return say(env, chat, 'Non trovo più questo montaggio. Usa /monta Nome | correzione.');
     if (azione === 'ok') return say(env, chat, `👍 Perfetto. <b>${esc(nome)}</b> è in 98 - Fatti.`, [[{ text: '📁 Apri', url: FATTI_URL }]]);
-    await mem(env).scrivi('attesa', { tipo: 'correzione', nome });
+    await mem(env).scrivi(kAttesa(chat), { tipo: 'correzione', nome });
     return say(env, chat, `✏️ <b>Cosa cambio in ${esc(nome)}?</b>\nScrivimelo normale, es: <i>hook più corto, togli APP FILE, chiudi su BOCCIATO, parole chiave più in alto</i>.\n\n/annulla per lasciar stare.`);
   }
 }
@@ -259,28 +262,40 @@ const tastiEsito = (n: { ok?: boolean; nome: string; run_id?: string; run_url?: 
     ]
   : [[{ text: '🔁 Riprova', callback_data: `riprova:${n.nome}`.slice(0, 64) }], ...(n.run_url ? [[{ text: '🔧 Log su GitHub', url: n.run_url }]] : [])];
 
+// le notifiche vanno a tutti gli utenti autorizzati
 async function onNotify(env: Env, n: Notify) {
-  const chat = env.ALLOWED_CHAT_ID;
-  if (n.tipo === 'fase') return say(env, chat, `<b>${esc(n.nome)}</b> · ${esc(n.testo)}`, undefined, true);
+  const chats = autorizzati(env);
+  if (n.tipo === 'fase') {
+    for (const chat of chats) await say(env, chat, `<b>${esc(n.nome)}</b> · ${esc(n.testo)}`, undefined, true);
+    return;
+  }
   if (n.run_id) await mem(env).scrivi(`run:${n.run_id}`, n.nome);
   const corpo = `${n.esito || (n.ok ? '✅ pronto' : '⚠️ non montato')} — <b>${esc(n.nome)}</b>\n\n${esc(n.testo)}`.slice(0, 1000);
   const tasti = tastiEsito(n);
-  if (n.foto) {
-    const form = new FormData();
-    form.append('chat_id', chat);
-    form.append('caption', corpo);
-    form.append('parse_mode', 'HTML');
-    form.append('reply_markup', JSON.stringify({ inline_keyboard: tasti }));
-    form.append('photo', new Blob([Uint8Array.from(atob(n.foto), (c) => c.charCodeAt(0))], { type: 'image/jpeg' }), 'anteprima.jpg');
-    const r = await fetch(`https://api.telegram.org/bot${env.TELEGRAM_BOT_TOKEN}/sendPhoto`, { method: 'POST', body: form });
-    if (r.ok) return;
+  let fotoId: string | undefined; // la foto si carica una volta, poi si riusa il file_id
+  for (const chat of chats) {
+    if (n.foto) {
+      const form = new FormData();
+      form.append('chat_id', chat);
+      form.append('caption', corpo);
+      form.append('parse_mode', 'HTML');
+      form.append('reply_markup', JSON.stringify({ inline_keyboard: tasti }));
+      if (fotoId) form.append('photo', fotoId);
+      else form.append('photo', new Blob([Uint8Array.from(atob(n.foto), (c) => c.charCodeAt(0))], { type: 'image/jpeg' }), 'anteprima.jpg');
+      const r = await fetch(`https://api.telegram.org/bot${env.TELEGRAM_BOT_TOKEN}/sendPhoto`, { method: 'POST', body: form });
+      if (r.ok) {
+        const j = (await r.json()) as { result?: { photo?: { file_id: string }[] } };
+        fotoId ??= j.result?.photo?.at(-1)?.file_id;
+        continue;
+      }
+    }
+    await say(env, chat, corpo, tasti);
   }
-  return say(env, chat, corpo, tasti);
 }
 
-// anteprima video (≤ 50 MB, limite dei bot): arriva già compressa da regista.mjs
+// anteprima video (≤ 50 MB, limite dei bot): arriva già compressa da regista.mjs.
+// Si carica una volta sola; agli altri utenti si rimanda lo stesso file_id.
 async function onVideo(env: Env, form: FormData) {
-  const chat = env.ALLOWED_CHAT_ID;
   const nome = String(form.get('nome') || '');
   const runId = String(form.get('run_id') || '');
   const runUrl = String(form.get('run_url') || '');
@@ -289,7 +304,10 @@ async function onVideo(env: Env, form: FormData) {
   if (runId) await mem(env).scrivi(`run:${runId}`, nome);
   const corpo = `✅ pronto — <b>${esc(nome)}</b>\n\n${esc(testo)}`.slice(0, 1000);
   const tasti = tastiEsito({ ok: true, nome, run_id: runId, run_url: runUrl });
-  if (video && typeof video !== 'string') {
+  if (!video || typeof video === 'string') return false;
+  let fileId: string | undefined;
+  let almenoUno = false;
+  for (const chat of autorizzati(env)) {
     const out = new FormData();
     out.append('chat_id', chat);
     out.append('caption', corpo);
@@ -299,11 +317,18 @@ async function onVideo(env: Env, form: FormData) {
     out.append('height', '1280');
     if (form.get('durata')) out.append('duration', String(Math.round(Number(form.get('durata')))));
     out.append('reply_markup', JSON.stringify({ inline_keyboard: tasti }));
-    out.append('video', video, `${nome}.mp4`);
+    if (fileId) out.append('video', fileId);
+    else out.append('video', video, `${nome}.mp4`);
     const r = await fetch(`https://api.telegram.org/bot${env.TELEGRAM_BOT_TOKEN}/sendVideo`, { method: 'POST', body: out });
-    if (r.ok) return true;
+    if (r.ok) {
+      almenoUno = true;
+      const j = (await r.json()) as { result?: { video?: { file_id: string } } };
+      fileId ??= j.result?.video?.file_id;
+    } else {
+      await say(env, chat, corpo, tasti); // se il video non passa, almeno il testo
+    }
   }
-  return false;
+  return almenoUno;
 }
 
 export default {
