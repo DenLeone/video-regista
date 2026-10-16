@@ -7,7 +7,11 @@
 //   ffmpeg / ffprobe nel PATH
 //   GROQ_API_KEY            trascrizione Whisper
 //   CLAUDE_CODE_OAUTH_TOKEN Claude Code con l'abbonamento (comando `claude`)
-//   NOTIFY_URL (opzionale)  POST JSON a fine lavoro (es. Worker Cloudflare -> email)
+//   NOTIFY_URL / NOTIFY_TOKEN (opzionali) bot Telegram: fasi, esito, anteprima video
+//
+// Modalità correzione (dal bottone ✏️ del bot): ORIGINE=98, CARTELLA=<nome>,
+// CORREZIONE=<testo>. Riparte dal piano salvato in 98 - Fatti/<nome>/_regista/
+// e produce "<nome> - FINALE v2.mp4" (v3, ...) nella stessa cartella.
 
 import { execFileSync, spawnSync } from 'node:child_process';
 import fs from 'node:fs';
@@ -16,6 +20,9 @@ import path from 'node:path';
 const REMOTE = process.env.REGISTA_REMOTE || 'gdrive';
 const IN_DIR = '97 - Editare';
 const OUT_DIR = '98 - Fatti';
+const CORREZIONE = (process.env.CORREZIONE || '').trim();
+const SRC_DIR = process.env.ORIGINE === '98' || CORREZIONE ? OUT_DIR : IN_DIR;
+const CACHE = '_regista'; // sottocartella con piano.json e materiale.json di ogni video
 const ROOT = path.resolve(path.dirname(new URL(import.meta.url).pathname.replace(/^\/([A-Za-z]:)/, '$1')), '..');
 const WORK = path.join(ROOT, 'work');
 const MEDIA = path.join(ROOT, 'public', 'media');
@@ -27,13 +34,15 @@ const run = (cmd, args, opts = {}) => execFileSync(cmd, args, { stdio: ['ignore'
 const rclone = (...args) => run('rclone', args);
 const remote = (...parts) => `${REMOTE}:${parts.join('/')}`;
 const isVai = (name) => path.parse(name).name.toUpperCase() === 'VAI';
+// file generati da noi o segnali: mai materiale di montaggio
+const isNostro = (name) => isVai(name) || /^_VAI_usato_/i.test(name) || /FINALE/i.test(name) || /^(NOTE|ERRORE|_ERRORE.*)\.txt$/i.test(name);
 
 // ---------- 1. trova la cartella da fare ----------
 function trovaCartella() {
   // avvio da Telegram/manuale con cartella esplicita: VAI non obbligatorio
   if (process.env.CARTELLA) {
     const nome = process.env.CARTELLA;
-    const files = JSON.parse(rclone('lsjson', remote(IN_DIR, nome), '--files-only'));
+    const files = JSON.parse(rclone('lsjson', remote(SRC_DIR, nome), '--files-only'));
     const vai = files.find((f) => isVai(f.Name));
     return { nome, files, vai: vai ? vai.Name : null };
   }
@@ -103,7 +112,10 @@ function fotogrammi(src, nome, durata) {
 
 // ---------- 3. Claude decide il montaggio ----------
 function chiediPiano() {
-  const prompt = fs.readFileSync(path.join(ROOT, 'scripts', 'prompt-regista.md'), 'utf8');
+  let prompt = fs.readFileSync(path.join(ROOT, 'scripts', 'prompt-regista.md'), 'utf8');
+  if (CORREZIONE && fs.existsSync(path.join(WORK, 'piano_precedente.json'))) {
+    prompt += `\n\n## MODALITÀ CORREZIONE\nEsiste già un montaggio: \`work/piano_precedente.json\`. Denis l'ha guardato e chiede queste modifiche:\n\n> ${CORREZIONE.replace(/\n/g, '\n> ')}\n\nParti dal piano precedente e applica SOLO quello che chiede, lasciando invariato il resto (stessi tagli, tempi e parole chiave dove non li tocca). Se una modifica sposta i tempi (es. accorcia l'hook), ricalcola gli \`at\` di parole chiave e flicker successivi. Scrivi il risultato in \`work/piano.json\` e nella \`note\` elenca in breve cosa hai cambiato.`;
+  }
   const r = spawnSync('claude', ['-p', prompt, '--allowedTools', 'Read,Write', '--output-format', 'text'], {
     cwd: ROOT, encoding: 'utf8', stdio: ['ignore', 'pipe', 'inherit'], timeout: 30 * 60 * 1000,
   });
@@ -154,7 +166,7 @@ async function invia(payload) {
   try {
     await fetch(process.env.NOTIFY_URL, {
       method: 'POST', headers: { 'content-type': 'application/json', 'x-regista-token': process.env.NOTIFY_TOKEN || '' },
-      body: JSON.stringify({ run_url: RUN_URL, ...payload }),
+      body: JSON.stringify({ run_url: RUN_URL, run_id: process.env.GITHUB_RUN_ID, ...payload }),
     });
   } catch (e) { log('notifica fallita', e.message); }
 }
@@ -194,28 +206,47 @@ async function main() {
   fs.mkdirSync(MEDIA, { recursive: true });
 
   try {
-    const media = files.filter((f) => VIDEO_EXT.concat(IMAGE_EXT).includes(path.extname(f.Name).toLowerCase()) && !isVai(f.Name));
+    const media = files.filter((f) => VIDEO_EXT.concat(IMAGE_EXT).includes(path.extname(f.Name).toLowerCase()) && !isNostro(f.Name));
     const peso = media.reduce((s, f) => s + (f.Size || 0), 0);
-    await fase(nome, `📥 Scarico ${media.length} file (${mb(peso)})`);
-    rclone('copy', remote(IN_DIR, nome), path.join(WORK, 'in'), '--exclude', '*.XML', '--exclude', '*.xml', '--exclude', '*FINALE*');
+    await fase(nome, `${CORREZIONE ? '✏️ Correzione · ' : ''}📥 Scarico ${media.length} file (${mb(peso)})`);
+    // solo il materiale: niente sottocartelle (_regista), niente video finali/note/segnali
+    rclone('copy', remote(SRC_DIR, nome), path.join(WORK, 'in'), '--max-depth', '1',
+      '--exclude', '*.XML', '--exclude', '*.xml', '--exclude', '*FINALE*', '--exclude', '_VAI_usato_*', '--exclude', '*.txt');
+    rclone('copy', remote(SRC_DIR, nome), path.join(WORK, 'in'), '--max-depth', '1', '--include', 'brief.txt');
+
+    // cache del giro precedente (trascrizioni già fatte, piano da correggere)
+    let cache = null;
+    try {
+      rclone('copy', remote(SRC_DIR, nome, CACHE), path.join(WORK, 'cache'));
+      if (fs.existsSync(path.join(WORK, 'cache', 'materiale.json'))) cache = JSON.parse(fs.readFileSync(path.join(WORK, 'cache', 'materiale.json'), 'utf8'));
+      if (fs.existsSync(path.join(WORK, 'cache', 'piano.json'))) fs.copyFileSync(path.join(WORK, 'cache', 'piano.json'), path.join(WORK, 'piano_precedente.json'));
+    } catch { /* primo giro: nessuna cache */ }
+    if (CORREZIONE && !fs.existsSync(path.join(WORK, 'piano_precedente.json'))) {
+      throw new Error('non trovo il piano del montaggio precedente (_regista/piano.json): rifaccio da zero con /monta');
+    }
     await fase(nome, '🎞️ Preparo i video (copie 1080p, trascrizione, fotogrammi)');
 
     const briefFile = fs.existsSync(path.join(WORK, 'in', 'brief.txt')) ? fs.readFileSync(path.join(WORK, 'in', 'brief.txt'), 'utf8') : '';
-    const brief = [briefFile, process.env.BRIEF_EXTRA ? `Dal telegram: ${process.env.BRIEF_EXTRA}` : ''].filter(Boolean).join('\n');
+    const brief = [briefFile, process.env.BRIEF_EXTRA ? `Dal telegram: ${process.env.BRIEF_EXTRA}` : '', cache?.brief && CORREZIONE ? cache.brief : '']
+      .filter(Boolean).join('\n');
     const materiale = { cartella: nome, brief, video: [], foto: [] };
 
     for (const f of fs.readdirSync(path.join(WORK, 'in')).sort()) {
       const src = path.join(WORK, 'in', f);
       const ext = path.extname(f).toLowerCase();
-      if (isVai(f)) continue;
+      if (isNostro(f) || fs.statSync(src).isDirectory()) continue;
       if (VIDEO_EXT.includes(ext)) {
         const info = probe(src);
         const base = path.parse(f).name;
         const file = `${base}.mp4`;
         log(`proxy ${f} (${info.durata.toFixed(1)} s, ${info.w}x${info.h})`);
         proxy(src, path.join(MEDIA, file));
-        const parlato = info.audio && haParlato(src);
-        const parole = parlato && process.env.GROQ_API_KEY ? await trascrivi(path.join(MEDIA, file)) : [];
+        const giaFatto = cache?.video?.find((v) => v.file === file);
+        let parole = giaFatto?.parole;
+        if (!parole) {
+          const parlato = info.audio && haParlato(src);
+          parole = parlato && process.env.GROQ_API_KEY ? await trascrivi(path.join(MEDIA, file)) : [];
+        }
         materiale.video.push({
           file, durata: +info.durata.toFixed(2), orient: info.w > info.h ? 'h' : 'v',
           parole, frames: fotogrammi(path.join(MEDIA, file), base, info.durata),
@@ -223,16 +254,21 @@ async function main() {
       } else if (IMAGE_EXT.includes(ext)) {
         materiale.foto.push(f);
       }
+      fs.rmSync(src, { force: true }); // l'originale 4K non serve più: libera disco sul runner
     }
     if (materiale.video.length === 0) throw new Error('nessun video nella cartella');
     fs.writeFileSync(path.join(WORK, 'materiale.json'), JSON.stringify(materiale, null, 1));
 
     const conParlato = materiale.video.filter((v) => v.parole.length).length;
-    await fase(nome, `🧠 Claude sceglie i tagli (${materiale.video.length} video, ${conParlato} con parlato${brief ? ', con brief' : ''})`);
+    await fase(nome, CORREZIONE ? `🧠 Claude applica la correzione: “${CORREZIONE.slice(0, 120)}”`
+      : `🧠 Claude sceglie i tagli (${materiale.video.length} video, ${conParlato} con parlato${brief ? ', con brief' : ''})`);
     const piano = chiediPiano();
     const durataPiano = piano.clips.reduce((s, c) => s + (c.end - c.start), 0);
     await fase(nome, `🎬 Render: ${durataPiano.toFixed(0)} s, ${piano.clips.length} tagli, ${piano.keywords.length} parole chiave`);
-    const finale = `${nome} - FINALE.mp4`;
+
+    // nome con versione: FINALE, FINALE v2, FINALE v3...
+    const versioni = files.filter((f) => /FINALE( v\d+)?\.mp4$/i.test(f.Name)).length;
+    const finale = `${nome} - FINALE${versioni ? ` v${versioni + 1}` : ''}.mp4`;
     const outFile = path.join(ROOT, 'out', finale);
     fs.mkdirSync(path.dirname(outFile), { recursive: true });
     renderizza(outFile);
@@ -241,7 +277,7 @@ async function main() {
     const durataN = probe(outFile).durata;
     const durata = durataN.toFixed(1);
     const note = [
-      `Montato automaticamente il ${new Date().toLocaleString('it-IT', { timeZone: 'Europe/Rome' })} in ${trascorso()}`,
+      `${CORREZIONE ? `Correzione (“${CORREZIONE}”)` : 'Montato automaticamente'} il ${new Date().toLocaleString('it-IT', { timeZone: 'Europe/Rome' })} in ${trascorso()}`,
       `Durata: ${durata} s · ${piano.tavola} · ${piano.clips.length} tagli`,
       `Parole chiave: ${piano.keywords.map((k) => `${k.word} @${k.at}s`).join(', ') || '—'}`,
       piano.note ? `Note: ${piano.note}` : '',
@@ -249,21 +285,55 @@ async function main() {
     ].filter(Boolean).join('\n');
     fs.writeFileSync(path.join(WORK, 'NOTE.txt'), note);
 
-    rclone('copyto', outFile, remote(IN_DIR, nome, finale));
-    rclone('copyto', path.join(WORK, 'NOTE.txt'), remote(IN_DIR, nome, 'NOTE.txt'));
-    if (vai) rclone('moveto', remote(IN_DIR, nome, vai), remote(IN_DIR, nome, `_VAI_usato_${vai}`));
-    rclone('moveto', remote(IN_DIR, nome), remote(OUT_DIR, nome));
-    await notifica('✅ pronto', nome, note, { ok: true, foto: anteprima(outFile, piano, durataN) });
+    rclone('copyto', outFile, remote(SRC_DIR, nome, finale));
+    rclone('copyto', path.join(WORK, 'NOTE.txt'), remote(SRC_DIR, nome, 'NOTE.txt'));
+    rclone('copyto', path.join(WORK, 'piano.json'), remote(SRC_DIR, nome, CACHE, 'piano.json'));
+    rclone('copyto', path.join(WORK, 'materiale.json'), remote(SRC_DIR, nome, CACHE, 'materiale.json'));
+    if (vai) rclone('moveto', remote(SRC_DIR, nome, vai), remote(SRC_DIR, nome, `_VAI_usato_${vai}`));
+    if (SRC_DIR === IN_DIR) rclone('moveto', remote(IN_DIR, nome), remote(OUT_DIR, nome));
+
+    // anteprima: prima provo il video in chat, se non passa mando la foto
+    const inviato = await inviaVideo(outFile, nome, note, durataN);
+    if (!inviato) await notifica('✅ pronto', nome, note, { ok: true, foto: anteprima(outFile, piano, durataN) });
   } catch (e) {
-    const testo = `Errore: ${e.message}\n\n` + (vai ? `Per riprovare rinomina _VAI_usato_${vai} in ${vai}, oppure /monta ${nome} dal bot.` : `Per riprovare: /monta ${nome} dal bot.`);
+    const testo = `Errore: ${e.message}\n\n` + (CORREZIONE ? 'Puoi riprovare la correzione dal bot (✏️) o scrivermi una richiesta diversa.'
+      : vai ? `Per riprovare rinomina _VAI_usato_${vai} in ${vai}, oppure 🔁 Riprova.` : 'Per riprovare: 🔁 Riprova.');
     fs.mkdirSync(WORK, { recursive: true });
     fs.writeFileSync(path.join(WORK, 'ERRORE.txt'), testo);
     try {
-      rclone('copyto', path.join(WORK, 'ERRORE.txt'), remote(IN_DIR, nome, 'ERRORE.txt'));
-      if (vai) rclone('moveto', remote(IN_DIR, nome, vai), remote(IN_DIR, nome, `_VAI_usato_${vai}`));
+      rclone('copyto', path.join(WORK, 'ERRORE.txt'), remote(SRC_DIR, nome, 'ERRORE.txt'));
+      if (vai) rclone('moveto', remote(SRC_DIR, nome, vai), remote(SRC_DIR, nome, `_VAI_usato_${vai}`));
     } catch (e2) { log('impossibile scrivere ERRORE su Drive', e2.message); }
     await notifica('⚠️ non montato', nome, testo);
     process.exitCode = 1;
+  }
+}
+
+// Video di anteprima per Telegram: i bot possono inviare al massimo 50 MB,
+// quindi 720p con bitrate calcolato per stare sotto ~45 MB.
+async function inviaVideo(outFile, nome, testo, durata) {
+  if (!process.env.NOTIFY_URL) return false;
+  try {
+    const anteprimaMp4 = path.join(WORK, 'anteprima.mp4');
+    const kbps = Math.max(600, Math.min(4000, Math.floor((45 * 8 * 1000) / Math.max(1, durata)) - 160));
+    run('ffmpeg', ['-y', '-v', 'error', '-i', outFile, '-vf', 'scale=720:-2', '-c:v', 'libx264', '-preset', 'veryfast',
+      '-b:v', `${kbps}k`, '-maxrate', `${kbps}k`, '-bufsize', `${kbps * 2}k`, '-c:a', 'aac', '-b:a', '128k', '-movflags', '+faststart', anteprimaMp4]);
+    const size = fs.statSync(anteprimaMp4).size;
+    if (size > 49 * 1e6) { log(`anteprima troppo grande (${mb(size)})`); return false; }
+    const form = new FormData();
+    form.append('nome', nome);
+    form.append('testo', testo);
+    form.append('durata', String(durata));
+    form.append('run_id', process.env.GITHUB_RUN_ID || '');
+    form.append('run_url', RUN_URL || '');
+    form.append('video', new Blob([fs.readFileSync(anteprimaMp4)], { type: 'video/mp4' }), 'anteprima.mp4');
+    const url = process.env.NOTIFY_URL.replace(/\/notify$/, '/video');
+    const r = await fetch(url, { method: 'POST', headers: { 'x-regista-token': process.env.NOTIFY_TOKEN || '' }, body: form });
+    log(`anteprima video: ${r.status} (${mb(size)})`);
+    return r.ok;
+  } catch (e) {
+    log('anteprima video fallita', e.message);
+    return false;
   }
 }
 

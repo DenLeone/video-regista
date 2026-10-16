@@ -2,6 +2,16 @@ name = "regista-telegram"
 main = "src/index.ts"
 compatibility_date = "2026-09-01"
 
+# Memoria del bot (conversazione /nuovo, correzioni in attesa, run -> cartella).
+# Durable Object con storage SQLite: si crea con il deploy, niente KV da creare a mano.
+[[durable_objects.bindings]]
+name = "MEMORIA"
+class_name = "Memoria"
+
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["Memoria"]
+
 # Segreti (wrangler secret put <NOME>):
 #   TELEGRAM_BOT_TOKEN, TELEGRAM_SECRET, ALLOWED_CHAT_ID,
 #   GITHUB_TOKEN, GITHUB_REPO, NOTIFY_TOKEN

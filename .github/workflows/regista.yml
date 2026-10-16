@@ -15,6 +15,14 @@ on:
         description: 'Brief al volo (aggiunto a brief.txt)'
         required: false
         default: ''
+      origine:
+        description: '97 = nuovo montaggio da 97 - Editare, 98 = correzione di un video in 98 - Fatti'
+        required: false
+        default: '97'
+      correzione:
+        description: 'Cosa cambiare rispetto al montaggio precedente (solo con origine 98)'
+        required: false
+        default: ''
 
 concurrency:
   group: regista              # un solo montaggio alla volta, gli altri aspettano
@@ -73,6 +81,8 @@ jobs:
           NOTIFY_TOKEN: ${{ secrets.NOTIFY_TOKEN }}
           CARTELLA: ${{ steps.check.outputs.cartella }}
           BRIEF_EXTRA: ${{ inputs.brief }}
+          ORIGINE: ${{ inputs.origine }}
+          CORREZIONE: ${{ inputs.correzione }}
         run: node scripts/regista.mjs
 
       - name: Conserva piano e note (debug)
