@@ -28,11 +28,16 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Strumenti (rclone, ffmpeg)
+        env:
+          RCLONE_CONF: ${{ secrets.RCLONE_CONF }}
         run: |
           sudo apt-get update -qq
-          sudo apt-get install -y -qq ffmpeg rclone
+          sudo apt-get install -y -qq ffmpeg
+          curl -fsSL https://rclone.org/install.sh | sudo bash > /dev/null
           mkdir -p ~/.config/rclone
-          echo "${{ secrets.RCLONE_CONF }}" > ~/.config/rclone/rclone.conf
+          # via env + printf: il token è JSON con virgolette, echo "..." le rovinerebbe
+          printf '%s\n' "$RCLONE_CONF" > ~/.config/rclone/rclone.conf
+          rclone lsf "gdrive:97 - Editare" --dirs-only > /dev/null && echo "Drive OK"
 
       - name: C'è qualcosa da fare?
         id: check
