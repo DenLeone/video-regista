@@ -35,6 +35,23 @@ const run = (cmd, args, opts = {}) => String(execFileSync(cmd, args, { stdio: ['
 const rclone = (...args) => run('rclone', args);
 const remote = (...parts) => `${REMOTE}:${parts.join('/')}`;
 const isVai = (name) => path.parse(name).name.toUpperCase() === 'VAI';
+
+// fetch con nuovi tentativi: tra una chiamata e l'altra passano minuti di ffmpeg e
+// la connessione tenuta aperta da Node viene chiusa dal server ("fetch failed").
+async function fetchRiprova(url, opts = {}, tentativi = 4) {
+  for (let i = 1; ; i++) {
+    try {
+      const r = await fetch(url, { ...opts, headers: { connection: 'close', ...(opts.headers || {}) }, signal: AbortSignal.timeout(5 * 60 * 1000) });
+      if (r.status >= 500 || r.status === 429) throw new Error(`HTTP ${r.status}: ${(await r.text()).slice(0, 200)}`);
+      return r;
+    } catch (e) {
+      const causa = e.cause ? ` (${e.cause.code || e.cause.message || e.cause})` : '';
+      if (i >= tentativi) throw new Error(`${new URL(url).host}: ${e.message}${causa}`);
+      log(`chiamata a ${new URL(url).host} fallita (${e.message}${causa}), riprovo ${i}/${tentativi - 1}`);
+      await new Promise((ok) => setTimeout(ok, 5000 * i));
+    }
+  }
+}
 // file generati da noi o segnali: mai materiale di montaggio
 const isNostro = (name) => isVai(name) || /^_VAI_usato_/i.test(name) || /FINALE/i.test(name) || /^(NOTE|ERRORE|_ERRORE.*)\.txt$/i.test(name);
 
@@ -85,7 +102,7 @@ async function trascrivi(file) {
   form.append('language', 'it');
   form.append('response_format', 'verbose_json');
   form.append('timestamp_granularities[]', 'word');
-  const res = await fetch('https://api.groq.com/openai/v1/audio/transcriptions', {
+  const res = await fetchRiprova('https://api.groq.com/openai/v1/audio/transcriptions', {
     method: 'POST', headers: { Authorization: `Bearer ${process.env.GROQ_API_KEY}` }, body: form,
   });
   if (!res.ok) throw new Error(`Groq ${res.status}: ${await res.text()}`);
@@ -186,7 +203,7 @@ const trascorso = () => `${Math.round((Date.now() - T0) / 60000)} min`;
 async function invia(payload) {
   if (!process.env.NOTIFY_URL) return;
   try {
-    await fetch(process.env.NOTIFY_URL, {
+    await fetchRiprova(process.env.NOTIFY_URL, {
       method: 'POST', headers: { 'content-type': 'application/json', 'x-regista-token': process.env.NOTIFY_TOKEN || '' },
       body: JSON.stringify({ run_url: RUN_URL, run_id: process.env.GITHUB_RUN_ID, ...payload }),
     });
@@ -352,7 +369,7 @@ async function inviaVideo(outFile, nome, testo, durata) {
     form.append('run_url', RUN_URL || '');
     form.append('video', new Blob([fs.readFileSync(anteprimaMp4)], { type: 'video/mp4' }), 'anteprima.mp4');
     const url = process.env.NOTIFY_URL.replace(/\/notify$/, '/video');
-    const r = await fetch(url, { method: 'POST', headers: { 'x-regista-token': process.env.NOTIFY_TOKEN || '' }, body: form });
+    const r = await fetchRiprova(url, { method: 'POST', headers: { 'x-regista-token': process.env.NOTIFY_TOKEN || '' }, body: form });
     log(`anteprima video: ${r.status} (${mb(size)})`);
     return r.ok;
   } catch (e) {
