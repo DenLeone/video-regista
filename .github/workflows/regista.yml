@@ -51,6 +51,8 @@ jobs:
         id: check
         env:
           CARTELLA: ${{ inputs.cartella }}
+          NOTIFY_URL: ${{ secrets.NOTIFY_URL }}
+          NOTIFY_TOKEN: ${{ secrets.NOTIFY_TOKEN }}
         run: |
           trovato="$CARTELLA"
           [ -z "$trovato" ] && while IFS= read -r d; do
@@ -58,6 +60,11 @@ jobs:
           done < <(rclone lsf "gdrive:97 - Editare" --dirs-only | sed 's:/$::')
           echo "cartella=$trovato" >> "$GITHUB_OUTPUT"
           if [ -n "$trovato" ]; then echo "Da montare: $trovato"; else echo "Niente da fare"; fi
+          # avvio manuale/dal bot senza niente da montare: avvisa, così non sembra un video fatto
+          if [ -z "$trovato" ] && [ "${{ github.event_name }}" = "workflow_dispatch" ] && [ -n "$NOTIFY_URL" ]; then
+            curl -s -X POST "$NOTIFY_URL" -H 'content-type: application/json' -H "x-regista-token: $NOTIFY_TOKEN" \
+              -d '{"tipo":"fase","nome":"Monta","testo":"🤷 Nessuna cartella con VAI in 97 - Editare: non ho montato niente. Aggiungi un file VAI oppure usa 🆕 Nuovo video e scrivi il nome della cartella."}' > /dev/null
+          fi
 
       - uses: actions/setup-node@v4
         if: steps.check.outputs.cartella != ''

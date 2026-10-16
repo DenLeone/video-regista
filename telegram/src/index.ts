@@ -107,8 +107,8 @@ async function stato(env: Env): Promise<string> {
     righe.push(`⏳ <b>In corso</b> da ${minuti(a.run_started_at || a.created_at)} min — fase: <b>${esc(fase)}</b>`);
   }
   if (!attivi.length) righe.push('💤 Nessun montaggio in corso.');
-  // i controlli automatici senza niente da fare durano ~1 min: li nascondo
-  const veri = runs.filter((w) => w.status === 'completed' && (w.event !== 'schedule' || minuti(w.run_started_at || w.created_at, w.updated_at) >= 3));
+  // i giri "a vuoto" (nessuna cartella da montare) durano ~1 min: non sono video fatti, li nascondo
+  const veri = runs.filter((w) => w.status === 'completed' && (w.conclusion !== 'success' || minuti(w.run_started_at || w.created_at, w.updated_at) >= 3));
   if (veri.length) {
     righe.push('\n<b>Ultimi montaggi</b>');
     for (const w of veri.slice(0, 5)) {
