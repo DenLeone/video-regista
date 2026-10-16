@@ -116,11 +116,21 @@ function chiediPiano() {
   if (CORREZIONE && fs.existsSync(path.join(WORK, 'piano_precedente.json'))) {
     prompt += `\n\n## MODALITÀ CORREZIONE\nEsiste già un montaggio: \`work/piano_precedente.json\`. Denis l'ha guardato e chiede queste modifiche:\n\n> ${CORREZIONE.replace(/\n/g, '\n> ')}\n\nParti dal piano precedente e applica SOLO quello che chiede, lasciando invariato il resto (stessi tagli, tempi e parole chiave dove non li tocca). Se una modifica sposta i tempi (es. accorcia l'hook), ricalcola gli \`at\` di parole chiave e flicker successivi. Scrivi il risultato in \`work/piano.json\` e nella \`note\` elenca in breve cosa hai cambiato.`;
   }
-  const r = spawnSync('claude', ['-p', prompt, '--allowedTools', 'Read,Write', '--output-format', 'text'], {
-    cwd: ROOT, encoding: 'utf8', stdio: ['ignore', 'pipe', 'inherit'], timeout: 30 * 60 * 1000,
+  const r = spawnSync('claude', ['-p', prompt, '--allowedTools', 'Read,Write', '--output-format', 'json'], {
+    cwd: ROOT, encoding: 'utf8', stdio: ['ignore', 'pipe', 'inherit'], timeout: 30 * 60 * 1000, maxBuffer: 1 << 26,
   });
   if (r.status !== 0) throw new Error(`claude terminato con codice ${r.status}`);
-  log('Claude:', (r.stdout || '').slice(-1500));
+  try {
+    const j = JSON.parse(r.stdout || '{}');
+    log('Claude:', String(j.result || '').slice(-1500));
+    const u = j.usage || {};
+    consumi.claude = {
+      input: (u.input_tokens || 0) + (u.cache_creation_input_tokens || 0) + (u.cache_read_input_tokens || 0),
+      output: u.output_tokens || 0,
+      usd: j.total_cost_usd,
+      turni: j.num_turns,
+    };
+  } catch { log('Claude (output non JSON):', (r.stdout || '').slice(-1500)); }
   const piano = JSON.parse(fs.readFileSync(path.join(WORK, 'piano.json'), 'utf8'));
   validaPiano(piano);
   return piano;
@@ -159,6 +169,17 @@ const RUN_URL = process.env.GITHUB_RUN_ID
   ? `${process.env.GITHUB_SERVER_URL}/${process.env.GITHUB_REPOSITORY}/actions/runs/${process.env.GITHUB_RUN_ID}`
   : undefined;
 const T0 = Date.now();
+// cosa è costato il giro: token Claude, secondi di audio a Groq, minuti di Actions
+const consumi = { claude: null, groqSec: 0 };
+const kTok = (n) => (n >= 1000 ? `${Math.round(n / 1000)}k` : String(n));
+function rigaConsumi() {
+  const c = consumi.claude;
+  const parti = [];
+  if (c) parti.push(`🧠 Claude ${kTok(c.input)} token letti + ${kTok(c.output)} scritti${c.usd != null ? ` (≈ $${c.usd.toFixed(2)} se fosse API; con l'abbonamento consuma il limite d'uso)` : ''}`);
+  if (consumi.groqSec) parti.push(`🎙️ Groq ${Math.round(consumi.groqSec / 60)} min di audio`);
+  parti.push(`⏱️ GitHub Actions ~${Math.ceil((Date.now() - T0) / 60000) + 2} min`);
+  return `Consumi: ${parti.join(' · ')}`;
+}
 const trascorso = () => `${Math.round((Date.now() - T0) / 60000)} min`;
 
 async function invia(payload) {
@@ -246,6 +267,7 @@ async function main() {
         if (!parole) {
           const parlato = info.audio && haParlato(src);
           parole = parlato && process.env.GROQ_API_KEY ? await trascrivi(path.join(MEDIA, file)) : [];
+          if (parlato && process.env.GROQ_API_KEY) consumi.groqSec += info.durata;
         }
         materiale.video.push({
           file, durata: +info.durata.toFixed(2), orient: info.w > info.h ? 'h' : 'v',
@@ -282,6 +304,7 @@ async function main() {
       `Parole chiave: ${piano.keywords.map((k) => `${k.word} @${k.at}s`).join(', ') || '—'}`,
       piano.note ? `Note: ${piano.note}` : '',
       `File: 98 - Fatti/${nome}/${finale}`,
+      rigaConsumi(),
     ].filter(Boolean).join('\n');
     fs.writeFileSync(path.join(WORK, 'NOTE.txt'), note);
 
