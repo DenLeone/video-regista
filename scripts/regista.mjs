@@ -142,18 +142,44 @@ function renderizza(out) {
   }
 }
 
-// ---------- 5. notifica ----------
-async function notifica(esito, nome, testo) {
-  log(`${esito}: ${nome}\n${testo}`);
-  if (process.env.GITHUB_STEP_SUMMARY) fs.appendFileSync(process.env.GITHUB_STEP_SUMMARY, `## ${esito} — ${nome}\n\n${testo}\n`);
+// ---------- 5. notifiche (bot Telegram) ----------
+const RUN_URL = process.env.GITHUB_RUN_ID
+  ? `${process.env.GITHUB_SERVER_URL}/${process.env.GITHUB_REPOSITORY}/actions/runs/${process.env.GITHUB_RUN_ID}`
+  : undefined;
+const T0 = Date.now();
+const trascorso = () => `${Math.round((Date.now() - T0) / 60000)} min`;
+
+async function invia(payload) {
   if (!process.env.NOTIFY_URL) return;
   try {
     await fetch(process.env.NOTIFY_URL, {
       method: 'POST', headers: { 'content-type': 'application/json', 'x-regista-token': process.env.NOTIFY_TOKEN || '' },
-      body: JSON.stringify({ esito, nome, testo }),
+      body: JSON.stringify({ run_url: RUN_URL, ...payload }),
     });
   } catch (e) { log('notifica fallita', e.message); }
 }
+
+// messaggio silenzioso a ogni fase
+const fase = (nome, testo) => { log(`[fase] ${testo}`); return invia({ tipo: 'fase', nome, testo: `${testo} (${trascorso()})` }); };
+
+async function notifica(esito, nome, testo, { ok = false, foto } = {}) {
+  log(`${esito}: ${nome}\n${testo}`);
+  if (process.env.GITHUB_STEP_SUMMARY) fs.appendFileSync(process.env.GITHUB_STEP_SUMMARY, `## ${esito} — ${nome}\n\n${testo}\n`);
+  await invia({ tipo: 'esito', esito, nome, testo, ok, foto });
+}
+
+// anteprima: il fotogramma a metà della prima parola chiave (o a 1/3 del video)
+function anteprima(outFile, piano, durata) {
+  const k = piano.keywords?.[0];
+  const t = k ? Math.min(durata - 0.1, k.at + Math.min(1, k.dur / 2)) : durata / 3;
+  const jpg = path.join(WORK, 'anteprima.jpg');
+  try {
+    run('ffmpeg', ['-y', '-v', 'error', '-ss', String(t), '-i', outFile, '-frames:v', '1', '-vf', 'scale=540:-2', '-q:v', '4', jpg]);
+    return fs.readFileSync(jpg).toString('base64');
+  } catch { return undefined; }
+}
+
+const mb = (bytes) => (bytes / 1e6 >= 1000 ? `${(bytes / 1e9).toFixed(1)} GB` : `${Math.round(bytes / 1e6)} MB`);
 
 // ---------- main ----------
 async function main() {
@@ -168,7 +194,11 @@ async function main() {
   fs.mkdirSync(MEDIA, { recursive: true });
 
   try {
+    const media = files.filter((f) => VIDEO_EXT.concat(IMAGE_EXT).includes(path.extname(f.Name).toLowerCase()) && !isVai(f.Name));
+    const peso = media.reduce((s, f) => s + (f.Size || 0), 0);
+    await fase(nome, `📥 Scarico ${media.length} file (${mb(peso)})`);
     rclone('copy', remote(IN_DIR, nome), path.join(WORK, 'in'), '--exclude', '*.XML', '--exclude', '*.xml', '--exclude', '*FINALE*');
+    await fase(nome, '🎞️ Preparo i video (copie 1080p, trascrizione, fotogrammi)');
 
     const briefFile = fs.existsSync(path.join(WORK, 'in', 'brief.txt')) ? fs.readFileSync(path.join(WORK, 'in', 'brief.txt'), 'utf8') : '';
     const brief = [briefFile, process.env.BRIEF_EXTRA ? `Dal telegram: ${process.env.BRIEF_EXTRA}` : ''].filter(Boolean).join('\n');
@@ -197,18 +227,25 @@ async function main() {
     if (materiale.video.length === 0) throw new Error('nessun video nella cartella');
     fs.writeFileSync(path.join(WORK, 'materiale.json'), JSON.stringify(materiale, null, 1));
 
+    const conParlato = materiale.video.filter((v) => v.parole.length).length;
+    await fase(nome, `🧠 Claude sceglie i tagli (${materiale.video.length} video, ${conParlato} con parlato${brief ? ', con brief' : ''})`);
     const piano = chiediPiano();
+    const durataPiano = piano.clips.reduce((s, c) => s + (c.end - c.start), 0);
+    await fase(nome, `🎬 Render: ${durataPiano.toFixed(0)} s, ${piano.clips.length} tagli, ${piano.keywords.length} parole chiave`);
     const finale = `${nome} - FINALE.mp4`;
     const outFile = path.join(ROOT, 'out', finale);
     fs.mkdirSync(path.dirname(outFile), { recursive: true });
     renderizza(outFile);
+    await fase(nome, '📤 Carico su Drive');
 
-    const durata = probe(outFile).durata.toFixed(1);
+    const durataN = probe(outFile).durata;
+    const durata = durataN.toFixed(1);
     const note = [
-      `Montato automaticamente il ${new Date().toLocaleString('it-IT', { timeZone: 'Europe/Rome' })}`,
-      `Durata: ${durata} s · ${piano.tavola}`,
+      `Montato automaticamente il ${new Date().toLocaleString('it-IT', { timeZone: 'Europe/Rome' })} in ${trascorso()}`,
+      `Durata: ${durata} s · ${piano.tavola} · ${piano.clips.length} tagli`,
       `Parole chiave: ${piano.keywords.map((k) => `${k.word} @${k.at}s`).join(', ') || '—'}`,
       piano.note ? `Note: ${piano.note}` : '',
+      `File: 98 - Fatti/${nome}/${finale}`,
     ].filter(Boolean).join('\n');
     fs.writeFileSync(path.join(WORK, 'NOTE.txt'), note);
 
@@ -216,7 +253,7 @@ async function main() {
     rclone('copyto', path.join(WORK, 'NOTE.txt'), remote(IN_DIR, nome, 'NOTE.txt'));
     if (vai) rclone('moveto', remote(IN_DIR, nome, vai), remote(IN_DIR, nome, `_VAI_usato_${vai}`));
     rclone('moveto', remote(IN_DIR, nome), remote(OUT_DIR, nome));
-    await notifica('✅ pronto', nome, note);
+    await notifica('✅ pronto', nome, note, { ok: true, foto: anteprima(outFile, piano, durataN) });
   } catch (e) {
     const testo = `Errore: ${e.message}\n\n` + (vai ? `Per riprovare rinomina _VAI_usato_${vai} in ${vai}, oppure /monta ${nome} dal bot.` : `Per riprovare: /monta ${nome} dal bot.`);
     fs.mkdirSync(WORK, { recursive: true });
