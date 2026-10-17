@@ -16,19 +16,31 @@ on:
         required: false
         default: ''
       origine:
-        description: '97 = nuovo montaggio da 97 - Editare, 98 = correzione di un video in 98 - Fatti'
+        description: '97 = nuovo montaggio da 97 - Editare, 98 = rifai/correggi un video in 98 - Fatti'
         required: false
         default: '97'
       correzione:
         description: 'Cosa cambiare rispetto al montaggio precedente (solo con origine 98)'
         required: false
         default: ''
+      ai:
+        description: 'auto (Claude, poi Gemini se serve) | claude | gemini — vuoto = variabile REGISTA_AI'
+        required: false
+        default: ''
+      modello:
+        description: 'Modello Claude: sonnet | opus | haiku — vuoto = variabile REGISTA_MODEL (default sonnet)'
+        required: false
+        default: ''
+      azione:
+        description: 'monta (default) | elenco = manda solo al bot le cartelle di 97 - Editare'
+        required: false
+        default: 'monta'
 
 # Una coda PER CARTELLA: GitHub tiene un solo giro "in attesa" per gruppo e scarta
 # quelli in attesa più vecchi. Con un gruppo unico, tre avvii di fila ne perdevano uno.
-# Cartelle diverse girano in parallelo; i controlli automatici hanno la loro coda.
+# Cartelle diverse girano in parallelo; i controlli automatici e l'elenco hanno la loro coda.
 concurrency:
-  group: regista-${{ inputs.cartella || 'auto' }}
+  group: regista-${{ inputs.azione == 'elenco' && 'elenco' || inputs.cartella || 'auto' }}
   cancel-in-progress: false
 
 jobs:
@@ -39,12 +51,10 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Strumenti (rclone, ffmpeg)
+      - name: Drive (rclone)
         env:
           RCLONE_CONF: ${{ secrets.RCLONE_CONF }}
         run: |
-          sudo apt-get update -qq
-          sudo apt-get install -y -qq ffmpeg
           curl -fsSL https://rclone.org/install.sh | sudo bash > /dev/null
           mkdir -p ~/.config/rclone
           # via env + printf: il token è JSON con virgolette, echo "..." le rovinerebbe
@@ -55,19 +65,31 @@ jobs:
         id: check
         env:
           CARTELLA: ${{ inputs.cartella }}
+          AZIONE: ${{ inputs.azione }}
           NOTIFY_URL: ${{ secrets.NOTIFY_URL }}
           NOTIFY_TOKEN: ${{ secrets.NOTIFY_TOKEN }}
         run: |
+          mapfile -t cartelle < <(rclone lsf "gdrive:97 - Editare" --dirs-only | sed 's:/$::')
           trovato="$CARTELLA"
-          [ -z "$trovato" ] && while IFS= read -r d; do
-            if rclone lsf "gdrive:97 - Editare/$d" --files-only | grep -qiE '^vai(\.[^.]+)?$'; then trovato="$d"; break; fi
-          done < <(rclone lsf "gdrive:97 - Editare" --dirs-only | sed 's:/$::')
+          con_vai=()
+          for d in "${cartelle[@]}"; do
+            if rclone lsf "gdrive:97 - Editare/$d" --files-only | grep -qiE '^vai(\.[^.]+)?$'; then
+              con_vai+=("$d"); [ -z "$trovato" ] && trovato="$d"
+            fi
+          done
+          [ "$AZIONE" = "elenco" ] && trovato=""
           echo "cartella=$trovato" >> "$GITHUB_OUTPUT"
           if [ -n "$trovato" ]; then echo "Da montare: $trovato"; else echo "Niente da fare"; fi
+          # il bot tiene l'elenco delle cartelle per i tasti di "Nuovo montaggio"
+          if [ -n "$NOTIFY_URL" ]; then
+            jq -n --args '{tipo:"cartelle", cartelle:$ARGS.positional}' -- "${cartelle[@]}" \
+              | jq --args '. + {vai:$ARGS.positional}' -- "${con_vai[@]}" \
+              | curl -s -X POST "$NOTIFY_URL" -H 'content-type: application/json' -H "x-regista-token: $NOTIFY_TOKEN" -d @- > /dev/null || true
+          fi
           # avvio manuale/dal bot senza niente da montare: avvisa, così non sembra un video fatto
-          if [ -z "$trovato" ] && [ "${{ github.event_name }}" = "workflow_dispatch" ] && [ -n "$NOTIFY_URL" ]; then
+          if [ -z "$trovato" ] && [ "$AZIONE" != "elenco" ] && [ "${{ github.event_name }}" = "workflow_dispatch" ] && [ -n "$NOTIFY_URL" ]; then
             curl -s -X POST "$NOTIFY_URL" -H 'content-type: application/json' -H "x-regista-token: $NOTIFY_TOKEN" \
-              -d '{"tipo":"fase","nome":"Monta","testo":"🤷 Nessuna cartella con VAI in 97 - Editare: non ho montato niente. Aggiungi un file VAI oppure usa 🆕 Nuovo video e scrivi il nome della cartella."}' > /dev/null
+              -d '{"tipo":"vuoto","nome":"—","testo":"Nessuna cartella con VAI in 97 - Editare: non ho montato niente."}' > /dev/null
           fi
 
       - uses: actions/setup-node@v4
@@ -79,9 +101,10 @@ jobs:
       - name: Dipendenze
         if: steps.check.outputs.cartella != ''
         run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq ffmpeg fonts-noto-color-emoji
           npm ci || npm install
           npm install -g @anthropic-ai/claude-code
-          sudo apt-get install -y -qq fonts-noto-color-emoji
 
       - name: Monta
         if: steps.check.outputs.cartella != ''
@@ -90,10 +113,11 @@ jobs:
           CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
           # riserva se Claude non risponde (limiti d'uso); facoltativa
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
-          # Settings → Secrets and variables → Actions → Variables (facoltative)
-          REGISTA_AI: ${{ vars.REGISTA_AI }}
-          REGISTA_MODEL: ${{ vars.REGISTA_MODEL }}
+          # scelte dal bot, altrimenti Settings → Secrets and variables → Actions → Variables (facoltative)
+          REGISTA_AI: ${{ inputs.ai || vars.REGISTA_AI }}
+          REGISTA_MODEL: ${{ inputs.modello || vars.REGISTA_MODEL }}
           GEMINI_MODEL: ${{ vars.GEMINI_MODEL }}
+          REGISTA_VERSIONE: ${{ github.ref_name }}
           NOTIFY_URL: ${{ secrets.NOTIFY_URL }}
           NOTIFY_TOKEN: ${{ secrets.NOTIFY_TOKEN }}
           CARTELLA: ${{ steps.check.outputs.cartella }}

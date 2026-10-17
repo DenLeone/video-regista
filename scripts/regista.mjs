@@ -161,7 +161,23 @@ function promptRegia({ modo, testoMateriale, regiaPrecedente }) {
   return `${p}\n\n---\n\n${testoMateriale}\n`;
 }
 
-const consumi = { ai: null, groqSec: 0 };
+const consumi = { ai: null, groqSec: 0, stima: null };
+
+// Stima prima dell'invio, per Claude: testo ≈ 1 token ogni 3,5 caratteri; immagini come le
+// conta Claude (lato lungo ridotto a 1568 px, token ≈ pixel / 750). È il peso di UN passaggio:
+// Claude Code rilegge il contesto a ogni passaggio, quindi il totale reale è più alto.
+function stimaToken(testo, fogli) {
+  let immagini = 0;
+  for (const f of fogli) {
+    try {
+      const [w, h] = run('ffprobe', ['-v', 'error', '-select_streams', 'v:0', '-show_entries', 'stream=width,height', '-of', 'csv=p=0', path.join(ROOT, f)])
+        .trim().split(',').map(Number);
+      const s = Math.min(1, 1568 / Math.max(w, h));
+      immagini += Math.round((w * s * h * s) / 750);
+    } catch { immagini += 1800; }
+  }
+  return { testo: Math.round(testo.length / 3.5), immagini, totale: Math.round(testo.length / 3.5) + immagini };
+}
 
 function regiaConClaude(prompt) {
   const modello = process.env.REGISTA_MODEL || 'sonnet';
@@ -194,12 +210,21 @@ async function regiaConGemini(prompt, fogli) {
     parts.push({ text: `Foglio provino ${f}:` });
     parts.push({ inline_data: { mime_type: 'image/jpeg', data: fs.readFileSync(path.join(ROOT, f)).toString('base64') } });
   }
-  const r = await fetchRiprova(`https://generativelanguage.googleapis.com/v1beta/models/${modello}:generateContent`, {
-    method: 'POST',
-    headers: { 'content-type': 'application/json', 'x-goog-api-key': process.env.GEMINI_API_KEY },
-    body: JSON.stringify({ contents: [{ role: 'user', parts }], generationConfig: { responseMimeType: 'application/json', temperature: 0.4 } }),
+  const contents = [{ role: 'user', parts }];
+  const base = `https://generativelanguage.googleapis.com/v1beta/models/${modello}`;
+  const headers = { 'content-type': 'application/json', 'x-goog-api-key': process.env.GEMINI_API_KEY };
+  // conteggio esatto prima dell'invio: countTokens non consuma quota
+  try {
+    const c = await fetchRiprova(`${base}:countTokens`, { method: 'POST', headers, body: JSON.stringify({ contents }) }, 2);
+    if (c.ok) { const t = (await c.json()).totalTokens; consumi.stima = { totale: t, esatta: true }; log(`Gemini: ${t} token da inviare`); }
+  } catch (e) { log('conteggio token Gemini non riuscito', e.message); }
+  const r = await fetchRiprova(`${base}:generateContent`, {
+    method: 'POST', headers,
+    body: JSON.stringify({ contents, generationConfig: { responseMimeType: 'application/json', temperature: 0.4 } }),
   });
   if (!r.ok) throw new Error(`Gemini ${r.status}: ${(await r.text()).slice(0, 300)}`);
+  const limiti = [...r.headers].filter(([k]) => /ratelimit/i.test(k));
+  if (limiti.length) log('Gemini limiti:', limiti.map(([k, v]) => `${k}=${v}`).join(' '));
   const j = await r.json();
   const testo = (j.candidates?.[0]?.content?.parts || []).map((p) => p.text || '').join('');
   const u = j.usageMetadata || {};
@@ -218,7 +243,7 @@ async function chiediRegia(testoMateriale, fogli, regiaPrecedente) {
   } catch (e) {
     if (modo !== 'auto' || !gemini) throw e;
     log(`${e.message}\n→ passo a Gemini`);
-    await fase(job.nome, '🔁 Claude non disponibile, uso Gemini');
+    await fase(job.nome, '🔁 Claude non disponibile, uso Gemini', 'regia');
     return regiaConGemini(promptRegia({ modo: 'gemini', testoMateriale, regiaPrecedente }), fogli);
   }
 }
@@ -264,6 +289,7 @@ function rigaConsumi() {
       : ' (API Gemini)';
     parti.push(`🧠 ${c.chi} ${c.modello}: ${kTok(c.input)} token letti + ${kTok(c.output)} scritti${extra}`);
   }
+  if (consumi.stima) parti.push(`📏 materiale ${consumi.stima.esatta ? '' : '≈ '}${kTok(consumi.stima.totale)} token`);
   if (consumi.groqSec) parti.push(`🎙️ Groq ${Math.round(consumi.groqSec / 60)} min di audio`);
   parti.push(`⏱️ GitHub Actions ~${Math.ceil((Date.now() - T0) / 60000) + 2} min`);
   return `Consumi: ${parti.join(' · ')}`;
@@ -275,18 +301,24 @@ async function invia(payload) {
   try {
     await fetchRiprova(process.env.NOTIFY_URL, {
       method: 'POST', headers: { 'content-type': 'application/json', 'x-regista-token': process.env.NOTIFY_TOKEN || '' },
-      body: JSON.stringify({ run_url: RUN_URL, run_id: process.env.GITHUB_RUN_ID, ...payload }),
+      body: JSON.stringify({ run_url: RUN_URL, run_id: process.env.GITHUB_RUN_ID, origine: SRC_DIR === OUT_DIR ? '98' : '97', ...payload }),
     });
   } catch (e) { log('notifica fallita', e.message); }
 }
 
-// messaggio silenzioso a ogni fase
-const fase = (nome, testo) => { log(`[fase] ${testo}`); return invia({ tipo: 'fase', nome, testo: `${testo} (${trascorso()})` }); };
+// a ogni fase il bot aggiorna la sua scheda di avanzamento (scarico, prepara, regia, render, carico)
+let ultimaFase = '';
+const VERSIONE = 'v2';
+const fase = (nome, testo, step) => {
+  log(`[fase] ${testo}`);
+  if (step) ultimaFase = step;
+  return invia({ tipo: 'fase', nome, testo: `${testo} (${trascorso()})`, step, minuti: Math.round((Date.now() - T0) / 60000), versione: VERSIONE });
+};
 
-async function notifica(esito, nome, testo, { ok = false, foto } = {}) {
+async function notifica(esito, nome, testo, { ok = false, foto, info } = {}) {
   log(`${esito}: ${nome}\n${testo}`);
   if (process.env.GITHUB_STEP_SUMMARY) fs.appendFileSync(process.env.GITHUB_STEP_SUMMARY, `## ${esito} — ${nome}\n\n${testo}\n`);
-  await invia({ tipo: 'esito', esito, nome, testo, ok, foto });
+  await invia({ tipo: 'esito', esito, nome, testo, ok, foto, info, step: ultimaFase, minuti: Math.round((Date.now() - T0) / 60000) });
 }
 
 // anteprima: il fotogramma a metà della prima parola chiave (o a 1/3 del video)
@@ -426,7 +458,7 @@ async function main() {
   try {
     const media = files.filter((f) => VIDEO_EXT.concat(IMAGE_EXT, AUDIO_EXT).includes(path.extname(f.Name).toLowerCase()) && !isNostro(f.Name));
     const peso = media.reduce((s, f) => s + (f.Size || 0), 0);
-    await fase(nome, `${CORREZIONE ? '✏️ Correzione · ' : ''}📥 Scarico ${media.length} file (${mb(peso)})`);
+    await fase(nome, `${CORREZIONE ? '✏️ Correzione · ' : ''}📥 Scarico ${media.length} file (${mb(peso)})`, 'scarico');
     // solo il materiale: niente sottocartelle (_regista), niente video finali/note/segnali
     rclone('copy', remote(SRC_DIR, nome), path.join(WORK, 'in'), '--max-depth', '1',
       '--exclude', '*.XML', '--exclude', '*.xml', '--exclude', '*FINALE*', '--exclude', '_VAI_usato_*', '--exclude', '*.txt');
@@ -442,7 +474,7 @@ async function main() {
     if (CORREZIONE && !regiaPrecedente) {
       throw new Error('questo video è stato montato con la versione precedente del regista (o non ha cache): per correggerlo serve un nuovo montaggio da zero.');
     }
-    await fase(nome, '🎞️ Preparo i video (copie 1080p, audio, sincronizzazione, trascrizione, fogli provino)');
+    await fase(nome, '🎞️ Preparo i video (copie 1080p, audio, sincronizzazione, trascrizione, fogli provino)', 'prepara');
 
     const briefFile = fs.existsSync(path.join(WORK, 'in', 'brief.txt')) ? fs.readFileSync(path.join(WORK, 'in', 'brief.txt'), 'utf8') : '';
     const brief = [briefFile, process.env.BRIEF_EXTRA ? `Dal telegram: ${process.env.BRIEF_EXTRA}` : '', cache?.brief && CORREZIONE ? cache.brief : '']
@@ -455,8 +487,12 @@ async function main() {
 
     const sinc = analisi.sorgenti.filter((s) => s.sync).length;
     const voci = analisi.sorgenti.filter((s) => s.principale).map((s) => `${s.id} (${s.nomeDispositivo})`).join(', ');
-    await fase(nome, CORREZIONE ? `🧠 Applico la correzione: “${CORREZIONE.slice(0, 120)}”`
-      : `🧠 Scelgo i tagli: ${analisi.sorgenti.length} sorgenti, voce da ${voci || '—'}, ${sinc} camere sincronizzate, ${analisi.frasi.length} frasi${brief ? ', con brief' : ''}`);
+    const stima = stimaToken(fs.readFileSync(path.join(ROOT, 'scripts', 'prompt-regista.md'), 'utf8') + testoMateriale, fogli);
+    consumi.stima = { totale: stima.totale, esatta: false };
+    log(`stima materiale per l'AI: ${stima.testo} token di testo + ${stima.immagini} di immagini (${fogli.length} fogli)`);
+    const pesoAI = ` · materiale ≈ ${kTok(stima.totale)} token`;
+    await fase(nome, CORREZIONE ? `🧠 Applico la correzione: “${CORREZIONE.slice(0, 120)}”${pesoAI}`
+      : `🧠 Scelgo i tagli: ${analisi.sorgenti.length} sorgenti, voce da ${voci || '—'}, ${sinc} camere sincronizzate, ${analisi.frasi.length} frasi${brief ? ', con brief' : ''}${pesoAI}`, 'regia');
     const regia = await chiediRegia(testoMateriale, fogli, CORREZIONE ? regiaPrecedente : null);
     const { piano, avvisi } = risolviRegia(regia, analisi);
     if (avvisi.length) log('avvisi regia:', avvisi.join(' | '));
@@ -464,7 +500,7 @@ async function main() {
     validaPiano(piano);
     const durataPiano = piano.clips.reduce((s, c) => s + (c.end - c.start), 0);
     const camereUsate = new Set(piano.clips.map((c) => c.file)).size;
-    await fase(nome, `🎬 Render: ${durataPiano.toFixed(0)} s, ${piano.clips.length} tagli da ${camereUsate} sorgenti, ${piano.keywords.length} parole chiave`);
+    await fase(nome, `🎬 Render: ${durataPiano.toFixed(0)} s, ${piano.clips.length} tagli da ${camereUsate} sorgenti, ${piano.keywords.length} parole chiave`, 'render');
 
     // nome con versione: FINALE, FINALE v2, FINALE v3...
     const versioni = files.filter((f) => /FINALE( v\d+)?\.mp4$/i.test(f.Name)).length;
@@ -472,7 +508,7 @@ async function main() {
     const outFile = path.join(ROOT, 'out', finale);
     fs.mkdirSync(path.dirname(outFile), { recursive: true });
     renderizza(outFile);
-    await fase(nome, '📤 Carico su Drive');
+    await fase(nome, '📤 Carico su Drive', 'carico');
 
     const durataN = probe(outFile).durata;
     const durata = durataN.toFixed(1);
@@ -492,9 +528,15 @@ async function main() {
     if (vai) rclone('moveto', remote(SRC_DIR, nome, vai), remote(SRC_DIR, nome, `_VAI_usato_${vai}`));
     if (SRC_DIR === IN_DIR) rclone('moveto', remote(IN_DIR, nome), remote(OUT_DIR, nome));
 
+    // dati per la scheda del bot
+    const info = {
+      file: finale, durata: +durataN.toFixed(1), tagli: piano.clips.length, sorgenti: camereUsate, voce: voci,
+      keywords: piano.keywords.map((k) => k.word), note: piano.note || '', ai: consumi.ai,
+      minuti: Math.round((Date.now() - T0) / 60000), correzione: CORREZIONE || '', versione: VERSIONE,
+    };
     // anteprima: prima provo il video in chat, se non passa mando la foto
-    const inviato = await inviaVideo(outFile, nome, note, durataN);
-    if (!inviato) await notifica('✅ pronto', nome, note, { ok: true, foto: anteprima(outFile, piano, durataN) });
+    const inviato = await inviaVideo(outFile, nome, note, durataN, info);
+    if (!inviato) await notifica('✅ pronto', nome, note, { ok: true, foto: anteprima(outFile, piano, durataN), info });
   } catch (e) {
     const testo = `Errore: ${e.message}\n\n` + (CORREZIONE ? 'Puoi riprovare la correzione dal bot (✏️) o scrivermi una richiesta diversa.'
       : vai ? `Per riprovare rinomina _VAI_usato_${vai} in ${vai}, oppure 🔁 Riprova.` : 'Per riprovare: 🔁 Riprova.');
@@ -504,14 +546,14 @@ async function main() {
       rclone('copyto', path.join(WORK, 'ERRORE.txt'), remote(SRC_DIR, nome, 'ERRORE.txt'));
       if (vai) rclone('moveto', remote(SRC_DIR, nome, vai), remote(SRC_DIR, nome, `_VAI_usato_${vai}`));
     } catch (e2) { log('impossibile scrivere ERRORE su Drive', e2.message); }
-    await notifica('⚠️ non montato', nome, testo);
+    await notifica('⚠️ non montato', nome, testo, { info: { errore: e.message, correzione: CORREZIONE || '' } });
     process.exitCode = 1;
   }
 }
 
 // Video di anteprima per Telegram: i bot possono inviare al massimo 50 MB,
 // quindi 720p con bitrate calcolato per stare sotto ~45 MB.
-async function inviaVideo(outFile, nome, testo, durata) {
+async function inviaVideo(outFile, nome, testo, durata, info) {
   if (!process.env.NOTIFY_URL) return false;
   try {
     const anteprimaMp4 = path.join(WORK, 'anteprima.mp4');
@@ -526,6 +568,7 @@ async function inviaVideo(outFile, nome, testo, durata) {
     form.append('durata', String(durata));
     form.append('run_id', process.env.GITHUB_RUN_ID || '');
     form.append('run_url', RUN_URL || '');
+    if (info) form.append('info', JSON.stringify(info));
     form.append('video', new Blob([fs.readFileSync(anteprimaMp4)], { type: 'video/mp4' }), 'anteprima.mp4');
     const url = process.env.NOTIFY_URL.replace(/\/notify$/, '/video');
     const r = await fetchRiprova(url, { method: 'POST', headers: { 'x-regista-token': process.env.NOTIFY_TOKEN || '' }, body: form });
