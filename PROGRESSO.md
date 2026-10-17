@@ -22,6 +22,7 @@ Primo giro reale: 58 min, di cui **40 per ricodificare tutto il girato 4K** in 1
 - Verificato che il motore non sfasa audio e video: clip di prova con lampo + bip nello stesso istante → dopo taglio e render Remotion scarto 10–20 ms (labiale percepibile oltre ~45 ms).
 - Aggancio audio più severo per clip corte (< 10 s in comune: punteggio ≥ 0,35 e spicco ≥ 2): in Wave3 un'Insta360 di 3 s risultava "sincronizzata" al limite.
 - Livelli audio di ogni sorgente nel log (`livelli <id>: fondo … voce …`).
+- **Effetti sonori nel Blueprint** (richiesta di Denis, 18/10): sintetizzati da `scripts/genera-sfx.mjs` → `public/sfx/` (nessun file scaricato, niente diritti). Riser metallico con "shing" sulla tavola d'apertura, blip tech quando compare una parola chiave, conferma a due toni sulle parole piene (sponsor/esito), glitch che segue il flicker fotogramma per fotogramma, strappo di carta sul flicker `tear`. Volume nel piano (`sfx.volume`) calcolato dal livello della voce (~12–16 dB sotto); `REGISTA_SFX=0` li toglie. Da fare dopo: denoise/riverbero della stanza (Denis: "quando funzionerà tutto").
 
 ### ⚠️ Minuti GitHub con 10 video al giorno
 10 × ~18 min ≈ 180 min/giorno ≈ 5.400/mese: oltre i 2.000 gratuiti dei repo privati. Opzioni (decide Denis): pagare l'eccedenza a minuto; GitHub Pro (3.000 min); **repo pubblico** = minuti illimitati e runner a 4 core (render ~2× più veloce) ma log e artifact visibili: in quel caso togliere l'upload degli artifact (fogli provino/trascrizioni) e i testi dell'AI dai log.

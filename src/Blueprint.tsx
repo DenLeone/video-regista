@@ -46,8 +46,18 @@ const ClipView: React.FC<{ clip: Clip; len: number }> = ({ clip, len }) => {
   );
 };
 
+// Effetti sonori sincronizzati con la grafica (generati da scripts/genera-sfx.mjs).
+// Volumi relativi tra loro; `base` arriva dal montaggio in base al livello della voce.
+const SFX = { riser: 0.75, ui_in: 0.45, ui_conferma: 0.55, glitch: 0.5, strappo: 0.6 } as const;
+const Sfx: React.FC<{ nome: keyof typeof SFX; da: number; base: number }> = ({ nome, da, base }) => (
+  <Sequence from={Math.max(0, da)} durationInFrames={FPS * 2} layout="none">
+    <Audio src={staticFile(`sfx/${nome}.wav`)} volume={SFX[nome] * base} />
+  </Sequence>
+);
+
 export const Blueprint: React.FC<Piano> = (piano) => {
   const totale = f(durataTotale(piano));
+  const sfx = piano.sfx === false ? 0 : Math.max(0, Math.min(1, piano.sfx?.volume ?? 0.25));
   let cursor = 0;
   const clips = piano.clips.map((c, i) => {
     const from = cursor;
@@ -89,6 +99,14 @@ export const Blueprint: React.FC<Piano> = (piano) => {
           <BlueprintKeyword word={k.word} note={k.note} tag={k.tag} filled={k.filled} top={k.top} />
         </Sequence>
       ))}
+
+      {sfx > 0 ? (
+        <>
+          <Sfx nome="riser" da={0} base={sfx} />
+          {piano.flickers.map((fl, i) => <Sfx key={`sf${i}`} nome={fl.tear ? 'strappo' : 'glitch'} da={f(fl.at)} base={sfx} />)}
+          {piano.keywords.map((k, i) => <Sfx key={`sk${i}`} nome={k.filled ? 'ui_conferma' : 'ui_in'} da={f(k.at)} base={sfx} />)}
+        </>
+      ) : null}
     </AbsoluteFill>
   );
 };

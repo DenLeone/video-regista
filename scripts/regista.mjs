@@ -472,7 +472,7 @@ export async function analizza(nome, brief, cache) {
     for (const s of sorgenti) {
       const c = cache.sorgenti?.find((x) => x.id === s.id);
       if (!c) continue;
-      Object.assign(s, { principale: c.principale, sync: c.sync, parlato: c.parlato, parole: c.parole });
+      Object.assign(s, { principale: c.principale, sync: c.sync, parlato: c.parlato, parole: c.parole, livello: c.livello });
       if (c.principale) { s.voce = c.voce; if (!fs.existsSync(path.join(MEDIA, s.voce))) estraiVoce(s.originale, path.join(MEDIA, s.voce)); }
     }
     for (const s of sorgenti.filter((x) => x.tipo === 'video')) {
@@ -491,6 +491,7 @@ export async function analizza(nome, brief, cache) {
     db.set(s.id, e);
     const v = sogliaVoce(e);
     s.parlato = v.haVoce;
+    s.livello = +v.voce.toFixed(1);
     if (s.tipo === 'video' && audioMuto(e)) s.audioMuto = true;
     log(`livelli ${s.id}: fondo ${v.fondo.toFixed(0)} dB, voce ${v.voce.toFixed(0)} dB${v.haVoce ? ' → parlato' : s.audioMuto ? ' → audio muto' : ''}`);
   }
@@ -659,6 +660,10 @@ async function main() {
     const { risultato: { piano, avvisi } } = await chiediRegia(testoMateriale, fogli, CORREZIONE ? regiaPrecedente : null, (r) => risolviRegia(r, analisi));
     if (avvisi.length) log('avvisi regia:', avvisi.join(' | '));
     if (analisi.avvisi?.length) piano.note = [...analisi.avvisi.map((a) => `⚠️ ${a}`), piano.note].filter(Boolean).join(' · ');
+    // effetti sonori sotto la voce: più bassa la voce registrata, più bassi gli effetti (~12–16 dB sotto)
+    const livelloVoce = Math.max(-60, ...analisi.sorgenti.filter((s) => s.principale && s.livello != null).map((s) => s.livello));
+    piano.sfx = process.env.REGISTA_SFX === '0' ? false
+      : { volume: +Math.min(0.6, Math.max(0.1, livelloVoce > -60 ? 10 ** ((livelloVoce + 2) / 20) : 0.25)).toFixed(3) };
     const durataPiano = piano.clips.reduce((s, c) => s + (c.end - c.start), 0);
     const camereUsate = new Set(piano.clips.map((c) => c.file)).size;
     await fase(nome, `🎬 Render: ${durataPiano.toFixed(0)} s, ${piano.clips.length} tagli da ${camereUsate} sorgenti, ${piano.keywords.length} parole chiave`, 'render');
