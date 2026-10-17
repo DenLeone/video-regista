@@ -7,6 +7,10 @@ export type Clip = {
   end: number;    // out-point nella clip sorgente
   punch?: boolean; // punch-in ~1,18x sul jump cut
   orient?: 'v' | 'h'; // verticale (riempie) o orizzontale (contenuta su fondo sfocato)
+  // voce da un'altra sorgente (iPhone, Insta360, mic esterno): l'immagine resta muta
+  audio?: { file: string; start: number };
+  muto?: boolean;   // nessun audio
+  volume?: number;  // volume dell'audio della clip stessa (default 1)
 };
 
 export type Keyword = {
