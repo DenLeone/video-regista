@@ -120,10 +120,18 @@ export function sincronizza(dbPrincipale, dbAltro) {
   for (let i = 0; i < v.length; i++) if (Math.abs(i - bestI) > lontano && v[i] > secondo) secondo = v[i];
   const spicco = secondo > 0 ? best / secondo : (best > 0 ? 10 : 0);
   const k = bestI - (a.length - 1);
-  return { offset: +(k * HOP).toFixed(3), punteggio: +best.toFixed(3), spicco: +spicco.toFixed(2), affidabile: best >= 0.2 && spicco >= 1.4 };
+  // con pochi secondi in comune (clip corte) una coincidenza è facile: serve un picco molto più netto
+  const comune = (Math.min(a.length, b.length - k) - Math.max(0, -k)) * HOP;
+  const affidabile = comune >= 10 ? best >= 0.2 && spicco >= 1.4 : comune >= 4 && best >= 0.35 && spicco >= 2;
+  return { offset: +(k * HOP).toFixed(3), punteggio: +best.toFixed(3), spicco: +spicco.toFixed(2), affidabile };
 }
 
 // ---------- frasi ----------
+// I tagli si fanno SOLO nelle pause vere dell'audio. Prima le frasi nascevano dai
+// confini tra le parole di Whisper (tempi sbagliati di qualche decimo): su Wave3 e
+// Cuffie p30i il 30–40% dei bordi cadeva in mezzo al parlato e, saltando o
+// riordinando le frasi, le parole restavano mozzate. Nel parlato di Denis ci sono
+// ~60 pause ≥ 100 ms al minuto: bastano per frasi da 1,5–5 s che finiscono sempre in una pausa.
 const t2i = (t, n) => Math.max(0, Math.min(n - 1, Math.round(t / HOP)));
 
 // punto più silenzioso in [t0, t1] (media su 40 ms)
@@ -140,142 +148,105 @@ function puntoSilenzio(db, t0, t1) {
   return { t: bestI * HOP, db: best };
 }
 
-// quanto silenzio continuo (sotto soglia) c'è intorno a t
-function durataSilenzio(db, t, soglia) {
-  const n = db.length; const i0 = t2i(t, n);
-  if (db[i0] > soglia) return 0;
-  let a = i0, b = i0;
-  while (a > 0 && db[a - 1] <= soglia) a--;
-  while (b < n - 1 && db[b + 1] <= soglia) b++;
-  return (b - a + 1) * HOP;
-}
-
-// inizio/fine reali della voce dentro [t0, t1]
-function confiniVoce(db, t0, t1, soglia) {
-  const n = db.length; const a = t2i(t0, n), b = t2i(t1, n), min = 6; // 30 ms sopra soglia
-  let inizio = null, fine = null;
-  for (let i = a, c = 0; i <= b; i++) { c = db[i] > soglia ? c + 1 : 0; if (c >= min) { inizio = (i - min + 1) * HOP; break; } }
-  for (let i = b, c = 0; i >= a; i--) { c = db[i] > soglia ? c + 1 : 0; if (c >= min) { fine = (i + min) * HOP; break; } }
-  return inizio != null && fine != null && fine > inizio ? { inizio, fine } : null;
-}
-
-// la pausa più lunga sotto soglia dentro [t0, t1] (ignora picchi brevi fino a 120 ms), se dura almeno `min` s
-function silenzioInterno(db, t0, t1, soglia, min) {
-  const n = db.length, a = t2i(t0, n), b = t2i(t1, n), tolleranza = Math.round(0.12 / HOP);
-  let best = null, inizio = -1, ultimoSilenzio = -1;
-  const chiudi = () => {
-    if (inizio >= 0 && (ultimoSilenzio - inizio + 1) * HOP >= min && (!best || ultimoSilenzio - inizio > best.b - best.a)) best = { a: inizio, b: ultimoSilenzio };
-  };
-  for (let i = a; i <= b; i++) {
-    if (db[i] <= soglia) { if (inizio < 0) inizio = i; ultimoSilenzio = i; }
-    else if (inizio >= 0 && i - ultimoSilenzio > tolleranza) { chiudi(); inizio = -1; }
+// tratti sotto soglia lunghi almeno `min` s (un picco fino a 30 ms, es. un click, non interrompe la pausa)
+function trovaPause(db, soglia, min) {
+  const out = [], toll = Math.round(0.03 / HOP);
+  let a = -1, ultimo = -1;
+  for (let i = 0; i <= db.length; i++) {
+    const sil = i < db.length && db[i] <= soglia;
+    if (sil) { if (a < 0) a = i; ultimo = i; continue; }
+    if (a >= 0 && (i === db.length || i - ultimo > toll)) {
+      if ((ultimo - a + 1) * HOP >= min) out.push({ da: a * HOP, a: (ultimo + 1) * HOP });
+      a = -1;
+    }
   }
-  chiudi();
-  return best ? { da: best.a * HOP, a: (best.b + 1) * HOP } : null;
+  return out;
 }
 
-const fineFrase = (w) => /[.!?…]$/.test(w) ? 2 : /[,;:]$/.test(w) ? 1 : 0;
+const finePeriodo = (testo) => /[.!?…]$/.test(testo);
 
-// parole: [{w, s, e}] nel tempo dell'audio principale. Restituisce frasi brevi
-// (circa 0,8–4 s) con: inizio/fine del taglio, testo, parole.
-export function frasi(parole, db, durata, { maxDur = 4, minDur = 0.7 } = {}) {
+// parole: [{w, s, e}] nel tempo dell'audio principale. Restituisce frasi di circa
+// 1,5–5 s con inizio/fine del taglio (dentro le pause, con un respiro) e testo.
+export function frasi(parole, db, durata, { maxDur = 5, minDur = 1.2, pausaMin = 0.1 } = {}) {
   if (!parole.length) return [];
-  const { soglia } = sogliaVoce(db);
-  const w = parole.map((p) => ({ w: String(p.w).trim(), s: p.s, e: Math.max(p.e, p.s + 0.05) }));
+  const { fondo, voce } = sogliaVoce(db);
+  const soglia = fondo + (voce - fondo) * 0.35;
+  const w = parole.map((p) => ({ w: String(p.w).trim(), s: p.s, e: Math.max(p.e, p.s + 0.05) })).filter((x) => x.w);
 
-  // confine tra parola i e i+1: punto di taglio nel silenzio e quanto è "forte"
-  const confini = [];
-  for (let i = 0; i < w.length - 1; i++) {
-    const lo = Math.min(w[i].e, w[i + 1].s), hi = Math.max(w[i].e, w[i + 1].s);
-    const p = puntoSilenzio(db, lo - 0.15, hi + 0.15);
-    const sil = durataSilenzio(db, p.t, soglia);
-    const pausa = Math.max(0, w[i + 1].s - w[i].e);
-    confini.push({ i, t: p.t, forza: fineFrase(w[i].w) + Math.min(3, sil * 8) + Math.min(2, pausa * 4), silenzio: sil });
+  // 1) gruppi di voce tra due pause vere (ai bordi del file una "pausa" infinita)
+  const pause = [{ da: -Infinity, a: 0 }, ...trovaPause(db, soglia, pausaMin), { da: durata, a: Infinity }];
+  let gruppi = [];
+  for (let k = 0; k < pause.length - 1; k++) {
+    const da = Math.max(0, pause[k].a), a = Math.min(durata, pause[k + 1].da);
+    if (a - da >= 0.05) gruppi.push({ da, a, prima: pause[k], dopo: pause[k + 1], parole: [] });
   }
-
-  // 1) spezza sui confini forti; 2) spezza ancora le frasi troppo lunghe sul confine migliore
-  let gruppi = [[0, w.length - 1]];
-  const dentro = (a, b) => confini.filter((c) => c.i >= a && c.i < b);
-  gruppi = gruppi.flatMap(([a, b]) => {
-    const tagli = dentro(a, b).filter((c) => c.forza >= 3 && c.silenzio >= 0.08).map((c) => c.i);
-    const out = []; let s = a;
-    for (const t of tagli) { out.push([s, t]); s = t + 1; }
-    out.push([s, b]);
-    return out;
-  });
-  const dur = ([a, b]) => w[b].e - w[a].s;
-  for (let giro = 0; giro < 20; giro++) {
-    let cambiato = false;
-    gruppi = gruppi.flatMap((g) => {
-      if (dur(g) <= maxDur || g[1] - g[0] < 3) return [g];
-      const cand = dentro(g[0] + 1, g[1] - 1); // almeno 2 parole per parte
-      if (!cand.length) return [g];
-      const c = cand.reduce((x, y) => (y.forza > x.forza ? y : x));
-      cambiato = true;
-      return [[g[0], c.i], [c.i + 1, g[1]]];
-    });
-    if (!cambiato) break;
+  // 2) parole nei gruppi secondo l'inizio (Whisper a volte anticipa di poco: 0,25 s di tolleranza);
+  //    una parola che cade in una pausa lunga va al gruppo più vicino, se non è troppo lontano
+  for (const p of w) {
+    let g = gruppi.find((x) => p.s >= x.da - 0.25 && p.s < x.a);
+    if (!g) {
+      const vicino = gruppi.reduce((m, x) => { const d = Math.min(Math.abs(p.s - x.da), Math.abs(p.s - x.a)); return d < m.d ? { d, x } : m; }, { d: Infinity, x: null });
+      if (vicino.d <= 0.6) g = vicino.x;
+    }
+    if (g) g.parole.push(p);
   }
-  // unisci i pezzetti troppo corti al vicino col confine più debole, ma mai attraverso
-  // una pausa lunga: "Queste sono… (7 s di mani sul tavolo) …queste sono le Anker"
-  // diventava una frase di 10 s; la falsa partenza resta da sola e l'AI la scarta
-  const pausaTra = (g, h) => w[h[0]].s - w[g[1]].e;
-  for (let i = 0; i < gruppi.length; i++) {
-    if (gruppi.length < 2 || dur(gruppi[i]) >= minDur) continue;
-    const okPrima = i > 0 && pausaTra(gruppi[i - 1], gruppi[i]) < 1;
-    const okDopo = i < gruppi.length - 1 && pausaTra(gruppi[i], gruppi[i + 1]) < 1;
-    if (!okPrima && !okDopo) continue;
-    const forzaPrima = okPrima ? confini[gruppi[i - 1][1]].forza : Infinity;
-    const forzaDopo = okDopo ? confini[gruppi[i][1]].forza : Infinity;
-    if (forzaPrima <= forzaDopo) { gruppi[i - 1][1] = gruppi[i][1]; gruppi.splice(i, 1); }
-    else { gruppi[i + 1][0] = gruppi[i][0]; gruppi.splice(i, 1); }
-    i--;
-  }
-
-  const costruisci = ([a, b]) => {
-    let taglioIn = a === 0 ? puntoSilenzio(db, Math.max(0, w[0].s - 0.4), w[0].s).t : confini[a - 1].t;
-    let taglioOut = b === w.length - 1 ? puntoSilenzio(db, w[b].e, Math.min(durata, w[b].e + 0.5)).t : confini[b].t;
-    // dopo una pausa lunga il punto più silenzioso può stare secondi prima della prima parola
-    // e i rumori (mani, prodotto) sembrano voce: il taglio resta vicino alle parole
-    if (taglioIn < w[a].s - 0.45) taglioIn = puntoSilenzio(db, Math.max(a > 0 ? w[a - 1].e : 0, w[a].s - 0.45), w[a].s).t;
-    if (taglioOut > w[b].e + 0.5) taglioOut = puntoSilenzio(db, w[b].e, Math.min(b < w.length - 1 ? w[b + 1].s : durata, w[b].e + 0.5)).t;
-    // tolgo i silenzi lunghi ai bordi lasciando un piccolo respiro
-    const v = confiniVoce(db, taglioIn, taglioOut, soglia);
-    const inizio = v ? Math.max(taglioIn, v.inizio - 0.06) : taglioIn;
-    const fine = v ? Math.min(taglioOut, v.fine + 0.1) : taglioOut;
-    return { a, b, inizio, fine: Math.max(fine, inizio + 0.2) };
+  // gruppi senza parole: rumore (mani, oggetti), respiri, "ehm" → fuori
+  gruppi = gruppi.filter((g) => g.parole.length);
+  // 3) un gruppo lunghissimo senza pause (raro): si divide sul punto più silenzioso tra due parole
+  const spezza = (g) => {
+    if (g.a - g.da <= 8 || g.parole.length < 4) return [g];
+    let best = null;
+    for (let i = 1; i < g.parole.length - 1; i++) {
+      const lo = Math.min(g.parole[i - 1].e, g.parole[i].s), hi = Math.max(g.parole[i - 1].e, g.parole[i].s);
+      const pt = puntoSilenzio(db, lo - 0.15, hi + 0.15);
+      if (pt.t > g.da + 1 && pt.t < g.a - 1 && (!best || pt.db < best.db)) best = { ...pt, i };
+    }
+    if (!best) return [g];
+    const taglio = { da: best.t, a: best.t };
+    return [...spezza({ da: g.da, a: best.t, prima: g.prima, dopo: taglio, parole: g.parole.slice(0, best.i) }),
+      ...spezza({ da: best.t, a: g.a, prima: taglio, dopo: g.dopo, parole: g.parole.slice(best.i) })];
   };
-  let out = gruppi.map(costruisci);
-  // frammenti sotto mezzo secondo (misurati sull'audio vero): uniti al vicino più attaccato
-  for (let i = 0; i < out.length && out.length > 1; i++) {
-    if (out[i].fine - out[i].inizio >= 0.45) continue;
-    const gapPrima = i > 0 ? out[i].inizio - out[i - 1].fine : Infinity;
-    const gapDopo = i < out.length - 1 ? out[i + 1].inizio - out[i].fine : Infinity;
-    if (Math.min(gapPrima, gapDopo) > 1) continue; // isolato: resta com'è
-    const j = gapPrima <= gapDopo ? i - 1 : i + 1;
-    const unito = costruisci([Math.min(out[i].a, out[j].a), Math.max(out[i].b, out[j].b)]);
-    out.splice(Math.min(i, j), 2, unito);
-    i = Math.max(-1, Math.min(i, j) - 1);
+  gruppi = gruppi.flatMap(spezza);
+
+  // 4) gruppi uniti in frasi scegliendo i punti di taglio migliori (programmazione dinamica):
+  //    conviene tagliare su pause lunghe e a fine periodo, frasi intorno ai 3 s, oltre maxDur si
+  //    paga caro; mai unire attraverso una pausa > 0,8 s (resterebbero secondi di vuoto nella frase)
+  const n = gruppi.length;
+  const pausaDopo = gruppi.map((g, j) => (j < n - 1 ? gruppi[j + 1].da - g.a : Infinity));
+  const costoConfine = (j) => {
+    if (j === n - 1) return 0;
+    const ultima = gruppi[j].parole[gruppi[j].parole.length - 1].w;
+    const forza = Math.min(1, pausaDopo[j] / 0.4) + (finePeriodo(ultima) ? 0.7 : /[,;:]$/.test(ultima) ? 0.3 : 0);
+    return 2.5 * Math.max(0, 1 - forza);
+  };
+  const costoFrase = (i, j) => {
+    for (let k = i; k < j; k++) if (pausaDopo[k] > 0.8) return Infinity;
+    const d = gruppi[j].a - gruppi[i].da;
+    if (d > 9 && i < j) return Infinity;
+    return 0.15 * (d - 3) ** 2 + (d > maxDur ? 4 * (d - maxDur) : 0) + (d < minDur ? 1.5 * (minDur - d) : 0);
+  };
+  const best = new Float64Array(n + 1).fill(Infinity), da = new Int32Array(n + 1);
+  best[0] = 0;
+  for (let j = 0; j < n; j++) {
+    for (let i = j; i >= 0; i--) {
+      const c = best[i] + costoFrase(i, j) + costoConfine(j);
+      if (c < best[j + 1]) { best[j + 1] = c; da[j + 1] = i; }
+      if (gruppi[j].a - gruppi[i].da > 9) break;
+    }
   }
-  // silenzi lunghi DENTRO una frase (Whisper "stira" una parola sopra una pausa:
-  // "in-ear" lunga 3 s di cui 2 di silenzio): la frase si divide lì e la pausa sparisce
-  const divise = [];
-  const coda = [...out];
-  while (coda.length) {
-    const f = coda.shift();
-    const run = silenzioInterno(db, f.inizio + 0.15, f.fine - 0.15, soglia, 0.7);
-    if (!run) { divise.push(f); continue; }
-    const meta = (run.da + run.a) / 2;
-    let k = f.a - 1;
-    while (k < f.b && w[k + 1].s < meta) k++;
-    // un pezzo senza parole è rumore (mani, oggetti) o un "ehm": si scarta
-    const pezzi = [{ a: f.a, b: k, inizio: f.inizio, fine: run.da + 0.1 }, { a: k + 1, b: f.b, inizio: run.a - 0.06, fine: f.fine }];
-    coda.unshift(...pezzi.filter((x) => x.b >= x.a && x.fine - x.inizio >= 0.3));
-  }
-  out = divise;
-  return out.map((f, k) => ({
-    id: `F${String(k + 1).padStart(3, '0')}`,
-    inizio: +f.inizio.toFixed(3), fine: +f.fine.toFixed(3),
-    testo: w.slice(f.a, f.b + 1).map((x) => x.w).join(' '),
-  }));
+  const unite = [];
+  for (let j = n; j > 0; j = da[j]) unite.unshift(gruppi.slice(da[j], j));
+
+  // 5) bordi: un respiro dentro la pausa (attacco 0,1 s, coda 0,15 s), mai oltre metà pausa.
+  //    Niente strette verso i tempi di Whisper: sbagliano proprio ai bordi e tornerebbero a mozzare le parole.
+  return unite.map((gr, k) => {
+    const primo = gr[0], ultimo = gr[gr.length - 1];
+    const inizio = Math.max(0, primo.da - Math.min(0.1, (primo.prima.a - primo.prima.da) / 2));
+    const fine = Math.min(durata, ultimo.a + Math.min(0.15, (ultimo.dopo.a - ultimo.dopo.da) / 2));
+    return {
+      id: `F${String(k + 1).padStart(3, '0')}`,
+      inizio: +inizio.toFixed(3), fine: +fine.toFixed(3),
+      testo: gr.flatMap((g) => g.parole.map((x) => x.w)).join(' '),
+    };
+  });
 }
