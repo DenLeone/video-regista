@@ -1,7 +1,7 @@
 # video-regista — PROGRESSO
 
 > File di passaggio tra sessioni (ufficio / casa / in giro). Aggiornato da Claude a ogni passo.
-> Ultimo aggiornamento: **2026-10-18 notte, sessione cloud (Claude Code web)** — Gemini attivo, sync dalle immagini, frasi senza pause morte.
+> Ultimo aggiornamento: **2026-10-18 notte, sessione cloud (Claude Code web)** — Gemini attivo con riserve, sync dalle immagini, tagli solo nelle pause, effetti sonori. TPU95A v2 pronto.
 
 ## ▶️ Come si usa adesso (pronto per i lotti)
 1. **Da Telegram** (comodo dal telefono): manda i file al bot **come File** (📎 → File, non come video: niente compressione), fino a 2 GB a file (4 GB con Premium); il nome del video come didascalia. Il bot raccoglie tutto in una scheda → 🚀 Monta subito o 📝 Con domande. Originali in `97 - Editare/<Nome>`, risultato in `98 - Fatti/<Nome>` (se il nome esiste già → "Nome (2)"). Tempo in più rispetto a Drive: ~0–3 min (download via MTProto, copia in 97 in sottofondo).
@@ -33,6 +33,12 @@ Primo giro reale: 58 min, di cui **40 per ricodificare tutto il girato 4K** in 1
 - **Pubblicare il bot nuovo**: token Cloudflare (modello "Edit Cloudflare Workers") → `gh secret set CLOUDFLARE_API_TOKEN -R DenLeone/video-regista` e `gh secret set CLOUDFLARE_ACCOUNT_ID -R DenLeone/video-regista`, poi Actions → bot → Run workflow (o push su `telegram/`). In alternativa a mano: `cd telegram` → `npx wrangler deploy`. Finché non lo fa resta il bot vecchio (funziona con la pipeline nuova, ma senza pannello/lotti).
 - **Per i video mandati su Telegram** (la Bot API normale scarica solo 20 MB, serve MTProto): su my.telegram.org → API development tools → crea un'app → copia api_id e api_hash, poi `gh secret set TG_API_ID -R DenLeone/video-regista`, `gh secret set TG_API_HASH -R DenLeone/video-regista` e `gh secret set TELEGRAM_BOT_TOKEN -R DenLeone/video-regista` (lo stesso token del bot).
 - Da verificare sul primo girato iPhone vero: resa dei colori dopo la conversione HDR→SDR (tonemap hable).
+- Cancellare il ramo temporaneo `diag-sync` su GitHub (Branches → cestino): l'ho usato per estrarre audio/fotogrammi di prova, la sessione cloud non può cancellare rami.
+
+### Stato a fine serata (18/10, ~01:10) e prossimi passi
+- Pronti in `98 - Fatti`: **TPU95A - FINALE v2** (primo video da pubblicare: effetti sonori + tagli nelle pause, regia Gemini), Wave3 - FINALE v2, Cuffie p30i - FINALE v5 (volto agganciato dalle immagini).
+- Tutto su `main` (ultimo commit: Gemini sovraccarico → altro modello Gemini → Claude). I prossimi video si avviano come sempre: cartella in `97 - Editare` + `VAI`, oppure `/monta <nome>`.
+- Da fare: denoise / riverbero della stanza (Denis: quando il resto è perfetto); regolare il volume degli effetti sonori se Denis lo chiede (`SFX` in `src/Blueprint.tsx`, formula in `regista.mjs`); interruttore effetti nel bot v3; poi la parte DaVinci (facoltativa, scelta da Denis).
 
 ## Obiettivo
 Montaggio **100% automatico, anche a PC spento**:
