@@ -1,7 +1,7 @@
 # video-regista — PROGRESSO
 
 > File di passaggio tra sessioni (ufficio / casa / in giro). Aggiornato da Claude a ogni passo.
-> Ultimo aggiornamento: **2026-10-17 notte, sessione cloud (Claude Code web)** — v2 veloce + lotti + bot v3 su `main`.
+> Ultimo aggiornamento: **2026-10-18 notte, sessione cloud (Claude Code web)** — Gemini attivo, sync dalle immagini, frasi senza pause morte.
 
 ## ▶️ Come si usa adesso (pronto per i lotti)
 1. **Da Telegram** (comodo dal telefono): manda i file al bot **come File** (📎 → File, non come video: niente compressione), fino a 2 GB a file (4 GB con Premium); il nome del video come didascalia. Il bot raccoglie tutto in una scheda → 🚀 Monta subito o 📝 Con domande. Originali in `97 - Editare/<Nome>`, risultato in `98 - Fatti/<Nome>` (se il nome esiste già → "Nome (2)"). Tempo in più rispetto a Drive: ~0–3 min (download via MTProto, copia in 97 in sottofondo).
@@ -12,11 +12,19 @@
 ### Velocità (17/10 notte)
 Primo giro reale: 58 min, di cui **40 per ricodificare tutto il girato 4K** in 1080p. Ora l'analisi legge audio e fogli provino direttamente dagli originali (solo fotogrammi chiave) e si ricodificano **solo i pezzi scelti dalla regia** (CRF 16, colori HDR→SDR): stima **~15–20 min a video** (download ~4, analisi ~2, AI ~1, pezzi ~2, render ~6, upload ~1,5). Girato sul disco grande `/mnt` del runner. Claude Code si installa solo se serve. Test locale completo (Drive finto): giro intero, correzione v2, errore → tutti ok.
 
+### Prove reali del 17–18/10 e correzioni
+- **Gemini attivo** (chiave inserita da Denis): prova su Cuffie p30i → FINALE v3 in 15 min, `gemini-3.8-flash`, 13k token letti + 4k scritti. Wave3 (prova di Denis, ancora con Claude): 18 min, 45 s.
+- **Cuffie p30i "fuori sync e sempre sulle mani"**: la Sony col volto (C0928) ha registrato **solo fruscio** (picco −47 dB, un canale rumore e l'altro vuoto: ricevitore wireless collegato alla presa mic ma spento → microfono interno escluso). Senza voce l'aggancio dall'audio è impossibile, quindi restavano le mani dell'iPhone e il volto messo come B-roll (labiale sbagliato).
+  - Ora: camera con **audio muto** → riconosciuta, **agganciata dalle immagini** (`scripts/sync-visivo.mjs`: movimento di mani/prodotto nelle due inquadrature, griglia 3×4, 45 s della camera muta contro tutta la camera della voce a 72×128). Su Cuffie p30i: −9,13 s, spicco 2,7–10 contro falsi ≤1,5. Costo sul runner: ~5 min (decodifica 4K), solo quando serve. Avviso nella scheda/NOTE se il microfono era spento.
+  - Regola nel prompt: il volto sincronizzato è l'inquadratura base (≥ metà delle frasi, hook e chiusura), mai più di 2 frasi di fila sulle sole mani; mai un volto che parla come B-roll.
+- **Frasi con secondi di vuoto** (F001 "Queste sono… queste sono le Anker" 9,7 s, Wave3 una "frase" di 45,9 s di unboxing): niente più unioni attraverso pause > 1 s, tagli vicini alle parole e silenzi interni ≥ 0,7 s spezzati (parole di Whisper "stirate" sopra le pause). Su Cuffie p30i: 227 → 200 s di parlato utile, frase più lunga 4,3 s.
+- Livelli audio di ogni sorgente nel log (`livelli <id>: fondo … voce …`).
+
 ### ⚠️ Minuti GitHub con 10 video al giorno
 10 × ~18 min ≈ 180 min/giorno ≈ 5.400/mese: oltre i 2.000 gratuiti dei repo privati. Opzioni (decide Denis): pagare l'eccedenza a minuto; GitHub Pro (3.000 min); **repo pubblico** = minuti illimitati e runner a 4 core (render ~2× più veloce) ma log e artifact visibili: in quel caso togliere l'upload degli artifact (fogli provino/trascrizioni) e i testi dell'AI dai log.
 
 ### Cose che deve fare Denis (ancora aperte)
-- **Chiave Gemini** (AI principale): `gh secret set GEMINI_API_KEY -R DenLeone/video-regista`. Senza chiave lavora Claude (funziona comunque).
+- **Sulla Sony**: lasciare il microfono acceso (anche solo quello interno) o accendere il trasmettitore: con l'audio l'aggancio è istantaneo e sicuro; dalle immagini costa ~5 min ed è il piano B.
 - **Pubblicare il bot nuovo**: token Cloudflare (modello "Edit Cloudflare Workers") → `gh secret set CLOUDFLARE_API_TOKEN -R DenLeone/video-regista` e `gh secret set CLOUDFLARE_ACCOUNT_ID -R DenLeone/video-regista`, poi Actions → bot → Run workflow (o push su `telegram/`). In alternativa a mano: `cd telegram` → `npx wrangler deploy`. Finché non lo fa resta il bot vecchio (funziona con la pipeline nuova, ma senza pannello/lotti).
 - **Per i video mandati su Telegram** (la Bot API normale scarica solo 20 MB, serve MTProto): su my.telegram.org → API development tools → crea un'app → copia api_id e api_hash, poi `gh secret set TG_API_ID -R DenLeone/video-regista`, `gh secret set TG_API_HASH -R DenLeone/video-regista` e `gh secret set TELEGRAM_BOT_TOKEN -R DenLeone/video-regista` (lo stesso token del bot).
 - Da verificare sul primo girato iPhone vero: resa dei colori dopo la conversione HDR→SDR (tonemap hable).

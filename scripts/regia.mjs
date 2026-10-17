@@ -153,7 +153,9 @@ export function materialePerAI(analisi) {
       parti.push(coperte.length
         ? `inquadratura sincronizzata con la voce di ${s.sync.con}: usabile come "camera" su ${intervalli(coperte.map((f) => f.id))}`
         : `sincronizzata con ${s.sync.con} ma non copre nessuna frase intera: usala come B-roll`);
-    } else if (s.tipo === 'video') parti.push(s.parlato ? 'ha parlato non sincronizzabile: usala solo come B-roll' : 'B-roll (non sincronizzata): mettila sopra la voce con "broll" + "da"');
+    } else if (s.tipo === 'video') parti.push(s.parlato ? 'ha parlato non sincronizzabile: usala solo come B-roll'
+      : s.audioMuto ? 'audio muto, NON sincronizzata: solo B-roll, e mai nei momenti in cui si vede qualcuno parlare (il labiale non tornerebbe)'
+        : 'B-roll (non sincronizzata): mettila sopra la voce con "broll" + "da"');
     if (s.fogli?.length) parti.push(`fogli: ${s.fogli.join(', ')} (un riquadro ogni ${s.passoFogli} s; tempi ${s.sync || s.principale ? 'nel tempo della voce' : 'della clip, da usare in "da"'})`);
     r.push(parti.join(' · '));
   }

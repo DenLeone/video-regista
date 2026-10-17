@@ -19,8 +19,9 @@
 import { execFileSync, spawn, spawnSync } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
-import { frasi, inviluppo, sincronizza, sogliaVoce } from './audio.mjs';
+import { audioMuto, frasi, inviluppo, sincronizza, sogliaVoce } from './audio.mjs';
 import { materialePerAI, risolviRegia } from './regia.mjs';
+import { movimento, syncMovimento } from './sync-visivo.mjs';
 import { AUDIO_EXT, IMAGE_EXT, NOMI_DISPOSITIVO, VIDEO_EXT, dispositivo, prioritaAudio, tagsPiatti } from './sorgenti.mjs';
 
 const REMOTE = process.env.REGISTA_REMOTE || 'gdrive';
@@ -490,7 +491,8 @@ export async function analizza(nome, brief, cache) {
     db.set(s.id, e);
     const v = sogliaVoce(e);
     s.parlato = v.haVoce;
-    log(`livelli ${s.id}: fondo ${v.fondo.toFixed(0)} dB, voce ${v.voce.toFixed(0)} dB${v.haVoce ? ' → parlato' : ''}`);
+    if (s.tipo === 'video' && audioMuto(e)) s.audioMuto = true;
+    log(`livelli ${s.id}: fondo ${v.fondo.toFixed(0)} dB, voce ${v.voce.toFixed(0)} dB${v.haVoce ? ' → parlato' : s.audioMuto ? ' → audio muto' : ''}`);
   }
 
   // audio principale: mic esterno > Insta360 > iPhone > altre camere > Sony.
@@ -533,12 +535,45 @@ export async function analizza(nome, brief, cache) {
   }
   tutteFrasi.forEach((f, i) => { f.id = `F${String(i + 1).padStart(3, '0')}`; });
 
+  // camere con audio muto: si agganciano dalle immagini, confrontando il movimento
+  // (mani, prodotto, gesti) con quello della camera della voce. Decodificare il 4K
+  // costa qualche minuto, quindi solo per le riprese lunghe girate insieme alla voce
+  // (il volto che parla dura quanto il parlato; i B-roll corti restano B-roll) e solo 45 s.
+  const vociVideo = sorgenti.filter((s) => s.principale && s.tipo === 'video');
+  const durataVoce = Math.max(0, ...vociVideo.map((p) => p.durata));
+  const movRif = new Map();
+  for (const s of sorgenti.filter((x) => x.tipo === 'video' && x.audioMuto && !x.sync && !x.principale && x.durata >= Math.max(15, durataVoce * 0.4))) {
+    s.provataVisiva = true;
+    const t0 = Date.now();
+    await fase(nome, `🔗 ${s.id} ha l'audio muto: la aggancio alla voce dalle immagini (qualche minuto)`, 'prepara');
+    const dur = Math.min(45, s.durata), da = +((s.durata - dur) / 2).toFixed(2);
+    try {
+      const pezzo = movimento(s.originale, { orizzontale: s.orient === 'h', da, dur });
+      for (const p of vociVideo) {
+        if (!movRif.has(p.id)) movRif.set(p.id, movimento(p.originale, { orizzontale: p.orient === 'h' }));
+        const r = syncMovimento(movRif.get(p.id), pezzo);
+        const offset = +(r.offset + da).toFixed(3);
+        // plausibile solo se almeno metà della camera muta cade dentro la registrazione della voce
+        const dentro = Math.min(p.durata, s.durata - offset) - Math.max(0, -offset);
+        const ok = r.affidabile && dentro >= s.durata * 0.5;
+        log(`sync dalle immagini ${s.id} ↔ ${p.id}: offset ${offset} s, spicco ${r.spicco}${ok ? '' : ' (non affidabile)'} · ${((Date.now() - t0) / 1000).toFixed(0)} s`);
+        if (ok) { s.sync = { con: p.id, offset, punteggio: r.punteggio, visivo: true }; break; }
+      }
+    } catch (e) { log(`sync dalle immagini ${s.id} non riuscita: ${e.message}`); }
+  }
+  movRif.clear();
+
   // fogli provino: per le camere sincronizzate i tempi scritti sono quelli della voce
   for (const s of sorgenti.filter((x) => x.tipo === 'video')) {
     const fp = fogliProvino(s.originale, s.id, s.durata, s.sync ? s.sync.offset : 0, s.colore);
     s.fogli = fp.fogli; s.passoFogli = fp.passo;
   }
-  return { cartella: nome, brief, sorgenti, frasi: tutteFrasi, foto };
+  // camere con audio muto e non sincronizzate: Denis deve saperlo (di solito un
+  // ricevitore wireless collegato alla presa microfono ma spento, che esclude il microfono interno)
+  const avvisi = sorgenti.filter((s) => s.provataVisiva).map((s) => s.sync
+    ? `${s.id} (${s.nomeDispositivo}) ha registrato solo fruscio (microfono collegato ma spento?): l'ho agganciata dalle immagini. Se il labiale non torna, dimmelo.`
+    : `${s.id} (${s.nomeDispositivo}) ha registrato solo fruscio, senza voce (microfono collegato ma spento?) e non sono riuscito ad agganciarla nemmeno dalle immagini: l'ho usata solo come B-roll. Lascia acceso il microfono della camera, anche quello interno basta.`);
+  return { cartella: nome, brief, sorgenti, frasi: tutteFrasi, foto, avvisi };
 }
 
 // ---------- main ----------
@@ -623,6 +658,7 @@ async function main() {
       : `🧠 Scelgo i tagli: ${analisi.sorgenti.length} sorgenti, voce da ${voci || '—'}, ${sinc} camere sincronizzate, ${analisi.frasi.length} frasi${brief ? ', con brief' : ''}${pesoAI}`, 'regia');
     const { risultato: { piano, avvisi } } = await chiediRegia(testoMateriale, fogli, CORREZIONE ? regiaPrecedente : null, (r) => risolviRegia(r, analisi));
     if (avvisi.length) log('avvisi regia:', avvisi.join(' | '));
+    if (analisi.avvisi?.length) piano.note = [...analisi.avvisi.map((a) => `⚠️ ${a}`), piano.note].filter(Boolean).join(' · ');
     const durataPiano = piano.clips.reduce((s, c) => s + (c.end - c.start), 0);
     const camereUsate = new Set(piano.clips.map((c) => c.file)).size;
     await fase(nome, `🎬 Render: ${durataPiano.toFixed(0)} s, ${piano.clips.length} tagli da ${camereUsate} sorgenti, ${piano.keywords.length} parole chiave`, 'render');
