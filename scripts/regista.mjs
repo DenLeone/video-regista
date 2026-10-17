@@ -32,6 +32,8 @@ const CACHE = '_regista'; // sottocartella con regia.json, piano.json e material
 const ROOT = path.resolve(path.dirname(new URL(import.meta.url).pathname.replace(/^\/([A-Za-z]:)/, '$1')), '..');
 const WORK = path.join(ROOT, 'work');
 const MEDIA = path.join(ROOT, 'public', 'media');
+// girato originale: sul runner va nel disco grande /mnt (il workflow imposta REGISTA_SCARICO)
+const SCARICO = process.env.REGISTA_SCARICO || path.join(WORK, 'in');
 
 const log = (...a) => console.log('[regista]', ...a);
 // con stdio 'inherit' execFileSync restituisce null: non va trattato come errore
@@ -56,8 +58,11 @@ async function fetchRiprova(url, opts = {}, tentativi = 4) {
     }
   }
 }
+// VAI "prenotato" appena parte un montaggio: il controllo periodico non lo riprende due volte
+const isInCorso = (name) => /^_VAI_in_corso_/i.test(name);
+const nomeVaiOriginale = (name) => name.replace(/^_VAI_in_corso_/i, '');
 // file generati da noi o segnali: mai materiale di montaggio
-const isNostro = (name) => isVai(name) || /^_VAI_usato_/i.test(name) || /FINALE/i.test(name) || /^(NOTE|ERRORE|_ERRORE.*)\.txt$/i.test(name);
+const isNostro = (name) => isVai(name) || isInCorso(name) || /^_VAI_usato_/i.test(name) || /FINALE/i.test(name) || /^(NOTE|ERRORE|_ERRORE.*)\.txt$/i.test(name);
 
 // ---------- 1. trova la cartella da fare ----------
 function trovaCartella() {
@@ -65,7 +70,7 @@ function trovaCartella() {
   if (process.env.CARTELLA) {
     const nome = process.env.CARTELLA;
     const files = JSON.parse(rclone('lsjson', remote(SRC_DIR, nome), '--files-only'));
-    const vai = files.find((f) => isVai(f.Name));
+    const vai = files.find((f) => isVai(f.Name) || isInCorso(f.Name));
     return { nome, files, vai: vai ? vai.Name : null };
   }
   const dirs = JSON.parse(rclone('lsjson', remote(IN_DIR), '--dirs-only'))
@@ -87,30 +92,62 @@ function probe(file) {
   let w = v?.width ?? 0, h = v?.height ?? 0;
   const rot = Math.abs(Number(v?.tags?.rotate ?? v?.side_data_list?.find((s) => s.rotation !== undefined)?.rotation ?? 0));
   if (rot === 90 || rot === 270) [w, h] = [h, w];
-  return { durata: Number(j.format.duration), w, h, audio: Boolean(a), video: Boolean(v), tags: tagsPiatti(j) };
+  const colore = v ? { trc: v.color_transfer, primaries: v.color_primaries, matrix: v.color_space } : null;
+  return { durata: Number(j.format.duration), w, h, audio: Boolean(a), video: Boolean(v), tags: tagsPiatti(j), colore };
 }
 
+// HDR (iPhone in HLG/Dolby Vision, clip PQ) → Rec.709: senza conversione i colori escono slavati
+const HDR = ['arib-std-b67', 'smpte2084'];
+function filtroColore(c) {
+  if (!c || !HDR.includes(c.trc)) return 'format=yuv420p';
+  return `zscale=tin=${c.trc}:pin=${c.primaries || 'bt2020'}:min=${c.matrix || 'bt2020nc'}:t=linear:npl=100,format=gbrpf32le,`
+    + 'zscale=p=bt709,tonemap=tonemap=hable:desat=0,zscale=t=bt709:m=bt709:r=tv,format=yuv420p';
+}
+
+// Si ricodificano solo i pezzi usati dal montaggio (1080p, colori SDR). Prima si convertiva
+// tutto il girato 4K: 40 dei 58 minuti del primo giro reale.
+function taglia(s, start, dur, out, conAudio) {
+  run('ffmpeg', ['-y', '-v', 'error', '-ss', start.toFixed(3), '-i', s.originale, '-t', (dur + 0.1).toFixed(3),
+    '-vf', `scale='if(gt(iw,ih),1920,1080)':-2,${filtroColore(s.colore)}`,
+    '-c:v', 'libx264', '-preset', 'veryfast', '-crf', '16', '-pix_fmt', 'yuv420p',
+    ...(conAudio ? ['-c:a', 'aac', '-b:a', '160k'] : ['-an']), '-movflags', '+faststart', out]);
+}
+
+function tagliaSegmenti(piano, analisi) {
+  const perFile = new Map(analisi.sorgenti.filter((s) => s.tipo === 'video').map((s) => [s.file, s]));
+  piano.clips.forEach((c, i) => {
+    const s = perFile.get(c.file);
+    if (!s) throw new Error(`sorgente sconosciuta ${c.file}`);
+    const dur = c.end - c.start;
+    const seg = `seg_${String(i).padStart(3, '0')}.mp4`;
+    taglia(s, c.start, dur, path.join(MEDIA, seg), !c.audio && !c.muto && s.haAudio);
+    Object.assign(c, { file: seg, start: 0, end: +dur.toFixed(3), sorgente: s.id, daSorgente: c.start });
+  });
+}
+
+// con tanti video in parallelo Groq può andare al limite orario: si passa al modello turbo (quota separata)
 async function trascrivi(file) {
   const mp3 = path.join(WORK, `${path.parse(file).name}.trascrizione.mp3`);
   run('ffmpeg', ['-y', '-v', 'error', '-i', file, '-vn', '-ac', '1', '-ar', '16000', '-b:a', '48k', mp3]);
-  const form = new FormData();
-  form.append('file', new Blob([fs.readFileSync(mp3)]), path.basename(mp3));
-  form.append('model', 'whisper-large-v3');
-  form.append('language', 'it');
-  form.append('response_format', 'verbose_json');
-  form.append('timestamp_granularities[]', 'word');
-  const res = await fetchRiprova('https://api.groq.com/openai/v1/audio/transcriptions', {
-    method: 'POST', headers: { Authorization: `Bearer ${process.env.GROQ_API_KEY}` }, body: form,
-  });
-  if (!res.ok) throw new Error(`Groq ${res.status}: ${await res.text()}`);
-  const j = await res.json();
-  return (j.words || []).map((w) => ({ w: w.word, s: +w.start.toFixed(2), e: +w.end.toFixed(2) }));
-}
-
-function proxy(src, dst) {
-  // proxy 1080p H.264: Remotion decodifica molto più in fretta che dal 4K
-  run('ffmpeg', ['-y', '-v', 'error', '-i', src, '-vf', "scale='if(gt(iw,ih),1920,1080)':-2", '-c:v', 'libx264',
-    '-preset', 'veryfast', '-crf', '20', '-pix_fmt', 'yuv420p', '-c:a', 'aac', '-b:a', '160k', '-movflags', '+faststart', dst]);
+  for (const modello of ['whisper-large-v3', 'whisper-large-v3-turbo']) {
+    const form = new FormData();
+    form.append('file', new Blob([fs.readFileSync(mp3)]), path.basename(mp3));
+    form.append('model', modello);
+    form.append('language', 'it');
+    form.append('response_format', 'verbose_json');
+    form.append('timestamp_granularities[]', 'word');
+    try {
+      const res = await fetchRiprova('https://api.groq.com/openai/v1/audio/transcriptions', {
+        method: 'POST', headers: { Authorization: `Bearer ${process.env.GROQ_API_KEY}` }, body: form,
+      }, 3);
+      if (!res.ok) throw new Error(`Groq ${res.status}: ${await res.text()}`);
+      const j = await res.json();
+      return (j.words || []).map((w) => ({ w: w.word, s: +w.start.toFixed(2), e: +w.end.toFixed(2) }));
+    } catch (e) {
+      if (modello.endsWith('turbo')) throw e;
+      log(`trascrizione con ${modello} non riuscita (${e.message}), provo whisper-large-v3-turbo`);
+    }
+  }
 }
 
 // traccia voce in WAV: Remotion la legge con tempi esatti
@@ -120,21 +157,27 @@ const FONT = ['/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf', 'C:/Window
 
 // Fogli provino: fino a 32 riquadri per clip, 16 per foglio, col tempo scritto sopra.
 // offset: tempo scritto = tempo nella clip - offset (per le camere sincronizzate = tempo della voce)
-function fogliProvino(file, id, durata, offset = 0) {
+// Dal girato originale si decodificano solo i fotogrammi chiave (molto più veloce sul 4K).
+function fogliProvino(file, id, durata, offset = 0, colore = null) {
   const n = Math.min(32, Math.max(4, Math.ceil(durata / 1.5)));
   const passo = durata / n;
   const dir = path.join(WORK, 'fogli', '_riquadri', id);
   fs.mkdirSync(dir, { recursive: true });
   let etichette = Boolean(FONT);
+  let soloChiave = true;
   for (let k = 0; k < n; k++) {
     const t = (k + 0.5) * passo;
     const out = path.join(dir, `${String(k).padStart(3, '0')}.jpg`);
     const scritta = `${(t - offset).toFixed(1)}s`;
+    const base = `scale=240:-2,${filtroColore(colore)}`;
     const filtro = etichette
-      ? `scale=240:-2,drawtext=fontfile='${FONT.replace(/:/g, '\\:')}':text='${scritta}':x=6:y=6:fontsize=24:fontcolor=white:box=1:boxcolor=black@0.65:boxborderw=4`
-      : 'scale=240:-2';
-    try { run('ffmpeg', ['-y', '-v', 'error', '-ss', t.toFixed(2), '-i', file, '-frames:v', '1', '-vf', filtro, '-q:v', '4', out]); }
-    catch (e) {
+      ? `${base},drawtext=fontfile='${FONT.replace(/:/g, '\\:')}':text='${scritta}':x=6:y=6:fontsize=24:fontcolor=white:box=1:boxcolor=black@0.65:boxborderw=4`
+      : base;
+    try {
+      run('ffmpeg', ['-y', '-v', 'error', ...(soloChiave ? ['-skip_frame', 'nokey'] : []), '-ss', t.toFixed(2), '-i', file, '-frames:v', '1', '-vf', filtro, '-q:v', '4', out]);
+      if (!fs.existsSync(out) || fs.statSync(out).size === 0) throw new Error('nessun fotogramma');
+    } catch (e) {
+      if (soloChiave) { soloChiave = false; k--; continue; } // fotogrammi chiave troppo radi: decodifica normale
       if (!etichette) throw e;
       etichette = false; k--; // drawtext non disponibile: rifaccio senza scritte
     }
@@ -182,6 +225,12 @@ function stimaToken(testo, fogli) {
 function regiaConClaude(prompt) {
   const modello = process.env.REGISTA_MODEL || 'sonnet';
   fs.rmSync(path.join(WORK, 'regia.json'), { force: true });
+  // Claude Code si installa solo quando serve (con Gemini principale di solito non serve)
+  const c = spawnSync('claude', ['--version'], { encoding: 'utf8', shell: process.platform === 'win32' });
+  if (c.error || c.status !== 0) {
+    log('installo Claude Code');
+    run('npm', ['install', '-g', '@anthropic-ai/claude-code'], { stdio: 'inherit', shell: process.platform === 'win32' });
+  }
   // il testo lungo passa da stdin: niente limiti di lunghezza della riga di comando
   const r = spawnSync('claude', ['-p', 'Segui le istruzioni e usa il materiale ricevuti in input.', '--model', modello,
     '--allowedTools', 'Read,Write', '--output-format', 'json'], {
@@ -219,10 +268,11 @@ async function regiaConGemini(prompt, fogli, modello = MODELLI_GEMINI[process.en
     const c = await fetchRiprova(`${base}:countTokens`, { method: 'POST', headers, body: JSON.stringify({ contents }) }, 2);
     if (c.ok) { const t = (await c.json()).totalTokens; consumi.stima = { totale: t, esatta: true }; log(`Gemini: ${t} token da inviare`); }
   } catch (e) { log('conteggio token Gemini non riuscito', e.message); }
+  // con più montaggi insieme si può toccare il limite al minuto: qualche tentativo in più prima della riserva
   const r = await fetchRiprova(`${base}:generateContent`, {
     method: 'POST', headers,
     body: JSON.stringify({ contents, generationConfig: { responseMimeType: 'application/json', temperature: 0.4 } }),
-  });
+  }, 6);
   if (r.status === 404 && modello !== MODELLI_GEMINI.flash) {
     log(`Gemini: modello ${modello} non disponibile, uso ${MODELLI_GEMINI.flash}`);
     return regiaConGemini(prompt, fogli, MODELLI_GEMINI.flash);
@@ -239,8 +289,9 @@ async function regiaConGemini(prompt, fogli, modello = MODELLI_GEMINI[process.en
   return regia;
 }
 
-// AI principale (default Gemini se c'è la chiave) e l'altra come riserva automatica
-async function chiediRegia(testoMateriale, fogli, regiaPrecedente) {
+// AI principale (default Gemini se c'è la chiave) e l'altra come riserva automatica.
+// `valida` controlla la regia: se è inutilizzabile si prova l'altra AI.
+async function chiediRegia(testoMateriale, fogli, regiaPrecedente, valida = (r) => r) {
   const scelta = (process.env.REGISTA_AI || 'gemini').toLowerCase();
   const haGemini = Boolean(process.env.GEMINI_API_KEY);
   const ordine = scelta === 'claude' || !haGemini ? ['claude', ...(haGemini ? ['gemini'] : [])] : ['gemini', 'claude'];
@@ -249,7 +300,8 @@ async function chiediRegia(testoMateriale, fogli, regiaPrecedente) {
   for (const [i, chi] of ordine.entries()) {
     try {
       const prompt = promptRegia({ modo: chi, testoMateriale, regiaPrecedente });
-      return chi === 'gemini' ? await regiaConGemini(prompt, fogli) : regiaConClaude(prompt);
+      const regia = chi === 'gemini' ? await regiaConGemini(prompt, fogli) : regiaConClaude(prompt);
+      return { regia, risultato: valida(regia) };
     } catch (e) {
       errore = e;
       if (i === ordine.length - 1) break;
@@ -276,8 +328,12 @@ function renderizza(out) {
   // (visto nel test del 16/10): fino a 3 tentativi.
   for (let tentativo = 1; ; tentativo++) {
     try {
+      // 1080×1920 a ~15 Mbps: il formato che TikTok/Instagram caricano meglio (meglio di un 4K pesante)
       run('npx', ['remotion', 'render', 'src/index.ts', 'Blueprint', out, `--props=${path.join(WORK, 'piano.json')}`,
-        '--codec=h264', '--crf=20', '--concurrency=100%'], { cwd: ROOT, stdio: 'inherit', shell: process.platform === 'win32' });
+        '--codec=h264', '--video-bitrate=15M', '--max-rate=16M', '--buffer-size=32M', '--audio-bitrate=320k', '--concurrency=100%',
+        // browser già installato (es. Chrome sul PC) invece di quello che Remotion scarica
+        ...(process.env.REMOTION_BROWSER ? [`--browser-executable=${process.env.REMOTION_BROWSER}`] : [])],
+      { cwd: ROOT, stdio: 'inherit', shell: process.platform === 'win32' });
       return;
     } catch (e) {
       if (tentativo >= 3) throw e;
@@ -352,8 +408,8 @@ export async function analizza(nome, brief, cache) {
   const sorgenti = [];
   const foto = [];
   const idUsati = new Set();
-  for (const f of fs.readdirSync(path.join(WORK, 'in')).sort()) {
-    const src = path.join(WORK, 'in', f);
+  for (const f of fs.readdirSync(SCARICO).sort()) {
+    const src = path.join(SCARICO, f);
     const ext = path.extname(f).toLowerCase();
     if (isNostro(f) || fs.statSync(src).isDirectory()) continue;
     let id = path.parse(f).name;
@@ -363,20 +419,20 @@ export async function analizza(nome, brief, cache) {
       const info = probe(src);
       if (!info.video) continue;
       const disp = dispositivo(f, info.tags);
-      log(`proxy ${f} (${NOMI_DISPOSITIVO[disp]}, ${info.durata.toFixed(1)} s, ${info.w}x${info.h})`);
-      proxy(src, path.join(MEDIA, `${id}.mp4`));
-      sorgenti.push({ id, file: `${id}.mp4`, tipo: 'video', dispositivo: disp, nomeDispositivo: NOMI_DISPOSITIVO[disp],
-        durata: +info.durata.toFixed(2), orient: info.w > info.h ? 'h' : 'v', haAudio: info.audio });
+      const hdr = HDR.includes(info.colore?.trc);
+      log(`video ${f} (${NOMI_DISPOSITIVO[disp]}, ${info.durata.toFixed(1)} s, ${info.w}x${info.h}${hdr ? ', HDR → SDR' : ''})`);
+      // `file` è il nome logico usato dalla regia; i pezzi veri si tagliano dall'originale dopo la regia
+      sorgenti.push({ id, file: `${id}.mp4`, originale: src, tipo: 'video', dispositivo: disp, nomeDispositivo: NOMI_DISPOSITIVO[disp],
+        durata: +info.durata.toFixed(2), orient: info.w > info.h ? 'h' : 'v', haAudio: info.audio, colore: info.colore });
     } else if (AUDIO_EXT.includes(ext)) {
       const info = probe(src);
       log(`audio ${f} (mic esterno, ${info.durata.toFixed(1)} s)`);
       estraiVoce(src, path.join(MEDIA, `${id}.voce.wav`));
-      sorgenti.push({ id, file: null, voce: `${id}.voce.wav`, tipo: 'audio', dispositivo: 'mic', nomeDispositivo: NOMI_DISPOSITIVO.mic,
+      sorgenti.push({ id, file: null, originale: src, voce: `${id}.voce.wav`, tipo: 'audio', dispositivo: 'mic', nomeDispositivo: NOMI_DISPOSITIVO.mic,
         durata: +info.durata.toFixed(2), haAudio: true });
     } else if (IMAGE_EXT.includes(ext)) {
       foto.push(f);
     }
-    fs.rmSync(src, { force: true }); // l'originale 4K non serve più: libera disco sul runner
   }
   if (!sorgenti.some((s) => s.tipo === 'video')) throw new Error('nessun video nella cartella');
 
@@ -387,20 +443,20 @@ export async function analizza(nome, brief, cache) {
       const c = cache.sorgenti?.find((x) => x.id === s.id);
       if (!c) continue;
       Object.assign(s, { principale: c.principale, sync: c.sync, parlato: c.parlato, parole: c.parole });
-      if (c.principale) { s.voce = c.voce; if (!fs.existsSync(path.join(MEDIA, s.voce))) estraiVoce(path.join(MEDIA, s.file), path.join(MEDIA, s.voce)); }
+      if (c.principale) { s.voce = c.voce; if (!fs.existsSync(path.join(MEDIA, s.voce))) estraiVoce(s.originale, path.join(MEDIA, s.voce)); }
     }
     for (const s of sorgenti.filter((x) => x.tipo === 'video')) {
-      const fp = fogliProvino(path.join(MEDIA, s.file), s.id, s.durata, s.sync ? s.sync.offset : 0);
+      const fp = fogliProvino(s.originale, s.id, s.durata, s.sync ? s.sync.offset : 0, s.colore);
       s.fogli = fp.fogli; s.passoFogli = fp.passo;
     }
     return { cartella: nome, brief, sorgenti, frasi: cache.frasi, foto };
   }
 
-  // inviluppi audio (dal proxy o dalla traccia voce) e rilevamento parlato
+  // inviluppi audio (dall'originale: si legge solo la traccia audio) e rilevamento parlato
   const db = new Map();
   for (const s of sorgenti) {
     if (!s.haAudio) continue;
-    const e = inviluppo(path.join(MEDIA, s.voce || s.file));
+    const e = inviluppo(s.voce ? path.join(MEDIA, s.voce) : s.originale);
     if (!e) continue;
     db.set(s.id, e);
     s.parlato = sogliaVoce(e).haVoce;
@@ -428,7 +484,7 @@ export async function analizza(nome, brief, cache) {
   // trascrizione solo delle voci principali (le altre camere non servono)
   const tutteFrasi = [];
   for (const p of principali) {
-    if (!p.voce) { p.voce = `${p.id}.voce.wav`; estraiVoce(path.join(MEDIA, p.file), path.join(MEDIA, p.voce)); }
+    if (!p.voce) { p.voce = `${p.id}.voce.wav`; estraiVoce(p.originale, path.join(MEDIA, p.voce)); }
     let parole = parolePrecedenti(p.file) || parolePrecedenti(p.voce);
     if (!parole && process.env.GROQ_API_KEY) {
       parole = await trascrivi(path.join(MEDIA, p.voce));
@@ -448,7 +504,7 @@ export async function analizza(nome, brief, cache) {
 
   // fogli provino: per le camere sincronizzate i tempi scritti sono quelli della voce
   for (const s of sorgenti.filter((x) => x.tipo === 'video')) {
-    const fp = fogliProvino(path.join(MEDIA, s.file), s.id, s.durata, s.sync ? s.sync.offset : 0);
+    const fp = fogliProvino(s.originale, s.id, s.durata, s.sync ? s.sync.offset : 0, s.colore);
     s.fogli = fp.fogli; s.passoFogli = fp.passo;
   }
   return { cartella: nome, brief, sorgenti, frasi: tutteFrasi, foto };
@@ -459,22 +515,30 @@ let job = {};
 async function main() {
   job = trovaCartella() || {};
   if (!job.nome) { log('niente da fare'); return; }
-  const { nome, files, vai } = job;
+  const { nome, files } = job;
+  let { vai } = job;
   log(`cartella: ${nome} (${files.length} file)`);
   fs.rmSync(WORK, { recursive: true, force: true });
   fs.rmSync(MEDIA, { recursive: true, force: true });
-  fs.mkdirSync(path.join(WORK, 'in'), { recursive: true });
+  fs.rmSync(SCARICO, { recursive: true, force: true });
+  fs.mkdirSync(SCARICO, { recursive: true });
   fs.mkdirSync(path.join(WORK, 'fogli'), { recursive: true });
   fs.mkdirSync(MEDIA, { recursive: true });
+  // prenoto il VAI (se il workflow non l'ha già fatto): niente doppi montaggi della stessa cartella
+  if (vai && isVai(vai)) {
+    try { rclone('moveto', remote(SRC_DIR, nome, vai), remote(SRC_DIR, nome, `_VAI_in_corso_${vai}`)); vai = `_VAI_in_corso_${vai}`; }
+    catch (e) { log('non riesco a prenotare il VAI', e.message); }
+  }
+  const vaiUsato = vai ? `_VAI_usato_${nomeVaiOriginale(vai)}` : null;
 
   try {
     const media = files.filter((f) => VIDEO_EXT.concat(IMAGE_EXT, AUDIO_EXT).includes(path.extname(f.Name).toLowerCase()) && !isNostro(f.Name));
     const peso = media.reduce((s, f) => s + (f.Size || 0), 0);
     await fase(nome, `${CORREZIONE ? '✏️ Correzione · ' : ''}📥 Scarico ${media.length} file (${mb(peso)})`, 'scarico');
     // solo il materiale: niente sottocartelle (_regista), niente video finali/note/segnali
-    rclone('copy', remote(SRC_DIR, nome), path.join(WORK, 'in'), '--max-depth', '1',
-      '--exclude', '*.XML', '--exclude', '*.xml', '--exclude', '*FINALE*', '--exclude', '_VAI_usato_*', '--exclude', '*.txt');
-    rclone('copy', remote(SRC_DIR, nome), path.join(WORK, 'in'), '--max-depth', '1', '--include', 'brief.txt');
+    rclone('copy', remote(SRC_DIR, nome), SCARICO, '--max-depth', '1', '--transfers', '8', '--multi-thread-streams', '8',
+      '--exclude', '*.XML', '--exclude', '*.xml', '--exclude', '*FINALE*', '--exclude', '_VAI_*', '--exclude', '*.txt');
+    rclone('copy', remote(SRC_DIR, nome), SCARICO, '--max-depth', '1', '--include', 'brief.txt');
 
     // cache del giro precedente (trascrizioni già fatte, regia da correggere)
     let cache = null, regiaPrecedente = null;
@@ -486,9 +550,9 @@ async function main() {
     if (CORREZIONE && !regiaPrecedente) {
       throw new Error('questo video è stato montato con la versione precedente del regista (o non ha cache): per correggerlo serve un nuovo montaggio da zero.');
     }
-    await fase(nome, '🎞️ Preparo i video (copie 1080p, audio, sincronizzazione, trascrizione, fogli provino)', 'prepara');
+    await fase(nome, '🎞️ Analizzo il girato (audio, sincronizzazione, trascrizione, fogli provino)', 'prepara');
 
-    const briefFile = fs.existsSync(path.join(WORK, 'in', 'brief.txt')) ? fs.readFileSync(path.join(WORK, 'in', 'brief.txt'), 'utf8') : '';
+    const briefFile = fs.existsSync(path.join(SCARICO, 'brief.txt')) ? fs.readFileSync(path.join(SCARICO, 'brief.txt'), 'utf8') : '';
     const brief = [briefFile, process.env.BRIEF_EXTRA ? `Dal telegram: ${process.env.BRIEF_EXTRA}` : '', cache?.brief && CORREZIONE ? cache.brief : '']
       .filter(Boolean).join('\n');
     const analisi = await analizza(nome, brief, cache);
@@ -505,14 +569,16 @@ async function main() {
     const pesoAI = ` · materiale ≈ ${kTok(stima.totale)} token`;
     await fase(nome, CORREZIONE ? `🧠 Applico la correzione: “${CORREZIONE.slice(0, 120)}”${pesoAI}`
       : `🧠 Scelgo i tagli: ${analisi.sorgenti.length} sorgenti, voce da ${voci || '—'}, ${sinc} camere sincronizzate, ${analisi.frasi.length} frasi${brief ? ', con brief' : ''}${pesoAI}`, 'regia');
-    const regia = await chiediRegia(testoMateriale, fogli, CORREZIONE ? regiaPrecedente : null);
-    const { piano, avvisi } = risolviRegia(regia, analisi);
+    const { risultato: { piano, avvisi } } = await chiediRegia(testoMateriale, fogli, CORREZIONE ? regiaPrecedente : null, (r) => risolviRegia(r, analisi));
     if (avvisi.length) log('avvisi regia:', avvisi.join(' | '));
-    fs.writeFileSync(path.join(WORK, 'piano.json'), JSON.stringify(piano, null, 1));
-    validaPiano(piano);
     const durataPiano = piano.clips.reduce((s, c) => s + (c.end - c.start), 0);
     const camereUsate = new Set(piano.clips.map((c) => c.file)).size;
     await fase(nome, `🎬 Render: ${durataPiano.toFixed(0)} s, ${piano.clips.length} tagli da ${camereUsate} sorgenti, ${piano.keywords.length} parole chiave`, 'render');
+    // solo adesso si ricodificano i pezzi scelti, poi gli originali non servono più
+    tagliaSegmenti(piano, analisi);
+    fs.rmSync(SCARICO, { recursive: true, force: true });
+    fs.writeFileSync(path.join(WORK, 'piano.json'), JSON.stringify(piano, null, 1));
+    validaPiano(piano);
 
     // nome con versione: FINALE, FINALE v2, FINALE v3...
     const versioni = files.filter((f) => /FINALE( v\d+)?\.mp4$/i.test(f.Name)).length;
@@ -537,7 +603,7 @@ async function main() {
     rclone('copyto', outFile, remote(SRC_DIR, nome, finale));
     rclone('copyto', path.join(WORK, 'NOTE.txt'), remote(SRC_DIR, nome, 'NOTE.txt'));
     for (const f of ['regia.json', 'piano.json', 'materiale.json']) rclone('copyto', path.join(WORK, f), remote(SRC_DIR, nome, CACHE, f));
-    if (vai) rclone('moveto', remote(SRC_DIR, nome, vai), remote(SRC_DIR, nome, `_VAI_usato_${vai}`));
+    if (vai) rclone('moveto', remote(SRC_DIR, nome, vai), remote(SRC_DIR, nome, vaiUsato));
     if (SRC_DIR === IN_DIR) rclone('moveto', remote(IN_DIR, nome), remote(OUT_DIR, nome));
 
     // dati per la scheda del bot
@@ -551,12 +617,12 @@ async function main() {
     if (!inviato) await notifica('✅ pronto', nome, note, { ok: true, foto: anteprima(outFile, piano, durataN), info });
   } catch (e) {
     const testo = `Errore: ${e.message}\n\n` + (CORREZIONE ? 'Puoi riprovare la correzione dal bot (✏️) o scrivermi una richiesta diversa.'
-      : vai ? `Per riprovare rinomina _VAI_usato_${vai} in ${vai}, oppure 🔁 Riprova.` : 'Per riprovare: 🔁 Riprova.');
+      : vai ? `Per riprovare: 🔁 Riprova dal bot, oppure rinomina ${vaiUsato} in ${nomeVaiOriginale(vai)}.` : 'Per riprovare: 🔁 Riprova.');
     fs.mkdirSync(WORK, { recursive: true });
     fs.writeFileSync(path.join(WORK, 'ERRORE.txt'), testo);
     try {
       rclone('copyto', path.join(WORK, 'ERRORE.txt'), remote(SRC_DIR, nome, 'ERRORE.txt'));
-      if (vai) rclone('moveto', remote(SRC_DIR, nome, vai), remote(SRC_DIR, nome, `_VAI_usato_${vai}`));
+      if (vai) rclone('moveto', remote(SRC_DIR, nome, vai), remote(SRC_DIR, nome, vaiUsato));
     } catch (e2) { log('impossibile scrivere ERRORE su Drive', e2.message); }
     await notifica('⚠️ non montato', nome, testo, { info: { errore: e.message, correzione: CORREZIONE || '' } });
     process.exitCode = 1;
@@ -594,4 +660,4 @@ async function inviaVideo(outFile, nome, testo, durata, info) {
 
 // avviato come script (non importato dai test)
 if (process.argv[1] && path.resolve(process.argv[1]) === path.resolve(ROOT, 'scripts', 'regista.mjs')) main();
-export { fogliProvino, chiediRegia, rigaConsumi, WORK, MEDIA };
+export { fogliProvino, chiediRegia, rigaConsumi, tagliaSegmenti, WORK, MEDIA, SCARICO };

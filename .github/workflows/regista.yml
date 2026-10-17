@@ -47,13 +47,18 @@ concurrency:
   group: regista-${{ inputs.azione == 'elenco' && 'elenco' || inputs.cartella || 'auto' }}
   cancel-in-progress: false
 
+# il giro automatico avvia un giro per ogni cartella con VAI (gh workflow run)
+permissions:
+  contents: read
+  actions: write
+
 jobs:
   monta:
     # versione fissa: ubuntu-latest passa a Ubuntu 26 dal 19/10/2026 (ffmpeg, font, dipendenze di Chrome)
     runs-on: ubuntu-24.04
     timeout-minutes: 240
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Drive (rclone)
         env:
@@ -70,33 +75,46 @@ jobs:
         env:
           CARTELLA: ${{ inputs.cartella }}
           AZIONE: ${{ inputs.azione }}
+          EVENTO: ${{ github.event_name }}
+          GH_TOKEN: ${{ github.token }}
           NOTIFY_URL: ${{ secrets.NOTIFY_URL }}
           NOTIFY_TOKEN: ${{ secrets.NOTIFY_TOKEN }}
         run: |
           mapfile -t cartelle < <(rclone lsf "gdrive:97 - Editare" --dirs-only | sed 's:/$::')
-          trovato="$CARTELLA"
+          declare -A vai_di=()
           con_vai=()
           for d in "${cartelle[@]}"; do
-            if rclone lsf "gdrive:97 - Editare/$d" --files-only | grep -qiE '^vai(\.[^.]+)?$'; then
-              con_vai+=("$d"); [ -z "$trovato" ] && trovato="$d"
-            fi
+            f=$(rclone lsf "gdrive:97 - Editare/$d" --files-only | grep -iE '^vai(\.[^.]+)?$' | head -n1 || true)
+            if [ -n "$f" ]; then con_vai+=("$d"); vai_di["$d"]="$f"; fi
           done
-          [ "$AZIONE" = "elenco" ] && trovato=""
+          # prenoto il VAI subito: un giro successivo non riprende la stessa cartella
+          prenota() { rclone moveto "gdrive:97 - Editare/$1/${vai_di[$1]}" "gdrive:97 - Editare/$1/_VAI_in_corso_${vai_di[$1]}" && echo "Prenotata: $1"; }
+          trovato="$CARTELLA"
+          liberi=("${con_vai[@]}")
+          if [ "$AZIONE" != "elenco" ] && [ -z "$trovato" ] && [ ${#con_vai[@]} -gt 0 ]; then
+            trovato="${con_vai[0]}"
+            prenota "$trovato" || true
+            # tutte le altre cartelle con VAI partono subito, ognuna nel suo giro (in parallelo)
+            for d in "${con_vai[@]:1}"; do
+              if prenota "$d"; then gh workflow run regista.yml --ref "$GITHUB_REF_NAME" -f cartella="$d" && echo "Avviata in parallelo: $d"; fi
+            done
+            liberi=()
+          fi
           echo "cartella=$trovato" >> "$GITHUB_OUTPUT"
           if [ -n "$trovato" ]; then echo "Da montare: $trovato"; else echo "Niente da fare"; fi
           # il bot tiene l'elenco delle cartelle per i tasti di "Nuovo montaggio"
           if [ -n "$NOTIFY_URL" ]; then
             jq -n --args '{tipo:"cartelle", cartelle:$ARGS.positional}' -- "${cartelle[@]}" \
-              | jq --args '. + {vai:$ARGS.positional}' -- "${con_vai[@]}" \
+              | jq --args '. + {vai:$ARGS.positional}' -- "${liberi[@]}" \
               | curl -s -X POST "$NOTIFY_URL" -H 'content-type: application/json' -H "x-regista-token: $NOTIFY_TOKEN" -d @- > /dev/null || true
           fi
           # avvio manuale/dal bot senza niente da montare: avvisa, così non sembra un video fatto
-          if [ -z "$trovato" ] && [ "$AZIONE" != "elenco" ] && [ "${{ github.event_name }}" = "workflow_dispatch" ] && [ -n "$NOTIFY_URL" ]; then
+          if [ -z "$trovato" ] && [ "$AZIONE" != "elenco" ] && [ "$EVENTO" = "workflow_dispatch" ] && [ -n "$NOTIFY_URL" ]; then
             curl -s -X POST "$NOTIFY_URL" -H 'content-type: application/json' -H "x-regista-token: $NOTIFY_TOKEN" \
               -d '{"tipo":"vuoto","nome":"—","testo":"Nessuna cartella con VAI in 97 - Editare: non ho montato niente."}' > /dev/null
           fi
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v5
         if: steps.check.outputs.cartella != ''
         with:
           node-version: 22
@@ -108,7 +126,10 @@ jobs:
           sudo apt-get update -qq
           sudo apt-get install -y -qq ffmpeg fonts-noto-color-emoji
           npm ci || npm install
-          npm install -g @anthropic-ai/claude-code
+          # il girato originale va nel disco grande del runner (/mnt), non in quello di sistema
+          sudo mkdir -p /mnt/regista && sudo chown "$USER" /mnt/regista
+          df -h / /mnt | sed 's/^/  /'
+          # Claude Code si installa da solo solo se serve (Gemini è l'AI principale)
 
       - name: Monta
         if: steps.check.outputs.cartella != ''
@@ -122,6 +143,7 @@ jobs:
           REGISTA_MODEL: ${{ inputs.modello || vars.REGISTA_MODEL }}
           GEMINI_MODEL: ${{ inputs.modello_gemini || vars.GEMINI_MODEL }}
           REGISTA_VERSIONE: ${{ github.ref_name }}
+          REGISTA_SCARICO: /mnt/regista/in
           NOTIFY_URL: ${{ secrets.NOTIFY_URL }}
           NOTIFY_TOKEN: ${{ secrets.NOTIFY_TOKEN }}
           CARTELLA: ${{ steps.check.outputs.cartella }}

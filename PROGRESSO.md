@@ -1,7 +1,23 @@
 # video-regista — PROGRESSO
 
 > File di passaggio tra sessioni (ufficio / casa / in giro). Aggiornato da Claude a ogni passo.
-> Ultimo aggiornamento: **2026-10-17 notte, sessione cloud (Claude Code web)** — v2 + bot v3 su `main`.
+> Ultimo aggiornamento: **2026-10-17 notte, sessione cloud (Claude Code web)** — v2 veloce + lotti + bot v3 su `main`.
+
+## ▶️ Come si usa adesso (pronto per i lotti)
+1. Su Drive: una cartella per video in `97 - Editare/` con tutto il girato (iPhone, Sony, Insta360, B-roll, audio del mic). Indicazioni per quel video: `brief.txt` nella cartella (facoltativo).
+2. Avvio: dal bot **🆕 Nuovo montaggio** (uno, guidato) o **📦 Più video** (spunti tante cartelle, partono in parallelo); oppure un file `VAI` in ogni cartella: il giro automatico le prende **tutte insieme**, ognuna nel suo giro.
+3. Ogni video ha una scheda che si aggiorna; il finale (1080×1920, ~15 Mbps) arriva in chat con 👍/✏️/🔁 e finisce in `98 - Fatti/<Nome>/`.
+
+### Velocità (17/10 notte)
+Primo giro reale: 58 min, di cui **40 per ricodificare tutto il girato 4K** in 1080p. Ora l'analisi legge audio e fogli provino direttamente dagli originali (solo fotogrammi chiave) e si ricodificano **solo i pezzi scelti dalla regia** (CRF 16, colori HDR→SDR): stima **~15–20 min a video** (download ~4, analisi ~2, AI ~1, pezzi ~2, render ~6, upload ~1,5). Girato sul disco grande `/mnt` del runner. Claude Code si installa solo se serve. Test locale completo (Drive finto): giro intero, correzione v2, errore → tutti ok.
+
+### ⚠️ Minuti GitHub con 10 video al giorno
+10 × ~18 min ≈ 180 min/giorno ≈ 5.400/mese: oltre i 2.000 gratuiti dei repo privati. Opzioni (decide Denis): pagare l'eccedenza a minuto; GitHub Pro (3.000 min); **repo pubblico** = minuti illimitati e runner a 4 core (render ~2× più veloce) ma log e artifact visibili: in quel caso togliere l'upload degli artifact (fogli provino/trascrizioni) e i testi dell'AI dai log.
+
+### Cose che deve fare Denis (ancora aperte)
+- **Chiave Gemini** (AI principale): `gh secret set GEMINI_API_KEY -R DenLeone/video-regista`. Senza chiave lavora Claude (funziona comunque).
+- **Pubblicare il bot nuovo**: token Cloudflare (modello "Edit Cloudflare Workers") → `gh secret set CLOUDFLARE_API_TOKEN -R DenLeone/video-regista` e `gh secret set CLOUDFLARE_ACCOUNT_ID -R DenLeone/video-regista`, poi Actions → bot → Run workflow (o push su `telegram/`). In alternativa a mano: `cd telegram` → `npx wrangler deploy`. Finché non lo fa resta il bot vecchio (funziona con la pipeline nuova, ma senza pannello/lotti).
+- Da verificare sul primo girato iPhone vero: resa dei colori dopo la conversione HDR→SDR (tonemap hable).
 
 ## Obiettivo
 Montaggio **100% automatico, anche a PC spento**:

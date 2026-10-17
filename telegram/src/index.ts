@@ -225,11 +225,11 @@ async function pannello(env: Env): Promise<Schermo> {
       `<b>Adesso</b>   ${await adesso(env)}`,
       `<b>Motore</b>   ${esc(motore(imp))}`, LINEA,
       '<b>1.</b> Carica i video su Drive in <code>97 - Editare/NomeVideo</code>',
-      '<b>2.</b> Premi <b>Nuovo montaggio</b> e scegli la cartella',
+      '<b>2.</b> <b>Nuovo montaggio</b> (uno, guidato) o <b>Più video</b> (tanti, in parallelo)',
       '<b>3.</b> Ricevi qui il video: approvi o chiedi una correzione',
     ].join('\n'),
     tasti: [
-      [tasto('🆕 Nuovo montaggio', 'nuovo')],
+      [tasto('🆕 Nuovo montaggio', 'nuovo'), tasto('📦 Più video', 'lotto')],
       [tasto('📊 Stato', 'stato'), tasto('⚙️ Impostazioni', 'imp')],
       [link('📂 97 · Da montare', URL_97), link('✅ 98 · Fatti', URL_98)],
       [tasto('❓ Guida', 'guida')],
@@ -249,7 +249,7 @@ async function schermoStato(env: Env): Promise<Schermo> {
     const veri = g.filter((w) => w.status === 'completed' && (w.conclusion !== 'success' || minuti(w.run_started_at || w.created_at, w.updated_at) >= 3));
     if (veri.length) {
       righe.push('', '<b>Ultimi montaggi</b>');
-      for (const w of veri.slice(0, 6)) {
+      for (const w of veri.slice(0, 10)) {
         const m = await leggi<RunMemo | string>(env, `run:${w.id}`);
         const nome = typeof m === 'string' ? m : m?.nome;
         const icona = w.conclusion === 'success' ? '✅' : w.conclusion === 'cancelled' ? '⏹' : '⚠️';
@@ -300,11 +300,12 @@ const GUIDA: Schermo = {
     '',
     '<b>1.</b> Crea <code>97 - Editare/NomeVideo/</code> e mettici tutto: clip iPhone, Sony, Insta360, B-roll, audio del microfono.',
     '<b>2.</b> 🆕 <b>Nuovo montaggio</b> → scegli la cartella, rispondi a 5 domande (o salta), 🚀 Avvia.',
+    '   📦 <b>Più video</b> → spunta tante cartelle, partono tutte insieme (indicazioni per video: <code>brief.txt</code> nella cartella).',
     '<b>3.</b> Segui la scheda di avanzamento: si aggiorna da sola (20–60 min).',
     '<b>4.</b> Arriva il video: 👍 Approva, ✏️ Correggi (scrivi cosa cambiare) o 🔁 Rifai da zero.',
     '',
     '<b>Audio</b> · microfono esterno > Insta360 > iPhone > Sony. Le camere della stessa ripresa vengono sincronizzate da sole.',
-    '<b>Automatico</b> · un file <code>VAI</code> nella cartella fa partire il montaggio da solo (controllo periodico 7–23).',
+    '<b>Automatico</b> · un file <code>VAI</code> nella cartella fa partire il montaggio da solo (controllo periodico 7–23); con più cartelle VAI partono tutte in parallelo.',
     '',
     '<b>Comandi</b>',
     '/menu pannello · /nuovo montaggio · /stato',
@@ -319,12 +320,64 @@ type Brief = { cartella?: string; sponsor?: string; durata?: string; tono?: stri
 type Passo = 'cartella' | 'sponsor' | 'sponsor_testo' | 'durata' | 'tono' | 'tavola' | 'note' | 'riepilogo';
 type Attesa =
   | { tipo: 'nuovo'; passo: Passo; dati: Brief; msg?: number; modifica?: boolean }
+  | { tipo: 'lotto'; scelte: string[]; msg?: number }
   | { tipo: 'correzione'; nome: string; runId?: string; msg?: number };
 const kAttesa = (chat: string) => `attesa:${chat}`;
 const ORDINE: Passo[] = ['cartella', 'sponsor', 'durata', 'tono', 'tavola', 'note', 'riepilogo'];
 const NUMERO: Record<Passo, number> = { cartella: 1, sponsor: 2, sponsor_testo: 2, durata: 3, tono: 4, tavola: 5, note: 6, riepilogo: 6 };
 const A_TESTO: Passo[] = ['cartella', 'sponsor_testo', 'tavola', 'note'];
 type Cartelle = { elenco: string[]; vai: string[]; aggiornato: number };
+
+// L'elenco di 97 - Editare arriva dal workflow. Se è vecchio lo chiedo da solo (giro "elenco" ≈1 min)
+// e, quando arriva, aggiorno le schermate aperte che lo mostrano.
+async function richiediElenco(env: Env, chat: string, forza = false): Promise<boolean> {
+  const c = await leggi<Cartelle>(env, 'cartelle');
+  const richiesto = (await leggi<number>(env, 'elenco_richiesto')) || 0;
+  const inAttesa = new Set((await leggi<string[]>(env, 'attesa_elenco')) || []);
+  inAttesa.add(chat);
+  await mem(env).scrivi('attesa_elenco', [...inAttesa]);
+  if (!forza && c && Date.now() - c.aggiornato < 10 * 60000) return false;
+  if (Date.now() - richiesto < 3 * 60000) return true; // già chiesto da poco
+  const imp = await impostazioni(env);
+  const r = await dispatch(env, RAMO[imp.versione], { azione: 'elenco' });
+  if (r.status !== 204) return false;
+  await mem(env).scrivi('elenco_richiesto', Date.now());
+  return true;
+}
+async function infoElenco(env: Env): Promise<string> {
+  const c = await leggi<Cartelle>(env, 'cartelle');
+  const richiesto = (await leggi<number>(env, 'elenco_richiesto')) || 0;
+  const aggiorna = Date.now() - richiesto < 3 * 60000 && (!c || c.aggiornato < richiesto) ? ' · ⏳ aggiorno l\'elenco…' : '';
+  return c ? `<i>97 - Editare alle ${ora(c.aggiornato).split(', ')[1]} · ⚡ = ha il file VAI${aggiorna}</i>`
+    : `<i>${aggiorna ? '⏳ Recupero l\'elenco delle cartelle (≈1 min)…' : 'Elenco non disponibile: premi Aggiorna o scrivi il nome.'}</i>`;
+}
+
+// ---------- più video insieme ----------
+async function schermoLotto(env: Env, a: Attesa & { tipo: 'lotto' }): Promise<Schermo> {
+  const c = await leggi<Cartelle>(env, 'cartelle');
+  const elenco = (c?.elenco || []).slice(0, 20);
+  const tasti: Kb = elenco.map((n, i) => [tasto(`${a.scelte.includes(n) ? '✅' : '⬜'} ${c?.vai.includes(n) ? '⚡ ' : ''}${tronca(n, 34)}`, `l:t:${i}`)]);
+  if (elenco.length) tasti.push([tasto('☑️ Tutte', 'l:tutte'), tasto('⬜ Nessuna', 'l:nessuna'), tasto('🔄 Aggiorna', 'l:aggiorna')]);
+  else tasti.push([tasto('🔄 Aggiorna elenco', 'l:aggiorna')]);
+  if (a.scelte.length) tasti.push([tasto(`🚀 Avvia ${a.scelte.length} ${a.scelte.length === 1 ? 'montaggio' : 'montaggi'}`, 'l:avvia')]);
+  tasti.push([tasto('✖️ Annulla', 'annulla')]);
+  const imp = await impostazioni(env);
+  return {
+    testo: [
+      '📦 <b>Più video insieme</b>', LINEA,
+      'Tocca le cartelle da montare: partono tutte <b>in parallelo</b>, ognuna con la sua scheda.',
+      '<i>Regia automatica; per indicazioni su un video metti un <code>brief.txt</code> nella sua cartella.</i>',
+      `⚙️ ${esc(motore(imp))}`, '', await infoElenco(env),
+      `Selezionate: <b>${a.scelte.length}</b>`,
+    ].join('\n'),
+    tasti,
+  };
+}
+async function mostraLotto(env: Env, chat: string, a: Attesa & { tipo: 'lotto' }, msgId?: number) {
+  await richiediElenco(env, chat);
+  a.msg = await mostra(env, chat, await schermoLotto(env, a), msgId ?? a.msg);
+  await mem(env).scrivi(kAttesa(chat), a);
+}
 
 function testata(p: Passo) {
   const n = NUMERO[p];
@@ -336,7 +389,7 @@ const nav = (a: Attesa & { tipo: 'nuovo' }): Button[] => (a.modifica
 
 function riassunto(d: Brief, imp: Imp): string {
   return [
-    `📁 <b>Cartella</b>   ${d.cartella ? esc(d.cartella) : '⚡ la prima con VAI'}`,
+    `📁 <b>Cartella</b>   ${d.cartella ? esc(d.cartella) : '⚡ tutte quelle con VAI'}`,
     `💰 <b>Sponsor</b>    ${d.sponsor ? esc(d.sponsor) : 'nessuno'}`,
     `⏱ <b>Durata</b>     ${d.durata || 'automatica'}`,
     `🎭 <b>Tono</b>        ${d.tono || 'automatico'}`,
@@ -356,10 +409,9 @@ async function schermoPasso(env: Env, a: Attesa & { tipo: 'nuovo' }): Promise<Sc
       for (let i = 0; i < elenco.length; i += 2) {
         righe.push(elenco.slice(i, i + 2).map((n, j) => tasto(`${c?.vai.includes(n) ? '⚡ ' : '📁 '}${tronca(n, 22)}`, `w:c:${i + j}`)));
       }
-      righe.push([tasto('⚡ Prima con VAI', 'w:c:*'), tasto('🔄 Aggiorna elenco', 'w:aggiorna')]);
+      righe.push([tasto('⚡ Tutte quelle con VAI', 'w:c:*'), tasto('🔄 Aggiorna elenco', 'w:aggiorna')]);
       righe.push(nav(a));
-      const info = c ? `<i>Elenco di 97 - Editare aggiornato alle ${ora(c.aggiornato).split(', ')[1]} · ⚡ = ha il file VAI</i>` : '<i>Elenco non ancora disponibile: premi Aggiorna (≈1 min) o scrivi il nome.</i>';
-      return { testo: `${testata(a.passo)}\n📁 <b>Quale cartella?</b>\nToccala qui sotto oppure scrivimi il nome esatto.\n\n${info}`, tasti: righe };
+      return { testo: `${testata(a.passo)}\n📁 <b>Quale cartella?</b>\nToccala qui sotto oppure scrivimi il nome esatto.\n\n${await infoElenco(env)}`, tasti: righe };
     }
     case 'sponsor':
       return { testo: `${testata(a.passo)}\n💰 <b>C'è uno sponsor?</b>`, tasti: [[tasto('No', 'w:v:sponsor:no'), tasto('Sì', 'w:v:sponsor:si')], nav(a)] };
@@ -388,6 +440,7 @@ async function schermoPasso(env: Env, a: Attesa & { tipo: 'nuovo' }): Promise<Sc
 
 async function vaiAPasso(env: Env, chat: string, a: Attesa & { tipo: 'nuovo' }, msgId?: number, nuovoMessaggio = false) {
   if (nuovoMessaggio) await togliTasti(env, chat, a.msg); // l'utente ha scritto: la domanda vecchia resta sopra senza tasti
+  if (a.passo === 'cartella') await richiediElenco(env, chat);
   a.msg = await mostra(env, chat, await schermoPasso(env, a), nuovoMessaggio ? undefined : (msgId ?? a.msg));
   await mem(env).scrivi(kAttesa(chat), a);
 }
@@ -425,7 +478,7 @@ async function lancia(env: Env, chat: string, i: Inputs, msgId?: number) {
   const err = await avvia(env, i, imp);
   if (err) return mostra(env, chat, { testo: `⚠️ <b>Non sono riuscito ad avviare</b>\n<code>${esc(tronca(err, 500))}</code>`, tasti: [[MENU_TASTO]] }, msgId);
   const card: Card = {
-    nome: i.cartella || '⚡ prima cartella con VAI', fasi: {}, minuti: 0, msg: {}, inCoda: true,
+    nome: i.cartella || '⚡ cartelle con VAI', fasi: {}, minuti: 0, msg: {}, inCoda: true,
     versione: imp.versione === 'beta' ? 'v2 beta' : undefined, brief: i.brief, correzione: i.correzione,
   };
   const id = await mostra(env, chat, { testo: scheda(card), tasti: [[tasto('📊 Stato', 'stato'), MENU_TASTO]] }, msgId);
@@ -492,6 +545,30 @@ async function onCallback(env: Env, cb: Callback) {
   if (data === 'guida') { await avviso(); return mostra(env, chat, GUIDA, msgId); }
   if (data === 'annulla') { await avviso('Annullato'); await mem(env).cancella(kAttesa(chat)); return mostra(env, chat, await pannello(env), msgId); }
   if (data === 'nuovo') { await avviso(); return vaiAPasso(env, chat, { tipo: 'nuovo', passo: 'cartella', dati: {} }, msgId); }
+  if (data === 'lotto') { await avviso(); return mostraLotto(env, chat, { tipo: 'lotto', scelte: [] }, msgId); }
+
+  if (data.startsWith('l:')) {
+    const a = await leggi<Attesa>(env, kAttesa(chat));
+    if (a?.tipo !== 'lotto') { await avviso('Questa schermata è scaduta'); return mostra(env, chat, await pannello(env), msgId); }
+    const [, azione, x = ''] = data.split(':');
+    const c = await leggi<Cartelle>(env, 'cartelle');
+    const elenco = (c?.elenco || []).slice(0, 20);
+    if (azione === 't') {
+      const n = elenco[Number(x)];
+      if (n) a.scelte = a.scelte.includes(n) ? a.scelte.filter((y) => y !== n) : [...a.scelte, n];
+    } else if (azione === 'tutte') a.scelte = [...elenco];
+    else if (azione === 'nessuna') a.scelte = [];
+    else if (azione === 'aggiorna') { await avviso((await richiediElenco(env, chat, true)) ? 'Aggiorno l\'elenco, ≈1 min' : 'Elenco non disponibile'); return mostraLotto(env, chat, a, msgId); }
+    else if (azione === 'avvia' && a.scelte.length) {
+      await avviso(`Avvio ${a.scelte.length}…`);
+      const scelte = [...a.scelte];
+      await mostra(env, chat, { testo: `📦 <b>Avviati ${scelte.length} montaggi in parallelo</b>\n${scelte.map((n) => `• ${esc(n)}`).join('\n')}\n\n<i>Ognuno ha la sua scheda qui sotto; il video arriva appena è pronto.</i>`, tasti: [[tasto('📊 Stato', 'stato'), MENU_TASTO]] }, msgId);
+      for (const n of scelte) await lancia(env, chat, { cartella: n });
+      return;
+    }
+    await avviso();
+    return mostraLotto(env, chat, a, msgId);
+  }
   if (data === 'noop') return avviso();
 
   if (data.startsWith('i:')) {
@@ -507,10 +584,8 @@ async function onCallback(env: Env, cb: Callback) {
     if (a?.tipo !== 'nuovo') { await avviso('Questa procedura è scaduta'); return mostra(env, chat, await pannello(env), msgId); }
     const [, azione, x = '', y = ''] = data.split(':');
     if (azione === 'aggiorna') {
-      const imp = await impostazioni(env);
-      const r = await dispatch(env, RAMO[imp.versione], { azione: 'elenco' });
-      await avviso(r.status === 204 ? 'Aggiorno l\'elenco, ≈1 min' : 'Elenco non disponibile con questo motore: scrivi il nome');
-      return;
+      await avviso((await richiediElenco(env, chat, true)) ? 'Aggiorno l\'elenco, ≈1 min' : 'Elenco non disponibile: scrivi il nome');
+      return vaiAPasso(env, chat, a, msgId);
     }
     if (azione === 'indietro') {
       const base = a.passo === 'sponsor_testo' ? 'sponsor' : a.passo;
@@ -600,6 +675,13 @@ async function onNotify(env: Env, n: Notify) {
   const chats = autorizzati(env);
   if (n.tipo === 'cartelle') {
     await mem(env).scrivi('cartelle', { elenco: n.cartelle || [], vai: n.vai || [], aggiornato: Date.now() } satisfies Cartelle);
+    const inAttesa = (await leggi<string[]>(env, 'attesa_elenco')) || [];
+    await mem(env).scrivi('attesa_elenco', []);
+    for (const chat of inAttesa) {
+      const a = await leggi<Attesa>(env, kAttesa(chat));
+      if (a?.tipo === 'nuovo' && a.passo === 'cartella') await mostra(env, chat, await schermoPasso(env, a), a.msg);
+      else if (a?.tipo === 'lotto') await mostra(env, chat, await schermoLotto(env, a), a.msg);
+    }
     return;
   }
   if (n.tipo === 'vuoto') {
