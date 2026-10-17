@@ -488,7 +488,9 @@ export async function analizza(nome, brief, cache) {
     const e = inviluppo(s.voce ? path.join(MEDIA, s.voce) : s.originale);
     if (!e) continue;
     db.set(s.id, e);
-    s.parlato = sogliaVoce(e).haVoce;
+    const v = sogliaVoce(e);
+    s.parlato = v.haVoce;
+    log(`livelli ${s.id}: fondo ${v.fondo.toFixed(0)} dB, voce ${v.voce.toFixed(0)} dB${v.haVoce ? ' → parlato' : ''}`);
   }
 
   // audio principale: mic esterno > Insta360 > iPhone > altre camere > Sony.
