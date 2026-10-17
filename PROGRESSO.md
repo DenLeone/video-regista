@@ -4,7 +4,8 @@
 > Ultimo aggiornamento: **2026-10-17 notte, sessione cloud (Claude Code web)** — v2 veloce + lotti + bot v3 su `main`.
 
 ## ▶️ Come si usa adesso (pronto per i lotti)
-1. Su Drive: una cartella per video in `97 - Editare/` con tutto il girato (iPhone, Sony, Insta360, B-roll, audio del mic). Indicazioni per quel video: `brief.txt` nella cartella (facoltativo).
+1. **Da Telegram** (comodo dal telefono): manda i file al bot **come File** (📎 → File, non come video: niente compressione), fino a 2 GB a file (4 GB con Premium); il nome del video come didascalia. Il bot raccoglie tutto in una scheda → 🚀 Monta subito o 📝 Con domande. Originali in `97 - Editare/<Nome>`, risultato in `98 - Fatti/<Nome>` (se il nome esiste già → "Nome (2)"). Tempo in più rispetto a Drive: ~0–3 min (download via MTProto, copia in 97 in sottofondo).
+   **Da Drive**: una cartella per video in `97 - Editare/` con tutto il girato (iPhone, Sony, Insta360, B-roll, audio del mic). Indicazioni per quel video: `brief.txt` nella cartella (facoltativo).
 2. Avvio: dal bot **🆕 Nuovo montaggio** (uno, guidato) o **📦 Più video** (spunti tante cartelle, partono in parallelo); oppure un file `VAI` in ogni cartella: il giro automatico le prende **tutte insieme**, ognuna nel suo giro.
 3. Ogni video ha una scheda che si aggiorna; il finale (1080×1920, ~15 Mbps) arriva in chat con 👍/✏️/🔁 e finisce in `98 - Fatti/<Nome>/`.
 
@@ -17,6 +18,7 @@ Primo giro reale: 58 min, di cui **40 per ricodificare tutto il girato 4K** in 1
 ### Cose che deve fare Denis (ancora aperte)
 - **Chiave Gemini** (AI principale): `gh secret set GEMINI_API_KEY -R DenLeone/video-regista`. Senza chiave lavora Claude (funziona comunque).
 - **Pubblicare il bot nuovo**: token Cloudflare (modello "Edit Cloudflare Workers") → `gh secret set CLOUDFLARE_API_TOKEN -R DenLeone/video-regista` e `gh secret set CLOUDFLARE_ACCOUNT_ID -R DenLeone/video-regista`, poi Actions → bot → Run workflow (o push su `telegram/`). In alternativa a mano: `cd telegram` → `npx wrangler deploy`. Finché non lo fa resta il bot vecchio (funziona con la pipeline nuova, ma senza pannello/lotti).
+- **Per i video mandati su Telegram** (la Bot API normale scarica solo 20 MB, serve MTProto): su my.telegram.org → API development tools → crea un'app → copia api_id e api_hash, poi `gh secret set TG_API_ID -R DenLeone/video-regista`, `gh secret set TG_API_HASH -R DenLeone/video-regista` e `gh secret set TELEGRAM_BOT_TOKEN -R DenLeone/video-regista` (lo stesso token del bot).
 - Da verificare sul primo girato iPhone vero: resa dei colori dopo la conversione HDR→SDR (tonemap hable).
 
 ## Obiettivo

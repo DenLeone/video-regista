@@ -86,6 +86,12 @@ export function risolviRegia(regia, analisi) {
 
   const totale = t;
   if (!clips.length) throw new Error('la regia non contiene nessuna clip utilizzabile');
+  // con parlato disponibile, una regia che non usa (quasi) nessuna frase valida è da rifare con l'altra AI
+  if (analisi.frasi.length) {
+    const conFrase = (regia.sequenza || []).filter((it) => it.frase);
+    const valide = conFrase.filter((it) => frasi.has(normFrase(it.frase)));
+    if (!valide.length || valide.length < conFrase.length / 2) throw new Error(`la regia usa frasi inesistenti (${conFrase.length - valide.length} su ${conFrase.length})`);
+  }
   const inizioFrase = (id) => {
     const n = normFrase(id);
     const idx = (regia.sequenza || []).findIndex((it, i) => normFrase(it.frase) === n && inizioVoce[i] != null);

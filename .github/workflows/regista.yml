@@ -39,6 +39,10 @@ on:
         description: 'monta (default) | elenco = manda solo al bot le cartelle di 97 - Editare'
         required: false
         default: 'monta'
+      telegram:
+        description: 'File mandati al bot (JSON [{"m": id_messaggio, "n": nome}]): originali in 97/<cartella>, risultato in 98/<cartella>'
+        required: false
+        default: ''
 
 # Una coda PER CARTELLA: GitHub tiene un solo giro "in attesa" per gruppo e scarta
 # quelli in attesa più vecchi. Con un gruppo unico, tre avvii di fila ne perdevano uno.
@@ -75,6 +79,7 @@ jobs:
         env:
           CARTELLA: ${{ inputs.cartella }}
           AZIONE: ${{ inputs.azione }}
+          TELEGRAM: ${{ inputs.telegram }}
           EVENTO: ${{ github.event_name }}
           GH_TOKEN: ${{ github.token }}
           NOTIFY_URL: ${{ secrets.NOTIFY_URL }}
@@ -90,6 +95,8 @@ jobs:
           # prenoto il VAI subito: un giro successivo non riprende la stessa cartella
           prenota() { rclone moveto "gdrive:97 - Editare/$1/${vai_di[$1]}" "gdrive:97 - Editare/$1/_VAI_in_corso_${vai_di[$1]}" && echo "Prenotata: $1"; }
           trovato="$CARTELLA"
+          # file da Telegram: la cartella la crea lo script (nome libero in 97 e 98)
+          [ -n "$TELEGRAM" ] && [ "$TELEGRAM" != "[]" ] && trovato="${CARTELLA:-Video da Telegram}"
           liberi=("${con_vai[@]}")
           if [ "$AZIONE" != "elenco" ] && [ -z "$trovato" ] && [ ${#con_vai[@]} -gt 0 ]; then
             trovato="${con_vai[0]}"
@@ -120,12 +127,21 @@ jobs:
           node-version: 22
           cache: npm
 
+      - uses: actions/setup-python@v5
+        if: steps.check.outputs.cartella != '' && inputs.telegram != '' && inputs.telegram != '[]'
+        with:
+          python-version: '3.12'
+
       - name: Dipendenze
         if: steps.check.outputs.cartella != ''
+        env:
+          TELEGRAM: ${{ inputs.telegram }}
         run: |
           sudo apt-get update -qq
           sudo apt-get install -y -qq ffmpeg fonts-noto-color-emoji
           npm ci || npm install
+          # Telethon (MTProto) per scaricare i file grandi mandati al bot; cryptg lo rende molto più veloce
+          if [ -n "$TELEGRAM" ] && [ "$TELEGRAM" != "[]" ]; then pip install --quiet telethon cryptg; fi
           # il girato originale va nel disco grande del runner (/mnt), non in quello di sistema
           sudo mkdir -p /mnt/regista && sudo chown "$USER" /mnt/regista
           df -h / /mnt | sed 's/^/  /'
@@ -147,6 +163,11 @@ jobs:
           NOTIFY_URL: ${{ secrets.NOTIFY_URL }}
           NOTIFY_TOKEN: ${{ secrets.NOTIFY_TOKEN }}
           CARTELLA: ${{ steps.check.outputs.cartella }}
+          TELEGRAM_FILE: ${{ inputs.telegram }}
+          # una volta sola: api_id/api_hash da my.telegram.org e il token del bot
+          TG_API_ID: ${{ secrets.TG_API_ID }}
+          TG_API_HASH: ${{ secrets.TG_API_HASH }}
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           BRIEF_EXTRA: ${{ inputs.brief }}
           ORIGINE: ${{ inputs.origine }}
           CORREZIONE: ${{ inputs.correzione }}

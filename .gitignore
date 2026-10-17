@@ -3,3 +3,4 @@ work/
 out/
 public/media/
 .env
+__pycache__/

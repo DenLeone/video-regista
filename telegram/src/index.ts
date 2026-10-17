@@ -27,6 +27,19 @@ export class Memoria extends DurableObject {
   async leggi(k: string): Promise<unknown> { return this.ctx.storage.get(k); }
   async scrivi(k: string, v: unknown) { await this.ctx.storage.put(k, v); }
   async cancella(k: string) { await this.ctx.storage.delete(k); }
+  // atomiche (dentro l'oggetto nessun'altra richiesta si inserisce tra get e put):
+  // servono quando Telegram consegna più file nello stesso istante
+  async aggiungi(k: string, v: unknown): Promise<number> {
+    const a = ((await this.ctx.storage.get(k)) as unknown[] | undefined) || [];
+    a.push(v);
+    await this.ctx.storage.put(k, a);
+    return a.length;
+  }
+  async prenota(k: string): Promise<boolean> {
+    if (await this.ctx.storage.get(k)) return false;
+    await this.ctx.storage.put(k, true);
+    return true;
+  }
 }
 const mem = (env: Env) => env.MEMORIA.get(env.MEMORIA.idFromName('denis'));
 // i metodi chiamati da remoto (RPC) non portano il tipo generico: lo rimetto qui
@@ -107,12 +120,13 @@ async function gh(env: Env, path: string, init: RequestInit = {}) {
     },
   });
 }
-type Inputs = { cartella?: string; brief?: string; origine?: '97' | '98'; correzione?: string };
+type Inputs = { cartella?: string; brief?: string; origine?: '97' | '98'; correzione?: string; telegram?: string };
 const dispatch = (env: Env, ref: string, inputs: Record<string, string>) =>
   gh(env, `/actions/workflows/${WORKFLOW}/dispatches`, { method: 'POST', body: JSON.stringify({ ref, inputs }) });
 
 async function avvia(env: Env, i: Inputs, imp: Imp): Promise<string | null> {
-  const base = { cartella: i.cartella || '', brief: i.brief || '', origine: i.origine || '97', correzione: i.correzione || '' };
+  const base: Record<string, string> = { cartella: i.cartella || '', brief: i.brief || '', origine: i.origine || '97', correzione: i.correzione || '' };
+  if (i.telegram) base.telegram = i.telegram; // indispensabile: se il workflow non lo conosce, meglio fallire che montare altro
   let r = await dispatch(env, RAMO[imp.versione], { ...base, ai: imp.ai, modello: imp.modello, modello_gemini: imp.gemini });
   // il workflow della versione stabile non conosce ancora ai/modello: riprovo senza
   if (r.status === 422) {
@@ -184,11 +198,12 @@ async function aggiornaCard(env: Env, runId: string, c: Card, runUrl?: string) {
 }
 
 // la prima notizia di un giro: se l'ho avviato io da qui, adotto il messaggio "in coda"
-async function cardDelGiro(env: Env, runId: string, nome: string, versione?: string): Promise<Card> {
+async function cardDelGiro(env: Env, runId: string, nome: string, versione?: string, richiesto?: string): Promise<Card> {
   const esistente = await leggi<Card>(env, `card:${runId}`);
   if (esistente) return esistente;
   const pendenti = ((await leggi<Pendente[]>(env, 'pendenti')) || []).filter((p) => Date.now() - p.quando < 40 * 60000);
-  const stesso = pendenti.findIndex((p) => p.nome.toLowerCase() === nome.toLowerCase());
+  // richiesto: il nome chiesto dal bot (la cartella può essere diventata "Nome (2)")
+  const stesso = pendenti.findIndex((p) => [nome, richiesto].filter(Boolean).some((x) => p.nome.toLowerCase() === String(x).toLowerCase()));
   const i = stesso >= 0 ? stesso : pendenti.findIndex((p) => p.nome === ''); // avvio "prima con VAI"
   let card: Card = { nome, fasi: {}, minuti: 0, msg: {}, versione };
   if (i >= 0) {
@@ -224,7 +239,7 @@ async function pannello(env: Env): Promise<Schermo> {
       '🎬 <b>REGISTA</b> · montaggio automatico 9:16', LINEA,
       `<b>Adesso</b>   ${await adesso(env)}`,
       `<b>Motore</b>   ${esc(motore(imp))}`, LINEA,
-      '<b>1.</b> Carica i video su Drive in <code>97 - Editare/NomeVideo</code>',
+      '<b>1.</b> Mandami i video qui <b>come File</b> (nome in didascalia) oppure caricali su Drive in <code>97 - Editare/NomeVideo</code>',
       '<b>2.</b> <b>Nuovo montaggio</b> (uno, guidato) o <b>Più video</b> (tanti, in parallelo)',
       '<b>3.</b> Ricevi qui il video: approvi o chiedi una correzione',
     ].join('\n'),
@@ -296,7 +311,9 @@ async function schermoImpostazioni(env: Env): Promise<Schermo> {
 const GUIDA: Schermo = {
   testo: [
     '❓ <b>Come funziona</b>', LINEA,
-    '<b>Il girato non passa da Telegram.</b> I bot possono scaricare al massimo 20 MB, un video 4K pesa gigabyte: i file vanno su Drive.',
+    '<b>Due modi di consegnare il girato</b>',
+    '📥 <b>Qui in chat</b>: mandami i file come <b>File</b> (📎 → File, non come video: così non vengono compressi), fino a 2 GB l\'uno (4 GB con Premium). Metti il nome del video come didascalia, poi 🚀 Monta. Gli originali finiscono in 97, il risultato in 98.',
+    '📂 <b>Su Drive</b>: per file più grandi o tanti video insieme, una cartella in 97 - Editare.',
     '',
     '<b>1.</b> Crea <code>97 - Editare/NomeVideo/</code> e mettici tutto: clip iPhone, Sony, Insta360, B-roll, audio del microfono.',
     '<b>2.</b> 🆕 <b>Nuovo montaggio</b> → scegli la cartella, rispondi a 5 domande (o salta), 🚀 Avvia.',
@@ -316,11 +333,12 @@ const GUIDA: Schermo = {
 };
 
 // ---------- nuovo montaggio: passi ----------
-type Brief = { cartella?: string; sponsor?: string; durata?: string; tono?: string; tavola?: string; note?: string };
+type Brief = { cartella?: string; sponsor?: string; durata?: string; tono?: string; tavola?: string; note?: string; telegram?: boolean };
 type Passo = 'cartella' | 'sponsor' | 'sponsor_testo' | 'durata' | 'tono' | 'tavola' | 'note' | 'riepilogo';
 type Attesa =
   | { tipo: 'nuovo'; passo: Passo; dati: Brief; msg?: number; modifica?: boolean }
   | { tipo: 'lotto'; scelte: string[]; msg?: number }
+  | { tipo: 'nome_raccolta'; poi: 'subito' | 'domande' | 'scheda'; msg?: number }
   | { tipo: 'correzione'; nome: string; runId?: string; msg?: number };
 const kAttesa = (chat: string) => `attesa:${chat}`;
 const ORDINE: Passo[] = ['cartella', 'sponsor', 'durata', 'tono', 'tavola', 'note', 'riepilogo'];
@@ -385,11 +403,11 @@ function testata(p: Passo) {
 }
 const nav = (a: Attesa & { tipo: 'nuovo' }): Button[] => (a.modifica
   ? [tasto('◀ Riepilogo', 'w:riepilogo'), tasto('✖️ Annulla', 'annulla')]
-  : [...(a.passo !== 'cartella' ? [tasto('◀ Indietro', 'w:indietro')] : []), tasto('✖️ Annulla', 'annulla')]);
+  : [...(a.passo !== 'cartella' && !(a.dati.telegram && a.passo === 'sponsor') ? [tasto('◀ Indietro', 'w:indietro')] : []), tasto('✖️ Annulla', 'annulla')]);
 
 function riassunto(d: Brief, imp: Imp): string {
   return [
-    `📁 <b>Cartella</b>   ${d.cartella ? esc(d.cartella) : '⚡ tutte quelle con VAI'}`,
+    d.telegram ? `📥 <b>Video</b>      ${esc(d.cartella || '')} · file da Telegram` : `📁 <b>Cartella</b>   ${d.cartella ? esc(d.cartella) : '⚡ tutte quelle con VAI'}`,
     `💰 <b>Sponsor</b>    ${d.sponsor ? esc(d.sponsor) : 'nessuno'}`,
     `⏱ <b>Durata</b>     ${d.durata || 'automatica'}`,
     `🎭 <b>Tono</b>        ${d.tono || 'automatico'}`,
@@ -403,6 +421,7 @@ async function schermoPasso(env: Env, a: Attesa & { tipo: 'nuovo' }): Promise<Sc
   const d = a.dati;
   switch (a.passo) {
     case 'cartella': {
+      if (d.telegram) return { testo: `${testata(a.passo)}\n✏️ <b>Come si chiama il video?</b>\nScrivimi il nome: diventa la cartella in 97 e in 98.`, tasti: [nav(a)] };
       const c = await leggi<Cartelle>(env, 'cartelle');
       const elenco = (c?.elenco || []).slice(0, 12);
       const righe: Kb = [];
@@ -440,7 +459,7 @@ async function schermoPasso(env: Env, a: Attesa & { tipo: 'nuovo' }): Promise<Sc
 
 async function vaiAPasso(env: Env, chat: string, a: Attesa & { tipo: 'nuovo' }, msgId?: number, nuovoMessaggio = false) {
   if (nuovoMessaggio) await togliTasti(env, chat, a.msg); // l'utente ha scritto: la domanda vecchia resta sopra senza tasti
-  if (a.passo === 'cartella') await richiediElenco(env, chat);
+  if (a.passo === 'cartella' && !a.dati.telegram) await richiediElenco(env, chat);
   a.msg = await mostra(env, chat, await schermoPasso(env, a), nuovoMessaggio ? undefined : (msgId ?? a.msg));
   await mem(env).scrivi(kAttesa(chat), a);
 }
@@ -488,7 +507,107 @@ async function lancia(env: Env, chat: string, i: Inputs, msgId?: number) {
 }
 
 // ---------- messaggi ----------
-type Msg = { chat: { id: number }; text?: string; video?: unknown; document?: unknown; photo?: unknown; animation?: unknown; video_note?: unknown; voice?: unknown; audio?: unknown };
+type FileMsg = { file_name?: string; file_size?: number; mime_type?: string };
+type Msg = {
+  message_id: number; chat: { id: number }; text?: string; caption?: string;
+  video?: FileMsg; document?: FileMsg; photo?: FileMsg[]; animation?: FileMsg; video_note?: FileMsg; voice?: FileMsg; audio?: FileMsg;
+};
+
+// ---------- video mandati direttamente al bot ----------
+// La Bot API fa scaricare ai bot solo 20 MB: qui si raccolgono i riferimenti ai messaggi,
+// il download vero (fino a 2 GB a file) lo fa il workflow via MTProto.
+type FileTg = { m: number; n: string; size: number; tipo: 'video' | 'audio' | 'foto' | 'testo'; compresso?: boolean };
+const EST_VIDEO = /\.(mov|mp4|m4v|mkv|webm|insv)$/i, EST_AUDIO = /\.(wav|mp3|m4a|aac|flac|aiff?|ogg)$/i, EST_FOTO = /\.(jpe?g|png|heic|webp)$/i;
+function fileDelMessaggio(msg: Msg): FileTg | null | 'rifiutato' {
+  const id = msg.message_id;
+  if (msg.document) {
+    const n = msg.document.file_name || `file_${id}`, mime = msg.document.mime_type || '', size = msg.document.file_size || 0;
+    if (mime.startsWith('video/') || EST_VIDEO.test(n)) return { m: id, n, size, tipo: 'video' };
+    if (mime.startsWith('audio/') || EST_AUDIO.test(n)) return { m: id, n, size, tipo: 'audio' };
+    if (mime.startsWith('image/') || EST_FOTO.test(n)) return { m: id, n, size, tipo: 'foto' };
+    if (/\.txt$/i.test(n)) return { m: id, n: /brief/i.test(n) ? 'brief.txt' : n, size, tipo: 'testo' };
+    return 'rifiutato';
+  }
+  const v = msg.video || msg.video_note || msg.animation;
+  if (v) return { m: id, n: v.file_name || `video_${id}.mp4`, size: v.file_size || 0, tipo: 'video', compresso: true };
+  if (msg.audio) return { m: id, n: msg.audio.file_name || `audio_${id}.m4a`, size: msg.audio.file_size || 0, tipo: 'audio' };
+  if (msg.voice) return { m: id, n: `vocale_${id}.ogg`, size: msg.voice.file_size || 0, tipo: 'audio', compresso: true };
+  if (msg.photo?.length) { const f = msg.photo[msg.photo.length - 1]; return { m: id, n: `foto_${id}.jpg`, size: f.file_size || 0, tipo: 'foto', compresso: true }; }
+  return null;
+}
+const pesoLeggibile = (b: number) => (b >= 1e9 ? `${(b / 1e9).toFixed(1).replace('.', ',')} GB` : `${Math.max(1, Math.round(b / 1e6))} MB`);
+const kR = (chat: string) => ({ file: `raccolta:${chat}`, nome: `raccolta_nome:${chat}`, msg: `raccolta_msg:${chat}`, scheda: `raccolta_scheda:${chat}` });
+const nomeDaDidascalia = (c?: string) => (c || '').split('\n')[0].replace(/[\\/:*?"<>|]+/g, ' ').trim().slice(0, 60);
+const nomeAutomatico = () => `Video ${new Date().toLocaleString('it-IT', { timeZone: 'Europe/Rome', day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }).replace(/[/:]/g, '-').replace(', ', ' ')}`;
+
+async function schermoRaccolta(env: Env, chat: string): Promise<Schermo> {
+  const k = kR(chat);
+  const files = (await leggi<FileTg[]>(env, k.file)) || [];
+  const nome = await leggi<string>(env, k.nome);
+  const totale = files.reduce((t, f) => t + f.size, 0);
+  const icona = { video: '🎥', audio: '🎙', foto: '🖼', testo: '📝' };
+  const compressi = files.filter((f) => f.compresso && f.tipo === 'video').length;
+  const righe = [
+    '📥 <b>Nuovo video da Telegram</b>', LINEA,
+    `<b>${files.length} ${files.length === 1 ? 'file' : 'file'}</b> · ${pesoLeggibile(totale)}`,
+    ...files.slice(0, 15).map((f) => `${icona[f.tipo]} ${esc(tronca(f.n, 40))} · ${pesoLeggibile(f.size)}${f.compresso && f.tipo === 'video' ? ' ⚠️ compresso' : ''}`),
+    ...(files.length > 15 ? [`… e altri ${files.length - 15}`] : []),
+    '', nome ? `<b>Nome</b>  ${esc(nome)}` : '<b>Nome</b>  <i>non ancora: scrivilo o mettilo come didascalia</i>',
+  ];
+  if (compressi) righe.push(`\n⚠️ Telegram ha compresso ${compressi} ${compressi === 1 ? 'video' : 'video'}: per la qualità piena rimandalo come <b>File</b> (📎 → File).`);
+  righe.push('<i>Puoi mandare altri file: si aggiungono qui. Massimo 2 GB a file (4 GB con Premium).</i>');
+  return {
+    testo: righe.join('\n'),
+    tasti: [
+      [tasto('🚀 Monta subito', 'r:subito'), tasto('📝 Con domande', 'r:domande')],
+      [tasto('✏️ Nome', 'r:nome'), tasto('🗑 Annulla', 'r:svuota')],
+    ],
+  };
+}
+const pausa = (ms: number) => new Promise((ok) => setTimeout(ok, ms));
+
+async function onFile(env: Env, chat: string, msg: Msg, f: FileTg) {
+  const k = kR(chat);
+  await mem(env).aggiungi(k.file, f);
+  const didascalia = nomeDaDidascalia(msg.caption);
+  if (didascalia && !(await leggi<string>(env, k.nome))) await mem(env).scrivi(k.nome, didascalia);
+  // una sola scheda anche se arrivano tanti file nello stesso istante
+  if (await mem(env).prenota(k.scheda)) {
+    const id = await invia(env, chat, await schermoRaccolta(env, chat));
+    await mem(env).scrivi(k.msg, id);
+    await pausa(2500); // aspetto gli altri file dello stesso invio e aggiorno una volta
+    return mostra(env, chat, await schermoRaccolta(env, chat), id);
+  }
+  let id = await leggi<number>(env, k.msg);
+  if (!id) { await pausa(3000); id = await leggi<number>(env, k.msg); }
+  if (id) await mostra(env, chat, await schermoRaccolta(env, chat), id);
+}
+
+async function nomeRaccolta(env: Env, chat: string, a: Attesa & { tipo: 'nome_raccolta' }, nome: string) {
+  await mem(env).cancella(kAttesa(chat));
+  await togliTasti(env, chat, a.msg);
+  const k = kR(chat);
+  await mem(env).scrivi(k.nome, nome);
+  if (a.poi === 'subito') return lanciaRaccolta(env, chat, nome, '');
+  if (a.poi === 'domande') return vaiAPasso(env, chat, { tipo: 'nuovo', passo: 'sponsor', dati: { cartella: nome, telegram: true } });
+  await togliTasti(env, chat, await leggi<number>(env, k.msg));
+  await mem(env).scrivi(k.msg, await invia(env, chat, await schermoRaccolta(env, chat)));
+}
+
+async function svuotaRaccolta(env: Env, chat: string) {
+  const k = kR(chat);
+  for (const x of [k.file, k.nome, k.msg, k.scheda]) await mem(env).cancella(x);
+}
+
+async function lanciaRaccolta(env: Env, chat: string, nome: string, brief: string, msgId?: number) {
+  const files = (await leggi<FileTg[]>(env, kR(chat).file)) || [];
+  if (!files.length) return mostra(env, chat, { testo: '📥 Non ho file in attesa: mandameli qui e poi premi Monta.', tasti: [[MENU_TASTO]] }, msgId);
+  const telegram = JSON.stringify(files.map((f) => ({ m: f.m, n: f.n })));
+  const vecchia = await leggi<number>(env, kR(chat).msg);
+  await svuotaRaccolta(env, chat);
+  if (vecchia && vecchia !== msgId) await togliTasti(env, chat, vecchia);
+  return lancia(env, chat, { cartella: nome, brief, telegram }, msgId);
+}
 
 async function onMessage(env: Env, msg: Msg) {
   const chat = String(msg.chat.id);
@@ -497,12 +616,9 @@ async function onMessage(env: Env, msg: Msg) {
     if (text.startsWith('/start')) await invia(env, chat, { testo: `🔒 Bot privato. Il tuo chat id è <code>${chat}</code>: chiedi a Denis di aggiungerlo.` });
     return;
   }
-  if (msg.video || msg.document || msg.photo || msg.animation || msg.video_note || msg.audio || msg.voice) {
-    return invia(env, chat, {
-      testo: '📦 <b>I file vanno su Drive, non qui.</b>\nTelegram fa scaricare ai bot al massimo 20 MB: un girato 4K pesa gigabyte.\n\nCaricali in <code>97 - Editare/NomeVideo</code>, poi premi <b>Nuovo montaggio</b>.',
-      tasti: [[link('📂 Apri 97 - Editare', URL_97)], [tasto('🆕 Nuovo montaggio', 'nuovo')]],
-    });
-  }
+  const f = fileDelMessaggio(msg);
+  if (f === 'rifiutato') return invia(env, chat, { testo: '🤔 Questo tipo di file non lo uso. Mandami video, audio del microfono, foto o un <code>brief.txt</code>.' });
+  if (f) return onFile(env, chat, msg, f);
   const cmd = text.match(/^\/(\w+)(?:@\w+)?\s*(.*)$/s);
   if (cmd) {
     const [, nome, resto] = cmd;
@@ -520,6 +636,7 @@ async function onMessage(env: Env, msg: Msg) {
 
   // testo libero: risposta a una domanda in sospeso?
   const attesa = await leggi<Attesa>(env, kAttesa(chat));
+  if (attesa?.tipo === 'nome_raccolta' && text) return nomeRaccolta(env, chat, attesa, nomeDaDidascalia(text) || nomeAutomatico());
   if (attesa?.tipo === 'correzione') {
     await togliTasti(env, chat, attesa.msg);
     const memo = attesa.runId ? await leggi<RunMemo | string>(env, `run:${attesa.runId}`) : undefined;
@@ -546,6 +663,35 @@ async function onCallback(env: Env, cb: Callback) {
   if (data === 'annulla') { await avviso('Annullato'); await mem(env).cancella(kAttesa(chat)); return mostra(env, chat, await pannello(env), msgId); }
   if (data === 'nuovo') { await avviso(); return vaiAPasso(env, chat, { tipo: 'nuovo', passo: 'cartella', dati: {} }, msgId); }
   if (data === 'lotto') { await avviso(); return mostraLotto(env, chat, { tipo: 'lotto', scelte: [] }, msgId); }
+
+  if (data.startsWith('r:')) {
+    const [, azione, poi = ''] = data.split(':');
+    const k = kR(chat);
+    const files = (await leggi<FileTg[]>(env, k.file)) || [];
+    if (!files.length) { await avviso('Nessun file in attesa'); return mostra(env, chat, await pannello(env), msgId); }
+    if (azione === 'svuota') {
+      await avviso('Annullato');
+      await svuotaRaccolta(env, chat);
+      return mostra(env, chat, { testo: '🗑 Raccolta annullata. I file restano nella chat: rimandameli quando vuoi.', tasti: [[MENU_TASTO]] }, msgId);
+    }
+    if (azione === 'nomeauto') {
+      await avviso();
+      const att = await leggi<Attesa>(env, kAttesa(chat));
+      const p = (['subito', 'domande', 'scheda'].includes(poi) ? poi : 'scheda') as 'subito' | 'domande' | 'scheda';
+      return nomeRaccolta(env, chat, att?.tipo === 'nome_raccolta' ? att : { tipo: 'nome_raccolta', poi: p, msg: msgId }, nomeAutomatico());
+    }
+    const nome = await leggi<string>(env, k.nome);
+    if (nome && azione === 'subito') { await avviso('Avvio…'); return lanciaRaccolta(env, chat, nome, '', msgId); }
+    if (nome && azione === 'domande') { await avviso(); return vaiAPasso(env, chat, { tipo: 'nuovo', passo: 'sponsor', dati: { cartella: nome, telegram: true } }, msgId); }
+    // serve il nome (o lo si vuole cambiare)
+    await avviso();
+    const dopo: 'subito' | 'domande' | 'scheda' = azione === 'subito' || azione === 'domande' ? azione : 'scheda';
+    const id = await invia(env, chat, {
+      testo: `✏️ <b>Come si chiama il video?</b>\nScrivimi il nome: diventa la cartella in 97 e in 98.${nome ? `\nAdesso: <i>${esc(nome)}</i>` : ''}`,
+      tasti: [[tasto(`Usa «${nomeAutomatico()}»`, `r:nomeauto:${dopo}`)], [tasto('✖️ Annulla', 'annulla')]],
+    });
+    return mem(env).scrivi(kAttesa(chat), { tipo: 'nome_raccolta', poi: dopo, msg: id } satisfies Attesa);
+  }
 
   if (data.startsWith('l:')) {
     const a = await leggi<Attesa>(env, kAttesa(chat));
@@ -594,7 +740,11 @@ async function onCallback(env: Env, cb: Callback) {
     }
     if (azione === 'riepilogo') { await avviso(); return vaiAPasso(env, chat, { ...a, passo: 'riepilogo', modifica: false }, msgId); }
     if (azione === 'mod') { await avviso(); return vaiAPasso(env, chat, { ...a, passo: x as Passo, modifica: true }, msgId); }
-    if (azione === 'avvia') { await avviso('Avvio…'); return lancia(env, chat, { cartella: a.dati.cartella, brief: componiBrief(a.dati) }, msgId); }
+    if (azione === 'avvia') {
+      await avviso('Avvio…');
+      if (a.dati.telegram) return lanciaRaccolta(env, chat, a.dati.cartella || '', componiBrief(a.dati), msgId);
+      return lancia(env, chat, { cartella: a.dati.cartella, brief: componiBrief(a.dati) }, msgId);
+    }
     if (azione === 'c' && a.passo === 'cartella') {
       const c = await leggi<Cartelle>(env, 'cartelle');
       const nome = x === '*' ? '' : c?.elenco[Number(x)];
@@ -646,7 +796,7 @@ type Info = {
 };
 type Notify = {
   tipo?: 'fase' | 'esito' | 'cartelle' | 'vuoto'; esito?: string; nome: string; testo: string; ok?: boolean; foto?: string;
-  run_url?: string; run_id?: string; step?: IdFase; minuti?: number; versione?: string; origine?: '97' | '98'; info?: Info;
+  run_url?: string; run_id?: string; step?: IdFase; minuti?: number; versione?: string; origine?: '97' | '98'; info?: Info; richiesto?: string;
   cartelle?: string[]; vai?: string[];
 };
 
@@ -694,7 +844,7 @@ async function onNotify(env: Env, n: Notify) {
   }
   if (n.tipo === 'fase') {
     if (!n.run_id) { for (const chat of chats) await invia(env, chat, { testo: `<b>${esc(n.nome)}</b> · ${esc(n.testo)}` }, true); return; }
-    const c = await cardDelGiro(env, n.run_id, n.nome, n.versione === 'v2' ? 'v2' : undefined);
+    const c = await cardDelGiro(env, n.run_id, n.nome, n.versione === 'v2' ? 'v2' : undefined, n.richiesto);
     const step = n.step || faseDaTesto(n.testo);
     if (step) { c.corrente = step; c.fasi[step] = pulisci(n.testo); }
     c.minuti = n.minuti ?? Number(/\((\d+) min\)\s*$/.exec(n.testo)?.[1] ?? c.minuti);
