@@ -58,7 +58,8 @@ async function fetchRiprova(url, opts = {}, tentativi = 4) {
       const causa = e.cause ? ` (${e.cause.code || e.cause.message || e.cause})` : '';
       if (i >= tentativi) throw new Error(`${new URL(url).host}: ${e.message}${causa}`);
       log(`chiamata a ${new URL(url).host} fallita (${e.message}${causa}), riprovo ${i}/${tentativi - 1}`);
-      await new Promise((ok) => setTimeout(ok, 5000 * i));
+      // attesa crescente (5, 10, 20, 40 s…): un servizio sovraccarico di solito si libera in un paio di minuti
+      await new Promise((ok) => setTimeout(ok, Math.min(60000, 5000 * 2 ** (i - 1))));
     }
   }
 }
@@ -272,28 +273,40 @@ function regiaConClaude(prompt) {
 
 // flash = veloce, ottima visione, limiti alti (predefinito) · pro = ragiona meglio, limiti più bassi
 const MODELLI_GEMINI = { flash: 'gemini-flash-latest', pro: 'gemini-pro-latest' };
-async function regiaConGemini(prompt, fogli, modello = MODELLI_GEMINI[process.env.GEMINI_MODEL] || process.env.GEMINI_MODEL || MODELLI_GEMINI.flash) {
+async function regiaConGemini(prompt, fogli, modello = MODELLI_GEMINI[process.env.GEMINI_MODEL] || process.env.GEMINI_MODEL || MODELLI_GEMINI.flash, riserva = true) {
   const parts = [{ text: prompt }];
   for (const f of fogli) {
     parts.push({ text: `Foglio provino ${f}:` });
     parts.push({ inline_data: { mime_type: 'image/jpeg', data: fs.readFileSync(path.join(ROOT, f)).toString('base64') } });
   }
   const contents = [{ role: 'user', parts }];
-  const base = `https://generativelanguage.googleapis.com/v1beta/models/${modello}`;
+  const base = `${process.env.GEMINI_URL || 'https://generativelanguage.googleapis.com/v1beta'}/models/${modello}`;
   const headers = { 'content-type': 'application/json', 'x-goog-api-key': process.env.GEMINI_API_KEY };
   // conteggio esatto prima dell'invio: countTokens non consuma quota
   try {
     const c = await fetchRiprova(`${base}:countTokens`, { method: 'POST', headers, body: JSON.stringify({ contents }) }, 2);
     if (c.ok) { const t = (await c.json()).totalTokens; consumi.stima = { totale: t, esatta: true }; log(`Gemini: ${t} token da inviare`); }
   } catch (e) { log('conteggio token Gemini non riuscito', e.message); }
-  // con più montaggi insieme si può toccare il limite al minuto: qualche tentativo in più prima della riserva
-  const r = await fetchRiprova(`${base}:generateContent`, {
-    method: 'POST', headers,
-    body: JSON.stringify({ contents, generationConfig: { responseMimeType: 'application/json', temperature: 0.4 } }),
-  }, 6);
-  if (r.status === 404 && modello !== MODELLI_GEMINI.flash) {
-    log(`Gemini: modello ${modello} non disponibile, uso ${MODELLI_GEMINI.flash}`);
-    return regiaConGemini(prompt, fogli, MODELLI_GEMINI.flash);
+  // l'altro modello Gemini (Flash ↔ Pro) gira su altri server: se uno è sovraccarico (503, visto il 17/10)
+  // o non esiste (404) si prova l'altro, e solo dopo si passa a Claude
+  const altro = modello === MODELLI_GEMINI.flash ? MODELLI_GEMINI.pro : MODELLI_GEMINI.flash;
+  let r;
+  try {
+    r = await fetchRiprova(`${base}:generateContent`, {
+      method: 'POST', headers,
+      body: JSON.stringify({ contents, generationConfig: { responseMimeType: 'application/json', temperature: 0.4 } }),
+    }, riserva ? 5 : 4);
+  } catch (e) {
+    if (riserva && /HTTP 5\d\d/.test(e.message)) {
+      log(`Gemini ${modello} sovraccarico, provo ${altro}`);
+      await fase(job.nome, `⏳ Gemini ${modello.includes('pro') ? 'Pro' : 'Flash'} sovraccarico (Google), provo l'altro modello Gemini`, 'regia');
+      return regiaConGemini(prompt, fogli, altro, false);
+    }
+    throw e;
+  }
+  if (r.status === 404 && riserva) {
+    log(`Gemini: modello ${modello} non disponibile, uso ${altro}`);
+    return regiaConGemini(prompt, fogli, altro, false);
   }
   if (!r.ok) throw new Error(`Gemini ${r.status}: ${(await r.text()).slice(0, 300)}`);
   const limiti = [...r.headers].filter(([k]) => /ratelimit/i.test(k));
@@ -324,7 +337,9 @@ async function chiediRegia(testoMateriale, fogli, regiaPrecedente, valida = (r) 
       errore = e;
       if (i === ordine.length - 1) break;
       log(`${e.message}\n→ passo a ${nomi[ordine[i + 1]]}`);
-      await fase(job.nome, `🔁 ${nomi[chi]} non disponibile, uso ${nomi[ordine[i + 1]]}`, 'regia');
+      const motivo = /HTTP 5\d\d/.test(e.message) ? 'sovraccarico dal lato del servizio' : /HTTP 429/.test(e.message) ? 'limite di richieste raggiunto'
+        : /regia|frasi|clip/.test(e.message) ? 'ha scritto una regia inutilizzabile' : 'non ha risposto';
+      await fase(job.nome, `🔁 ${nomi[chi]} ${motivo}: uso ${nomi[ordine[i + 1]]}`, 'regia');
     }
   }
   throw errore;

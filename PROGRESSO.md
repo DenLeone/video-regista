@@ -22,6 +22,7 @@ Primo giro reale: 58 min, di cui **40 per ricodificare tutto il girato 4K** in 1
 - Verificato che il motore non sfasa audio e video: clip di prova con lampo + bip nello stesso istante → dopo taglio e render Remotion scarto 10–20 ms (labiale percepibile oltre ~45 ms).
 - Aggancio audio più severo per clip corte (< 10 s in comune: punteggio ≥ 0,35 e spicco ≥ 2): in Wave3 un'Insta360 di 3 s risultava "sincronizzata" al limite.
 - Livelli audio di ogni sorgente nel log (`livelli <id>: fondo … voce …`).
+- **Gemini sovraccarico** (Cuffie v5, 17/10 notte): Google ha risposto 503 ("model overloaded") a 6 tentativi in 85 s → regia fatta da Claude. Ora: attese crescenti (5/10/20/40 s), poi **l'altro modello Gemini** (Flash ↔ Pro, altri server), solo dopo Claude; il bot dice il motivo vero (sovraccarico / limite / regia inutilizzabile). `GEMINI_URL` per i test.
 - **Effetti sonori nel Blueprint** (richiesta di Denis, 18/10): sintetizzati da `scripts/genera-sfx.mjs` → `public/sfx/` (nessun file scaricato, niente diritti). Riser metallico con "shing" sulla tavola d'apertura, blip tech quando compare una parola chiave, conferma a due toni sulle parole piene (sponsor/esito), glitch che segue il flicker fotogramma per fotogramma, strappo di carta sul flicker `tear`. Volume nel piano (`sfx.volume`) calcolato dal livello della voce (~12–16 dB sotto); `REGISTA_SFX=0` li toglie. Da fare dopo: denoise/riverbero della stanza (Denis: "quando funzionerà tutto").
 
 ### ⚠️ Minuti GitHub con 10 video al giorno
