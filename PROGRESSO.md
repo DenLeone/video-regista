@@ -1,7 +1,7 @@
 # video-regista — PROGRESSO
 
 > File di passaggio tra sessioni (ufficio / casa / in giro). Aggiornato da Claude a ogni passo.
-> Ultimo aggiornamento: **2026-10-16 pomeriggio, ufficio**.
+> Ultimo aggiornamento: **2026-10-17 sera, sessione cloud (Claude Code web)**.
 
 ## Obiettivo
 Montaggio **100% automatico, anche a PC spento**:
@@ -10,7 +10,8 @@ Montaggio **100% automatico, anche a PC spento**:
 Vyra NON viene toccato: resta per il montaggio a mano (la sua automazione `vyra-auto-edit` è **in pausa**, vedi sotto).
 
 ## Dove sta il progetto
-- Codice: `H:\Il mio Drive\96 - Progetti comuni\video-regista\` (Drive, accessibile da ufficio/casa/telefono).
+- Codice: `H:\Il mio Drive\96 - Progetti comuni\video-regista\` sul PC ufficio, `G:\Il mio Drive\96 - Progetti comuni\video-regista\` a casa (stesso Drive, lettera diversa).
+- Le sessioni cloud di Claude Code non vedono Drive: lavorano sul repo GitHub `DenLeone/video-regista`. Dopo un push dal cloud, fare `git pull` nella cartella Drive.
 - ⚠️ **Non fare `npm install` dentro Drive** (node_modules = migliaia di file → sincronizzazione intasata). Per provare in locale: copiare la cartella su C: (es. `C:\temp\video-regista`), `npm install` lì.
 - Quando il repo GitHub esisterà, la fonte di verità sarà GitHub; Drive resta una copia comoda.
 - Copia di lavoro sul PC ufficio: `C:\temp\video-regista` (con node_modules e il proxy di test) e `C:\temp\regista-telegram` (per i deploy del bot).
@@ -36,7 +37,8 @@ Vyra NON viene toccato: resta per il montaggio a mano (la sua automazione `vyra-
 - [x] Secret repo impostati: `NOTIFY_TOKEN`, `NOTIFY_URL`. Secret worker: `GITHUB_REPO`.
 - [x] **Tutti i secret impostati** (16/10, ~14:27): repo `CLAUDE_CODE_OAUTH_TOKEN`, `GROQ_API_KEY`, `RCLONE_CONF`, `NOTIFY_TOKEN`, `NOTIFY_URL`; worker `TELEGRAM_BOT_TOKEN`, `TELEGRAM_SECRET`, `ALLOWED_CHAT_ID`, `GITHUB_TOKEN`, `GITHUB_REPO`, `NOTIFY_TOKEN`. rclone installato sul PC ufficio (remote `gdrive`, funziona).
 - [x] Workflow `regista` **riattivato** (cron ogni 30 min 7–23 + /monta).
-- [ ] ⏳ **Primo giro reale su GitHub** su `97 - Editare/_TEST_GH` (video in macchina, con parlato). Run 38900694099 fallito subito: `echo "${{secrets.RCLONE_CONF}}"` mangiava le virgolette del token → corretto (env + printf). Run 38900918411 (14:30) in corso, oltre 30 min nella fase Monta — esito da registrare qui. Usa ancora la versione dello script SENZA fasi/anteprima/correzioni (lanciato prima di quelle modifiche) e senza cache `_regista`, quindi su `_TEST_GH` la ✏️ correzione non funzionerà: serve un nuovo montaggio.
+- [x] **Primo giro reale su GitHub riuscito** (16/10, run 38911870639, 15:57–16:55 ora italiana) su `97 - Editare/Cuffie p30i`, versione attuale dello script (2ab1d92): render 1081 frame → `Cuffie p30i - FINALE.mp4` 85 MB, caricato su Drive, anteprima 19 MB inviata al bot (HTTP 200). Fase Monta = 56 min.
+  - Prima: run 38900694099 fallito subito (`echo "${{secrets.RCLONE_CONF}}"` mangiava le virgolette → corretto con env + printf). Run 38900918411 su `_TEST_GH` (versione vecchia): render completato (`_TEST_GH - FINALE.mp4` 45 MB, Monta 32 min) ma crash subito dopo l'upload con `Cannot read properties of null (reading 'toString')`: era `execFileSync` con stdio `inherit` che restituisce null, **già corretto** in `run()` (righe 33–34 di `regista.mjs`). `_TEST_GH` resta senza cache `_regista`: la ✏️ correzione lì non funziona, serve un nuovo montaggio.
 - [x] **Bot v2** (16/10): menu a bottoni; `/nuovo` = brief guidato a 5 domande (cartella, sponsor, durata, tono, tavola, note) con riepilogo e 🚀 Avvia; `/stato` con fase in corso e minuti; messaggi silenziosi a ogni fase; a fine montaggio **video 720p in chat** (≤45 MB; se non passa → foto anteprima) con 👍 Va bene / ✏️ Correggi; ✏️ → scrivi cosa cambiare → giro in modalità correzione (`origine=98`) che riparte dal piano salvato e crea `FINALE v2`, `v3`…; errori con 🔁 Riprova. Memoria del bot = Durable Object `Memoria` (KV non creabile: login wrangler senza scope KV).
 - [x] Script: cache per ogni video in `98 - Fatti/<nome>/_regista/` (`piano.json`, `materiale.json` con trascrizioni → le correzioni non ritrascrivono); esclude dal materiale `_VAI_usato_*`, `*FINALE*`, `NOTE/ERRORE.txt`; cancella gli originali 4K dopo il proxy (spazio sul runner). **Non ancora provato su un giro reale.**
 - [ ] ⚠️ **rclone usa il client_id condiviso** che Google/rclone ritirano "durante il 2026" → può smettere di funzionare all'improvviso. Da sistemare: creare client OAuth proprio (Google Cloud progetto `regista`, Drive API, app **pubblicata** non in test, client "App desktop") e rifare `rclone config` → aggiornare secret `RCLONE_CONF`. Denis ha scelto di rimandarlo (16/10).
@@ -65,7 +67,9 @@ Poi Claude riattiva il workflow e lancia il primo giro.
 
 ## Rischi / da verificare
 - Token Claude via abbonamento in Actions: da guide di terzi, da confermare sul README ufficiale di claude-code-action.
-- Render su runner GitHub (2 CPU, no GPU): su PC ufficio ~8 min per 38 s; su GitHub non ancora misurato.
+- Render su runner GitHub (2 CPU, no GPU): misurato il 16/10, fase Monta completa 32–56 min per video da ~36–42 s. Con ~2000 min/mese gratuiti = circa 25–35 montaggi/mese (i giri a vuoto del cron costano 1 min l'uno; GitHub ne esegue molti meno di uno ogni 30 min, circa 1 ogni 3 ore).
+- ⚠️ Dal **19/10/2026** `ubuntu-latest` passa a Ubuntu 26: possibili rotture su installazione ffmpeg/rclone o dipendenze di Chrome per Remotion. Valutare di fissare `runs-on: ubuntu-24.04` nel workflow.
+- Idea in valutazione (17/10): comando Telegram "vai su DaVinci" → montaggio fatto in DaVinci Resolve sul PC (vedi chat del 17/10; serve un agente locale sul PC).
 - Clip senza parlato: montaggio basato solo sui fotogrammi → più generico; `brief.txt` o brief dal bot aiuta.
 
 ## Vyra (messo da parte il 16/10)
