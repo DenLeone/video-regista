@@ -41,12 +41,21 @@ const URL_98 = 'https://drive.google.com/drive/folders/1icN7ww-f6CrClZ5nhxi9eiX3
 const VERSIONE_COMANDI = 3; // cambia → il bot ri-registra da solo il menu comandi
 const LINEA = '━━━━━━━━━━━━━━━━━━';
 
-type Imp = { versione: 'stabile' | 'beta'; ai: 'auto' | 'claude' | 'gemini'; modello: 'haiku' | 'sonnet' | 'opus' };
-const IMP_BASE: Imp = { versione: 'stabile', ai: 'auto', modello: 'sonnet' };
+// ai = AI principale; l'altra fa sempre da riserva automatica
+type Imp = { versione: 'stabile' | 'beta'; ai: 'gemini' | 'claude'; modello: 'haiku' | 'sonnet' | 'opus'; gemini: 'flash' | 'pro' };
+const IMP_BASE: Imp = { versione: 'stabile', ai: 'gemini', modello: 'sonnet', gemini: 'flash' };
 const RAMO: Record<Imp['versione'], string> = { stabile: 'main', beta: 'regista-v2' };
 const NOME_MODELLO: Record<Imp['modello'], string> = { haiku: 'Haiku', sonnet: 'Sonnet', opus: 'Opus' };
-const impostazioni = async (env: Env) => ({ ...IMP_BASE, ...((await leggi<Imp>(env, 'impostazioni')) || {}) });
-const motore = (i: Imp) => `${i.versione === 'beta' ? 'Beta' : 'Stabile'} · AI ${i.ai === 'auto' ? `auto (Claude ${NOME_MODELLO[i.modello]} → Gemini)` : i.ai === 'claude' ? `Claude ${NOME_MODELLO[i.modello]}` : 'Gemini'}`;
+const NOME_GEMINI: Record<Imp['gemini'], string> = { flash: 'Flash', pro: 'Pro' };
+async function impostazioni(env: Env): Promise<Imp> {
+  const i = { ...IMP_BASE, ...((await leggi<Partial<Imp>>(env, 'impostazioni')) || {}) };
+  if (i.ai !== 'claude') i.ai = 'gemini'; // il vecchio "auto" diventa Gemini
+  return i;
+}
+const motore = (i: Imp) => {
+  const g = `Gemini ${NOME_GEMINI[i.gemini]}`, c = `Claude ${NOME_MODELLO[i.modello]}`;
+  return `${i.versione === 'beta' ? 'Beta · ' : ''}${i.ai === 'gemini' ? `${g} (riserva ${c})` : `${c} (riserva ${g})`}`;
+};
 
 // ---------- Telegram ----------
 type Button = { text: string; callback_data?: string; url?: string };
@@ -104,7 +113,7 @@ const dispatch = (env: Env, ref: string, inputs: Record<string, string>) =>
 
 async function avvia(env: Env, i: Inputs, imp: Imp): Promise<string | null> {
   const base = { cartella: i.cartella || '', brief: i.brief || '', origine: i.origine || '97', correzione: i.correzione || '' };
-  let r = await dispatch(env, RAMO[imp.versione], { ...base, ai: imp.ai, modello: imp.modello });
+  let r = await dispatch(env, RAMO[imp.versione], { ...base, ai: imp.ai, modello: imp.modello, modello_gemini: imp.gemini });
   // il workflow della versione stabile non conosce ancora ai/modello: riprovo senza
   if (r.status === 422) {
     const t = await r.text();
@@ -257,10 +266,11 @@ async function schermoImpostazioni(env: Env): Promise<Schermo> {
   const sel = (on: boolean, t: string) => `${on ? '● ' : '○ '}${t}`;
   const desc = {
     stabile: 'versione in produzione (ramo main)',
-    beta: 'regista v2: camere sincronizzate, tagli sui silenzi, regia per frasi',
-    auto: 'Claude; se è al limite d\'uso passa da solo a Gemini',
-    claude: 'solo Claude',
-    gemini: 'solo Gemini (serve la chiave GEMINI_API_KEY)',
+    beta: 'ramo di prova regista-v2: le novità prima del rilascio',
+    gemini: 'principale Gemini; se è al limite passa da solo a Claude',
+    claude: 'principale Claude; se è al limite passa da solo a Gemini',
+    flash: 'veloce, ottima lettura delle immagini, pochi token, limiti alti — consigliato',
+    pro: 'ragiona meglio sui tagli; più lento, più token, limiti giornalieri più bassi',
     haiku: 'il più economico, scelte più semplici',
     sonnet: 'equilibrio qualità/consumi — consigliato',
     opus: 'il più bravo, consuma molto di più',
@@ -268,14 +278,15 @@ async function schermoImpostazioni(env: Env): Promise<Schermo> {
   return {
     testo: [
       '⚙️ <b>Impostazioni</b>', LINEA,
-      `<b>Motore</b> · ${i.versione === 'beta' ? 'Beta v2' : 'Stabile'}`, `<i>${desc[i.versione]}</i>`, '',
-      `<b>AI</b> · ${i.ai === 'auto' ? 'Auto' : i.ai === 'claude' ? 'Claude' : 'Gemini'}`, `<i>${desc[i.ai]}</i>`, '',
+      `<b>Motore</b> · ${i.versione === 'beta' ? 'Beta' : 'Stabile'}`, `<i>${desc[i.versione]}</i>`, '',
+      `<b>AI principale</b> · ${i.ai === 'claude' ? 'Claude' : 'Gemini'}`, `<i>${desc[i.ai]}</i>`, '',
+      `<b>Modello Gemini</b> · ${NOME_GEMINI[i.gemini]}`, `<i>${desc[i.gemini]}</i>`, '',
       `<b>Modello Claude</b> · ${NOME_MODELLO[i.modello]}`, `<i>${desc[i.modello]}</i>`,
-      LINEA, '<i>AI e modello si applicano con il motore v2 (oggi: Beta v2).</i>',
     ].join('\n'),
     tasti: [
-      [tasto(sel(i.versione === 'stabile', 'Stabile'), 'i:versione:stabile'), tasto(sel(i.versione === 'beta', 'Beta v2'), 'i:versione:beta')],
-      [tasto(sel(i.ai === 'auto', 'Auto'), 'i:ai:auto'), tasto(sel(i.ai === 'claude', 'Claude'), 'i:ai:claude'), tasto(sel(i.ai === 'gemini', 'Gemini'), 'i:ai:gemini')],
+      [tasto(sel(i.versione === 'stabile', 'Stabile'), 'i:versione:stabile'), tasto(sel(i.versione === 'beta', 'Beta'), 'i:versione:beta')],
+      [tasto(sel(i.ai === 'gemini', 'AI: Gemini'), 'i:ai:gemini'), tasto(sel(i.ai === 'claude', 'AI: Claude'), 'i:ai:claude')],
+      [tasto(sel(i.gemini === 'flash', 'Gemini Flash'), 'i:gemini:flash'), tasto(sel(i.gemini === 'pro', 'Gemini Pro'), 'i:gemini:pro')],
       [tasto(sel(i.modello === 'haiku', 'Haiku'), 'i:modello:haiku'), tasto(sel(i.modello === 'sonnet', 'Sonnet'), 'i:modello:sonnet'), tasto(sel(i.modello === 'opus', 'Opus'), 'i:modello:opus')],
       [MENU_TASTO],
     ],

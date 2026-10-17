@@ -7,9 +7,9 @@
 //   ffmpeg / ffprobe nel PATH
 //   GROQ_API_KEY            trascrizione Whisper
 //   CLAUDE_CODE_OAUTH_TOKEN Claude Code con l'abbonamento (comando `claude`)
-//   GEMINI_API_KEY          (opzionale) riserva se Claude non risponde (limiti d'uso)
-//   REGISTA_AI              auto (default) | claude | gemini
-//   REGISTA_MODEL           modello Claude (default sonnet) · GEMINI_MODEL (default gemini-flash-latest)
+//   GEMINI_API_KEY          Gemini (AI principale di default)
+//   REGISTA_AI              gemini (default) | claude: l'AI principale; l'altra fa da riserva automatica
+//   REGISTA_MODEL           modello Claude (default sonnet) · GEMINI_MODEL flash (default) | pro | nome completo
 //   NOTIFY_URL / NOTIFY_TOKEN (opzionali) bot Telegram: fasi, esito, anteprima video
 //
 // Modalità correzione (dal bottone ✏️ del bot): ORIGINE=98, CARTELLA=<nome>,
@@ -156,7 +156,7 @@ function promptRegia({ modo, testoMateriale, regiaPrecedente }) {
     p += `\n\n## MODALITÀ CORREZIONE\nEsiste già un montaggio, questa è la sua regia:\n\`\`\`json\n${JSON.stringify(regiaPrecedente, null, 1)}\n\`\`\`\nDenis l'ha guardato e chiede queste modifiche:\n\n> ${CORREZIONE.replace(/\n/g, '\n> ')}\n\nParti da questa regia e applica SOLO quello che chiede, lasciando invariato il resto. I tempi li ricalcola lo script. Nella \`note\` elenca in breve cosa hai cambiato.`;
   }
   p += modo === 'claude'
-    ? '\n\n## Come consegnare\nGuarda i fogli provino (tutti nello stesso turno), poi scrivi la regia con lo strumento Write in `work/regia.json` e rispondi con 3 righe di riepilogo.'
+    ? '\n\n## Come consegnare\nLeggi i fogli provino con lo strumento Read, tutti nello stesso turno (letture in parallelo), poi scrivi la regia con lo strumento Write in `work/regia.json` e rispondi con 3 righe di riepilogo.'
     : '\n\n## Come consegnare\nI fogli provino sono allegati in ordine, ognuno preceduto dal suo nome. Rispondi SOLO con il JSON della regia.';
   return `${p}\n\n---\n\n${testoMateriale}\n`;
 }
@@ -203,8 +203,9 @@ function regiaConClaude(prompt) {
   return JSON.parse(fs.readFileSync(path.join(WORK, 'regia.json'), 'utf8'));
 }
 
-async function regiaConGemini(prompt, fogli) {
-  const modello = process.env.GEMINI_MODEL || 'gemini-flash-latest';
+// flash = veloce, ottima visione, limiti alti (predefinito) · pro = ragiona meglio, limiti più bassi
+const MODELLI_GEMINI = { flash: 'gemini-flash-latest', pro: 'gemini-pro-latest' };
+async function regiaConGemini(prompt, fogli, modello = MODELLI_GEMINI[process.env.GEMINI_MODEL] || process.env.GEMINI_MODEL || MODELLI_GEMINI.flash) {
   const parts = [{ text: prompt }];
   for (const f of fogli) {
     parts.push({ text: `Foglio provino ${f}:` });
@@ -222,6 +223,10 @@ async function regiaConGemini(prompt, fogli) {
     method: 'POST', headers,
     body: JSON.stringify({ contents, generationConfig: { responseMimeType: 'application/json', temperature: 0.4 } }),
   });
+  if (r.status === 404 && modello !== MODELLI_GEMINI.flash) {
+    log(`Gemini: modello ${modello} non disponibile, uso ${MODELLI_GEMINI.flash}`);
+    return regiaConGemini(prompt, fogli, MODELLI_GEMINI.flash);
+  }
   if (!r.ok) throw new Error(`Gemini ${r.status}: ${(await r.text()).slice(0, 300)}`);
   const limiti = [...r.headers].filter(([k]) => /ratelimit/i.test(k));
   if (limiti.length) log('Gemini limiti:', limiti.map(([k, v]) => `${k}=${v}`).join(' '));
@@ -234,18 +239,25 @@ async function regiaConGemini(prompt, fogli) {
   return regia;
 }
 
+// AI principale (default Gemini se c'è la chiave) e l'altra come riserva automatica
 async function chiediRegia(testoMateriale, fogli, regiaPrecedente) {
-  const modo = (process.env.REGISTA_AI || 'auto').toLowerCase();
-  const gemini = Boolean(process.env.GEMINI_API_KEY);
-  if (modo === 'gemini') return regiaConGemini(promptRegia({ modo: 'gemini', testoMateriale, regiaPrecedente }), fogli);
-  try {
-    return regiaConClaude(promptRegia({ modo: 'claude', testoMateriale, regiaPrecedente }));
-  } catch (e) {
-    if (modo !== 'auto' || !gemini) throw e;
-    log(`${e.message}\n→ passo a Gemini`);
-    await fase(job.nome, '🔁 Claude non disponibile, uso Gemini', 'regia');
-    return regiaConGemini(promptRegia({ modo: 'gemini', testoMateriale, regiaPrecedente }), fogli);
+  const scelta = (process.env.REGISTA_AI || 'gemini').toLowerCase();
+  const haGemini = Boolean(process.env.GEMINI_API_KEY);
+  const ordine = scelta === 'claude' || !haGemini ? ['claude', ...(haGemini ? ['gemini'] : [])] : ['gemini', 'claude'];
+  const nomi = { gemini: 'Gemini', claude: 'Claude' };
+  let errore;
+  for (const [i, chi] of ordine.entries()) {
+    try {
+      const prompt = promptRegia({ modo: chi, testoMateriale, regiaPrecedente });
+      return chi === 'gemini' ? await regiaConGemini(prompt, fogli) : regiaConClaude(prompt);
+    } catch (e) {
+      errore = e;
+      if (i === ordine.length - 1) break;
+      log(`${e.message}\n→ passo a ${nomi[ordine[i + 1]]}`);
+      await fase(job.nome, `🔁 ${nomi[chi]} non disponibile, uso ${nomi[ordine[i + 1]]}`, 'regia');
+    }
   }
+  throw errore;
 }
 
 function validaPiano(p) {

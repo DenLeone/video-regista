@@ -24,11 +24,15 @@ on:
         required: false
         default: ''
       ai:
-        description: 'auto (Claude, poi Gemini se serve) | claude | gemini — vuoto = variabile REGISTA_AI'
+        description: 'AI principale: gemini | claude (l''altra fa da riserva) — vuoto = variabile REGISTA_AI, poi gemini'
         required: false
         default: ''
       modello:
         description: 'Modello Claude: sonnet | opus | haiku — vuoto = variabile REGISTA_MODEL (default sonnet)'
+        required: false
+        default: ''
+      modello_gemini:
+        description: 'Modello Gemini: flash | pro — vuoto = variabile GEMINI_MODEL (default flash)'
         required: false
         default: ''
       azione:
@@ -111,12 +115,12 @@ jobs:
         env:
           GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
           CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
-          # riserva se Claude non risponde (limiti d'uso); facoltativa
+          # AI principale di default; se manca si usa Claude
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
           # scelte dal bot, altrimenti Settings → Secrets and variables → Actions → Variables (facoltative)
           REGISTA_AI: ${{ inputs.ai || vars.REGISTA_AI }}
           REGISTA_MODEL: ${{ inputs.modello || vars.REGISTA_MODEL }}
-          GEMINI_MODEL: ${{ vars.GEMINI_MODEL }}
+          GEMINI_MODEL: ${{ inputs.modello_gemini || vars.GEMINI_MODEL }}
           REGISTA_VERSIONE: ${{ github.ref_name }}
           NOTIFY_URL: ${{ secrets.NOTIFY_URL }}
           NOTIFY_TOKEN: ${{ secrets.NOTIFY_TOKEN }}
