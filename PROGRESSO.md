@@ -43,6 +43,9 @@ Primo giro reale: 58 min, di cui **40 per ricodificare tutto il girato 4K** in 1
 - Struttura nel codice: `src/comune.tsx` (clip con voce, effetti sonori, condivisi da tutti gli stili), una composizione per stile (`src/Blueprint.tsx`, `src/Cinematico.tsx`) registrata in `src/Root.tsx`, istruzioni di grafica per l'AI in `scripts/stili/<nome>.md` (inserite nel prompt al posto di `{{GRAFICA}}`), nome in `STILI` di `scripts/regista.mjs`. Lo stile si sceglie PRIMA della regia (anche nella prova veloce `azione: regia`).
 - Il piano ha ora `parole` (ogni parola detta sulla timeline finale, dai tempi di Whisper riportati dentro la frase): servono agli stili con sottotitoli.
 
+### Bot pubblicato davvero — 18/10
+- Il workflow `bot` chiudeva "success" anche senza token (solo un avviso: "Manca il secret CLOUDFLARE_API_TOKEN") e online restava il bot del 16/10. Denis ha creato il token (modello Edit Cloudflare Workers) e il secret `CLOUDFLARE_API_TOKEN`; l'account è in `telegram/wrangler.toml`. Pubblicato il 18/10 (versione 848d91ef). Per verificare un deploy: nel log deve esserci "Uploaded regista-telegram", non l'avviso.
+
 ### Esito e video senza parlato — 18/10
 - La scritta di esito c'è solo se Denis dà un giudizio (nelle frasi usate o nel brief) e usa le sue parole: voto ("8/10"), "NON È MALE", "CONSIGLIATO"…; "PROMOSSO" solo se lo dice. Regola in `prompt-regista.md` ("L'esito"), richiamata dagli stili.
 - Senza parlato (Denis registra la voce dopo sul video finito): scritte agganciate con `elemento` (prima lo script le toglieva tutte: Key air del 17/10 era uscito senza scritte), audio delle clip tolto (`"audio": "ambiente"` per tenerlo), 25–45 s.
@@ -62,7 +65,6 @@ Primo giro reale: 58 min, di cui **40 per ricodificare tutto il girato 4K** in 1
 
 ### Cose che deve fare Denis (ancora aperte)
 - **Sulla Sony**: lasciare il microfono acceso (anche solo quello interno) o accendere il trasmettitore: con l'audio l'aggancio è istantaneo e sicuro; dalle immagini costa ~5 min ed è il piano B.
-- **Pubblicare il bot nuovo**: token Cloudflare (modello "Edit Cloudflare Workers") → `gh secret set CLOUDFLARE_API_TOKEN -R DenLeone/video-regista` e `gh secret set CLOUDFLARE_ACCOUNT_ID -R DenLeone/video-regista`, poi Actions → bot → Run workflow (o push su `telegram/`). In alternativa a mano: `cd telegram` → `npx wrangler deploy`. Finché non lo fa resta il bot vecchio (funziona con la pipeline nuova, ma senza pannello/lotti).
 - **Per i video mandati su Telegram** (la Bot API normale scarica solo 20 MB, serve MTProto): su my.telegram.org → API development tools → crea un'app → copia api_id e api_hash, poi `gh secret set TG_API_ID -R DenLeone/video-regista`, `gh secret set TG_API_HASH -R DenLeone/video-regista` e `gh secret set TELEGRAM_BOT_TOKEN -R DenLeone/video-regista` (lo stesso token del bot).
 - Da verificare sul primo girato iPhone vero: resa dei colori dopo la conversione HDR→SDR (tonemap hable).
 - Cancellare il ramo temporaneo `diag-sync` su GitHub (Branches → cestino): l'ho usato per estrarre audio/fotogrammi di prova, la sessione cloud non può cancellare rami.
