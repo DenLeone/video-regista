@@ -316,7 +316,7 @@ const GUIDA: Schermo = {
     '📂 <b>Su Drive</b>: per file più grandi o tanti video insieme, una cartella in 97 - Editare.',
     '',
     '<b>1.</b> Crea <code>97 - Editare/NomeVideo/</code> e mettici tutto: clip iPhone, Sony, Insta360, B-roll, audio del microfono.',
-    '<b>2.</b> 🆕 <b>Nuovo montaggio</b> → scegli la cartella, rispondi a 5 domande (o salta), 🚀 Avvia.',
+    '<b>2.</b> 🆕 <b>Nuovo montaggio</b> → scegli la cartella e lo stile, rispondi alle domande (o salta), 🚀 Avvia.',
     '   📦 <b>Più video</b> → spunta tante cartelle, partono tutte insieme (indicazioni per video: <code>brief.txt</code> nella cartella).',
     '<b>3.</b> Segui la scheda di avanzamento: si aggiorna da sola (20–60 min).',
     '<b>4.</b> Arriva il video: 👍 Approva, ✏️ Correggi (scrivi cosa cambiare) o 🔁 Rifai da zero.',
@@ -327,22 +327,30 @@ const GUIDA: Schermo = {
     '<b>Comandi</b>',
     '/menu pannello · /nuovo montaggio · /stato',
     '/impostazioni · /annulla',
-    '<code>/monta Nome | brief</code> avvio rapido senza domande',
+    '<code>/monta Nome | brief</code> avvio rapido senza domande (stile nel brief: <code>Stile: Cinematico</code>)',
   ].join('\n'),
   tasti: [[tasto('🆕 Nuovo montaggio', 'nuovo'), MENU_TASTO]],
 };
 
 // ---------- nuovo montaggio: passi ----------
-type Brief = { cartella?: string; sponsor?: string; durata?: string; tono?: string; tavola?: string; note?: string; telegram?: boolean };
-type Passo = 'cartella' | 'sponsor' | 'sponsor_testo' | 'durata' | 'tono' | 'tavola' | 'note' | 'riepilogo';
+type Brief = { cartella?: string; stile?: string; sponsor?: string; durata?: string; tono?: string; tavola?: string; note?: string; telegram?: boolean };
+type Passo = 'cartella' | 'stile' | 'sponsor' | 'sponsor_testo' | 'durata' | 'tono' | 'tavola' | 'note' | 'riepilogo';
 type Attesa =
   | { tipo: 'nuovo'; passo: Passo; dati: Brief; msg?: number; modifica?: boolean }
   | { tipo: 'lotto'; scelte: string[]; msg?: number }
   | { tipo: 'nome_raccolta'; poi: 'subito' | 'domande' | 'scheda'; msg?: number }
   | { tipo: 'correzione'; nome: string; runId?: string; msg?: number };
 const kAttesa = (chat: string) => `attesa:${chat}`;
-const ORDINE: Passo[] = ['cartella', 'sponsor', 'durata', 'tono', 'tavola', 'note', 'riepilogo'];
-const NUMERO: Record<Passo, number> = { cartella: 1, sponsor: 2, sponsor_testo: 2, durata: 3, tono: 4, tavola: 5, note: 6, riepilogo: 6 };
+const ORDINE: Passo[] = ['cartella', 'stile', 'sponsor', 'durata', 'tono', 'tavola', 'note', 'riepilogo'];
+const NUMERO: Record<Passo, number> = { cartella: 1, stile: 2, sponsor: 3, sponsor_testo: 3, durata: 4, tono: 5, tavola: 6, note: 7, riepilogo: 7 };
+const PASSI = 7;
+// stili pronti: gli stessi nomi di STILI in scripts/regista.mjs (il primo è quello predefinito)
+const STILI = [{ nome: 'Blueprint', tasto: '📐 Blueprint', cosa: 'tavola tecnica, parole chiave in box, effetti digitali' },
+  { nome: 'Cinematico', tasto: '🎬 Cinematico', cosa: 'spot di prodotto caldo, sottotitoli parola per parola, titoli grandi' }];
+// la tavola esiste solo nel Blueprint: con gli altri stili il passo si salta
+const saltaPasso = (p: Passo, d: Brief) => p === 'tavola' && Boolean(d.stile) && d.stile !== 'Blueprint';
+// primo passo dei video mandati in chat (la cartella è già il nome dato al bot)
+const PRIMO_TELEGRAM: Passo = 'stile';
 const A_TESTO: Passo[] = ['cartella', 'sponsor_testo', 'tavola', 'note'];
 type Cartelle = { elenco: string[]; vai: string[]; aggiornato: number };
 
@@ -399,19 +407,20 @@ async function mostraLotto(env: Env, chat: string, a: Attesa & { tipo: 'lotto' }
 
 function testata(p: Passo) {
   const n = NUMERO[p];
-  return `🆕 <b>Nuovo montaggio</b> · passo ${n}/6\n<code>${'●'.repeat(n)}${'○'.repeat(6 - n)}</code>\n`;
+  return `🆕 <b>Nuovo montaggio</b> · passo ${n}/${PASSI}\n<code>${'●'.repeat(n)}${'○'.repeat(PASSI - n)}</code>\n`;
 }
 const nav = (a: Attesa & { tipo: 'nuovo' }): Button[] => (a.modifica
   ? [tasto('◀ Riepilogo', 'w:riepilogo'), tasto('✖️ Annulla', 'annulla')]
-  : [...(a.passo !== 'cartella' && !(a.dati.telegram && a.passo === 'sponsor') ? [tasto('◀ Indietro', 'w:indietro')] : []), tasto('✖️ Annulla', 'annulla')]);
+  : [...(a.passo !== 'cartella' && !(a.dati.telegram && a.passo === PRIMO_TELEGRAM) ? [tasto('◀ Indietro', 'w:indietro')] : []), tasto('✖️ Annulla', 'annulla')]);
 
 function riassunto(d: Brief, imp: Imp): string {
   return [
     d.telegram ? `📥 <b>Video</b>      ${esc(d.cartella || '')} · file da Telegram` : `📁 <b>Cartella</b>   ${d.cartella ? esc(d.cartella) : '⚡ tutte quelle con VAI'}`,
+    `🎨 <b>Stile</b>         ${esc(d.stile || STILI[0].nome)}`,
     `💰 <b>Sponsor</b>    ${d.sponsor ? esc(d.sponsor) : 'nessuno'}`,
     `⏱ <b>Durata</b>     ${d.durata || 'automatica'}`,
     `🎭 <b>Tono</b>        ${d.tono || 'automatico'}`,
-    `📐 <b>Tavola</b>     ${d.tavola ? esc(d.tavola) : 'automatica'}`,
+    ...(saltaPasso('tavola', d) ? [] : [`📐 <b>Tavola</b>     ${d.tavola ? esc(d.tavola) : 'automatica'}`]),
     `📝 <b>Note</b>        ${d.note ? esc(tronca(d.note, 200)) : '—'}`,
     `⚙️ <b>Motore</b>     ${esc(motore(imp))}`,
   ].join('\n');
@@ -432,6 +441,11 @@ async function schermoPasso(env: Env, a: Attesa & { tipo: 'nuovo' }): Promise<Sc
       righe.push(nav(a));
       return { testo: `${testata(a.passo)}\n📁 <b>Quale cartella?</b>\nToccala qui sotto oppure scrivimi il nome esatto.\n\n${await infoElenco(env)}`, tasti: righe };
     }
+    case 'stile':
+      return {
+        testo: `${testata(a.passo)}\n🎨 <b>Che stile?</b>\n${STILI.map((x) => `${x.tasto}: ${x.cosa}`).join('\n')}`,
+        tasti: [STILI.map((x) => tasto(x.tasto, `w:v:stile:${x.nome}`)), nav(a)],
+      };
     case 'sponsor':
       return { testo: `${testata(a.passo)}\n💰 <b>C'è uno sponsor?</b>`, tasti: [[tasto('No', 'w:v:sponsor:no'), tasto('Sì', 'w:v:sponsor:si')], nav(a)] };
     case 'sponsor_testo':
@@ -446,11 +460,11 @@ async function schermoPasso(env: Env, a: Attesa & { tipo: 'nuovo' }): Promise<Sc
       return { testo: `${testata(a.passo)}\n📝 <b>Indicazioni per la regia?</b>\nCosa dire del prodotto, battute, cosa evitare… scrivilo oppure:`, tasti: [[tasto('Nessuna', 'w:v:note:')], nav(a)] };
     case 'riepilogo':
       return {
-        testo: `🆕 <b>Nuovo montaggio</b> · pronto\n<code>●●●●●●</code>\n\n${riassunto(d, await impostazioni(env))}`,
+        testo: `🆕 <b>Nuovo montaggio</b> · pronto\n<code>${'●'.repeat(PASSI)}</code>\n\n${riassunto(d, await impostazioni(env))}`,
         tasti: [
           [tasto('🚀 Avvia montaggio', 'w:avvia')],
-          [tasto('📁 Cartella', 'w:mod:cartella'), tasto('💰 Sponsor', 'w:mod:sponsor'), tasto('⏱ Durata', 'w:mod:durata')],
-          [tasto('🎭 Tono', 'w:mod:tono'), tasto('📐 Tavola', 'w:mod:tavola'), tasto('📝 Note', 'w:mod:note')],
+          [tasto('📁 Cartella', 'w:mod:cartella'), tasto('🎨 Stile', 'w:mod:stile'), tasto('💰 Sponsor', 'w:mod:sponsor')],
+          [tasto('⏱ Durata', 'w:mod:durata'), tasto('🎭 Tono', 'w:mod:tono'), ...(saltaPasso('tavola', d) ? [] : [tasto('📐 Tavola', 'w:mod:tavola')]), tasto('📝 Note', 'w:mod:note')],
           [tasto('✖️ Annulla', 'annulla')],
         ],
       };
@@ -464,30 +478,34 @@ async function vaiAPasso(env: Env, chat: string, a: Attesa & { tipo: 'nuovo' }, 
   await mem(env).scrivi(kAttesa(chat), a);
 }
 
-function prossimo(a: Attesa & { tipo: 'nuovo' }, appena: Passo, valore: string): Passo {
+function prossimo(a: Attesa & { tipo: 'nuovo' }, d: Brief, appena: Passo, valore: string): Passo {
   if (appena === 'sponsor' && valore === 'si') return 'sponsor_testo';
   if (a.modifica) return 'riepilogo';
   const base = appena === 'sponsor_testo' ? 'sponsor' : appena;
-  return ORDINE[ORDINE.indexOf(base) + 1] || 'riepilogo';
+  let i = ORDINE.indexOf(base) + 1;
+  while (ORDINE[i] && saltaPasso(ORDINE[i], d)) i++;
+  return ORDINE[i] || 'riepilogo';
 }
 
 async function rispondiPasso(env: Env, chat: string, a: Attesa & { tipo: 'nuovo' }, valore: string, msgId?: number, scritto = false) {
   const d = { ...a.dati };
   const p = a.passo;
   if (p === 'cartella') d.cartella = valore;
+  else if (p === 'stile') d.stile = valore;
   else if (p === 'sponsor' && valore !== 'si') d.sponsor = '';
   else if (p === 'sponsor_testo') d.sponsor = valore;
   else if (p === 'durata') d.durata = valore;
   else if (p === 'tono') d.tono = valore;
   else if (p === 'tavola') d.tavola = valore;
   else if (p === 'note') d.note = valore;
-  await vaiAPasso(env, chat, { ...a, dati: d, passo: prossimo(a, p, valore) }, msgId, scritto);
+  await vaiAPasso(env, chat, { ...a, dati: d, passo: prossimo(a, d, p, valore) }, msgId, scritto);
 }
 
 const componiBrief = (d: Brief) => [
+  d.stile ? `Stile: ${d.stile}` : '',
   d.sponsor ? `Sponsor: ${d.sponsor}` : 'Nessuno sponsor',
   d.durata ? `Durata: ${d.durata}` : '', d.tono ? `Tono: ${d.tono}` : '',
-  d.tavola ? `Tavola: ${d.tavola}` : '', d.note ? `Note: ${d.note}` : '',
+  d.tavola && !saltaPasso('tavola', d) ? `Tavola: ${d.tavola}` : '', d.note ? `Note: ${d.note}` : '',
 ].filter(Boolean).join('. ');
 
 // avvio: il messaggio diventa la scheda "in coda", poi la adotta il primo aggiornamento del giro
@@ -589,7 +607,7 @@ async function nomeRaccolta(env: Env, chat: string, a: Attesa & { tipo: 'nome_ra
   const k = kR(chat);
   await mem(env).scrivi(k.nome, nome);
   if (a.poi === 'subito') return lanciaRaccolta(env, chat, nome, '');
-  if (a.poi === 'domande') return vaiAPasso(env, chat, { tipo: 'nuovo', passo: 'sponsor', dati: { cartella: nome, telegram: true } });
+  if (a.poi === 'domande') return vaiAPasso(env, chat, { tipo: 'nuovo', passo: PRIMO_TELEGRAM, dati: { cartella: nome, telegram: true } });
   await togliTasti(env, chat, await leggi<number>(env, k.msg));
   await mem(env).scrivi(k.msg, await invia(env, chat, await schermoRaccolta(env, chat)));
 }
@@ -682,7 +700,7 @@ async function onCallback(env: Env, cb: Callback) {
     }
     const nome = await leggi<string>(env, k.nome);
     if (nome && azione === 'subito') { await avviso('Avvio…'); return lanciaRaccolta(env, chat, nome, '', msgId); }
-    if (nome && azione === 'domande') { await avviso(); return vaiAPasso(env, chat, { tipo: 'nuovo', passo: 'sponsor', dati: { cartella: nome, telegram: true } }, msgId); }
+    if (nome && azione === 'domande') { await avviso(); return vaiAPasso(env, chat, { tipo: 'nuovo', passo: PRIMO_TELEGRAM, dati: { cartella: nome, telegram: true } }, msgId); }
     // serve il nome (o lo si vuole cambiare)
     await avviso();
     const dopo: 'subito' | 'domande' | 'scheda' = azione === 'subito' || azione === 'domande' ? azione : 'scheda';
@@ -735,8 +753,10 @@ async function onCallback(env: Env, cb: Callback) {
     }
     if (azione === 'indietro') {
       const base = a.passo === 'sponsor_testo' ? 'sponsor' : a.passo;
+      let i = Math.max(0, ORDINE.indexOf(base) - 1);
+      while (i > 0 && saltaPasso(ORDINE[i], a.dati)) i--;
       await avviso();
-      return vaiAPasso(env, chat, { ...a, passo: ORDINE[Math.max(0, ORDINE.indexOf(base) - 1)] }, msgId);
+      return vaiAPasso(env, chat, { ...a, passo: ORDINE[i] }, msgId);
     }
     if (azione === 'riepilogo') { await avviso(); return vaiAPasso(env, chat, { ...a, passo: 'riepilogo', modifica: false }, msgId); }
     if (azione === 'mod') { await avviso(); return vaiAPasso(env, chat, { ...a, passo: x as Passo, modifica: true }, msgId); }
