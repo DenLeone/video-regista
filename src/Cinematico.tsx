@@ -12,8 +12,9 @@ const { fontFamily: MONTSERRAT } = loadFont('normal', { weights: ['500', '600', 
 const GIALLO = '#FFE62E';
 const FONDO = '#0A0806';
 const OMBRA = '0 4px 24px rgba(0,0,0,0.45), 0 1px 3px rgba(0,0,0,0.6)';
-// look caldo sulle clip: un filo di contrasto e saturazione, tinta calda leggera
-const LOOK = 'contrast(1.06) saturate(1.08) sepia(0.12) brightness(0.98)';
+// look caldo sulle clip: un filo di contrasto e saturazione, tinta calda leggera; senza
+// scurire (Giacca autunnale, 18/10: con l'I-Log convertito il volto quasi non si vedeva)
+const LOOK = 'contrast(1.03) saturate(1.08) sepia(0.1)';
 const SFX = { whoosh: 0.55, impatto: 0.7 } as const;
 const CENTRO_PAROLE = 1100; // y del centro dei sottotitoli
 const clamp = { extrapolateLeft: 'clamp', extrapolateRight: 'clamp' } as const;
@@ -110,7 +111,7 @@ export const Cinematico: React.FC<Piano> = (piano) => {
       <Clips piano={piano} fondo={FONDO} filtro={LOOK} />
       {/* tinta calda e vignettatura */}
       <AbsoluteFill style={{ backgroundColor: '#FF8A2A', mixBlendMode: 'soft-light', opacity: 0.1 }} />
-      <AbsoluteFill style={{ background: 'radial-gradient(ellipse 90% 75% at 50% 50%, rgba(0,0,0,0) 55%, rgba(0,0,0,0.45) 100%)' }} />
+      <AbsoluteFill style={{ background: 'radial-gradient(ellipse 100% 80% at 50% 50%, rgba(0,0,0,0) 62%, rgba(0,0,0,0.28) 100%)' }} />
 
       {gruppi.map((g, i) => (
         <Sequence key={`p${i}`} from={f(g.at)} durationInFrames={Math.max(2, f(g.fine) - f(g.at))}>

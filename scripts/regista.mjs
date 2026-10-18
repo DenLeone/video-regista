@@ -29,6 +29,7 @@ const REMOTE = process.env.REGISTA_REMOTE || 'gdrive';
 const IN_DIR = '97 - Editare';
 const OUT_DIR = '98 - Fatti';
 const CORREZIONE = (process.env.CORREZIONE || '').trim();
+const RIRENDER = process.env.AZIONE === 'render'; // rifà solo il render con la regia salvata (origine 98)
 // file mandati direttamente al bot: [{"m": id_messaggio, "n": "nome.mov"}, ...]
 const TELEGRAM_FILE = (process.env.TELEGRAM_FILE || '').trim();
 const DA_TELEGRAM = Boolean(TELEGRAM_FILE && TELEGRAM_FILE !== '[]');
@@ -155,8 +156,12 @@ const HDR = ['arib-std-b67', 'smpte2084'];
 // Insta360 (I-Log → Rec709 BT1886). Il "look" (caldo, contrasto) lo aggiunge poi lo stile.
 const LUT_ILOG = path.join(ROOT, 'lut', 'Luna_I-Log_to_Rec709_BT1886_s33_v2.cube');
 const perFiltro = (p) => p.replace(/\\/g, '/').replace(/:/g, '\\:');
+// I-Log con esposizione automatica: la Insta protegge il cielo e dopo la LUT i medi restano bassi
+// (Giacca autunnale, 18/10: luminosità media 0,22–0,30). `alza` = curva che porta la media
+// misurata della clip (da) verso ESPOSIZIONE_LOG (a), lasciando fermi nero e bianco
+const ESPOSIZIONE_LOG = 0.4;
 function filtroColore(c) {
-  if (c?.log) return `lut3d=file='${perFiltro(LUT_ILOG)}':interp=tetrahedral,format=yuv420p`;
+  if (c?.log) return `lut3d=file='${perFiltro(LUT_ILOG)}':interp=tetrahedral${c.alza ? `,curves=master='0/0 ${c.alza.da}/${c.alza.a} 1/1'` : ''},format=yuv420p`;
   if (!c || !HDR.includes(c.trc)) return 'format=yuv420p';
   return `zscale=tin=${c.trc}:pin=${c.primaries || 'bt2020'}:min=${c.matrix || 'bt2020nc'}:t=linear:npl=100,format=gbrpf32le,`
     + 'zscale=p=bt709,tonemap=tonemap=hable:desat=0,zscale=t=bt709:m=bt709:r=tv,format=yuv420p';
@@ -591,6 +596,16 @@ async function notifica(esito, nome, testo, { ok = false, foto, info } = {}) {
   await invia({ tipo: 'esito', esito, nome, testo, ok, foto, info, step: ultimaFase, minuti: Math.round((Date.now() - T0) / 60000) });
 }
 
+// 8 fotogrammi del video finito in una griglia 4×2: va in _regista per controllare il risultato
+// (colore, scritte) senza scaricare il video
+function fotogrammiFinale(outFile, durata) {
+  const out = path.join(WORK, 'fotogrammi.jpg');
+  try {
+    run('ffmpeg', ['-y', '-v', 'error', '-i', outFile, '-vf', `fps=${(8 / Math.max(1, durata)).toFixed(4)},scale=360:-2,tile=4x2`, '-frames:v', '1', '-q:v', '4', out]);
+    return out;
+  } catch (e) { log('fotogrammi del finale non riusciti', e.message); return null; }
+}
+
 // anteprima: il fotogramma a metà della prima parola chiave (o a 1/3 del video)
 function anteprima(outFile, piano, durata) {
   const k = piano.keywords?.[0];
@@ -650,10 +665,15 @@ export async function analizza(nome, brief, cache) {
       log(`video ${f} (${NOMI_DISPOSITIVO[disp]}, ${info.durata.toFixed(1)} s, ${info.w}x${info.h}${iLog ? ', I-Log → Rec709' : hdr ? ', HDR → SDR' : ''})`);
       if (disp === 'insta') log(`  ${id}: colore ${JSON.stringify(info.colore)} · metadati ${JSON.stringify(info.tags).slice(0, 800)}`);
       if (iLog) {
-        confrontoColore(src, id, info.durata, info.colore);
-        // la LUT vuole un'esposizione giusta: girato scuro → convertito scurissimo
         const dopo = statisticheColore(src, info.durata, filtroColore(info.colore).replace(/,format=yuv420p$/, ''));
-        if (dopo && dopo.y < 45) logScuri.push(id);
+        if (dopo) {
+          const m = Math.max(0.02, (dopo.y - 16) / 219); // luminosità media 0–1 dopo la LUT
+          // al massimo ~1 stop in più: oltre si vede solo rumore
+          if (m < ESPOSIZIONE_LOG - 0.03) info.colore.alza = { da: +m.toFixed(3), a: +Math.min(ESPOSIZIONE_LOG, m * 2).toFixed(3) };
+          if (m < 0.12) logScuri.push(id);
+          log(`  ${id}: luminosità dopo la LUT ${m.toFixed(2)}${info.colore.alza ? `, schiarita a ${info.colore.alza.a}` : ''}`);
+        }
+        confrontoColore(src, id, info.durata, info.colore);
       }
       // `file` è il nome logico usato dalla regia; i pezzi veri si tagliano dall'originale dopo la regia
       sorgenti.push({ id, file: `${id}.mp4`, originale: src, tipo: 'video', dispositivo: disp, nomeDispositivo: NOMI_DISPOSITIVO[disp],
@@ -789,7 +809,7 @@ export async function analizza(nome, brief, cache) {
     ? `${s.id} (${s.nomeDispositivo}) ha registrato solo fruscio (microfono collegato ma spento?): l'ho agganciata dalle immagini. Se il labiale non torna, dimmelo.`
     : `${s.id} (${s.nomeDispositivo}) ha registrato solo fruscio, senza voce (microfono collegato ma spento?) e non sono riuscito ad agganciarla nemmeno dalle immagini: l'ho usata solo come B-roll. Lascia acceso il microfono della camera, anche quello interno basta.`);
   if (logRiconosciuti.length) avvisi.push(`${logRiconosciuti.join(', ')}: riconosciut${logRiconosciuti.length > 1 ? 'e' : 'a'} come I-Log (10 bit, colori spenti) e convertit${logRiconosciuti.length > 1 ? 'e' : 'a'} con la LUT Insta360. Se non era in I-Log scrivi "senza i-Log" nel brief.`);
-  if (logScuri.length) avvisi.push(`${logScuri.join(', ')}: in I-Log ma sottoespost${logScuri.length > 1 ? 'e' : 'a'}, dopo la conversione resta${logScuri.length > 1 ? 'no' : ''} scur${logScuri.length > 1 ? 'e' : 'a'}. In I-Log esponi un po' di più (+0,7 EV) o aggiungi luce.`);
+  if (logScuri.length) avvisi.push(`${logScuri.join(', ')}: molto scur${logScuri.length > 1 ? 'e' : 'a'} anche dopo la LUT, ho schiarito il possibile. In I-Log con poca luce meglio aggiungere luce o esporre +0,7 EV.`);
   if (/\bi-?log\b/i.test(brief || '') && !/\b(senza|no)\s+i-?log\b/i.test(brief || '') && !sorgenti.some((s) => s.colore?.log)) {
     avvisi.push('nel brief c\'è "i-Log" ma nessuna clip è riconosciuta come Insta360: colori lasciati come sono');
   }
@@ -915,7 +935,7 @@ async function main() {
     await fase(nome, '🎞️ Analizzo il girato (audio, sincronizzazione, trascrizione, fogli provino)', 'prepara');
 
     const briefFile = fs.existsSync(path.join(SCARICO, 'brief.txt')) ? fs.readFileSync(path.join(SCARICO, 'brief.txt'), 'utf8') : '';
-    const brief = [briefFile, process.env.BRIEF_EXTRA ? `Dal telegram: ${process.env.BRIEF_EXTRA}` : '', cache?.brief && CORREZIONE ? cache.brief : '']
+    const brief = [briefFile, process.env.BRIEF_EXTRA ? `Dal telegram: ${process.env.BRIEF_EXTRA}` : '', cache?.brief && (CORREZIONE || RIRENDER) ? cache.brief : '']
       .filter(Boolean).join('\n');
     const analisi = await analizza(nome, brief, cache);
     fs.writeFileSync(path.join(WORK, 'materiale.json'), JSON.stringify(analisi, null, 1));
@@ -932,9 +952,13 @@ async function main() {
     stileCorrente = stile;
     if (stile !== STILI[0]) log(`stile: ${stile}`);
     const pesoAI = ` · materiale ≈ ${kTok(stima.totale)} token`;
-    await fase(nome, CORREZIONE ? `🧠 Applico la correzione: “${CORREZIONE.slice(0, 120)}”${pesoAI}`
+    if (RIRENDER) await fase(nome, regiaPrecedente ? '🎨 Rifaccio solo il render: stessa regia, colore e grafica aggiornati' : '⚠️ Nessuna regia precedente: la riscrivo', 'regia');
+    else await fase(nome, CORREZIONE ? `🧠 Applico la correzione: “${CORREZIONE.slice(0, 120)}”${pesoAI}`
       : `🧠 Scelgo i tagli: ${analisi.sorgenti.length} sorgenti, voce da ${voci || '—'}, ${sinc} camere sincronizzate, ${analisi.frasi.length} frasi${brief ? ', con brief' : ''}${pesoAI}`, 'regia');
-    const { regia, risultato: { piano, avvisi } } = await chiediRegia(testoMateriale, fogli, CORREZIONE ? regiaPrecedente : null, (r) => risolviRegia(r, analisi));
+    // azione "render": stessa regia del giro prima, si rifanno solo colore, tagli e grafica
+    const { regia, risultato: { piano, avvisi } } = RIRENDER && regiaPrecedente
+      ? { regia: regiaPrecedente, risultato: risolviRegia(regiaPrecedente, analisi) }
+      : await chiediRegia(testoMateriale, fogli, CORREZIONE ? regiaPrecedente : null, (r) => risolviRegia(r, analisi));
     if (avvisi.length) log('avvisi regia:', avvisi.join(' | '));
     if (regia.scaletta) log('scaletta:', [].concat(regia.scaletta).join(' → '));
     log('testo montato:', piano.testo);
@@ -983,6 +1007,7 @@ async function main() {
     rclone('copyto', path.join(WORK, 'NOTE.txt'), remote(DEST, nome, 'NOTE.txt'));
     for (const f of ['regia.json', 'piano.json', 'materiale.json']) rclone('copyto', path.join(WORK, f), remote(DEST, nome, CACHE, f));
     for (const f of fs.readdirSync(WORK).filter((x) => /^colore-.+\.jpg$/.test(x))) rclone('copyto', path.join(WORK, f), remote(DEST, nome, CACHE, f));
+    if (fotogrammiFinale(outFile, durataN)) rclone('copyto', path.join(WORK, 'fotogrammi.jpg'), remote(DEST, nome, CACHE, 'fotogrammi.jpg'));
     if (vai) rclone('moveto', remote(SRC_DIR, nome, vai), remote(SRC_DIR, nome, vaiUsato));
     if (SRC_DIR === IN_DIR && !DA_TELEGRAM) rclone('moveto', remote(IN_DIR, nome), remote(OUT_DIR, nome));
 
