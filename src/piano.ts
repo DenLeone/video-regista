@@ -42,6 +42,8 @@ export type Piano = {
   testo?: string;           // il parlato del montaggio, di fila (per NOTE.txt)
   // effetti sonori (public/sfx): volume in base al livello della voce; false = nessuno
   sfx?: { volume: number } | false;
+  // ogni parola detta, sulla timeline finale (sottotitoli parola per parola degli stili che li usano)
+  parole?: { at: number; dur: number; w: string }[];
 };
 
 export const FPS = 30;

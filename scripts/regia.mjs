@@ -26,6 +26,9 @@ export function risolviRegia(regia, analisi) {
   const trovaSorgente = (nome) => sorgenti.find((s) => baseNome(s.id) === baseNome(nome) || baseNome(s.file) === baseNome(nome));
   const frasi = new Map(analisi.frasi.map((f) => [f.id, f]));
   const broll = sorgenti.filter((s) => s.tipo === 'video' && !s.sync && !s.principale);
+  // solo riprese, senza parlato: Denis registra la voce dopo, sopra al video finito (Key air,
+  // 18/10), quindi l'audio delle clip (fruscio, mani, stanza) va tolto, salvo "audio": "ambiente"
+  const senzaVoce = !(regia.sequenza || []).some((it) => it.frase);
   let girandolaBroll = 0;
 
   // la chiusura non resta mai a metà frase: se l'ultima frase continua nella successiva
@@ -70,6 +73,7 @@ export function risolviRegia(regia, analisi) {
   const clips = [];
   const inizioVoce = []; // per ogni elemento della sequenza: dove inizia sulla timeline finale
   const testo = [];
+  const parole = []; // parole del montaggio sulla timeline finale (sottotitoli parola per parola)
   let t = 0;
 
   sequenza.forEach((it, idx) => {
@@ -81,6 +85,7 @@ export function risolviRegia(regia, analisi) {
       const taglio = fineTaglio.get(idx);
       const dur = q((taglio ? taglio.t : f.fine) - f.inizio);
       testo.push(taglio ? f.testo.trim().split(/\s+/).slice(0, -taglio.parole).join(' ') : f.testo);
+      paroleFrase(voce, f, taglio).forEach((w) => parole.push({ at: q(t + Math.max(0, w.s - f.inizio)), dur: +Math.max(0.05, w.e - w.s).toFixed(3), w: w.w }));
       const audio = { file: voce.voce, start: +f.inizio.toFixed(3) };
       if (it.broll) {
         const b = trovaSorgente(it.broll);
@@ -112,7 +117,7 @@ export function risolviRegia(regia, analisi) {
       if (da + dur > b.durata) da = Math.max(0, b.durata - dur - 0.05);
       clip = { file: b.file, start: +da.toFixed(3), end: +(da + dur).toFixed(3), orient: b.orient };
       // la Sony registra audio solo dal microfono interno: lo uso come ambiente, ma piano
-      if (it.audio === 'muto' || b.soloImmagini) clip.muto = true;
+      if (it.audio === 'muto' || b.soloImmagini || (senzaVoce && it.audio !== 'ambiente')) clip.muto = true;
       else if (b.dispositivo === 'sony') clip.volume = 0.35;
     } else {
       avvisi.push(`elemento ${idx + 1} senza frase né broll: saltato`);
@@ -169,13 +174,19 @@ export function risolviRegia(regia, analisi) {
     return idx >= 0 ? inizioVoce[idx] : null;
   };
 
+  // senza parlato le scritte si agganciano all'elemento della sequenza (numero da 1), come i
+  // flicker (Key air, 17/10: l'AI usava "elemento" e lo script toglieva tutte le scritte)
+  const inizioElemento = (n) => (Number.isInteger(Number(n)) ? inizioVoce[Number(n) - 1] ?? null : null);
   let keywords = [];
   for (const k of regia.keywords || []) {
-    let at = k.frase ? inizioFrase(k.frase) : (typeof k.at === 'number' ? k.at : null);
-    if (at == null) { avvisi.push(`parola chiave ${k.word}: frase ${k.frase} non usata nel montaggio, tolta`); continue; }
+    let at = k.frase ? inizioFrase(k.frase) : k.elemento != null ? inizioElemento(k.elemento) : (typeof k.at === 'number' ? k.at : null);
+    if (at == null) {
+      avvisi.push(`parola chiave ${k.word}: ${k.frase ? `frase ${k.frase} non usata nel montaggio` : k.elemento != null ? `elemento ${k.elemento} inesistente` : 'senza frase né elemento'}, tolta`);
+      continue;
+    }
     at = q(Math.min(totale - 0.5, at + (Number(k.ritardo) || 0)));
     const dur = k.fino_alla_fine ? totale - at : Math.min(4, Math.max(0.8, Number(k.dur) || 2));
-    keywords.push({ at, dur: q(dur), word: String(k.word || '').toUpperCase(), note: k.note, tag: k.tag, filled: Boolean(k.filled), top: Number(k.top) || 1330 });
+    keywords.push({ at, dur: q(dur), word: String(k.word || ''), note: k.note, tag: k.tag, filled: Boolean(k.filled), top: Number(k.top) || undefined }); // senza top: quello dello stile
   }
   keywords.sort((a, b) => a.at - b.at);
   for (let i = 1; i < keywords.length; i++) {
@@ -204,6 +215,7 @@ export function risolviRegia(regia, analisi) {
       sponsorAt,
       note: [regia.note, ...avvisi.map((a) => `⚠️ ${a}`)].filter(Boolean).join(' · '),
       testo: testo.join(' '),
+      parole: parole.filter((w) => w.at < totale - 0.05),
     },
     avvisi,
     durata: totale,
@@ -217,6 +229,29 @@ export function risolviRegia(regia, analisi) {
 //   interrotta / finisce a metà  frase lasciata in sospeso
 const RIMANDO = /^(appunto|però|quindi|anche|ma|perché|poi|infatti|cioè|questo|questa|questi|queste|l'unica|l'unico|invece|allora|comunque)\b/i;
 const finita = (t) => /[.!?…]["»”)]?$/.test(String(t).trim());
+// le parole di Whisper della frase `f` (quelle del suo testo, nello stesso ordine), senza le
+// ultime tolte dal taglio sulle ripetizioni. Whisper sbaglia i bordi anche di mezzo secondo
+// (Wave3: "5" 0,4 s prima della frase, "pronto" dopo la fine): cerco la sequenza esatta in una
+// finestra larga e riporto i tempi dentro la frase, in ordine
+function paroleFrase(voce, f, taglio) {
+  const fine = taglio ? taglio.t : f.fine;
+  const tutte = (voce?.parole || []).filter((w) => w.s >= f.inizio - 1 && w.s < f.fine + 0.6);
+  const tok = f.testo.trim().split(/\s+/);
+  let da = -1;
+  tutte.forEach((w, i) => {
+    if (!tok.every((x, k) => String(tutte[i + k]?.w || '').trim() === x)) return;
+    if (da < 0 || Math.abs(w.s - f.inizio) < Math.abs(tutte[da].s - f.inizio)) da = i;
+  });
+  let scelte = da >= 0 ? tutte.slice(da, da + tok.length) : tutte.filter((w) => w.s >= f.inizio - 0.25 && w.s < f.fine);
+  if (taglio) scelte = scelte.slice(0, -taglio.parole);
+  let prima = f.inizio - 0.06;
+  return scelte.map((w) => {
+    const s = Math.min(Math.max(w.s, prima + 0.06), fine - 0.12);
+    prima = s;
+    return { w: String(w.w).trim(), s, e: Math.max(s + 0.05, Math.min(w.e, fine)) };
+  });
+}
+
 const paroleDi = (t) => (String(t).toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').match(/[a-z0-9]+/g) || []);
 export function successiva(frasi, f) {
   const g = frasi[frasi.indexOf(f) + 1];

@@ -39,7 +39,17 @@ Primo giro reale: 58 min, di cui **40 per ricodificare tutto il girato 4K** in 1
   - `Blueprint/`: scheda `stile.txt` dello stile attuale + `esempi/` e `asset/` per ritocchi.
   - `_Modello nuovo stile (copia e rinomina)/`: `stile.txt` con le istruzioni e i campi da compilare (quando usarlo/argomenti, tono, colori, font, scritte, ritmo, suoni, musica, apertura/chiusura), `esempi/` (1–3 video di riferimento), `asset/` (logo/overlay PNG trasparenti, font, sfx, musica).
 - Flusso: Denis prepara la cartella → Claude costruisce lo stile come nuova composizione Remotion (da esempi + asset) e lo aggiunge a `STILI` in `scripts/regista.mjs` e a `src/Root.tsx`.
-- Già nel codice: `Stile: <nome>` nel brief sceglie lo stile; se non è ancora pronto si usa Blueprint e la NOTE lo dice. Da fare col 2° stile: scelta automatica in base agli argomenti di `stile.txt` e tasto nel bot.
+- Già nel codice: `Stile: <nome>` nel brief sceglie lo stile; se non è ancora pronto si usa Blueprint e la NOTE lo dice. Da fare: scelta automatica in base agli argomenti di `stile.txt` e tasto nel bot.
+- Struttura nel codice: `src/comune.tsx` (clip con voce, effetti sonori, condivisi da tutti gli stili), una composizione per stile (`src/Blueprint.tsx`, `src/Cinematico.tsx`) registrata in `src/Root.tsx`, istruzioni di grafica per l'AI in `scripts/stili/<nome>.md` (inserite nel prompt al posto di `{{GRAFICA}}`), nome in `STILI` di `scripts/regista.mjs`. Lo stile si sceglie PRIMA della regia (anche nella prova veloce `azione: regia`).
+- Il piano ha ora `parole` (ogni parola detta sulla timeline finale, dai tempi di Whisper riportati dentro la frase): servono agli stili con sottotitoli.
+
+### Stile Cinematico — 18/10
+- Dai 3 video di riferimento di Denis (spot prodotto, 576×1024): Drive `Stili/Cinematico/` con `stile.txt`, `esempi/` (da metterci i 3 riferimenti), `asset/`.
+- Grafica: look caldo (filtro CSS + tinta soft-light + vignettatura), sottotitoli Montserrat Bold bianchi una parola alla volta al centro (y≈1100; parole di 1–2 lettere unite alla successiva; spariscono durante i titoli), titoli Montserrat Black stretti (−0,045em) con `tag` = etichetta piccola sopra e `note` = sottotitolo giallo #FFE62E sotto, `top` default 380.
+- Suoni: `impatto` (colpo basso) sul primo titolo, `whoosh` su ogni titolo (scripts/genera-sfx.mjs).
+- Regia: 3–5 titoli (prodotto, poi numeri/specifiche), niente flicker; volto ~1/3 delle frasi (aggancio, commenti, chiusura), il resto B-roll ravvicinati del prodotto.
+- Provato in locale: render di prova (titoli e parole ok) e pipeline completa con `Stile: Cinematico` nel brief.
+- Ripresa consigliata a Denis: Insta360 in **i-Log** + LUT ufficiale Insta360 (.cube) da mettere in `Stili/Cinematico/asset/` → poi va collegata nel taglio dei segmenti (lut3d di ffmpeg). Non Dolby Vision (HDR: va riconvertito in SDR con il tonemap, colori meno controllabili). Finché la LUT non è collegata: profilo standard (SDR).
 
 ### ⚠️ Minuti GitHub con 10 video al giorno
 10 × ~18 min ≈ 180 min/giorno ≈ 5.400/mese: oltre i 2.000 gratuiti dei repo privati. Opzioni (decide Denis): pagare l'eccedenza a minuto; GitHub Pro (3.000 min); **repo pubblico** = minuti illimitati e runner a 4 core (render ~2× più veloce) ma log e artifact visibili: in quel caso togliere l'upload degli artifact (fogli provino/trascrizioni) e i testi dell'AI dai log.

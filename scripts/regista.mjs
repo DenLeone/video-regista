@@ -224,7 +224,8 @@ function fogliProvino(file, id, durata, offset = 0, colore = null) {
 
 // ---------- 3. l'AI scrive la regia ----------
 function promptRegia({ modo, testoMateriale, regiaPrecedente }) {
-  let p = fs.readFileSync(path.join(ROOT, 'scripts', 'prompt-regista.md'), 'utf8');
+  let p = fs.readFileSync(path.join(ROOT, 'scripts', 'prompt-regista.md'), 'utf8')
+    .replace('{{GRAFICA}}', fs.readFileSync(path.join(ROOT, 'scripts', 'stili', `${stileCorrente}.md`), 'utf8').trim());
   if (regiaPrecedente) {
     p += `\n\n## MODALITÀ CORREZIONE\nEsiste già un montaggio, questa è la sua regia:\n\`\`\`json\n${JSON.stringify(regiaPrecedente, null, 1)}\n\`\`\`\nDenis l'ha guardato e chiede queste modifiche:\n\n> ${CORREZIONE.replace(/\n/g, '\n> ')}\n\nParti da questa regia e applica SOLO quello che chiede, lasciando invariato il resto. I tempi li ricalcola lo script. Nella \`note\` elenca in breve cosa hai cambiato.`;
   }
@@ -456,8 +457,10 @@ function validaPiano(p) {
 // ---------- 4. render ----------
 // Stili pronti = composizioni Remotion registrate in src/Root.tsx. Le schede e gli esempi
 // stanno su Drive in "03 · Social — Risorse/Stili/<nome>/" (stile.txt, esempi/, asset/):
-// uno stile nuovo si costruisce da lì e si aggiunge qui e in Root.tsx.
-const STILI = ['Blueprint'];
+// uno stile nuovo si costruisce da lì e si aggiunge qui, in Root.tsx e in scripts/stili/<nome>.md
+// (le istruzioni di grafica per l'AI, inserite nel prompt al posto di {{GRAFICA}}).
+const STILI = ['Blueprint', 'Cinematico'];
+let stileCorrente = STILI[0];
 function scegliStile(brief) {
   const richiesto = (/stile\s*:\s*([^\n.,;]+)/i.exec(brief || '') || [])[1]?.trim();
   if (!richiesto) return { stile: STILI[0] };
@@ -735,13 +738,14 @@ async function provaRegia() {
   }
   const analisi = JSON.parse(fs.readFileSync(path.join(WORK, 'cache', 'materiale.json'), 'utf8'));
   if (process.env.BRIEF_EXTRA) analisi.brief = `Dal telegram: ${process.env.BRIEF_EXTRA}`;
+  stileCorrente = scegliStile(analisi.brief).stile;
   for (const s of analisi.sorgenti) s.fogli = []; // i fogli provino non sono salvati: prova solo sul testo
   const testoMateriale = `${materialePerAI(analisi)}\n\n(Prova veloce: i fogli provino non sono inclusi, scegli le inquadrature solo in base alle sorgenti.)`;
   await fase(nome, '📝 Prova della regia: solo il testo, senza render', 'regia');
   const { regia, risultato: { piano, avvisi } } = await chiediRegia(testoMateriale, [], null, (r) => risolviRegia(r, analisi));
   const durata = piano.clips.reduce((t, c) => t + (c.end - c.start), 0);
   const testo = [
-    `Testo (${durata.toFixed(0)} s, ${piano.clips.length} tagli): ${piano.testo}`,
+    `Testo (${durata.toFixed(0)} s, ${piano.clips.length} tagli, stile ${stileCorrente}): ${piano.testo}`,
     regia.scaletta ? `Scaletta: ${[].concat(regia.scaletta).join(' → ')}` : '',
     avvisi.length ? `Avvisi: ${avvisi.join(' · ')}` : '',
     rigaConsumi(),
@@ -837,6 +841,9 @@ async function main() {
     const stima = stimaToken(fs.readFileSync(path.join(ROOT, 'scripts', 'prompt-regista.md'), 'utf8') + testoMateriale, fogli);
     consumi.stima = { totale: stima.totale, esatta: false };
     log(`stima materiale per l'AI: ${stima.testo} token di testo + ${stima.immagini} di immagini (${fogli.length} fogli)`);
+    const { stile, avviso: avvisoStile } = scegliStile(brief);
+    stileCorrente = stile;
+    if (stile !== STILI[0]) log(`stile: ${stile}`);
     const pesoAI = ` · materiale ≈ ${kTok(stima.totale)} token`;
     await fase(nome, CORREZIONE ? `🧠 Applico la correzione: “${CORREZIONE.slice(0, 120)}”${pesoAI}`
       : `🧠 Scelgo i tagli: ${analisi.sorgenti.length} sorgenti, voce da ${voci || '—'}, ${sinc} camere sincronizzate, ${analisi.frasi.length} frasi${brief ? ', con brief' : ''}${pesoAI}`, 'regia');
@@ -844,7 +851,6 @@ async function main() {
     if (avvisi.length) log('avvisi regia:', avvisi.join(' | '));
     if (regia.scaletta) log('scaletta:', [].concat(regia.scaletta).join(' → '));
     log('testo montato:', piano.testo);
-    const { stile, avviso: avvisoStile } = scegliStile(brief);
     if (avvisoStile) analisi.avvisi = [...(analisi.avvisi || []), avvisoStile];
     if (analisi.avvisi?.length) piano.note = [...analisi.avvisi.map((a) => `⚠️ ${a}`), piano.note].filter(Boolean).join(' · ');
     // effetti sonori sotto la voce: più bassa la voce registrata, più bassi gli effetti (~12–16 dB sotto)
@@ -876,7 +882,7 @@ async function main() {
     const durata = durataN.toFixed(1);
     const note = [
       `${CORREZIONE ? `Correzione (“${CORREZIONE}”)` : 'Montato automaticamente'} il ${new Date().toLocaleString('it-IT', { timeZone: 'Europe/Rome' })} in ${trascorso()}`,
-      `Durata: ${durata} s · ${piano.tavola} · ${piano.clips.length} tagli da ${camereUsate} sorgenti · voce: ${voci || 'audio delle clip'}`,
+      `Durata: ${durata} s · ${stile === 'Blueprint' ? piano.tavola : `stile ${stile}`} · ${piano.clips.length} tagli da ${camereUsate} sorgenti · voce: ${voci || 'audio delle clip'}`,
       `Parole chiave: ${piano.keywords.map((k) => `${k.word} @${k.at.toFixed(1)}s`).join(', ') || '—'}`,
       piano.testo ? `Testo: ${piano.testo}` : '',
       piano.note ? `Note: ${piano.note}` : '',

@@ -1,4 +1,4 @@
-// Effetti sonori del Blueprint, sintetizzati da zero (nessun file scaricato:
+// Effetti sonori degli stili, sintetizzati da zero (nessun file scaricato:
 // niente diritti, sempre uguali, ritoccabili qui). Uscita: public/sfx/*.wav
 // (48 kHz mono, picco −3 dBFS). Il volume finale lo decide il montaggio in base
 // al livello della voce. Uso: node scripts/genera-sfx.mjs
@@ -8,6 +8,8 @@
 // ui_conferma parola chiave piena (sponsor, esito): due toni di conferma
 // glitch      flicker sui tagli: crepitio che segue il lampeggio fotogramma per fotogramma
 // strappo     flicker con la carta strappata: strappo di carta
+// whoosh      (Cinematico) titolo che entra: soffio d'aria morbido, picco a 0,3 s
+// impatto     (Cinematico) primo titolo: colpo basso profondo con coda, da trailer
 
 import fs from 'node:fs';
 import path from 'node:path';
@@ -139,6 +141,29 @@ function strappo() {
   return riverbero(y, 0.12, 0.5);
 }
 
+function whoosh() {
+  const T = 0.85, picco = 0.3; // il titolo è entrato del tutto ~0,1 s dopo il picco
+  const inv = (t) => (t < picco ? (t / picco) ** 2 : Math.exp(-(t - picco) / 0.13));
+  // due strati di rumore con la banda che sale e poi ridiscende: aria che passa
+  const banda = (k) => (t) => (t < picco ? 380 * (6.5 * k) ** (t / picco) : 2470 * k * Math.exp(-(t - picco) / 0.35) + 700 * k);
+  const n1 = vuoto(T).map(() => rnd()), n2 = vuoto(T).map(() => rnd());
+  const a = passaBanda(n1, banda(1), 1.4), b = passaBanda(n2, banda(0.62), 0.9);
+  const y = vuoto(T);
+  for (let i = 0; i < y.length; i++) y[i] = (a[i] * 0.7 + b[i] * 0.5) * inv(i / SR);
+  return riverbero(y, 0.22, 0.7);
+}
+
+function impatto() {
+  const T = 1.8;
+  const y = vuoto(T);
+  // sub che scende di tono (70 → 40 Hz) + "corpo" a 110 Hz + soffio filtrato sull'attacco
+  somma(y, tono(T, (t) => 40 + 30 * Math.exp(-t / 0.12), (t) => Math.min(1, t / 0.006) * Math.exp(-t / 0.5)), 0, 1);
+  somma(y, tono(0.6, 110, (t) => Math.min(1, t / 0.004) * Math.exp(-t / 0.09)), 0, 0.35);
+  const n = new Float32Array(Math.round(0.4 * SR)).map((_, i) => rnd() * Math.exp(-i / (SR * 0.07)));
+  somma(y, passaBanda(n, 260, 0.6), 0, 0.5);
+  return riverbero(y, 0.35, 0.85);
+}
+
 function salva(nome, y) {
   let picco = 0; for (const v of y) picco = Math.max(picco, Math.abs(v));
   const g = picco > 0 ? 10 ** (-3 / 20) / picco : 1;
@@ -164,3 +189,6 @@ salva('ui_conferma', uiConferma());
 salva('glitch', glitch());
 seme = 777;
 salva('strappo', strappo());
+seme = 4242;
+salva('whoosh', whoosh());
+salva('impatto', impatto());
