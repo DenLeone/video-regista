@@ -957,7 +957,7 @@ async function main() {
       : `🧠 Scelgo i tagli: ${analisi.sorgenti.length} sorgenti, voce da ${voci || '—'}, ${sinc} camere sincronizzate, ${analisi.frasi.length} frasi${brief ? ', con brief' : ''}${pesoAI}`, 'regia');
     // azione "render": stessa regia del giro prima, si rifanno solo colore, tagli e grafica
     const { regia, risultato: { piano, avvisi } } = RIRENDER && regiaPrecedente
-      ? { regia: regiaPrecedente, risultato: risolviRegia(regiaPrecedente, analisi) }
+      ? (fs.writeFileSync(path.join(WORK, 'regia.json'), JSON.stringify(regiaPrecedente, null, 1)), { regia: regiaPrecedente, risultato: risolviRegia(regiaPrecedente, analisi) })
       : await chiediRegia(testoMateriale, fogli, CORREZIONE ? regiaPrecedente : null, (r) => risolviRegia(r, analisi));
     if (avvisi.length) log('avvisi regia:', avvisi.join(' | '));
     if (regia.scaletta) log('scaletta:', [].concat(regia.scaletta).join(' → '));
