@@ -122,7 +122,7 @@ function probe(file) {
   let w = v?.width ?? 0, h = v?.height ?? 0;
   const rot = Math.abs(Number(v?.tags?.rotate ?? v?.side_data_list?.find((s) => s.rotation !== undefined)?.rotation ?? 0));
   if (rot === 90 || rot === 270) [w, h] = [h, w];
-  const colore = v ? { trc: v.color_transfer, primaries: v.color_primaries, matrix: v.color_space } : null;
+  const colore = v ? { trc: v.color_transfer, primaries: v.color_primaries, matrix: v.color_space, pix: v.pix_fmt } : null;
   return { durata: Number(j.format.duration), w, h, audio: Boolean(a), video: Boolean(v), tags: tagsPiatti(j), colore };
 }
 
@@ -137,6 +137,16 @@ function filtroColore(c) {
   if (!c || !HDR.includes(c.trc)) return 'format=yuv420p';
   return `zscale=tin=${c.trc}:pin=${c.primaries || 'bt2020'}:min=${c.matrix || 'bt2020nc'}:t=linear:npl=100,format=gbrpf32le,`
     + 'zscale=p=bt709,tonemap=tonemap=hable:desat=0,zscale=t=bt709:m=bt709:r=tv,format=yuv420p';
+}
+
+// prima/dopo la conversione colore su un fotogramma (a metà clip): va in _regista per
+// controllare la resa della LUT I-Log senza scaricare il girato
+function confrontoColore(file, id, durata, colore) {
+  const out = path.join(WORK, `colore-${id}.jpg`);
+  try {
+    run('ffmpeg', ['-y', '-v', 'error', '-ss', (durata / 2).toFixed(2), '-i', file, '-frames:v', '1', '-filter_complex',
+      `[0:v]scale=540:-2,split[a][b];[a]format=yuv420p[a1];[b]${filtroColore(colore)}[b1];[a1][b1]hstack`, '-q:v', '3', out]);
+  } catch (e) { log(`confronto colore di ${id} non riuscito`, e.message); }
 }
 
 // Si ricodificano solo i pezzi usati dal montaggio (1080p, colori SDR). Prima si convertiva
@@ -586,6 +596,9 @@ export async function analizza(nome, brief, cache) {
       if (iLog && info.colore) info.colore.log = true;
       const hdr = !iLog && HDR.includes(info.colore?.trc);
       log(`video ${f} (${NOMI_DISPOSITIVO[disp]}, ${info.durata.toFixed(1)} s, ${info.w}x${info.h}${iLog ? ', I-Log → Rec709' : hdr ? ', HDR → SDR' : ''})`);
+      // Insta360: colore e metadati nel log, per riconoscere l'I-Log in automatico
+      if (disp === 'insta') log(`  ${id}: colore ${JSON.stringify(info.colore)} · metadati ${JSON.stringify(info.tags).slice(0, 800)}`);
+      if (iLog) confrontoColore(src, id, info.durata, info.colore);
       // `file` è il nome logico usato dalla regia; i pezzi veri si tagliano dall'originale dopo la regia
       sorgenti.push({ id, file: `${id}.mp4`, originale: src, tipo: 'video', dispositivo: disp, nomeDispositivo: NOMI_DISPOSITIVO[disp],
         durata: +info.durata.toFixed(2), orient: info.w > info.h ? 'h' : 'v', haAudio: info.audio, colore: info.colore, data: dataRipresa(info.tags, f) });
@@ -906,6 +919,7 @@ async function main() {
     rclone('copyto', outFile, remote(DEST, nome, finale));
     rclone('copyto', path.join(WORK, 'NOTE.txt'), remote(DEST, nome, 'NOTE.txt'));
     for (const f of ['regia.json', 'piano.json', 'materiale.json']) rclone('copyto', path.join(WORK, f), remote(DEST, nome, CACHE, f));
+    for (const f of fs.readdirSync(WORK).filter((x) => /^colore-.+\.jpg$/.test(x))) rclone('copyto', path.join(WORK, f), remote(DEST, nome, CACHE, f));
     if (vai) rclone('moveto', remote(SRC_DIR, nome, vai), remote(SRC_DIR, nome, vaiUsato));
     if (SRC_DIR === IN_DIR && !DA_TELEGRAM) rclone('moveto', remote(IN_DIR, nome), remote(OUT_DIR, nome));
 
