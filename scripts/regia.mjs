@@ -49,6 +49,24 @@ export function risolviRegia(regia, analisi) {
     } else avvisi.push(`la chiusura (${fUltima.id}) finisce a metà frase`);
   } else if (fUltima && !finita(fUltima.testo)) avvisi.push(`la chiusura (${fUltima.id}) finisce senza punto: controlla`);
 
+  // ripartenze dentro la stessa frase: "…in più versioni e quindi mi | E quindi mi interessava…"
+  // (Lark A2): se la frase dopo comincia con le ultime parole di quella prima, la prima si
+  // accorcia prima delle parole ripetute (tempi parola di Whisper, con un filo di margine)
+  const fineTaglio = new Map();
+  sequenza.forEach((it, idx) => {
+    const f = frasi.get(normFrase(it.frase)), g = frasi.get(normFrase(sequenza[idx + 1]?.frase));
+    if (!f || !g || f.principale !== g.principale) return;
+    const pf = paroleDi(f.testo), pg = paroleDi(g.testo);
+    let k = 0;
+    for (let n = Math.min(5, pf.length - 2, pg.length - 1); n >= 2; n--) if (pf.slice(-n).join(' ') === pg.slice(0, n).join(' ')) { k = n; break; }
+    if (!k) return;
+    const parole = (sorgenti.find((x) => x.id === f.principale)?.parole || []).filter((w) => w.s >= f.inizio - 0.3 && w.s < f.fine);
+    const prima = parole[parole.length - k];
+    if (!prima || paroleDi(prima.w)[0] !== pf[pf.length - k]) return;
+    const taglio = Math.max(f.inizio + 0.4, prima.s - 0.02);
+    if (taglio < f.fine - 0.1) { fineTaglio.set(idx, { t: taglio, parole: k }); avvisi.push(`${f.id}: tolto "${pf.slice(-k).join(' ')}" ripetuto all'inizio di ${g.id}`); }
+  });
+
   const clips = [];
   const inizioVoce = []; // per ogni elemento della sequenza: dove inizia sulla timeline finale
   const testo = [];
@@ -60,8 +78,9 @@ export function risolviRegia(regia, analisi) {
       const f = frasi.get(normFrase(it.frase));
       if (!f) { avvisi.push(`frase ${it.frase} inesistente: saltata`); return; }
       const voce = sorgenti.find((s) => s.id === f.principale);
-      const dur = q(f.fine - f.inizio);
-      testo.push(f.testo);
+      const taglio = fineTaglio.get(idx);
+      const dur = q((taglio ? taglio.t : f.fine) - f.inizio);
+      testo.push(taglio ? f.testo.trim().split(/\s+/).slice(0, -taglio.parole).join(' ') : f.testo);
       const audio = { file: voce.voce, start: +f.inizio.toFixed(3) };
       if (it.broll) {
         const b = trovaSorgente(it.broll);
