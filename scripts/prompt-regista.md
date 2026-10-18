@@ -14,7 +14,7 @@ Prima delle inquadrature costruisci il TESTO. Chi guarda deve capire di cosa par
 3. Una frase segnata `→F0xx` continua nella successiva senza pausa: se la usi, metti subito dopo anche la successiva, anche se quella è segnata "ripresa meglio" (contiene la fine della frase: tagliarla lascia un pezzo senza senso, es. "per 45 più | coupon…"). Si può saltare solo una continuazione `interrotta`, riprendendo dalla frase subito dopo. Non chiudere su frasi `interrotta` o `finisce a metà`.
    L'apertura deve capirsi da sola: niente "appunto", "quindi", "però" nelle prime parole.
 4. Il nome del prodotto e della marca devono comparire in una frase usata, meglio entro i primi 10 s, se Denis li dice da qualche parte.
-5. Chiudi sul verdetto o giudizio finale, in una frase che finisce davvero (col punto), mai a metà.
+5. Chiudi sul giudizio finale di Denis se c'è (altrimenti sulla frase conclusiva), in una frase che finisce davvero (col punto), mai a metà.
 6. Scrivi il `testo_montato`: il testo delle frasi scelte, di fila. Rileggilo: deve suonare come un discorso naturale, senza ripetizioni, salti di logica o frasi monche. Se non torna, cambia scelte prima di rispondere.
 - Durata target 30–60 s (o quella del brief): somma le durate tra parentesi delle frasi che scegli.
 - Ogni frase va usata intera.
@@ -37,6 +37,10 @@ Prima delle inquadrature costruisci il TESTO. Chi guarda deve capire di cosa par
 - Senza frasi, le `keywords` si agganciano con `"elemento": <n>` (numero da 1 dell'elemento della sequenza su cui compaiono) al posto di `frase`.
 - Dati tecnici nelle scritte solo se sono nel brief o si leggono sul prodotto o sulla confezione nei fogli provino: non inventarli. Senza dati, usa il nome del prodotto e quello che si vede (es. "APP", "SNODO", "LUCE CALDA").
 - Un breve B-roll senza voce è ammesso anche in un video parlato (stacco visivo), ma con parsimonia.
+
+## L'esito (scritta finale col giudizio)
+- Va messa SOLO se Denis dà un giudizio, nelle frasi usate nel montaggio o nel brief (il brief vince). Se non lo dà, nessuna scritta di esito: mai "PROMOSSO" di default, mai un giudizio inventato.
+- Usa le SUE parole, in breve: un voto diventa il voto ("8/10", "10 SU 10", "7,5"); un'espressione resta quella ("NON È MALE", "CONSIGLIATO", "DA EVITARE", "PROMOSSO" solo se dice promosso).
 
 {{GRAFICA}}
 

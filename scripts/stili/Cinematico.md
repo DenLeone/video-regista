@@ -6,10 +6,10 @@ Look da spot di prodotto: immagini calde e pulite, sottotitoli bianchi parola pe
   - `note`: sottotitolo giallo sotto il titolo, 1–4 parole che danno il dato o il contesto ("20° anniversario", "fino a 14 ore", "metà prezzo"). Senza "// " e senza ironia forzata.
   1. Il primo titolo è il prodotto (tag = marca, word = nome, note = cosa lo rende speciale), sulla frase in cui Denis lo nomina o in apertura.
   2–4. I numeri e le specifiche che Denis dice (prezzo, autonomia, misure, confronto), sulla frase in cui li dice.
-  5. Solo se c'è un verdetto netto: titolo breve ("PROMOSSO", "DA PRENDERE"), `"fino_alla_fine": true`.
+  5. Esito (vedi "L'esito": solo se Denis dà un giudizio, con le sue parole, es. "8/10", "NON È MALE"): `"fino_alla_fine": true`. Senza giudizio, niente.
   - `top`: y del titolo (0–1920), default 380 (in alto). Se in quell'inquadratura il prodotto o il volto stanno in alto, usa 1250.
   - Il titolo è il dato, non la frase: non ripetere parola per parola quello che si sta già leggendo nei sottotitoli.
-  - **Senza parlato** (Denis registra la voce dopo): 3–4 titoli agganciati con `elemento`, uno ogni 7–10 s, il primo sul primo o secondo elemento (tag = marca, word = nome del prodotto); poi le funzioni che si vedono nelle riprese; lascia libero l'ultimo terzo del video o chiudi con un titolo `fino_alla_fine`. Inquadrature da 1,5–3 s, movimenti lenti, tanti dettagli.
+  - **Senza parlato** (Denis registra la voce dopo): 3–4 titoli agganciati con `elemento`, uno ogni 7–10 s, il primo sul primo o secondo elemento (tag = marca, word = nome del prodotto); poi le funzioni che si vedono nelle riprese; l'esito solo se è nel brief. Inquadrature da 1,5–3 s, movimenti lenti, tanti dettagli.
 - `flickers`: [] (questo stile non ne ha). `tavola`: "". `soggetto`: nome breve del prodotto.
 - `sponsor`: null; se il brief cita uno sponsor, mettilo come titolo (tag "In collaborazione con", word = marca) sulla frase in cui viene nominato.
 - **Inquadrature in questo stile** (sostituisce la regola "almeno metà delle frasi sul volto"): contano le immagini del prodotto. Il volto resta per l'aggancio, i commenti personali e la chiusura, circa un terzo delle frasi; nelle frasi che descrivono il prodotto preferisci B-roll ravvicinati, lenti e puliti (dettagli, luci, materiali, prodotto in uso). Restano valide tutte le altre regole: niente bocca che parla sopra la voce, niente mani davanti, niente inquadrature mosse o sfocate, mai più di 2 frasi di fila sulle sole mani.

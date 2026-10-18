@@ -43,6 +43,10 @@ Primo giro reale: 58 min, di cui **40 per ricodificare tutto il girato 4K** in 1
 - Struttura nel codice: `src/comune.tsx` (clip con voce, effetti sonori, condivisi da tutti gli stili), una composizione per stile (`src/Blueprint.tsx`, `src/Cinematico.tsx`) registrata in `src/Root.tsx`, istruzioni di grafica per l'AI in `scripts/stili/<nome>.md` (inserite nel prompt al posto di `{{GRAFICA}}`), nome in `STILI` di `scripts/regista.mjs`. Lo stile si sceglie PRIMA della regia (anche nella prova veloce `azione: regia`).
 - Il piano ha ora `parole` (ogni parola detta sulla timeline finale, dai tempi di Whisper riportati dentro la frase): servono agli stili con sottotitoli.
 
+### Esito e video senza parlato — 18/10
+- La scritta di esito c'è solo se Denis dà un giudizio (nelle frasi usate o nel brief) e usa le sue parole: voto ("8/10"), "NON È MALE", "CONSIGLIATO"…; "PROMOSSO" solo se lo dice. Regola in `prompt-regista.md` ("L'esito"), richiamata dagli stili.
+- Senza parlato (Denis registra la voce dopo sul video finito): scritte agganciate con `elemento` (prima lo script le toglieva tutte: Key air del 17/10 era uscito senza scritte), audio delle clip tolto (`"audio": "ambiente"` per tenerlo), 25–45 s.
+
 ### Stile Cinematico — 18/10
 - Dai 3 video di riferimento di Denis (spot prodotto, 576×1024): Drive `Stili/Cinematico/` con `stile.txt`, `esempi/` (da metterci i 3 riferimenti), `asset/`.
 - Grafica: look caldo (filtro CSS + tinta soft-light + vignettatura), sottotitoli Montserrat Bold bianchi una parola alla volta al centro (y≈1100; parole di 1–2 lettere unite alla successiva; spariscono durante i titoli), titoli Montserrat Black stretti (−0,045em) con `tag` = etichetta piccola sopra e `note` = sottotitolo giallo #FFE62E sotto, `top` default 380.
