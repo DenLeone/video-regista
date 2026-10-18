@@ -920,6 +920,34 @@ async function onNotify(env: Env, n: Notify) {
   }
 }
 
+// foto profilo del bot (workflow foto-bot, grafica/avatar-bot.jpg): la imposta con
+// setMyProfilePhoto e la manda in chat con l'esito, così Denis la ha comunque
+async function onFotoProfilo(env: Env, form: FormData) {
+  const foto = form.get('foto');
+  if (!foto || typeof foto === 'string') return 'foto mancante';
+  const imposta = new FormData();
+  imposta.append('photo', JSON.stringify({ type: 'static', photo: 'attach://foto' }));
+  imposta.append('foto', foto, 'avatar.jpg');
+  const r = (await (await fetch(`https://api.telegram.org/bot${env.TELEGRAM_BOT_TOKEN}/setMyProfilePhoto`, { method: 'POST', body: imposta })).json()) as { ok: boolean; description?: string };
+  const testo = r.ok
+    ? '🎬 <b>Nuova foto profilo impostata.</b>\nSe non la vedi subito, chiudi e riapri la chat.'
+    : `🎬 <b>Foto profilo del bot</b>\nNon sono riuscito a impostarla da solo (<code>${esc(r.description || 'errore')}</code>): mettila da @BotFather → /mybots → Edit Bot → Edit Botpic, mandando questa foto.`;
+  for (const chat of autorizzati(env)) {
+    const out = new FormData();
+    out.append('chat_id', chat);
+    out.append('caption', testo);
+    out.append('parse_mode', 'HTML');
+    out.append('photo', foto, 'avatar.jpg');
+    await fetch(`https://api.telegram.org/bot${env.TELEGRAM_BOT_TOKEN}/sendPhoto`, { method: 'POST', body: out });
+    // come file, per poterla salvare in qualità piena
+    const doc = new FormData();
+    doc.append('chat_id', chat);
+    doc.append('document', foto, 'regista-den.jpg');
+    await fetch(`https://api.telegram.org/bot${env.TELEGRAM_BOT_TOKEN}/sendDocument`, { method: 'POST', body: doc });
+  }
+  return r.ok ? 'ok' : `non impostata: ${r.description}`;
+}
+
 // video finale (≤ 50 MB, limite dei bot): arriva già compresso da regista.mjs.
 // Si carica una volta sola; agli altri utenti si rimanda lo stesso file_id.
 async function onVideo(env: Env, form: FormData) {
@@ -996,9 +1024,10 @@ export default {
       return new Response('ok');
     }
 
-    if (req.method === 'POST' && (url.pathname === '/notify' || url.pathname === '/video')) {
+    if (req.method === 'POST' && (url.pathname === '/notify' || url.pathname === '/video' || url.pathname === '/foto-profilo')) {
       if (req.headers.get('x-regista-token') !== env.NOTIFY_TOKEN) return new Response('no', { status: 401 });
       if (url.pathname === '/notify') { await onNotify(env, (await req.json()) as Notify); return new Response('ok'); }
+      if (url.pathname === '/foto-profilo') return new Response(await onFotoProfilo(env, await req.formData()));
       const inviato = await onVideo(env, await req.formData());
       return new Response(inviato ? 'ok' : 'video non inviato', { status: inviato ? 200 : 502 });
     }

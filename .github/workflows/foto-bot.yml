@@ -1,0 +1,21 @@
+name: foto-bot
+
+# Imposta la foto profilo del bot Telegram con grafica/avatar-bot.jpg (e la manda in chat).
+# Si lancia a mano dal tab Actions, dopo che il bot è stato pubblicato.
+on:
+  workflow_dispatch:
+
+jobs:
+  foto:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v5
+      - name: Manda la foto al bot
+        env:
+          NOTIFY_URL: ${{ secrets.NOTIFY_URL }}
+          NOTIFY_TOKEN: ${{ secrets.NOTIFY_TOKEN }}
+        run: |
+          if [ -z "$NOTIFY_URL" ]; then echo "::error::Manca il secret NOTIFY_URL"; exit 1; fi
+          esito=$(curl -sS -X POST "${NOTIFY_URL%/notify}/foto-profilo" -H "x-regista-token: $NOTIFY_TOKEN" -F "foto=@grafica/avatar-bot.jpg;type=image/jpeg")
+          echo "bot: $esito"
+          [ "$esito" = "ok" ] || echo "::warning::foto profilo non impostata ($esito): la foto è comunque arrivata in chat"
