@@ -30,6 +30,13 @@ Primo giro reale: 58 min, di cui **40 per ricodificare tutto il girato 4K** in 1
 - **Lark A2**: regia di Claude con falsa partenza in apertura, chiusura tagliata ("Questi top") e verdetto saltato. Ora: segni nel materiale per l'AI (`→F009` frase che continua, `ripresa meglio in F003`, `interrotta`, `finisce a metà`), procedura del racconto nel prompt (scaletta → frasi migliori → nome prodotto → verdetto → rilettura del `testo_montato`), chiusura completata in automatico fino al primo punto (max 2 frasi/7 s) o avviso. Il testo montato finisce in NOTE.txt (`Testo: …`).
 - **Solo immagini** (scelta di Denis): video già montati (nome con TikTok/Reel/export/montato/HQ grade) e girati di più di 3 giorni prima del resto → B-roll muto, la loro voce non entra mai (in Lark A2: il TikTok finito e IMG_8451 del 25/09).
 
+### Stili (preset) — 18/10
+- Su Drive: `03 · Social — Risorse/Stili/` (cartella che Denis aveva già, con dentro `Download (2).mp4` lasciato com'era).
+  - `Blueprint/`: scheda `stile.txt` dello stile attuale + `esempi/` e `asset/` per ritocchi.
+  - `_Modello nuovo stile (copia e rinomina)/`: `stile.txt` con le istruzioni e i campi da compilare (quando usarlo/argomenti, tono, colori, font, scritte, ritmo, suoni, musica, apertura/chiusura), `esempi/` (1–3 video di riferimento), `asset/` (logo/overlay PNG trasparenti, font, sfx, musica).
+- Flusso: Denis prepara la cartella → Claude costruisce lo stile come nuova composizione Remotion (da esempi + asset) e lo aggiunge a `STILI` in `scripts/regista.mjs` e a `src/Root.tsx`.
+- Già nel codice: `Stile: <nome>` nel brief sceglie lo stile; se non è ancora pronto si usa Blueprint e la NOTE lo dice. Da fare col 2° stile: scelta automatica in base agli argomenti di `stile.txt` e tasto nel bot.
+
 ### ⚠️ Minuti GitHub con 10 video al giorno
 10 × ~18 min ≈ 180 min/giorno ≈ 5.400/mese: oltre i 2.000 gratuiti dei repo privati. Opzioni (decide Denis): pagare l'eccedenza a minuto; GitHub Pro (3.000 min); **repo pubblico** = minuti illimitati e runner a 4 core (render ~2× più veloce) ma log e artifact visibili: in quel caso togliere l'upload degli artifact (fogli provino/trascrizioni) e i testi dell'AI dai log.
 

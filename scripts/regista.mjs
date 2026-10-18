@@ -429,13 +429,24 @@ function validaPiano(p) {
 }
 
 // ---------- 4. render ----------
-function renderizza(out) {
+// Stili pronti = composizioni Remotion registrate in src/Root.tsx. Le schede e gli esempi
+// stanno su Drive in "03 · Social — Risorse/Stili/<nome>/" (stile.txt, esempi/, asset/):
+// uno stile nuovo si costruisce da lì e si aggiunge qui e in Root.tsx.
+const STILI = ['Blueprint'];
+function scegliStile(brief) {
+  const richiesto = (/stile\s*:\s*([^\n.,;]+)/i.exec(brief || '') || [])[1]?.trim();
+  if (!richiesto) return { stile: STILI[0] };
+  const trovato = STILI.find((x) => x.toLowerCase() === richiesto.toLowerCase());
+  return trovato ? { stile: trovato } : { stile: STILI[0], avviso: `lo stile "${richiesto}" non è ancora pronto: ho usato ${STILI[0]}` };
+}
+
+function renderizza(out, stile = STILI[0]) {
   // Il primo render a volte fallisce per un errore transitorio del compositor
   // (visto nel test del 16/10): fino a 3 tentativi.
   for (let tentativo = 1; ; tentativo++) {
     try {
       // 1080×1920 a ~15 Mbps: il formato che TikTok/Instagram caricano meglio (meglio di un 4K pesante)
-      run('npx', ['remotion', 'render', 'src/index.ts', 'Blueprint', out, `--props=${path.join(WORK, 'piano.json')}`,
+      run('npx', ['remotion', 'render', 'src/index.ts', stile, out, `--props=${path.join(WORK, 'piano.json')}`,
         '--codec=h264', '--video-bitrate=15M', '--max-rate=16M', '--buffer-size=32M', '--audio-bitrate=320k', '--concurrency=100%',
         // browser già installato (es. Chrome sul PC) invece di quello che Remotion scarica
         ...(process.env.REMOTION_BROWSER ? [`--browser-executable=${process.env.REMOTION_BROWSER}`] : [])],
@@ -759,6 +770,8 @@ async function main() {
     if (avvisi.length) log('avvisi regia:', avvisi.join(' | '));
     if (regia.scaletta) log('scaletta:', [].concat(regia.scaletta).join(' → '));
     log('testo montato:', piano.testo);
+    const { stile, avviso: avvisoStile } = scegliStile(brief);
+    if (avvisoStile) analisi.avvisi = [...(analisi.avvisi || []), avvisoStile];
     if (analisi.avvisi?.length) piano.note = [...analisi.avvisi.map((a) => `⚠️ ${a}`), piano.note].filter(Boolean).join(' · ');
     // effetti sonori sotto la voce: più bassa la voce registrata, più bassi gli effetti (~12–16 dB sotto)
     const livelloVoce = Math.max(-60, ...analisi.sorgenti.filter((s) => s.principale && s.livello != null).map((s) => s.livello));
@@ -782,7 +795,7 @@ async function main() {
     const finale = `${nome} - FINALE${versioni ? ` v${versioni + 1}` : ''}.mp4`;
     const outFile = path.join(ROOT, 'out', finale);
     fs.mkdirSync(path.dirname(outFile), { recursive: true });
-    renderizza(outFile);
+    renderizza(outFile, stile);
     await fase(nome, '📤 Carico su Drive', 'carico');
 
     const durataN = probe(outFile).durata;
