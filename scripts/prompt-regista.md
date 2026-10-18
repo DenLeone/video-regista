@@ -40,6 +40,7 @@ Prima delle inquadrature costruisci il TESTO. Chi guarda deve capire di cosa par
 
 ## Le scritte a schermo
 - Sempre in italiano: il pubblico è italiano (Key air, 18/10: "GRID HONEYCOMB", "APP CONTROL"). Restano come sono solo i nomi dei prodotti, le marche e le sigle (Wi-Fi, USB-C, ANC, Hz).
+- A parlare è Denis: mai il suo nome nelle scritte né frasi in terza persona su di lui (Giacca autunnale, 18/10: "la preferita di Denis"). Scritte neutre o in prima persona ("la mia preferita").
 
 ## L'esito (scritta finale col giudizio)
 - Va messa SOLO se Denis dà un giudizio, nelle frasi usate nel montaggio o nel brief (il brief vince: "Giudizio finale: X" = usa X; "Giudizio finale: nessuno" = nessuna scritta di esito). Se non lo dà, nessuna scritta di esito: mai "PROMOSSO" di default, mai un giudizio inventato.
