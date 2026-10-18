@@ -370,19 +370,44 @@ async function regiaConGemini(prompt, fogli, valida) {
     const c = await fetchRiprova(`${GEMINI_BASE()}/models/${modelli[0]}:countTokens`, { method: 'POST', headers, body: JSON.stringify({ contents }) }, 2);
     if (c.ok) { const t = (await c.json()).totalTokens; consumi.stima = { totale: t, esatta: true }; log(`Gemini: ${t} token da inviare`); }
   } catch (e) { log('conteggio token Gemini non riuscito', e.message); }
-  const body = JSON.stringify({ contents, generationConfig: { responseMimeType: 'application/json', temperature: 0.4 } });
+  const generationConfig = { responseMimeType: 'application/json', temperature: 0.4 };
+  const leggi = async (risposta, modello) => {
+    const j = await risposta.json();
+    const testo = (j.candidates?.[0]?.content?.parts || []).map((x) => x.text || '').join('');
+    const u = j.usageMetadata || {};
+    const prima = consumi.ai?.chi === 'Gemini' ? consumi.ai : { input: 0, output: 0 };
+    consumi.ai = { chi: 'Gemini', modello: j.modelVersion || modello, input: prima.input + (u.promptTokenCount || 0), output: prima.output + (u.candidatesTokenCount || 0) + (u.thoughtsTokenCount || 0) };
+    return { testo, regia: JSON.parse(testo.replace(/^```(?:json)?\s*|\s*```$/g, '')) };
+  };
+  // difetti del racconto che il controllo automatico trova (ordine rimescolato, frasi staccate,
+  // chiusura a metà): Gemini rilegge la sua regia con l'elenco e la riscrive, una volta sola
+  const difetti = (r) => (r.avvisi || []).filter((a) => /ordine del discorso|staccata|finisce a metà|finisce senza punto/.test(a));
   let motivo = 'nessun modello';
   for (const [i, modello] of modelli.entries()) {
-    const esito = await chiamaGemini(modello, body, headers);
+    const esito = await chiamaGemini(modello, JSON.stringify({ contents, generationConfig }), headers);
     if (esito.risposta) {
       try {
-        const j = await esito.risposta.json();
-        const testo = (j.candidates?.[0]?.content?.parts || []).map((x) => x.text || '').join('');
-        const u = j.usageMetadata || {};
-        consumi.ai = { chi: 'Gemini', modello: j.modelVersion || modello, input: u.promptTokenCount || 0, output: (u.candidatesTokenCount || 0) + (u.thoughtsTokenCount || 0) };
-        const regia = JSON.parse(testo.replace(/^```(?:json)?\s*|\s*```$/g, ''));
+        let { testo, regia } = await leggi(esito.risposta, modello);
+        let risultato = valida(regia);
+        const problemi = difetti(risultato);
+        if (problemi.length) {
+          log(`Gemini: rilettura della regia (${problemi.join(' | ')})`);
+          await fase(job.nome, `✍️ Rileggo la regia: ${problemi.length} punt${problemi.length === 1 ? 'o' : 'i'} da sistemare nel racconto`, 'regia');
+          const correzione = [...contents, { role: 'model', parts: [{ text: testo }] }, { role: 'user', parts: [{ text:
+            `Il controllo automatico del tuo montaggio ha trovato:\n- ${problemi.join('\n- ')}\n`
+            + 'Riscrivi la regia COMPLETA correggendo questi punti: ordine del discorso di Denis, frasi che rimandano a prima messe dopo ciò a cui si riferiscono, chiusura su una frase che finisce col punto. Stesse regole, stesso formato JSON.' }] }];
+          const esito2 = await chiamaGemini(modello, JSON.stringify({ contents: correzione, generationConfig }), headers);
+          if (esito2.risposta) {
+            try {
+              const nuova = await leggi(esito2.risposta, modello);
+              const r2 = valida(nuova.regia);
+              log(`Gemini: dopo la rilettura ${difetti(r2).length} difetti (prima ${problemi.length})`);
+              if (difetti(r2).length < problemi.length) ({ regia, risultato } = { regia: nuova.regia, risultato: r2 });
+            } catch (e) { log('rilettura della regia non usabile', e.message); }
+          } else log(`rilettura non riuscita: ${esito2.motivo}`);
+        }
         fs.writeFileSync(path.join(WORK, 'regia.json'), JSON.stringify(regia, null, 1));
-        return { regia, risultato: valida(regia) };
+        return { regia, risultato };
       } catch (e) { esito.motivo = `regia inutilizzabile (${e.message.slice(0, 120)})`; }
     }
     motivo = esito.motivo;
@@ -688,7 +713,56 @@ export async function analizza(nome, brief, cache) {
 
 // ---------- main ----------
 let job = {};
+// Prova veloce della sola regia (azione "regia"): rilegge il materiale già analizzato
+// (_regista/materiale.json del montaggio precedente), chiede la regia e manda il testo che
+// verrebbe montato, su Telegram e in _regista/prova-regia.txt. Niente download del girato e
+// niente render: 1–2 minuti invece di 10–20. Serve a mettere a punto il racconto.
+async function provaRegia() {
+  const nome = process.env.CARTELLA;
+  job = { nome };
+  if (!nome) throw new Error('prova regia: manca la cartella');
+  fs.rmSync(WORK, { recursive: true, force: true });
+  fs.mkdirSync(path.join(WORK, 'cache'), { recursive: true });
+  let dir = null;
+  for (const d of [OUT_DIR, IN_DIR]) {
+    try { rclone('copy', remote(d, nome, CACHE), path.join(WORK, 'cache')); } catch { continue; }
+    if (fs.existsSync(path.join(WORK, 'cache', 'materiale.json'))) { dir = d; break; }
+  }
+  if (!dir) {
+    await notifica('⚠️ prova regia', nome, 'Non trovo il materiale già analizzato: serve prima un montaggio completo di questa cartella.');
+    process.exitCode = 1;
+    return;
+  }
+  const analisi = JSON.parse(fs.readFileSync(path.join(WORK, 'cache', 'materiale.json'), 'utf8'));
+  if (process.env.BRIEF_EXTRA) analisi.brief = `Dal telegram: ${process.env.BRIEF_EXTRA}`;
+  for (const s of analisi.sorgenti) s.fogli = []; // i fogli provino non sono salvati: prova solo sul testo
+  const testoMateriale = `${materialePerAI(analisi)}\n\n(Prova veloce: i fogli provino non sono inclusi, scegli le inquadrature solo in base alle sorgenti.)`;
+  await fase(nome, '📝 Prova della regia: solo il testo, senza render', 'regia');
+  const { regia, risultato: { piano, avvisi } } = await chiediRegia(testoMateriale, [], null, (r) => risolviRegia(r, analisi));
+  const durata = piano.clips.reduce((t, c) => t + (c.end - c.start), 0);
+  const testo = [
+    `Testo (${durata.toFixed(0)} s, ${piano.clips.length} tagli): ${piano.testo}`,
+    regia.scaletta ? `Scaletta: ${[].concat(regia.scaletta).join(' → ')}` : '',
+    avvisi.length ? `Avvisi: ${avvisi.join(' · ')}` : '',
+    rigaConsumi(),
+  ].filter(Boolean).join('\n\n');
+  fs.writeFileSync(path.join(WORK, 'prova-regia.txt'), testo);
+  fs.writeFileSync(path.join(WORK, 'regia.json'), JSON.stringify(regia, null, 1));
+  try {
+    rclone('copyto', path.join(WORK, 'prova-regia.txt'), remote(dir, nome, CACHE, 'prova-regia.txt'));
+    rclone('copyto', path.join(WORK, 'regia.json'), remote(dir, nome, CACHE, 'regia-prova.json'));
+  } catch (e) { log('prova regia non salvata su Drive', e.message); }
+  await notifica('📝 prova regia', nome, testo);
+}
+
 async function main() {
+  if (process.env.AZIONE === 'regia') {
+    return provaRegia().catch(async (e) => {
+      log(e.stack || e.message);
+      await notifica('⚠️ prova regia', process.env.CARTELLA || '—', `Errore: ${e.message}`);
+      process.exitCode = 1;
+    });
+  }
   job = trovaCartella() || {};
   if (!job.nome) { log('niente da fare'); return; }
   const { nome, files } = job;

@@ -36,7 +36,7 @@ on:
         required: false
         default: ''
       azione:
-        description: 'monta (default) | elenco = manda solo al bot le cartelle di 97 - Editare'
+        description: 'monta (default) | elenco = manda solo al bot le cartelle di 97 - Editare | regia = prova veloce della sola regia (testo, niente render) su una cartella già montata'
         required: false
         default: 'monta'
       telegram:
@@ -48,7 +48,7 @@ on:
 # quelli in attesa più vecchi. Con un gruppo unico, tre avvii di fila ne perdevano uno.
 # Cartelle diverse girano in parallelo; i controlli automatici e l'elenco hanno la loro coda.
 concurrency:
-  group: regista-${{ inputs.azione == 'elenco' && 'elenco' || inputs.cartella || 'auto' }}
+  group: regista-${{ inputs.azione == 'elenco' && 'elenco' || inputs.azione == 'regia' && format('regia-{0}', inputs.cartella) || inputs.cartella || 'auto' }}
   cancel-in-progress: false
 
 # il giro automatico avvia un giro per ogni cartella con VAI (gh workflow run)
@@ -98,7 +98,7 @@ jobs:
           # file da Telegram: la cartella la crea lo script (nome libero in 97 e 98)
           [ -n "$TELEGRAM" ] && [ "$TELEGRAM" != "[]" ] && trovato="${CARTELLA:-Video da Telegram}"
           liberi=("${con_vai[@]}")
-          if [ "$AZIONE" != "elenco" ] && [ -z "$trovato" ] && [ ${#con_vai[@]} -gt 0 ]; then
+          if [ "$AZIONE" != "elenco" ] && [ "$AZIONE" != "regia" ] && [ -z "$trovato" ] && [ ${#con_vai[@]} -gt 0 ]; then
             trovato="${con_vai[0]}"
             prenota "$trovato" || true
             # tutte le altre cartelle con VAI partono subito, ognuna nel suo giro (in parallelo)
@@ -133,7 +133,8 @@ jobs:
           python-version: '3.12'
 
       - name: Dipendenze
-        if: steps.check.outputs.cartella != ''
+        # la prova della sola regia non tocca video: niente ffmpeg né Remotion
+        if: steps.check.outputs.cartella != '' && inputs.azione != 'regia'
         env:
           TELEGRAM: ${{ inputs.telegram }}
         run: |
@@ -171,6 +172,7 @@ jobs:
           BRIEF_EXTRA: ${{ inputs.brief }}
           ORIGINE: ${{ inputs.origine }}
           CORREZIONE: ${{ inputs.correzione }}
+          AZIONE: ${{ inputs.azione }}
         run: node scripts/regista.mjs
 
       - name: Conserva piano e note (debug)

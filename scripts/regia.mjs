@@ -109,6 +109,19 @@ export function risolviRegia(regia, analisi) {
 
   const totale = t;
   if (!clips.length) throw new Error('la regia non contiene nessuna clip utilizzabile');
+  // il montaggio deve seguire l'ordine del discorso (Lark A2, 18/10: frasi rimescolate con
+  // "appunto", "però", "l'unica" rimasti senza la frase a cui si riferivano)
+  const usate = sequenza.map((it) => frasi.get(normFrase(it.frase))).filter(Boolean);
+  const indietro = usate.slice(2).filter((f, i) => f.principale === usate[i + 1].principale && analisi.frasi.indexOf(f) < analisi.frasi.indexOf(usate[i + 1])).length;
+  if (indietro) avvisi.push(`ordine del discorso cambiato ${indietro} volt${indietro === 1 ? 'a' : 'e'}`);
+  // una frase che rimanda a prima va dopo una delle 3 frasi che la precedono nel girato
+  // (si possono saltare una falsa partenza o un inciso, non un pezzo di discorso)
+  usate.forEach((f, i) => {
+    if (!RIMANDO.test(f.testo.trim())) return;
+    const k = analisi.frasi.indexOf(f);
+    const prima = analisi.frasi.slice(Math.max(0, k - 3), k).filter((g) => g.principale === f.principale);
+    if (prima.length && !prima.includes(usate[i - 1])) avvisi.push(`${f.id} ("${f.testo.split(' ').slice(0, 3).join(' ')}…") è staccata da ciò a cui si riferisce (${prima[prima.length - 1].id})`);
+  });
   // con parlato disponibile, una regia che non usa (quasi) nessuna frase valida è da rifare con l'altra AI
   if (analisi.frasi.length) {
     const conFrase = sequenza.filter((it) => it.frase);
@@ -167,6 +180,7 @@ export function risolviRegia(regia, analisi) {
 //   →F009             continua nella F009 senza pausa né punto: vanno prese insieme
 //   ripresa meglio in F003  falsa partenza o ripetizione che Denis ridice poco dopo
 //   interrotta / finisce a metà  frase lasciata in sospeso
+const RIMANDO = /^(appunto|però|quindi|anche|ma|perché|poi|infatti|cioè|questo|questa|questi|queste|l'unica|l'unico|invece|allora|comunque)\b/i;
 const finita = (t) => /[.!?…]["»”)]?$/.test(String(t).trim());
 const paroleDi = (t) => (String(t).toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').match(/[a-z0-9]+/g) || []);
 export function successiva(frasi, f) {
