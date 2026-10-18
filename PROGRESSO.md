@@ -53,7 +53,8 @@ Primo giro reale: 58 min, di cui **40 per ricodificare tutto il girato 4K** in 1
 - Suoni: `impatto` (colpo basso) sul primo titolo, `whoosh` su ogni titolo (scripts/genera-sfx.mjs).
 - Regia: 3–5 titoli (prodotto, poi numeri/specifiche), niente flicker; volto ~1/3 delle frasi (aggancio, commenti, chiusura), il resto B-roll ravvicinati del prodotto.
 - Provato in locale: render di prova (titoli e parole ok) e pipeline completa con `Stile: Cinematico` nel brief.
-- Ripresa consigliata a Denis: Insta360 in **i-Log** + LUT ufficiale Insta360 (.cube) da mettere in `Stili/Cinematico/asset/` → poi va collegata nel taglio dei segmenti (lut3d di ffmpeg). Non Dolby Vision (HDR: va riconvertito in SDR con il tonemap, colori meno controllabili). Finché la LUT non è collegata: profilo standard (SDR).
+- Ripresa consigliata a Denis: Insta360 (serie Luna) in **i-Log** a 10 bit, non Dolby Vision (HDR: va riconvertito in SDR col tonemap, colori meno controllabili).
+- I-Log collegato (18/10): LUT tecnica ufficiale `lut/Luna_I-Log_to_Rec709_BT1886_s33_v2.cube` (dallo zip "Luna Series I-Log LUTs" che ha mandato Denis; le altre sono per HDR) applicata con `lut3d` nel taglio dei segmenti e nei fogli provino (`filtroColore`, `colore.log`). Si attiva con "i-Log" nel brief (vale per le clip Insta360) o se i metadati del file contengono "i-log". Prima la conversione tecnica, poi il look dello stile (Cinematico: caldo + vignettatura). Da fare con la prima clip i-Log vera: controllare la resa e se i metadati permettono il riconoscimento automatico.
 
 ### ⚠️ Minuti GitHub con 10 video al giorno
 10 × ~18 min ≈ 180 min/giorno ≈ 5.400/mese: oltre i 2.000 gratuiti dei repo privati. Opzioni (decide Denis): pagare l'eccedenza a minuto; GitHub Pro (3.000 min); **repo pubblico** = minuti illimitati e runner a 4 core (render ~2× più veloce) ma log e artifact visibili: in quel caso togliere l'upload degli artifact (fogli provino/trascrizioni) e i testi dell'AI dai log.

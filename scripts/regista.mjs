@@ -128,7 +128,12 @@ function probe(file) {
 
 // HDR (iPhone in HLG/Dolby Vision, clip PQ) → Rec.709: senza conversione i colori escono slavati
 const HDR = ['arib-std-b67', 'smpte2084'];
+// I-Log (Insta360): girato piatto, si riporta a colori normali con la LUT tecnica ufficiale
+// Insta360 (I-Log → Rec709 BT1886). Il "look" (caldo, contrasto) lo aggiunge poi lo stile.
+const LUT_ILOG = path.join(ROOT, 'lut', 'Luna_I-Log_to_Rec709_BT1886_s33_v2.cube');
+const perFiltro = (p) => p.replace(/\\/g, '/').replace(/:/g, '\\:');
 function filtroColore(c) {
+  if (c?.log) return `lut3d=file='${perFiltro(LUT_ILOG)}':interp=tetrahedral,format=yuv420p`;
   if (!c || !HDR.includes(c.trc)) return 'format=yuv420p';
   return `zscale=tin=${c.trc}:pin=${c.primaries || 'bt2020'}:min=${c.matrix || 'bt2020nc'}:t=linear:npl=100,format=gbrpf32le,`
     + 'zscale=p=bt709,tonemap=tonemap=hable:desat=0,zscale=t=bt709:m=bt709:r=tv,format=yuv420p';
@@ -576,8 +581,11 @@ export async function analizza(nome, brief, cache) {
       const info = probe(src);
       if (!info.video) continue;
       const disp = dispositivo(f, info.tags);
-      const hdr = HDR.includes(info.colore?.trc);
-      log(`video ${f} (${NOMI_DISPOSITIVO[disp]}, ${info.durata.toFixed(1)} s, ${info.w}x${info.h}${hdr ? ', HDR → SDR' : ''})`);
+      // I-Log: dai metadati se la camera lo scrive, altrimenti "i-Log" nel brief vale per le clip Insta360
+      const iLog = /\bi-?log\b/i.test(Object.values(info.tags).join(' ')) || (disp === 'insta' && /\bi-?log\b/i.test(brief || ''));
+      if (iLog && info.colore) info.colore.log = true;
+      const hdr = !iLog && HDR.includes(info.colore?.trc);
+      log(`video ${f} (${NOMI_DISPOSITIVO[disp]}, ${info.durata.toFixed(1)} s, ${info.w}x${info.h}${iLog ? ', I-Log → Rec709' : hdr ? ', HDR → SDR' : ''})`);
       // `file` è il nome logico usato dalla regia; i pezzi veri si tagliano dall'originale dopo la regia
       sorgenti.push({ id, file: `${id}.mp4`, originale: src, tipo: 'video', dispositivo: disp, nomeDispositivo: NOMI_DISPOSITIVO[disp],
         durata: +info.durata.toFixed(2), orient: info.w > info.h ? 'h' : 'v', haAudio: info.audio, colore: info.colore, data: dataRipresa(info.tags, f) });
@@ -711,6 +719,9 @@ export async function analizza(nome, brief, cache) {
   const avvisi = sorgenti.filter((s) => s.provataVisiva).map((s) => s.sync
     ? `${s.id} (${s.nomeDispositivo}) ha registrato solo fruscio (microfono collegato ma spento?): l'ho agganciata dalle immagini. Se il labiale non torna, dimmelo.`
     : `${s.id} (${s.nomeDispositivo}) ha registrato solo fruscio, senza voce (microfono collegato ma spento?) e non sono riuscito ad agganciarla nemmeno dalle immagini: l'ho usata solo come B-roll. Lascia acceso il microfono della camera, anche quello interno basta.`);
+  if (/\bi-?log\b/i.test(brief || '') && !sorgenti.some((s) => s.colore?.log)) {
+    avvisi.push('nel brief c\'è "i-Log" ma nessuna clip è riconosciuta come Insta360: colori lasciati come sono');
+  }
   return { cartella: nome, brief, sorgenti, frasi: tutteFrasi, foto, avvisi };
 }
 
