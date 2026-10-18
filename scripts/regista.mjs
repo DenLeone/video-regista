@@ -149,6 +149,24 @@ function confrontoColore(file, id, durata, colore) {
   } catch (e) { log(`confronto colore di ${id} non riuscito`, e.message); }
 }
 
+// luminosità e saturazione medie (scala 8 bit) di alcuni fotogrammi, dopo il filtro `filtro`.
+// Tarate sul test I-Log del 18/10: I-Log originale saturazione ~3 (girato normale 13–19);
+// convertito con la LUT ma esposto poco, luminosità ~37 (un prodotto in luce scura ~60)
+function statisticheColore(file, durata, filtro = 'null') {
+  const tmp = path.join(WORK, 'statistiche.txt');
+  const v = [0.25, 0.5, 0.75].map((q) => {
+    try {
+      fs.rmSync(tmp, { force: true });
+      run('ffmpeg', ['-y', '-v', 'error', '-ss', (durata * q).toFixed(2), '-i', file, '-frames:v', '1', '-vf',
+        `scale=270:-2,${filtro},format=yuv420p,signalstats,metadata=print:file='${perFiltro(tmp)}'`, '-f', 'null', '-']);
+      const t = fs.readFileSync(tmp, 'utf8');
+      return { y: Number(/YAVG=([\d.]+)/.exec(t)?.[1]), sat: Number(/SATAVG=([\d.]+)/.exec(t)?.[1]) };
+    } catch { return null; }
+  }).filter((x) => x && Number.isFinite(x.y) && Number.isFinite(x.sat));
+  if (!v.length) return null;
+  return { y: v.reduce((a, x) => a + x.y, 0) / v.length, sat: v.reduce((a, x) => a + x.sat, 0) / v.length };
+}
+
 // Si ricodificano solo i pezzi usati dal montaggio (1080p, colori SDR). Prima si convertiva
 // tutto il girato 4K: 40 dei 58 minuti del primo giro reale.
 function taglia(s, start, dur, out, conAudio) {
@@ -580,6 +598,7 @@ export async function analizza(nome, brief, cache) {
   const sorgenti = [];
   const foto = [];
   const idUsati = new Set();
+  const logRiconosciuti = [], logScuri = []; // clip I-Log riconosciute dai colori, clip I-Log sottoesposte
   for (const f of fs.readdirSync(SCARICO).sort()) {
     const src = path.join(SCARICO, f);
     const ext = path.extname(f).toLowerCase();
@@ -591,14 +610,28 @@ export async function analizza(nome, brief, cache) {
       const info = probe(src);
       if (!info.video) continue;
       const disp = dispositivo(f, info.tags);
-      // I-Log: dai metadati se la camera lo scrive, altrimenti "i-Log" nel brief vale per le clip Insta360
-      const iLog = /\bi-?log\b/i.test(Object.values(info.tags).join(' ')) || (disp === 'insta' && /\bi-?log\b/i.test(brief || ''));
+      // I-Log: la Insta360 non lo scrive nei metadati (test del 18/10: bt709, 10 bit e basta).
+      // Si riconosce da 10 bit + colori spentissimi; "i-Log" nel brief lo forza, "senza i-Log" lo esclude
+      const noLog = /\b(senza|no)\s+i-?log\b/i.test(brief || '');
+      let iLog = !noLog && (/\bi-?log\b/i.test(Object.values(info.tags).join(' ')) || (disp === 'insta' && /\bi-?log\b/i.test(brief || '')));
+      if (!iLog && !noLog && disp === 'insta' && /10/.test(info.colore?.pix || '') && !HDR.includes(info.colore?.trc)) {
+        const st = statisticheColore(src, info.durata);
+        if (st && st.sat < 6) {
+          iLog = true;
+          logRiconosciuti.push(id);
+          log(`  ${id}: 10 bit e colori spenti (saturazione ${st.sat.toFixed(1)}): la tratto come I-Log`);
+        }
+      }
       if (iLog && info.colore) info.colore.log = true;
       const hdr = !iLog && HDR.includes(info.colore?.trc);
       log(`video ${f} (${NOMI_DISPOSITIVO[disp]}, ${info.durata.toFixed(1)} s, ${info.w}x${info.h}${iLog ? ', I-Log → Rec709' : hdr ? ', HDR → SDR' : ''})`);
-      // Insta360: colore e metadati nel log, per riconoscere l'I-Log in automatico
       if (disp === 'insta') log(`  ${id}: colore ${JSON.stringify(info.colore)} · metadati ${JSON.stringify(info.tags).slice(0, 800)}`);
-      if (iLog) confrontoColore(src, id, info.durata, info.colore);
+      if (iLog) {
+        confrontoColore(src, id, info.durata, info.colore);
+        // la LUT vuole un'esposizione giusta: girato scuro → convertito scurissimo
+        const dopo = statisticheColore(src, info.durata, filtroColore(info.colore).replace(/,format=yuv420p$/, ''));
+        if (dopo && dopo.y < 45) logScuri.push(id);
+      }
       // `file` è il nome logico usato dalla regia; i pezzi veri si tagliano dall'originale dopo la regia
       sorgenti.push({ id, file: `${id}.mp4`, originale: src, tipo: 'video', dispositivo: disp, nomeDispositivo: NOMI_DISPOSITIVO[disp],
         durata: +info.durata.toFixed(2), orient: info.w > info.h ? 'h' : 'v', haAudio: info.audio, colore: info.colore, data: dataRipresa(info.tags, f) });
@@ -732,7 +765,9 @@ export async function analizza(nome, brief, cache) {
   const avvisi = sorgenti.filter((s) => s.provataVisiva).map((s) => s.sync
     ? `${s.id} (${s.nomeDispositivo}) ha registrato solo fruscio (microfono collegato ma spento?): l'ho agganciata dalle immagini. Se il labiale non torna, dimmelo.`
     : `${s.id} (${s.nomeDispositivo}) ha registrato solo fruscio, senza voce (microfono collegato ma spento?) e non sono riuscito ad agganciarla nemmeno dalle immagini: l'ho usata solo come B-roll. Lascia acceso il microfono della camera, anche quello interno basta.`);
-  if (/\bi-?log\b/i.test(brief || '') && !sorgenti.some((s) => s.colore?.log)) {
+  if (logRiconosciuti.length) avvisi.push(`${logRiconosciuti.join(', ')}: riconosciut${logRiconosciuti.length > 1 ? 'e' : 'a'} come I-Log (10 bit, colori spenti) e convertit${logRiconosciuti.length > 1 ? 'e' : 'a'} con la LUT Insta360. Se non era in I-Log scrivi "senza i-Log" nel brief.`);
+  if (logScuri.length) avvisi.push(`${logScuri.join(', ')}: in I-Log ma sottoespost${logScuri.length > 1 ? 'e' : 'a'}, dopo la conversione resta${logScuri.length > 1 ? 'no' : ''} scur${logScuri.length > 1 ? 'e' : 'a'}. In I-Log esponi un po' di più (+0,7 EV) o aggiungi luce.`);
+  if (/\bi-?log\b/i.test(brief || '') && !/\b(senza|no)\s+i-?log\b/i.test(brief || '') && !sorgenti.some((s) => s.colore?.log)) {
     avvisi.push('nel brief c\'è "i-Log" ma nessuna clip è riconosciuta come Insta360: colori lasciati come sono');
   }
   return { cartella: nome, brief, sorgenti, frasi: tutteFrasi, foto, avvisi };
