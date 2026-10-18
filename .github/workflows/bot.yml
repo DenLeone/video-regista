@@ -2,8 +2,8 @@ name: bot
 
 # Pubblica il bot Telegram (Cloudflare Worker) quando cambia telegram/ su main,
 # oppure a mano dal tab Actions (anche da un altro ramo).
-# Serve una volta sola: secret CLOUDFLARE_API_TOKEN (modello "Edit Cloudflare Workers")
-# e CLOUDFLARE_ACCOUNT_ID. Senza secret il job finisce con un avviso, non fallisce.
+# Serve una volta sola: secret CLOUDFLARE_API_TOKEN (modello "Edit Cloudflare Workers");
+# l'account è in telegram/wrangler.toml. Senza secret il job finisce con un avviso, non fallisce.
 on:
   push:
     branches: [main]
@@ -32,4 +32,6 @@ jobs:
             echo "::warning::Manca il secret CLOUDFLARE_API_TOKEN: bot non pubblicato (pubblicalo a mano con npx wrangler deploy)"
             exit 0
           fi
+          # secret CLOUDFLARE_ACCOUNT_ID vuoto: vale account_id di wrangler.toml
+          [ -n "$CLOUDFLARE_ACCOUNT_ID" ] || unset CLOUDFLARE_ACCOUNT_ID
           npx --yes wrangler@4 deploy

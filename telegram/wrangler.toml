@@ -1,5 +1,7 @@
 name = "regista-telegram"
 main = "src/index.ts"
+# account Cloudflare di Denis (non è un segreto: per pubblicare serve il secret CLOUDFLARE_API_TOKEN)
+account_id = "5b9821477c750916e6c3f8936a6da859"
 compatibility_date = "2026-09-01"
 
 # Memoria del bot (conversazione /nuovo, correzioni in attesa, run -> cartella).
