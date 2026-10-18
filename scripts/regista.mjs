@@ -33,6 +33,7 @@ const RIRENDER = process.env.AZIONE === 'render'; // rifà solo il render con la
 // file mandati direttamente al bot: [{"m": id_messaggio, "n": "nome.mov"}, ...]
 const TELEGRAM_FILE = (process.env.TELEGRAM_FILE || '').trim();
 const DA_TELEGRAM = Boolean(TELEGRAM_FILE && TELEGRAM_FILE !== '[]');
+const CHIAVI_TELEGRAM = Boolean(process.env.TG_API_ID && process.env.TG_API_HASH && process.env.TELEGRAM_BOT_TOKEN);
 const SRC_DIR = process.env.ORIGINE === '98' || CORREZIONE ? OUT_DIR : IN_DIR;
 const CACHE = '_regista'; // sottocartella con regia.json, piano.json e materiale.json di ogni video
 const ROOT = path.resolve(path.dirname(new URL(import.meta.url).pathname.replace(/^\/([A-Za-z]:)/, '$1')), '..');
@@ -576,7 +577,8 @@ async function invia(payload) {
     await fetchRiprova(process.env.NOTIFY_URL, {
       method: 'POST', headers: { 'content-type': 'application/json', 'x-regista-token': process.env.NOTIFY_TOKEN || '' },
       // richiesto = nome chiesto dal bot (la cartella può essere diventata "Nome (2)"): serve ad agganciare la scheda
-      body: JSON.stringify({ run_url: RUN_URL, run_id: process.env.GITHUB_RUN_ID, origine: SRC_DIR === OUT_DIR ? '98' : '97', richiesto: process.env.CARTELLA || '', ...payload }),
+      // tgFile: ci sono le chiavi per scaricare i video mandati in chat (il bot avvisa se mancano)
+      body: JSON.stringify({ run_url: RUN_URL, run_id: process.env.GITHUB_RUN_ID, origine: SRC_DIR === OUT_DIR ? '98' : '97', richiesto: process.env.CARTELLA || '', tgFile: CHIAVI_TELEGRAM, ...payload }),
     });
   } catch (e) { log('notifica fallita', e.message); }
 }
@@ -901,6 +903,7 @@ async function main() {
     if (DA_TELEGRAM) {
       const refs = JSON.parse(TELEGRAM_FILE);
       await fase(nome, `📥 Scarico ${refs.length} file da Telegram`, 'scarico');
+      if (!CHIAVI_TELEGRAM) throw new Error('i video mandati in chat non sono ancora attivi: servono i secret TG_API_ID, TG_API_HASH e TELEGRAM_BOT_TOKEN su GitHub (vedi la Guida del bot). Intanto carica i file su Drive in 97 - Editare.');
       run(process.env.REGISTA_PYTHON || 'python3', [path.join(ROOT, 'scripts', 'scarica-telegram.py'), SCARICO], { stdio: 'inherit' });
       // gli originali vanno in 97 mentre analisi, AI e render proseguono
       copiaOriginali = inSottofondo('rclone', ['copy', SCARICO, remote(IN_DIR, nome), '--transfers', '8']);
@@ -1015,7 +1018,7 @@ async function main() {
     const info = {
       file: finale, durata: +durataN.toFixed(1), tagli: piano.clips.length, sorgenti: camereUsate, voce: voci,
       keywords: piano.keywords.map((k) => k.word), note: piano.note || '', ai: consumi.ai,
-      minuti: Math.round((Date.now() - T0) / 60000), correzione: CORREZIONE || '', versione: VERSIONE,
+      minuti: Math.round((Date.now() - T0) / 60000), correzione: CORREZIONE || '', versione: VERSIONE, stile,
     };
     // anteprima: prima provo il video in chat, se non passa mando la foto
     const inviato = await inviaVideo(outFile, nome, note, durataN, info);

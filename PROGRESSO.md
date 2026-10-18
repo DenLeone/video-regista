@@ -43,6 +43,15 @@ Primo giro reale: 58 min, di cui **40 per ricodificare tutto il girato 4K** in 1
 - Struttura nel codice: `src/comune.tsx` (clip con voce, effetti sonori, condivisi da tutti gli stili), una composizione per stile (`src/Blueprint.tsx`, `src/Cinematico.tsx`) registrata in `src/Root.tsx`, istruzioni di grafica per l'AI in `scripts/stili/<nome>.md` (inserite nel prompt al posto di `{{GRAFICA}}`), nome in `STILI` di `scripts/regista.mjs`. Lo stile si sceglie PRIMA della regia (anche nella prova veloce `azione: regia`).
 - Il piano ha ora `parole` (ogni parola detta sulla timeline finale, dai tempi di Whisper riportati dentro la frase): servono agli stili con sottotitoli.
 
+### Bot rifatto (veloce) — 18/10
+- Nuovo montaggio: cartella → stile (con immagine di anteprima degli stili, `/stili.jpg`, da `grafica/stili-anteprima.jpg` via `scripts/anteprima-stili.mjs`) → riepilogo con 🚀 Avvia. Sponsor, durata, tono, 🏁 giudizio finale (va nel brief come "Giudizio finale: X"), note e tavola (solo Blueprint) si aprono dal riepilogo.
+- Nome cartella scritto a mano: controllato sull'elenco di 97, se non esiste propone le più simili (o "Usa comunque").
+- Video finito: 👍 Approva · ✏️ Correggi · 🎨 Solo render (azione `render`, stessa regia, niente AI) · 🔁 Rifai da zero · Drive/Log. Didascalia con lo stile.
+- Impostazioni: stile predefinito (usato da Più video, /monta, video in chat "Monta subito"), AI principale, modello Gemini; Stabile/Beta e modello Claude in "🔧 Avanzate". Più video: stile per tutto il lotto.
+- Telegram riceve subito "ok" e il lavoro continua in `waitUntil`; un errore del bot arriva in chat invece di restare muto (e Telegram non ripete l'aggiornamento).
+- Video mandati in chat: il workflow dice al bot se ci sono le chiavi (`tgFile`); se mancano, pannello e raccolta lo dicono e il montaggio fallisce subito con un messaggio chiaro. **Da fare (Denis)**: my.telegram.org → API development tools → api_id/api_hash → secret GitHub `TG_API_ID`, `TG_API_HASH`, `TELEGRAM_BOT_TOKEN`.
+- Prove: simulazione locale di Telegram e GitHub con 24 controlli (tutti i flussi), in scratchpad `bot-test/`.
+
 ### Bot pubblicato davvero — 18/10
 - Il workflow `bot` chiudeva "success" anche senza token (solo un avviso: "Manca il secret CLOUDFLARE_API_TOKEN") e online restava il bot del 16/10. Denis ha creato il token (modello Edit Cloudflare Workers) e il secret `CLOUDFLARE_API_TOKEN`; l'account è in `telegram/wrangler.toml`. Pubblicato il 18/10 (versione 848d91ef). Per verificare un deploy: nel log deve esserci "Uploaded regista-telegram", non l'avviso.
 - Foto profilo del bot: `grafica/avatar-bot.*` (ciak "Regista DEN", colori caldi, disegno originale). Impostata dal bot stesso con `setMyProfilePhoto`: workflow `foto-bot` (a mano) → `/foto-profilo` del worker, che la manda anche in chat. Per cambiarla: sostituire `grafica/avatar-bot.jpg` e rilanciare il workflow.
