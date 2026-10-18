@@ -38,6 +38,9 @@ Prima delle inquadrature costruisci il TESTO. Chi guarda deve capire di cosa par
 - Dati tecnici nelle scritte solo se sono nel brief o si leggono sul prodotto o sulla confezione nei fogli provino: non inventarli. Senza dati, usa il nome del prodotto e quello che si vede (es. "APP", "SNODO", "LUCE CALDA").
 - Un breve B-roll senza voce è ammesso anche in un video parlato (stacco visivo), ma con parsimonia.
 
+## Le scritte a schermo
+- Sempre in italiano: il pubblico è italiano (Key air, 18/10: "GRID HONEYCOMB", "APP CONTROL"). Restano come sono solo i nomi dei prodotti, le marche e le sigle (Wi-Fi, USB-C, ANC, Hz).
+
 ## L'esito (scritta finale col giudizio)
 - Va messa SOLO se Denis dà un giudizio, nelle frasi usate nel montaggio o nel brief (il brief vince). Se non lo dà, nessuna scritta di esito: mai "PROMOSSO" di default, mai un giudizio inventato.
 - Usa le SUE parole, in breve: un voto diventa il voto ("8/10", "10 SU 10", "7,5"); un'espressione resta quella ("NON È MALE", "CONSIGLIATO", "DA EVITARE", "PROMOSSO" solo se dice promosso).
