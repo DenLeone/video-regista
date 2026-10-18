@@ -45,6 +45,7 @@ Primo giro reale: 58 min, di cui **40 per ricodificare tutto il girato 4K** in 1
 
 ### Bot pubblicato davvero — 18/10
 - Il workflow `bot` chiudeva "success" anche senza token (solo un avviso: "Manca il secret CLOUDFLARE_API_TOKEN") e online restava il bot del 16/10. Denis ha creato il token (modello Edit Cloudflare Workers) e il secret `CLOUDFLARE_API_TOKEN`; l'account è in `telegram/wrangler.toml`. Pubblicato il 18/10 (versione 848d91ef). Per verificare un deploy: nel log deve esserci "Uploaded regista-telegram", non l'avviso.
+- Foto profilo del bot: `grafica/avatar-bot.*` (ciak "Regista DEN", colori caldi, disegno originale). Impostata dal bot stesso con `setMyProfilePhoto`: workflow `foto-bot` (a mano) → `/foto-profilo` del worker, che la manda anche in chat. Per cambiarla: sostituire `grafica/avatar-bot.jpg` e rilanciare il workflow.
 
 ### Esito e video senza parlato — 18/10
 - La scritta di esito c'è solo se Denis dà un giudizio (nelle frasi usate o nel brief) e usa le sue parole: voto ("8/10"), "NON È MALE", "CONSIGLIATO"…; "PROMOSSO" solo se lo dice. Regola in `prompt-regista.md` ("L'esito"), richiamata dagli stili.
