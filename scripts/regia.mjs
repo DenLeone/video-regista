@@ -114,6 +114,22 @@ export function risolviRegia(regia, analisi) {
   const usate = sequenza.map((it) => frasi.get(normFrase(it.frase))).filter(Boolean);
   const indietro = usate.slice(2).filter((f, i) => f.principale === usate[i + 1].principale && analisi.frasi.indexOf(f) < analisi.frasi.indexOf(usate[i + 1])).length;
   if (indietro) avvisi.push(`ordine del discorso cambiato ${indietro} volt${indietro === 1 ? 'a' : 'e'}`);
+  // una frase che finisce senza punteggiatura continua nella successiva: staccarla la spezza
+  // ("…per 45 più | coupon ovviamente…", Lark A2 prova del 18/10); dopo una virgola si può chiudere
+  // (saltare una continuazione interrotta — "fosse..." — e riprendere subito dopo va bene; una
+  // ripetizione no: può contenere la fine della frase prima, come "o meno," in Lark A2)
+  const segni = segniFrasi(analisi.frasi);
+  const falsaPartenza = (g) => (segni.get(g.id) || []).includes('interrotta');
+  usate.forEach((f, i) => {
+    const g = successiva(analisi.frasi, f), dopo = usate[i + 1];
+    if (!g || !dopo || dopo === g || /[,;:]$/.test(f.testo.trim())) return;
+    const salto = analisi.frasi.indexOf(dopo) - analisi.frasi.indexOf(g);
+    if (falsaPartenza(g) && dopo.principale === g.principale && salto > 0 && salto <= 2) return;
+    avvisi.push(`${f.id} lasciata a metà: continua in ${g.id}`);
+  });
+  if (usate[0] && (RIMANDO.test(usate[0].testo.trim()) || /\bappunto\b/i.test(usate[0].testo.split(/\s+/).slice(0, 8).join(' ')))) {
+    avvisi.push(`l'apertura (${usate[0].id}) rimanda a qualcosa detto prima: scegli un aggancio che si capisce da solo`);
+  }
   // una frase che rimanda a prima va dopo una delle 3 frasi che la precedono nel girato
   // (si possono saltare una falsa partenza o un inciso, non un pezzo di discorso)
   usate.forEach((f, i) => {

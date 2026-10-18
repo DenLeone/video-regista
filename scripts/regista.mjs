@@ -381,7 +381,7 @@ async function regiaConGemini(prompt, fogli, valida) {
   };
   // difetti del racconto che il controllo automatico trova (ordine rimescolato, frasi staccate,
   // chiusura a metà): Gemini rilegge la sua regia con l'elenco e la riscrive, una volta sola
-  const difetti = (r) => (r.avvisi || []).filter((a) => /ordine del discorso|staccata|finisce a metà|finisce senza punto/.test(a));
+  const difetti = (r) => (r.avvisi || []).filter((a) => /ordine del discorso|staccata|lasciata a metà|apertura|finisce a metà|finisce senza punto/.test(a));
   let motivo = 'nessun modello';
   for (const [i, modello] of modelli.entries()) {
     const esito = await chiamaGemini(modello, JSON.stringify({ contents, generationConfig }), headers);
@@ -395,7 +395,7 @@ async function regiaConGemini(prompt, fogli, valida) {
           await fase(job.nome, `✍️ Rileggo la regia: ${problemi.length} punt${problemi.length === 1 ? 'o' : 'i'} da sistemare nel racconto`, 'regia');
           const correzione = [...contents, { role: 'model', parts: [{ text: testo }] }, { role: 'user', parts: [{ text:
             `Il controllo automatico del tuo montaggio ha trovato:\n- ${problemi.join('\n- ')}\n`
-            + 'Riscrivi la regia COMPLETA correggendo questi punti: ordine del discorso di Denis, frasi che rimandano a prima messe dopo ciò a cui si riferiscono, chiusura su una frase che finisce col punto. Stesse regole, stesso formato JSON.' }] }];
+            + 'Riscrivi la regia COMPLETA correggendo questi punti: ordine del discorso di Denis, frasi che rimandano a prima messe dopo ciò a cui si riferiscono, frasi lasciate a metà seguite dalla loro continuazione, apertura che si capisce da sola, chiusura su una frase che finisce col punto. Stesse regole, stesso formato JSON.' }] }];
           const esito2 = await chiamaGemini(modello, JSON.stringify({ contents: correzione, generationConfig }), headers);
           if (esito2.risposta) {
             try {
