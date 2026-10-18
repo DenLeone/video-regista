@@ -94,12 +94,35 @@ function nomeLibero(richiesto) {
   return nome;
 }
 
+// nome scritto a mano che non esiste ("Giacca autunno" per "Giacca autunnale", 18/10):
+// errore chiaro con le cartelle dal nome più simile
+function cartellaNonTrovata(nome, errore) {
+  let simili = [];
+  try {
+    const norm = (t) => String(t).toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim();
+    const dist = (a, b) => {
+      const d = Array.from({ length: b.length + 1 }, (_, j) => j);
+      for (let i = 1; i <= a.length; i++) {
+        let prec = d[0]; d[0] = i;
+        for (let j = 1; j <= b.length; j++) { const t = d[j]; d[j] = Math.min(d[j] + 1, d[j - 1] + 1, prec + (a[i - 1] === b[j - 1] ? 0 : 1)); prec = t; }
+      }
+      return d[b.length];
+    };
+    const n = norm(nome);
+    simili = JSON.parse(rclone('lsjson', remote(SRC_DIR), '--dirs-only')).map((x) => x.Name)
+      .map((x) => ({ x, d: norm(x).includes(n) || n.includes(norm(x)) ? 0 : dist(norm(x), n) }))
+      .filter((c) => c.d <= Math.max(3, n.length / 3)).sort((a, b) => a.d - b.d).slice(0, 3).map((c) => c.x);
+  } catch { /* elenco non disponibile */ }
+  return new Error(`non trovo la cartella "${nome}" in ${SRC_DIR}${simili.length ? `. Forse intendevi: ${simili.map((x) => `"${x}"`).join(', ')}` : ` (${String(errore?.message || '').split('\n')[0]})`}`);
+}
+
 function trovaCartella() {
   if (DA_TELEGRAM) return { nome: nomeLibero(process.env.CARTELLA), files: [], vai: null };
   // avvio da Telegram/manuale con cartella esplicita: VAI non obbligatorio
   if (process.env.CARTELLA) {
     const nome = process.env.CARTELLA;
-    const files = JSON.parse(rclone('lsjson', remote(SRC_DIR, nome), '--files-only'));
+    let files;
+    try { files = JSON.parse(rclone('lsjson', remote(SRC_DIR, nome), '--files-only')); } catch (e) { throw cartellaNonTrovata(nome, e); }
     const vai = files.find((f) => isVai(f.Name) || isInCorso(f.Name));
     return { nome, files, vai: vai ? vai.Name : null };
   }
@@ -826,7 +849,12 @@ async function main() {
       process.exitCode = 1;
     });
   }
-  job = trovaCartella() || {};
+  try { job = trovaCartella() || {}; } catch (e) {
+    log(e.stack || e.message);
+    await notifica('⚠️ non montato', process.env.CARTELLA || '—', `Errore: ${e.message}`);
+    process.exitCode = 1;
+    return;
+  }
   if (!job.nome) { log('niente da fare'); return; }
   const { nome, files } = job;
   let { vai } = job;
