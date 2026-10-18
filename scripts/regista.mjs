@@ -9,7 +9,8 @@
 //   CLAUDE_CODE_OAUTH_TOKEN Claude Code con l'abbonamento (comando `claude`)
 //   GEMINI_API_KEY          Gemini (AI principale di default)
 //   REGISTA_AI              gemini (default) | claude: l'AI principale; l'altra fa da riserva automatica
-//   REGISTA_MODEL           modello Claude (default sonnet) · GEMINI_MODEL flash (default) | pro | nome completo
+//   REGISTA_MODEL           modello Claude (default sonnet) · GEMINI_MODEL flash (default) | pro
+//   GEMINI_MODELLI          (facoltativo) elenco fisso "a,b,c" al posto della rotazione automatica dei Flash
 //   NOTIFY_URL / NOTIFY_TOKEN (opzionali) bot Telegram: fasi, esito, anteprima video
 //
 // Modalità correzione (dal bottone ✏️ del bot): ORIGINE=98, CARTELLA=<nome>,
@@ -68,6 +69,16 @@ const isInCorso = (name) => /^_VAI_in_corso_/i.test(name);
 const nomeVaiOriginale = (name) => name.replace(/^_VAI_in_corso_/i, '');
 // file generati da noi o segnali: mai materiale di montaggio
 const isNostro = (name) => isVai(name) || isInCorso(name) || /^_VAI_usato_/i.test(name) || /FINALE/i.test(name) || /^(NOTE|ERRORE|_ERRORE.*)\.txt$/i.test(name);
+
+// data di ripresa: metadati della camera, altrimenti dal nome (VID_20261018_…, IMG_20261018…)
+function dataRipresa(tags, nome) {
+  for (const k of ['com.apple.quicktime.creationdate', 'creation_time', 'date']) {
+    const d = Date.parse(tags?.[k] || '');
+    if (d > Date.UTC(2015, 0, 1)) return d;
+  }
+  const m = /(20\d{2})(\d{2})(\d{2})/.exec(nome);
+  return m ? Date.UTC(+m[1], +m[2] - 1, +m[3]) : null;
+}
 
 // ---------- 1. trova la cartella da fare ----------
 // video da Telegram: la cartella non esiste ancora, scelgo un nome libero in 97 e 98
@@ -272,56 +283,118 @@ function regiaConClaude(prompt) {
 }
 
 // flash = veloce, ottima visione, limiti alti (predefinito) · pro = ragiona meglio, limiti più bassi
-const MODELLI_GEMINI = { flash: 'gemini-flash-latest', pro: 'gemini-pro-latest' };
-async function regiaConGemini(prompt, fogli, modello = MODELLI_GEMINI[process.env.GEMINI_MODEL] || process.env.GEMINI_MODEL || MODELLI_GEMINI.flash, riserva = true) {
+// ---------- Gemini: rotazione dei modelli secondo i limiti del piano gratuito ----------
+// Sul piano gratuito ogni modello Flash ha i SUOI limiti: 20 richieste al giorno e 5 al
+// minuto (visto il 18/10: 3.8 Flash a 21/20, gli altri Flash quasi intatti). Ruotando i
+// Flash completi si hanno ~80 regie al giorno di qualità piena; i Flash Lite (500 al giorno,
+// ma meno bravi a costruire un racconto) solo come riserva, poi Claude. L'elenco arriva da
+// Google (ListModels), così i modelli nuovi entrano da soli. GEMINI_MODELLI="a,b,c" lo forza.
+const GEMINI_BASE = () => process.env.GEMINI_URL || 'https://generativelanguage.googleapis.com/v1beta';
+const attesa = (ms) => new Promise((ok) => setTimeout(ok, ms));
+export const nomeBreveGemini = (m) => m.replace(/^gemini-/, '').replace(/-preview$/, '').split('-')
+  .map((x) => (/^\d/.test(x) ? x : x[0].toUpperCase() + x.slice(1))).join(' ');
+
+export function ordinaModelliGemini(nomi, scelta = 'flash') {
+  const versione = (n) => Number((/^gemini-(\d+(?:\.\d+)?)/.exec(n) || [])[1] || 0);
+  const tipo = (n) => (/^gemini-\d+(?:\.\d+)?-flash-lite(-preview)?$/.test(n) ? 'lite'
+    : /^gemini-\d+(?:\.\d+)?-flash(-preview)?$/.test(n) ? 'flash' : /^gemini-\d+(?:\.\d+)?-pro(-preview)?$/.test(n) ? 'pro' : null);
+  // un solo nome per versione: la versione stabile batte la preview
+  const scegli = (t) => {
+    const perVersione = new Map();
+    for (const n of nomi.filter((x) => tipo(x) === t)) {
+      const v = versione(n), prima = perVersione.get(v);
+      if (!prima || (prima.endsWith('-preview') && !n.endsWith('-preview'))) perVersione.set(v, n);
+    }
+    return [...perVersione.entries()].sort((x, y) => y[0] - x[0]).map(([, n]) => n);
+  };
+  const lista = [...scegli('flash').slice(0, 4), ...scegli('lite').slice(0, 2)];
+  return scelta === 'pro' ? [...scegli('pro').slice(0, 1), ...lista] : lista;
+}
+
+async function modelliGemini(headers) {
+  if (process.env.GEMINI_MODELLI) return process.env.GEMINI_MODELLI.split(',').map((x) => x.trim()).filter(Boolean);
+  try {
+    const r = await fetchRiprova(`${GEMINI_BASE()}/models?pageSize=200`, { headers }, 2);
+    if (r.ok) {
+      const nomi = ((await r.json()).models || []).filter((m) => (m.supportedGenerationMethods || []).includes('generateContent'))
+        .map((m) => m.name.replace(/^models\//, ''));
+      const lista = ordinaModelliGemini(nomi, process.env.GEMINI_MODEL);
+      if (lista.length) return lista;
+    }
+  } catch (e) { log('elenco dei modelli Gemini non disponibile', e.message); }
+  return ['gemini-flash-latest', 'gemini-flash-lite-latest'];
+}
+
+// Una chiamata a un modello. Limite del giorno finito → si passa subito al modello dopo
+// (riprovare spreca richieste: ieri i tentativi a vuoto hanno contribuito a finirle);
+// limite al minuto → si aspetta quanto dice Google e si riprova; sovraccarico → 2 tentativi.
+async function chiamaGemini(modello, body, headers) {
+  const url = `${GEMINI_BASE()}/models/${modello}:generateContent`;
+  for (let tentativo = 1; tentativo <= 3; tentativo++) {
+    let r;
+    try {
+      r = await fetch(url, { method: 'POST', headers: { connection: 'close', ...headers }, body, signal: AbortSignal.timeout(5 * 60 * 1000) });
+    } catch (e) {
+      if (tentativo === 3) return { motivo: `non risponde (${e.message})` };
+      await attesa(5000 * tentativo); continue;
+    }
+    if (r.ok) return { risposta: r };
+    const testo = await r.text();
+    if (r.status === 429) {
+      if (/PerDay/i.test(testo)) return { motivo: 'richieste del giorno finite' };
+      const ritardo = Number((/"retryDelay":\s*"(\d+(?:\.\d+)?)s"/.exec(testo) || [])[1] || 20);
+      if (tentativo < 3 && ritardo <= 65) { log(`Gemini ${modello}: limite al minuto, aspetto ${Math.ceil(ritardo)} s`); await attesa(ritardo * 1000 + 500); continue; }
+      return { motivo: 'limite al minuto' };
+    }
+    if (r.status >= 500) {
+      if (tentativo < 3) { log(`Gemini ${modello}: ${r.status}, riprovo`); await attesa(5000 * 2 ** (tentativo - 1)); continue; }
+      return { motivo: `sovraccarico (${r.status})` };
+    }
+    return { motivo: r.status === 404 ? 'modello non disponibile' : `errore ${r.status}: ${testo.slice(0, 200)}` };
+  }
+  return { motivo: 'non risponde' };
+}
+
+async function regiaConGemini(prompt, fogli, valida) {
   const parts = [{ text: prompt }];
   for (const f of fogli) {
     parts.push({ text: `Foglio provino ${f}:` });
     parts.push({ inline_data: { mime_type: 'image/jpeg', data: fs.readFileSync(path.join(ROOT, f)).toString('base64') } });
   }
   const contents = [{ role: 'user', parts }];
-  const base = `${process.env.GEMINI_URL || 'https://generativelanguage.googleapis.com/v1beta'}/models/${modello}`;
   const headers = { 'content-type': 'application/json', 'x-goog-api-key': process.env.GEMINI_API_KEY };
-  // conteggio esatto prima dell'invio: countTokens non consuma quota
+  const modelli = await modelliGemini(headers);
+  log(`Gemini: modelli in ordine ${modelli.join(', ')}`);
+  // conteggio esatto prima dell'invio: countTokens non consuma le richieste di generazione
   try {
-    const c = await fetchRiprova(`${base}:countTokens`, { method: 'POST', headers, body: JSON.stringify({ contents }) }, 2);
+    const c = await fetchRiprova(`${GEMINI_BASE()}/models/${modelli[0]}:countTokens`, { method: 'POST', headers, body: JSON.stringify({ contents }) }, 2);
     if (c.ok) { const t = (await c.json()).totalTokens; consumi.stima = { totale: t, esatta: true }; log(`Gemini: ${t} token da inviare`); }
   } catch (e) { log('conteggio token Gemini non riuscito', e.message); }
-  // l'altro modello Gemini (Flash ↔ Pro) gira su altri server: se uno è sovraccarico (503, visto il 17/10)
-  // o non esiste (404) si prova l'altro, e solo dopo si passa a Claude
-  const altro = modello === MODELLI_GEMINI.flash ? MODELLI_GEMINI.pro : MODELLI_GEMINI.flash;
-  let r;
-  try {
-    r = await fetchRiprova(`${base}:generateContent`, {
-      method: 'POST', headers,
-      body: JSON.stringify({ contents, generationConfig: { responseMimeType: 'application/json', temperature: 0.4 } }),
-    }, riserva ? 5 : 4);
-  } catch (e) {
-    if (riserva && /HTTP 5\d\d/.test(e.message)) {
-      log(`Gemini ${modello} sovraccarico, provo ${altro}`);
-      await fase(job.nome, `⏳ Gemini ${modello.includes('pro') ? 'Pro' : 'Flash'} sovraccarico (Google), provo l'altro modello Gemini`, 'regia');
-      return regiaConGemini(prompt, fogli, altro, false);
+  const body = JSON.stringify({ contents, generationConfig: { responseMimeType: 'application/json', temperature: 0.4 } });
+  let motivo = 'nessun modello';
+  for (const [i, modello] of modelli.entries()) {
+    const esito = await chiamaGemini(modello, body, headers);
+    if (esito.risposta) {
+      try {
+        const j = await esito.risposta.json();
+        const testo = (j.candidates?.[0]?.content?.parts || []).map((x) => x.text || '').join('');
+        const u = j.usageMetadata || {};
+        consumi.ai = { chi: 'Gemini', modello: j.modelVersion || modello, input: u.promptTokenCount || 0, output: (u.candidatesTokenCount || 0) + (u.thoughtsTokenCount || 0) };
+        const regia = JSON.parse(testo.replace(/^```(?:json)?\s*|\s*```$/g, ''));
+        fs.writeFileSync(path.join(WORK, 'regia.json'), JSON.stringify(regia, null, 1));
+        return { regia, risultato: valida(regia) };
+      } catch (e) { esito.motivo = `regia inutilizzabile (${e.message.slice(0, 120)})`; }
     }
-    throw e;
+    motivo = esito.motivo;
+    const dopo = modelli[i + 1];
+    log(`Gemini ${modello}: ${motivo}${dopo ? ` → provo ${dopo}` : ''}`);
+    if (dopo) await fase(job.nome, `⏳ Gemini ${nomeBreveGemini(modello)}: ${motivo}, uso ${nomeBreveGemini(dopo)}`, 'regia');
   }
-  if (r.status === 404 && riserva) {
-    log(`Gemini: modello ${modello} non disponibile, uso ${altro}`);
-    return regiaConGemini(prompt, fogli, altro, false);
-  }
-  if (!r.ok) throw new Error(`Gemini ${r.status}: ${(await r.text()).slice(0, 300)}`);
-  const limiti = [...r.headers].filter(([k]) => /ratelimit/i.test(k));
-  if (limiti.length) log('Gemini limiti:', limiti.map(([k, v]) => `${k}=${v}`).join(' '));
-  const j = await r.json();
-  const testo = (j.candidates?.[0]?.content?.parts || []).map((p) => p.text || '').join('');
-  const u = j.usageMetadata || {};
-  consumi.ai = { chi: 'Gemini', modello: j.modelVersion || modello, input: u.promptTokenCount || 0, output: (u.candidatesTokenCount || 0) + (u.thoughtsTokenCount || 0) };
-  const regia = JSON.parse(testo.replace(/^```(?:json)?\s*|\s*```$/g, ''));
-  fs.writeFileSync(path.join(WORK, 'regia.json'), JSON.stringify(regia, null, 1));
-  return regia;
+  throw new Error(`Gemini: ${motivo} su tutti i modelli (${modelli.map(nomeBreveGemini).join(', ')})`);
 }
 
 // AI principale (default Gemini se c'è la chiave) e l'altra come riserva automatica.
-// `valida` controlla la regia: se è inutilizzabile si prova l'altra AI.
+// `valida` controlla la regia: se è inutilizzabile si prova il modello o l'AI successiva.
 async function chiediRegia(testoMateriale, fogli, regiaPrecedente, valida = (r) => r) {
   const scelta = (process.env.REGISTA_AI || 'gemini').toLowerCase();
   const haGemini = Boolean(process.env.GEMINI_API_KEY);
@@ -331,15 +404,15 @@ async function chiediRegia(testoMateriale, fogli, regiaPrecedente, valida = (r) 
   for (const [i, chi] of ordine.entries()) {
     try {
       const prompt = promptRegia({ modo: chi, testoMateriale, regiaPrecedente });
-      const regia = chi === 'gemini' ? await regiaConGemini(prompt, fogli) : regiaConClaude(prompt);
+      if (chi === 'gemini') return await regiaConGemini(prompt, fogli, valida);
+      const regia = regiaConClaude(prompt);
       return { regia, risultato: valida(regia) };
     } catch (e) {
       errore = e;
       if (i === ordine.length - 1) break;
       log(`${e.message}\n→ passo a ${nomi[ordine[i + 1]]}`);
-      const motivo = /HTTP 5\d\d/.test(e.message) ? 'sovraccarico dal lato del servizio' : /HTTP 429/.test(e.message) ? 'limite di richieste raggiunto'
-        : /regia|frasi|clip/.test(e.message) ? 'ha scritto una regia inutilizzabile' : 'non ha risposto';
-      await fase(job.nome, `🔁 ${nomi[chi]} ${motivo}: uso ${nomi[ordine[i + 1]]}`, 'regia');
+      const motivo = chi === 'gemini' ? e.message.replace(/^Gemini: /, '') : /regia|frasi|clip/.test(e.message) ? 'ha scritto una regia inutilizzabile' : 'non ha risposto';
+      await fase(job.nome, `🔁 ${nomi[chi]}: ${motivo}. Uso ${nomi[ordine[i + 1]]}`, 'regia');
     }
   }
   throw errore;
@@ -468,7 +541,7 @@ export async function analizza(nome, brief, cache) {
       log(`video ${f} (${NOMI_DISPOSITIVO[disp]}, ${info.durata.toFixed(1)} s, ${info.w}x${info.h}${hdr ? ', HDR → SDR' : ''})`);
       // `file` è il nome logico usato dalla regia; i pezzi veri si tagliano dall'originale dopo la regia
       sorgenti.push({ id, file: `${id}.mp4`, originale: src, tipo: 'video', dispositivo: disp, nomeDispositivo: NOMI_DISPOSITIVO[disp],
-        durata: +info.durata.toFixed(2), orient: info.w > info.h ? 'h' : 'v', haAudio: info.audio, colore: info.colore });
+        durata: +info.durata.toFixed(2), orient: info.w > info.h ? 'h' : 'v', haAudio: info.audio, colore: info.colore, data: dataRipresa(info.tags, f) });
     } else if (AUDIO_EXT.includes(ext)) {
       const info = probe(src);
       log(`audio ${f} (mic esterno, ${info.durata.toFixed(1)} s)`);
@@ -480,6 +553,16 @@ export async function analizza(nome, brief, cache) {
     }
   }
   if (!sorgenti.some((s) => s.tipo === 'video')) throw new Error('nessun video nella cartella');
+
+  // Video già montati (TikTok, Reel, export…) e girati di altri giorni: solo immagini.
+  // In Lark A2 c'erano un TikTok già finito e una conversazione di settembre, e le loro voci
+  // finivano tra le frasi candidate. Scelta di Denis (18/10): restano come B-roll, la voce mai.
+  const recente = Math.max(0, ...sorgenti.filter((s) => s.tipo === 'video' && s.data).map((s) => s.data));
+  for (const s of sorgenti.filter((x) => x.tipo === 'video')) {
+    const perche = /tik ?tok|reel|export|montat|hq.?grade/i.test(s.id) ? 'video già montato'
+      : recente && s.data && recente - s.data > 3 * 86400e3 ? `girato il ${new Date(s.data).toLocaleDateString('it-IT')}, non con il resto` : null;
+    if (perche) { s.soloImmagini = perche; log(`${s.id}: solo immagini (${perche})`); }
+  }
 
   // correzione: stesse frasi e stessa sincronizzazione del montaggio da correggere,
   // così gli id F001... della regia precedente puntano agli stessi pezzi
@@ -500,7 +583,7 @@ export async function analizza(nome, brief, cache) {
   // inviluppi audio (dall'originale: si legge solo la traccia audio) e rilevamento parlato
   const db = new Map();
   for (const s of sorgenti) {
-    if (!s.haAudio) continue;
+    if (!s.haAudio || s.soloImmagini) continue;
     const e = inviluppo(s.voce ? path.join(MEDIA, s.voce) : s.originale);
     if (!e) continue;
     db.set(s.id, e);
@@ -672,8 +755,10 @@ async function main() {
     const pesoAI = ` · materiale ≈ ${kTok(stima.totale)} token`;
     await fase(nome, CORREZIONE ? `🧠 Applico la correzione: “${CORREZIONE.slice(0, 120)}”${pesoAI}`
       : `🧠 Scelgo i tagli: ${analisi.sorgenti.length} sorgenti, voce da ${voci || '—'}, ${sinc} camere sincronizzate, ${analisi.frasi.length} frasi${brief ? ', con brief' : ''}${pesoAI}`, 'regia');
-    const { risultato: { piano, avvisi } } = await chiediRegia(testoMateriale, fogli, CORREZIONE ? regiaPrecedente : null, (r) => risolviRegia(r, analisi));
+    const { regia, risultato: { piano, avvisi } } = await chiediRegia(testoMateriale, fogli, CORREZIONE ? regiaPrecedente : null, (r) => risolviRegia(r, analisi));
     if (avvisi.length) log('avvisi regia:', avvisi.join(' | '));
+    if (regia.scaletta) log('scaletta:', [].concat(regia.scaletta).join(' → '));
+    log('testo montato:', piano.testo);
     if (analisi.avvisi?.length) piano.note = [...analisi.avvisi.map((a) => `⚠️ ${a}`), piano.note].filter(Boolean).join(' · ');
     // effetti sonori sotto la voce: più bassa la voce registrata, più bassi gli effetti (~12–16 dB sotto)
     const livelloVoce = Math.max(-60, ...analisi.sorgenti.filter((s) => s.principale && s.livello != null).map((s) => s.livello));
@@ -706,6 +791,7 @@ async function main() {
       `${CORREZIONE ? `Correzione (“${CORREZIONE}”)` : 'Montato automaticamente'} il ${new Date().toLocaleString('it-IT', { timeZone: 'Europe/Rome' })} in ${trascorso()}`,
       `Durata: ${durata} s · ${piano.tavola} · ${piano.clips.length} tagli da ${camereUsate} sorgenti · voce: ${voci || 'audio delle clip'}`,
       `Parole chiave: ${piano.keywords.map((k) => `${k.word} @${k.at.toFixed(1)}s`).join(', ') || '—'}`,
+      piano.testo ? `Testo: ${piano.testo}` : '',
       piano.note ? `Note: ${piano.note}` : '',
       `File: ${OUT_DIR}/${nome}/${finale}`,
       DA_TELEGRAM ? (avvisoOriginali || `Originali: ${IN_DIR}/${nome}`) : '',

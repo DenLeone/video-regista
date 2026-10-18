@@ -28,17 +28,40 @@ export function risolviRegia(regia, analisi) {
   const broll = sorgenti.filter((s) => s.tipo === 'video' && !s.sync && !s.principale);
   let girandolaBroll = 0;
 
+  // la chiusura non resta mai a metà frase: se l'ultima frase continua nella successiva
+  // (stessa voce, senza punto né pausa) aggiungo le frasi che servono ad arrivare a un punto,
+  // al massimo 2 e 7 s in più; se il punto non arriva non aggiungo niente e lo segnalo
+  const sequenza = [...(regia.sequenza || [])];
+  const ultimo = sequenza.map((it) => Boolean(it.frase)).lastIndexOf(true);
+  const fUltima = ultimo >= 0 ? frasi.get(normFrase(sequenza[ultimo].frase)) : null;
+  if (fUltima && successiva(analisi.frasi, fUltima)) {
+    const catena = [];
+    for (let f = fUltima, extra = 0; catena.length < 2;) {
+      const g = successiva(analisi.frasi, f);
+      if (!g || sequenza.some((it) => normFrase(it.frase) === g.id) || (extra += g.fine - g.inizio) > 7) break;
+      catena.push(g); f = g;
+      if (/[.!?…]/.test(g.testo)) break;
+    }
+    const fino = catena.findIndex((g) => /[.!?…]/.test(g.testo));
+    if (fino >= 0) {
+      catena.slice(0, fino + 1).forEach((g, n) => sequenza.splice(ultimo + 1 + n, 0, { frase: g.id, camera: sequenza[ultimo].camera }));
+      avvisi.push(`chiusura completata con ${catena.slice(0, fino + 1).map((g) => g.id).join(', ')}: l'ultima frase era a metà`);
+    } else avvisi.push(`la chiusura (${fUltima.id}) finisce a metà frase`);
+  } else if (fUltima && !finita(fUltima.testo)) avvisi.push(`la chiusura (${fUltima.id}) finisce senza punto: controlla`);
+
   const clips = [];
   const inizioVoce = []; // per ogni elemento della sequenza: dove inizia sulla timeline finale
+  const testo = [];
   let t = 0;
 
-  (regia.sequenza || []).forEach((it, idx) => {
+  sequenza.forEach((it, idx) => {
     let clip = null;
     if (it.frase) {
       const f = frasi.get(normFrase(it.frase));
       if (!f) { avvisi.push(`frase ${it.frase} inesistente: saltata`); return; }
       const voce = sorgenti.find((s) => s.id === f.principale);
       const dur = q(f.fine - f.inizio);
+      testo.push(f.testo);
       const audio = { file: voce.voce, start: +f.inizio.toFixed(3) };
       if (it.broll) {
         const b = trovaSorgente(it.broll);
@@ -70,7 +93,7 @@ export function risolviRegia(regia, analisi) {
       if (da + dur > b.durata) da = Math.max(0, b.durata - dur - 0.05);
       clip = { file: b.file, start: +da.toFixed(3), end: +(da + dur).toFixed(3), orient: b.orient };
       // la Sony registra audio solo dal microfono interno: lo uso come ambiente, ma piano
-      if (it.audio === 'muto') clip.muto = true;
+      if (it.audio === 'muto' || b.soloImmagini) clip.muto = true;
       else if (b.dispositivo === 'sony') clip.volume = 0.35;
     } else {
       avvisi.push(`elemento ${idx + 1} senza frase né broll: saltato`);
@@ -88,13 +111,13 @@ export function risolviRegia(regia, analisi) {
   if (!clips.length) throw new Error('la regia non contiene nessuna clip utilizzabile');
   // con parlato disponibile, una regia che non usa (quasi) nessuna frase valida è da rifare con l'altra AI
   if (analisi.frasi.length) {
-    const conFrase = (regia.sequenza || []).filter((it) => it.frase);
+    const conFrase = sequenza.filter((it) => it.frase);
     const valide = conFrase.filter((it) => frasi.has(normFrase(it.frase)));
     if (!valide.length || valide.length < conFrase.length / 2) throw new Error(`la regia usa frasi inesistenti (${conFrase.length - valide.length} su ${conFrase.length})`);
   }
   const inizioFrase = (id) => {
     const n = normFrase(id);
-    const idx = (regia.sequenza || []).findIndex((it, i) => normFrase(it.frase) === n && inizioVoce[i] != null);
+    const idx = sequenza.findIndex((it, i) => normFrase(it.frase) === n && inizioVoce[i] != null);
     return idx >= 0 ? inizioVoce[idx] : null;
   };
 
@@ -132,10 +155,47 @@ export function risolviRegia(regia, analisi) {
       sponsor: regia.sponsor || null,
       sponsorAt,
       note: [regia.note, ...avvisi.map((a) => `⚠️ ${a}`)].filter(Boolean).join(' · '),
+      testo: testo.join(' '),
     },
     avvisi,
     durata: totale,
   };
+}
+
+// Segni per l'AI accanto alle frasi (Lark A2, 18/10: la regia apriva su una falsa partenza
+// e chiudeva su "Questi top" tagliato):
+//   →F009             continua nella F009 senza pausa né punto: vanno prese insieme
+//   ripresa meglio in F003  falsa partenza o ripetizione che Denis ridice poco dopo
+//   interrotta / finisce a metà  frase lasciata in sospeso
+const finita = (t) => /[.!?…]["»”)]?$/.test(String(t).trim());
+const paroleDi = (t) => (String(t).toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').match(/[a-z0-9]+/g) || []);
+export function successiva(frasi, f) {
+  const g = frasi[frasi.indexOf(f) + 1];
+  return g && g.principale === f.principale && !finita(f.testo) && g.inizio - f.fine < 0.8 ? g : null;
+}
+export function segniFrasi(frasi) {
+  const out = new Map();
+  frasi.forEach((f, i) => {
+    const segni = [];
+    const g = successiva(frasi, f);
+    if (g) segni.push(`→${g.id}`);
+    else if (/(\.\.\.|…)$/.test(f.testo.trim())) segni.push('interrotta');
+    else if (!finita(f.testo) && frasi[i + 1]?.principale !== f.principale) segni.push('finisce a metà');
+    const tutte = paroleDi(f.testo), a = tutte.filter((w) => w.length >= 3);
+    if (a.length >= 3) {
+      for (const h of frasi.slice(i + 1, i + 7)) {
+        if (h.principale !== f.principale) break;
+        const altre = paroleDi(h.testo), b = new Set(altre);
+        const stessoInizio = tutte.length >= 4 && tutte.slice(0, 4).join(' ') === altre.slice(0, 4).join(' ');
+        if (altre.length >= tutte.length && (stessoInizio || a.filter((w) => b.has(w)).length / a.length >= 0.6)) {
+          segni.push(`ripresa meglio in ${h.id}`);
+          break;
+        }
+      }
+    }
+    if (segni.length) out.set(f.id, segni);
+  });
+  return out;
 }
 
 // Il materiale in forma compatta per l'AI: sorgenti, fogli provino, frasi.
@@ -145,6 +205,7 @@ export function materialePerAI(analisi) {
   r.push(`Brief di Denis: ${analisi.brief ? `\n${analisi.brief}` : '(nessuno)'}`);
   r.push('', '## Sorgenti');
   const frasiDi = (id) => analisi.frasi.filter((f) => f.principale === id);
+  const segni = segniFrasi(analisi.frasi);
   for (const s of analisi.sorgenti) {
     const parti = [`- **${s.id}** · ${s.nomeDispositivo} · ${s.tipo === 'audio' ? 'solo audio' : s.orient === 'v' ? 'verticale' : 'orizzontale'} · ${s.durata.toFixed(1)} s`];
     if (s.principale) parti.push(`VOCE PRINCIPALE (${frasiDi(s.id).length} frasi)`);
@@ -153,7 +214,8 @@ export function materialePerAI(analisi) {
       parti.push(coperte.length
         ? `inquadratura sincronizzata con la voce di ${s.sync.con}: usabile come "camera" su ${intervalli(coperte.map((f) => f.id))}`
         : `sincronizzata con ${s.sync.con} ma non copre nessuna frase intera: usala come B-roll`);
-    } else if (s.tipo === 'video') parti.push(s.parlato ? 'ha parlato non sincronizzabile: usala solo come B-roll'
+    } else if (s.soloImmagini) parti.push(`SOLO IMMAGINI (${s.soloImmagini}): usala solo come B-roll muto, la sua voce non entra mai nel montaggio`);
+    else if (s.tipo === 'video') parti.push(s.parlato ? 'ha parlato non sincronizzabile: usala solo come B-roll'
       : s.audioMuto ? 'audio muto, NON sincronizzata: solo B-roll, e mai nei momenti in cui si vede qualcuno parlare (il labiale non tornerebbe)'
         : 'B-roll (non sincronizzata): mettila sopra la voce con "broll" + "da"');
     if (s.fogli?.length) parti.push(`fogli: ${s.fogli.join(', ')} (un riquadro ogni ${s.passoFogli} s; tempi ${s.sync || s.principale ? 'nel tempo della voce' : 'della clip, da usare in "da"'})`);
@@ -163,8 +225,11 @@ export function materialePerAI(analisi) {
   for (const p of analisi.sorgenti.filter((s) => s.principale)) {
     const fr = frasiDi(p.id);
     if (!fr.length) continue;
-    r.push('', `## Frasi della voce ${p.id} (inizio in secondi, durata)`);
-    for (const f of fr) r.push(`${f.id} ${f.inizio.toFixed(1)} (${(f.fine - f.inizio).toFixed(1)}s) ${f.testo}`);
+    r.push('', `## Frasi della voce ${p.id} (inizio in secondi, durata) [segni]`);
+    for (const f of fr) {
+      const sg = segni.get(f.id);
+      r.push(`${f.id} ${f.inizio.toFixed(1)} (${(f.fine - f.inizio).toFixed(1)}s) ${f.testo}${sg ? `  [${sg.join(', ')}]` : ''}`);
+    }
   }
   if (!analisi.frasi.length) r.push('', '## Nessun parlato', 'Montaggio solo immagini: la sequenza è fatta solo di elementi "broll".');
   return r.join('\n');

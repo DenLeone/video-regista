@@ -39,6 +39,7 @@ export type Piano = {
   sponsor?: { material: string; test: string } | null;
   sponsorAt?: number;       // da quando mostrare il cartiglio
   note?: string;            // dubbi/scelte di Claude, finiscono in NOTE.txt
+  testo?: string;           // il parlato del montaggio, di fila (per NOTE.txt)
   // effetti sonori (public/sfx): volume in base al livello della voce; false = nessuno
   sfx?: { volume: number } | false;
 };
