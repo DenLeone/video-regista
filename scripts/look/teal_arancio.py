@@ -8,7 +8,9 @@ import numpy as np
 
 CURVA = ([0, 0.04, 0.12, 0.25, 0.45, 0.65, 0.82, 1], [0, 0.0, 0.04, 0.14, 0.34, 0.56, 0.76, 0.94])
 SAT, VERDI_SAT, VERDI_SPOSTA, PELLE_SAT = 1.35, 0.55, 0.07, 1.15
-OMBRE, LUCI = (-0.035, 0.008, 0.04), (0.035, 0.006, -0.035)
+# tinte misurate sugli esempi di 12K Quality: ombre circa -1,2% rosso / +1,9% blu, luci calde.
+# La prima versione era tre volte più forte e azzerava il rosso nei neri: schiariti, diventavano blu
+OMBRE, LUCI = (-0.012, 0.002, 0.018), (0.03, 0.006, -0.03)
 
 
 def rgb2hsv(a):

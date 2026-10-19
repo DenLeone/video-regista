@@ -24,9 +24,12 @@ VIGNETTA = 0.35
 # nera e lo sfondo buio la prima prova lo lasciava troppo scuro (Giacca autunnale, 19/10)
 CURVA_SOGGETTO = ([0, 0.03, 0.1, 0.25, 0.45, 0.7, 1], [0, 0.04, 0.15, 0.36, 0.58, 0.8, 1])
 CALDO = (1.015, 1.0, 0.985)
-OMBRE_SOGGETTO = (0.015, 0.0, -0.03)  # toglie il petrolio della LUT dalle ombre del soggetto (giacca nera, non blu)
+# toglie dal soggetto, PRIMA di schiarirlo, il petrolio che la LUT mette nelle ombre (stessi numeri
+# di OMBRE in teal_arancio.py, di segno opposto): schiarito, diventava blu elettrico (19/10)
+OMBRE_SOGGETTO = (0.0, 0.0, 0.0)
 NITIDEZZA = 0.45                       # maschera di contrasto sul soggetto (la "qualità" degli esempi)
 VOLTO = 0.5          # luminosità del viso a cui portare il soggetto (0–1)
+MAX_SCHIARITA = 2.0  # al massimo il doppio: un volto in ombra (0,07) portato a 0,5 diventava rumore e blu
 COPERTURA = (0.04, 0.62)  # quota di persona nell'inquadratura per cui ha senso
 
 
@@ -50,12 +53,13 @@ def main():
         if volto is None:
             xs, ys = CURVA_SOGGETTO
         else:
-            v = float(np.clip(volto, 0.08, 0.6))
-            xs, ys = [0, 0.05, v, min(0.97, v + 0.3), 1], [0, 0.045, max(v, VOLTO), min(0.985, max(v, VOLTO) + 0.28), 1]
+            v = float(np.clip(volto, 0.05, 0.6))
+            dove = min(max(v, VOLTO), v * MAX_SCHIARITA)
+            xs, ys = [0, 0.04, v, min(0.97, v + 0.3), 1], [0, 0.04, dove, min(0.985, dove + 0.28), 1]
         canali = []
         for k, o in zip(CALDO, OMBRE_SOGGETTO):
-            y = np.interp(np.clip(x * k, 0, 1), xs, ys)
-            canali.append(np.clip((y + o * (1 - y) ** 2) * 255, 0, 255).astype(np.uint8))
+            neutro = np.clip(x + o * (1 - x) ** 2, 0, 1)
+            canali.append(np.clip(np.interp(np.clip(neutro * k, 0, 1), xs, ys) * 255, 0, 255).astype(np.uint8))
         return np.dstack(canali).reshape(256, 1, 3)
     tab = tabella()
     yy, xx = np.mgrid[0:h, 0:w].astype(np.float32)
@@ -91,7 +95,8 @@ def main():
     def imposta_volto(volti):
         if not volti:
             return tab
-        print(f'volto {np.median(volti):.2f} → {max(float(np.median(volti)), VOLTO):.2f}', file=sys.stderr)
+        v = float(np.median(volti))
+        print(f'volto {v:.2f} → {min(max(v, VOLTO), v * MAX_SCHIARITA):.2f}', file=sys.stderr)
         return tabella(float(np.median(volti)))
 
     with vision.ImageSegmenter.create_from_options(opzioni) as seg:
