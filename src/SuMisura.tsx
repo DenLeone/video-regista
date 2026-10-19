@@ -229,22 +229,32 @@ const Titolo: React.FC<{ k: Keyword; len: number; g: GraficaStile }> = ({ k, len
 // centro, una parola alla volta mentre le dice, minuscole e con la punteggiatura; il resto del
 // parlato resta piccolo in basso. La parola entra con un piccolo scatto (da 82% a 100%)
 const Y_GRANDE: Record<Posizione, number> = { alto: 560, centro: 980, basso: 1300 };
+// righe di al massimo ~12 caratteri (le etichette sui B-roll muti: "wireless e bluetooth")
+function righeEtichetta(t: string, max = 12): string[] {
+  const righe: string[] = [];
+  for (const p of t.split(/\s+/).filter(Boolean)) {
+    const ultima = righe[righe.length - 1];
+    if (ultima && ultima.length + 1 + p.length <= max) righe[righe.length - 1] = `${ultima} ${p}`;
+    else righe.push(p);
+  }
+  return righe.slice(0, 3);
+}
 const ParolaGrande: React.FC<{ testo: string; len: number; ultima: boolean; g: GraficaStile }> = ({ testo, len, ultima, g }) => {
   const fr = useCurrentFrame();
   const entra = interpolate(fr, [0, 3], [0, 1], { ...clamp, easing: Easing.out(Easing.back(1.7)) });
   const esce = ultima ? interpolate(fr, [len - 3, len], [1, 0], clamp) : 1;
-  const t = caratteri(testo, g);
-  // ~0,62 em a lettera nel Montserrat ExtraBold minuscolo: la parola non esce mai dai bordi
-  const fs = Math.min(150, (W - 120) / Math.max(1, t.length * 0.62));
+  const righe = righeEtichetta(caratteri(testo, g));
+  // ~0,62 em a lettera nel Montserrat ExtraBold minuscolo: la riga non esce mai dai bordi
+  const fs = Math.min(150, (W - 120) / Math.max(1, Math.max(...righe.map((r) => r.length)) * 0.62));
   return (
     <AbsoluteFill>
       <div style={{
-        position: 'absolute', top: Y_GRANDE[g.posTitoli] - fs * 0.6, left: 50, right: 50, textAlign: 'center', whiteSpace: 'nowrap',
-        ...stileFont(g.fontTitoli), fontSize: fs, lineHeight: 1.15, letterSpacing: '-0.02em', color: g.coloreTitoli,
+        position: 'absolute', top: Y_GRANDE[g.posTitoli] - fs * (0.6 + 0.5 * (righe.length - 1)), left: 50, right: 50, textAlign: 'center',
+        ...stileFont(g.fontTitoli), fontSize: fs, lineHeight: 1.0, letterSpacing: '-0.02em', color: g.coloreTitoli,
         textShadow: '0 6px 24px rgba(0,0,0,0.42), 0 2px 5px rgba(0,0,0,0.35)',
         opacity: Math.min(1, entra * 1.6) * esce, transform: `scale(${0.82 + 0.18 * entra})`,
       }}>
-        {t}
+        {righe.map((r, i) => <div key={i} style={{ whiteSpace: 'nowrap' }}>{r}</div>)}
       </div>
     </AbsoluteFill>
   );
@@ -255,6 +265,9 @@ const ParolaGrande: React.FC<{ testo: string; len: number; ultima: boolean; g: G
 function paroleGrandi(parole: Piano['parole'] = [], frasi: Keyword[] = []) {
   return frasi.flatMap((k) => {
     const dentro = parole.filter((p) => p.at >= k.at - 0.05 && p.at < k.at + k.dur);
+    // sui B-roll senza voce la scritta dell'AI, tutta insieme: un'etichetta di cosa si vede
+    // (980, 20/10: "knob volume" e "wireless e bluetooth" sulla carrellata finale non uscivano)
+    if (!dentro.length) return k.word.trim() ? [{ at: k.at, fine: k.at + k.dur, testo: k.word.trim(), ultima: true }] : [];
     const gruppi = gruppiParole(dentro, [], true);
     return gruppi.map((x, i) => ({ ...x, fine: i === gruppi.length - 1 ? Math.max(x.fine, k.at + k.dur) : gruppi[i + 1].at, ultima: i === gruppi.length - 1 }));
   });

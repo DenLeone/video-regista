@@ -173,7 +173,8 @@ export function promptSuMisura(g, testoAI) {
     righe.push('- `keywords` = le FRASI FORTI DETTE IN GRANDE: i pezzi del parlato che reggono il video, mostrati enormi al centro una parola alla volta mentre Denis li dice (il resto del parlato lo mette lo script, piccolo in basso).',
       '  - La PRIMA è l\'aggancio, sulle primissime parole del video (es. "questa è la prima tastiera che…"). Poi i numeri e i dati, i momenti "wow", cosa cambia per chi la usa, la chiusura.',
       '  - 5–10 in tutto, una ogni 4–8 s; ognuna 2–8 parole dette di fila (al massimo ~4 s di parlato); mai due attaccate: in mezzo almeno qualche parola in piccolo.',
-      '  - Ognuna: `frase` (dove la dice) e `dette` = le parole ESATTE come le dice, copiate dalla trascrizione, di seguito e nello stesso ordine (es. `"dette": "una tastiera 100%"`); `word` = le stesse parole. Lo script le aggancia da solo all\'istante in cui le dice: niente `ritardo` né `dur`.');
+      '  - Ognuna: `frase` (dove la dice) e `dette` = le parole ESATTE come le dice, copiate dalla trascrizione, di seguito e nello stesso ordine (es. `"dette": "una tastiera 100%"`); `word` = le stesse parole. Lo script le aggancia da solo all\'istante in cui le dice: niente `ritardo` né `dur`.',
+      '  - Sui B-roll SENZA parlato puoi mettere un\'etichetta: `elemento` (numero da 1 dell\'elemento della sequenza), `word` = 1–3 parole su cosa si vede (es. "knob del volume"), `dur` 1,5–2,5 s; al massimo una per B-roll.');
   } else if (g.titoli) {
     righe.push('- `keywords` = i TITOLI: 3–5 in tutto, mai la trascrizione. Ognuno ancorato a una frase usata (`frase`, `ritardo` 0–1 s; senza parlato `elemento`), `dur` 2–3,5 s.',
       '  - `word`: nome del prodotto o un dato brevissimo (max ~16 caratteri); `tag`: etichetta piccola sopra (marca o categoria, facoltativa); `note`: sottotitolo sotto, 1–4 parole (senza "// ").',
