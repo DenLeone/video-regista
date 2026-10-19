@@ -74,7 +74,7 @@ async function fetchRiprova(url, opts = {}, tentativi = 4) {
 const isInCorso = (name) => /^_VAI_in_corso_/i.test(name);
 const nomeVaiOriginale = (name) => name.replace(/^_VAI_in_corso_/i, '');
 // file generati da noi o segnali: mai materiale di montaggio
-const isNostro = (name) => isVai(name) || isInCorso(name) || /^_VAI_usato_/i.test(name) || /FINALE/i.test(name) || /^(NOTE|ERRORE|_ERRORE.*)\.txt$/i.test(name);
+const isNostro = (name) => isVai(name) || isInCorso(name) || /^_VAI_usato_/i.test(name) || /FINALE| - PROVA \d+s/i.test(name) || /^(NOTE|ERRORE|_ERRORE.*)\.txt$/i.test(name);
 
 // data di ripresa: metadati della camera, altrimenti dal nome (VID_20261018_…, IMG_20261018…)
 function dataRipresa(tags, nome) {
@@ -274,6 +274,49 @@ function preparaImmagini(foto) {
   return { immagini: out, foglio: path.relative(ROOT, foglio).replace(/\\/g, '/') };
 }
 
+// MediaPipe (segmentazione della persona) in un ambiente a parte: il Python di sistema del runner
+// non accetta pip install. Si prepara una volta sola per giro.
+let mediapipePronto = null;
+function preparaMediaPipe() {
+  mediapipePronto ??= (async () => {
+    const modello = path.join(WORK, 'selfie_multiclass.tflite');
+    let py = process.env.REGISTA_PYTHON || 'python3';
+    try { run(py, ['-c', 'import mediapipe'], { stdio: 'ignore' }); } catch {
+      const venv = path.join(WORK, 'venv-ritaglio');
+      run('python3', ['-m', 'venv', venv]);
+      py = path.join(venv, 'bin', 'python');
+      run(py, ['-m', 'pip', 'install', '--quiet', 'mediapipe']);
+    }
+    if (!fs.existsSync(modello)) {
+      const r = await fetchRiprova('https://storage.googleapis.com/mediapipe-models/image_segmenter/selfie_multiclass_256x256/float32/latest/selfie_multiclass_256x256.tflite', {}, 3);
+      if (!r.ok) throw new Error(`modello di segmentazione: ${r.status}`);
+      fs.writeFileSync(modello, Buffer.from(await r.arrayBuffer()));
+    }
+    return { py, modello };
+  })();
+  return mediapipePronto;
+}
+
+// "Soggetto in risalto" (stili su misura): sui pezzi già colorati la persona resta luminosa e lo
+// sfondo si sfoca, scende al buio e vira al petrolio (scripts/look/risalto.py). I pezzi senza una
+// persona chiara (dettagli di prodotto) restano come sono; se qualcosa non va, video senza risalto.
+async function risaltoPersona(piano) {
+  if (!piano.grafica?.risalto) return;
+  try {
+    const { py, modello } = await preparaMediaPipe();
+    let n = 0;
+    for (const c of piano.clips) {
+      if (c.orient === 'h') continue;
+      const src = path.join(MEDIA, c.file), out = path.join(MEDIA, `ris_${c.file}`);
+      const esito = run(py, [path.join(ROOT, 'scripts', 'look', 'risalto.py'), src, out, modello], { stdio: ['ignore', 'pipe', 'inherit'] });
+      if (/^risalto/m.test(esito) && fs.existsSync(out)) { fs.renameSync(out, src); n++; }
+    }
+    log(`soggetto in risalto: ${n} pezzi su ${piano.clips.length}`);
+  } catch (e) {
+    log('soggetto in risalto non riuscito: pezzi senza', e.message.split('\n')[0]);
+  }
+}
+
 // la persona ritagliata nei momenti delle scritte grandi (stili su misura con "Scritte dietro di me"):
 // MediaPipe in scripts/ritaglio.py; se qualcosa non va le scritte restano davanti, il video esce lo stesso
 async function ritagliPersona(piano) {
@@ -290,21 +333,8 @@ async function ritagliPersona(piano) {
   }
   if (g.titoli && g.tipoTitoli === 'frasi') for (const k of piano.keywords) intervalli.push([k.at, k.at + k.dur]);
   if (!intervalli.length) return;
-  const modello = path.join(WORK, 'selfie_multiclass.tflite');
   try {
-    // MediaPipe in un ambiente a parte (il Python di sistema del runner non accetta pip install)
-    let py = process.env.REGISTA_PYTHON || 'python3';
-    try { run(py, ['-c', 'import mediapipe'], { stdio: 'ignore' }); } catch {
-      const venv = path.join(WORK, 'venv-ritaglio');
-      run('python3', ['-m', 'venv', venv]);
-      py = path.join(venv, 'bin', 'python');
-      run(py, ['-m', 'pip', 'install', '--quiet', 'mediapipe']);
-    }
-    if (!fs.existsSync(modello)) {
-      const r = await fetchRiprova('https://storage.googleapis.com/mediapipe-models/image_segmenter/selfie_multiclass_256x256/float32/latest/selfie_multiclass_256x256.tflite', {}, 3);
-      if (!r.ok) throw new Error(`modello di segmentazione: ${r.status}`);
-      fs.writeFileSync(modello, Buffer.from(await r.arrayBuffer()));
-    }
+    const { py, modello } = await preparaMediaPipe();
     let t = 0, n = 0;
     for (const [i, c] of piano.clips.entries()) {
       const dur = c.end - c.start;
@@ -695,7 +725,8 @@ function caricaStile(nome) {
       log(`stile ${nome}: musica ${path.basename(scelto)}`);
     } else avvisi.push(`stile ${nome}: musica richiesta ma nessun brano in asset/`);
   }
-  const lut = tutti.find((p) => /\.cube$/i.test(p));
+  // LUT: quella in asset/ dello stile; con "Look: teal e arancio" quella del repo (lut/teal-arancio.cube)
+  const lut = tutti.find((p) => /\.cube$/i.test(p)) || (grafica.look === 'teal' ? path.join(ROOT, 'lut', 'teal-arancio.cube') : null);
   if (lut) { LUT_STILE = lut; log(`stile ${nome}: LUT ${path.basename(lut)}`); }
   stileSuMisura = { nome: grafica.nome || nome, grafica, testoAI, avvisi };
   log(`stile su misura ${nome}: ${JSON.stringify(grafica)}`);
@@ -1196,7 +1227,7 @@ async function main() {
       await fase(nome, `${CORREZIONE ? '✏️ Correzione · ' : ''}📥 Scarico ${media.length} file (${mb(peso)})`, 'scarico');
       // solo il materiale: niente sottocartelle (_regista), niente video finali/note/segnali
       rclone('copy', remote(dirMedia, nome), SCARICO, '--max-depth', '1', '--transfers', '8', '--multi-thread-streams', '8',
-        '--exclude', '*.XML', '--exclude', '*.xml', '--exclude', '*FINALE*', '--exclude', '_VAI_*', '--exclude', '*.txt');
+        '--exclude', '*.XML', '--exclude', '*.xml', '--exclude', '*FINALE*', '--exclude', '* - PROVA *', '--exclude', '_VAI_*', '--exclude', '*.txt');
     }
     try { rclone('copy', remote(SRC_DIR, nome), SCARICO, '--max-depth', '1', '--include', 'brief.txt'); } catch { /* cartella nuova */ }
 
@@ -1229,7 +1260,8 @@ async function main() {
     const stima = stimaToken(fs.readFileSync(path.join(ROOT, 'scripts', 'prompt-regista.md'), 'utf8') + testoMateriale, fogli);
     consumi.stima = { totale: stima.totale, esatta: false };
     log(`stima materiale per l'AI: ${stima.testo} token di testo + ${stima.immagini} di immagini (${fogli.length} fogli)`);
-    const { stile, avviso: avvisoStile } = scegliStile(brief);
+    // lo stile chiesto al bot (input brief) vale più di quello scritto in brief.txt o nel giro precedente
+    const { stile, avviso: avvisoStile } = scegliStile([process.env.BRIEF_EXTRA || '', brief].join('\n'));
     stileCorrente = stile;
     if (stile !== STILI[0]) log(`stile: ${stile}`);
     const pesoAI = ` · materiale ≈ ${kTok(stima.totale)} token`;
@@ -1257,6 +1289,7 @@ async function main() {
     if (PROVA_SECONDI) { troncaPiano(piano, PROVA_SECONDI); log(`render di prova: primi ${PROVA_SECONDI} s (${piano.clips.length} tagli)`); }
     // solo adesso si ricodificano i pezzi scelti, poi gli originali non servono più
     tagliaSegmenti(piano, analisi);
+    await risaltoPersona(piano);
     await ritagliPersona(piano);
     // prima di cancellarli, gli originali devono essere su Drive; se la copia fallisce il video si consegna lo stesso
     if (copiaOriginali) {

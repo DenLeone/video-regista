@@ -12,15 +12,15 @@ export const sfuma = (len: number, base = 1) => (fr: number) => base * Math.max(
 // Una clip a tutto schermo. Le clip orizzontali vanno "contenute" sopra
 // una copia sfocata di sé stesse, così non si perde metà inquadratura.
 // `filtro`: correzione colore CSS dello stile (es. look caldo del Cinematico).
-export const ClipView: React.FC<{ clip: Clip; len: number; fondo?: string; filtro?: string }> = ({ clip, len, fondo = '#0B1014', filtro }) => {
+export const ClipView: React.FC<{ clip: Clip; len: number; fondo?: string; filtro?: string; muto?: boolean }> = ({ clip, len, fondo = '#0B1014', filtro, muto }) => {
   const src = staticFile(`media/${clip.file}`);
   const startFrom = f(clip.start);
   const endAt = startFrom + len;
   const scale = clip.punch ? 1.18 : 1;
   // clip in bianco e nero (stili su misura): si aggiunge al filtro dello stile
   if (clip.bn) filtro = `${filtro ?? ''} grayscale(1) contrast(1.06)`.trim();
-  const mutaImmagine = Boolean(clip.audio || clip.muto);
-  const voce = clip.audio ? (
+  const mutaImmagine = Boolean(clip.audio || clip.muto || muto);
+  const voce = clip.audio && !muto ? (
     <Audio src={staticFile(`media/${clip.audio.file}`)} startFrom={f(clip.audio.start)} endAt={f(clip.audio.start) + len} volume={sfuma(len)} />
   ) : null;
   const volume = sfuma(len, clip.volume ?? 1);
@@ -47,7 +47,7 @@ export const ClipView: React.FC<{ clip: Clip; len: number; fondo?: string; filtr
 };
 
 // tutte le clip una dopo l'altra sulla timeline
-export const Clips: React.FC<{ piano: Piano; fondo?: string; filtro?: string }> = ({ piano, fondo, filtro }) => {
+export const Clips: React.FC<{ piano: Piano; fondo?: string; filtro?: string; muto?: boolean }> = ({ piano, fondo, filtro, muto }) => {
   let cursor = 0;
   return (
     <>
@@ -57,7 +57,7 @@ export const Clips: React.FC<{ piano: Piano; fondo?: string; filtro?: string }> 
         cursor += f(durataClip(c));
         return (
           <Sequence key={`c${i}`} from={from} durationInFrames={len}>
-            <ClipView clip={c} len={len} fondo={fondo} filtro={filtro} />
+            <ClipView clip={c} len={len} fondo={fondo} filtro={filtro} muto={muto} />
           </Sequence>
         );
       })}

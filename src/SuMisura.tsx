@@ -21,6 +21,7 @@ const LOOK: Record<GraficaStile['look'], string | undefined> = {
   caldo: 'contrast(1.03) saturate(1.08) sepia(0.1)',
   freddo: 'contrast(1.04) saturate(0.95) hue-rotate(-6deg)',
   'bianco e nero': 'grayscale(1) contrast(1.08)',
+  teal: undefined, // LUT teal e arancio già applicata in ffmpeg
 };
 const Y: Record<Posizione, number> = { alto: 420, centro: 1060, basso: 1440 };
 const OMBRA = '0 3px 14px rgba(0,0,0,0.55), 0 1px 3px rgba(0,0,0,0.7)';
@@ -221,6 +222,61 @@ const Titolo: React.FC<{ k: Keyword; len: number; g: GraficaStile }> = ({ k, len
   );
 };
 
+// inizio "prima e dopo" (12K Quality, 19/10): per un attimo l'immagine piatta, come esce dalla
+// camera in I-Log, poi una linea di luce la attraversa e dietro resta il colore finale
+const PIATTO = 'saturate(0.18) contrast(0.6) brightness(1.25) sepia(0.06)';
+const RIVELA = { inizio: 14, fine: 40 };
+const Rivela: React.FC<{ piano: Piano }> = ({ piano }) => {
+  const fr = useCurrentFrame();
+  const p = interpolate(fr, [RIVELA.inizio, RIVELA.fine], [0, 1], { ...clamp, easing: Easing.inOut(Easing.cubic) });
+  return (
+    <AbsoluteFill>
+      <AbsoluteFill style={{ clipPath: `inset(0 0 0 ${p * 100}%)` }}>
+        <Clips piano={piano} fondo="#0B0B0B" filtro={PIATTO} muto />
+      </AbsoluteFill>
+      {p > 0 && p < 1 ? <div style={{ position: 'absolute', top: 0, bottom: 0, left: `calc(${p * 100}% - 2px)`, width: 4, background: 'rgba(255,255,255,0.9)', boxShadow: '0 0 28px 8px rgba(255,255,255,0.4)' }} /> : null}
+    </AbsoluteFill>
+  );
+};
+
+// chiusura con logo Instagram e nome (come negli esempi di 12K Quality): l'immagine si scurisce,
+// il logo entra bianco, si accende dei colori di Instagram e torna bianco
+const CHIUSURA = 54;
+const LogoInstagram: React.FC<{ colori: number }> = ({ colori }) => {
+  const forme = (tratto: string) => (
+    <g fill="none" stroke={tratto} strokeWidth={1.9}>
+      <rect x="2.5" y="2.5" width="19" height="19" rx="5.4" />
+      <circle cx="12" cy="12" r="4.4" />
+    </g>
+  );
+  return (
+    <svg width={150} height={150} viewBox="0 0 24 24">
+      <defs>
+        <radialGradient id="ig" cx="0.3" cy="1.07" r="1.5" gradientUnits="objectBoundingBox">
+          <stop offset="0" stopColor="#FDF497" /><stop offset="0.08" stopColor="#FDF497" /><stop offset="0.45" stopColor="#FD5949" />
+          <stop offset="0.6" stopColor="#D6249F" /><stop offset="0.9" stopColor="#285AEB" />
+        </radialGradient>
+      </defs>
+      {forme('#FFFFFF')}
+      <circle cx="17.3" cy="6.7" r="1.2" fill="#FFFFFF" />
+      <g opacity={colori}>{forme('url(#ig)')}<circle cx="17.3" cy="6.7" r="1.2" fill="#D6249F" /></g>
+    </svg>
+  );
+};
+const Chiusura: React.FC<{ nome: string; g: GraficaStile }> = ({ nome, g }) => {
+  const fr = useCurrentFrame();
+  const v = interpolate(fr, [0, 12], [0, 1], { ...clamp, easing: Easing.out(Easing.cubic) });
+  const colori = interpolate(fr, [10, 22, 38, 50], [0, 1, 1, 0], clamp);
+  return (
+    <AbsoluteFill style={{ backgroundColor: `rgba(0,0,0,${(0.62 * v).toFixed(3)})`, justifyContent: 'center', alignItems: 'center' }}>
+      <div style={{ opacity: v, transform: `scale(${0.92 + 0.08 * v})`, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 22 }}>
+        <LogoInstagram colori={colori} />
+        <div style={{ ...stileFont(g.fontSottotitoli), fontWeight: 600, fontSize: 40, color: '#FFFFFF', letterSpacing: '0.06em', textTransform: 'uppercase', textShadow: OMBRA }}>{nome}</div>
+      </div>
+    </AbsoluteFill>
+  );
+};
+
 export const SuMisura: React.FC<Piano> = (piano) => {
   const g: GraficaStile = { ...BASE, ...(piano.grafica || {}) };
   useFont([g.fontApertura, g.fontSottotitoli, g.fontTitoli, g.fontCorsivo]);
@@ -242,6 +298,7 @@ export const SuMisura: React.FC<Piano> = (piano) => {
     <AbsoluteFill style={{ backgroundColor: '#0B0B0B' }}>
       <Clips piano={piano} fondo="#0B0B0B" filtro={LOOK[g.look]} />
       {g.vignetta > 0 ? <AbsoluteFill style={{ background: `radial-gradient(ellipse 100% 80% at 50% 50%, rgba(0,0,0,0) 60%, rgba(0,0,0,${g.vignetta.toFixed(2)}) 100%)` }} /> : null}
+      {g.rivela ? <Sequence durationInFrames={RIVELA.fine + 1}><Rivela piano={piano} /></Sequence> : null}
 
       {aperture.map((b, i) => (
         <Sequence key={`a${i}`} from={f(b.at)} durationInFrames={len(b.at, b.fine)}>
@@ -267,6 +324,10 @@ export const SuMisura: React.FC<Piano> = (piano) => {
         </Sequence>
       ))}
 
+      {g.chiusura && totale > CHIUSURA * 2 ? (
+        <Sequence from={totale - CHIUSURA} durationInFrames={CHIUSURA}><Chiusura nome={g.chiusura} g={g} /></Sequence>
+      ) : null}
+
       {m ? <Audio src={staticFile(m.file)} loop volume={(fr) => m.volume * Math.min(1, fr / 15, (totale - fr) / 30)} /> : null}
       {sfx > 0 ? (
         <>
@@ -275,6 +336,8 @@ export const SuMisura: React.FC<Piano> = (piano) => {
           {frasi.map((k, i) => <Sfx key={`sf${i}`} nome="whoosh" da={f(k.at) - 6} volume={0.45 * sfx} />)}
           {frasi.map((k, i) => <Sfx key={`pf${i}`} nome="colpo" da={f(k.at + 0.15)} volume={0.5 * sfx} />)}
           {titoli.map((k, i) => <Sfx key={`st${i}`} nome="whoosh" da={f(k.at) - 6} volume={0.55 * sfx} />)}
+          {g.rivela ? <Sfx nome="whoosh" da={RIVELA.inizio - 4} volume={0.4 * sfx} /> : null}
+          {g.chiusura && totale > CHIUSURA * 2 ? <Sfx nome="whoosh" da={totale - CHIUSURA - 4} volume={0.35 * sfx} /> : null}
         </>
       ) : null}
     </AbsoluteFill>
