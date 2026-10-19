@@ -9,7 +9,8 @@
 //   "uscita": "03 · Social — Risorse/Stili/12K Quality/_laboratorio/catalogo",
 //   "catalogo": { "cartelle": ["98 - Fatti/980"], "max": 8 },      // fogli con tutti i video
 //   "fotogrammi": [{ "file": "98 - Fatti/980/IMG_1.MOV", "tempi": [2.5, 7] }],
-//   "varianti": [{ "id": "A", "filtro": "lut3d=file=lut/12k.cube" }], // applicate a ogni fotogramma
+//   "varianti": [{ "id": "A", "filtro": "lut3d=file=lut/12k.cube", "adatta": true }], // su ogni fotogramma;
+//                 adatta = prima la curva di esposizione del pezzo, come fa il montaggio col look 12K
 //   "clip": [{ "file": "...", "da": 3, "dur": 4, "variante": "A" }]   // pezzi brevi in mp4
 // }
 // I fotogrammi escono già convertiti come nel montaggio (HDR → SDR, I-Log → Rec709): "<n>-base.jpg"
@@ -18,7 +19,7 @@
 import { execFile, execFileSync } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
-import { filtroTecnico, probe, riconosciLog } from './colore.mjs';
+import { curvaEsposizione, filtroTecnico, misuraPezzo, probe, riconosciLog } from './colore.mjs';
 import { VIDEO_EXT, dispositivo } from './sorgenti.mjs';
 
 const ROOT = path.resolve(path.dirname(new URL(import.meta.url).pathname.replace(/^\/([A-Za-z]:)/, '$1')), '..');
@@ -133,10 +134,15 @@ function fotogrammiEVarianti(ric) {
       const base = path.join(OUT, `${nome}-base.jpg`);
       fotogramma(s, t, base);
       const fatti = [base];
+      // curva di esposizione del pezzo intorno al fotogramma (2 s), come nel montaggio
+      const m = misuraPezzo(s.u, Math.max(0, t - 1), 2, s.tecnico);
+      const curva = curvaEsposizione(m);
+      if (m) log(`  ${nome}: soggetto ${m.medio.toFixed(2)}, neri ${m.nero.toFixed(2)}, bianchi ${m.bianco.toFixed(2)}${curva ? ` → ${curva}` : ''}`);
       for (const v of varianti) {
         const o = path.join(OUT, `${nome}-${pulito(v.id)}.jpg`);
         try {
-          fotogramma(s, t, o, v.filtro.replace(/lut\//g, `${ROOT}/lut/`));
+          const filtro = v.filtro.replace(/lut\//g, `${ROOT}/lut/`);
+          fotogramma(s, t, o, v.adatta && curva ? `curves=master='${curva}',${filtro}` : filtro);
           fatti.push(o);
         } catch (e) { log(`variante ${v.id} su ${nome}: ${e.message.split('\n')[0]}`); }
       }
