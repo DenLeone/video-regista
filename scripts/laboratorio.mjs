@@ -1,8 +1,8 @@
 // Laboratorio del look (workflow laboratorio.yml): prove di colore e nitidezza sul girato vero,
 // senza montare niente. Legge una ricetta (lab/<nome>.json) e mette i risultati su Drive.
 //
-// Le sorgenti si leggono da Drive con `rclone serve http`: ffmpeg salta ai secondi che servono
-// (richieste a pezzi) invece di scaricare file da 2 GB.
+// Le sorgenti si scaricano una alla volta nel disco grande del runner (LAB_SCARICO) e si cancellano
+// appena finite. Lo streaming da Drive (rclone serve http) restava appeso per decine di minuti.
 //
 // Ricetta:
 // {
@@ -15,7 +15,7 @@
 // I fotogrammi escono già convertiti come nel montaggio (HDR → SDR, I-Log → Rec709): "<n>-base.jpg"
 // è il punto di partenza del look, "<n>-<variante>.jpg" il risultato.
 
-import { execFile, execFileSync, spawn } from 'node:child_process';
+import { execFile, execFileSync } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
 import { filtroTecnico, probe, riconosciLog } from './colore.mjs';
@@ -24,13 +24,14 @@ import { VIDEO_EXT, dispositivo } from './sorgenti.mjs';
 const ROOT = path.resolve(path.dirname(new URL(import.meta.url).pathname.replace(/^\/([A-Za-z]:)/, '$1')), '..');
 const REMOTE = process.env.REGISTA_REMOTE || 'gdrive';
 const OUT = path.join(ROOT, 'work', 'lab');
-const PORTA = 8088;
+const SCARICO = process.env.LAB_SCARICO || path.join(ROOT, 'work', 'lab-in');
 const FONT = '/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf';
 
 const log = (...a) => console.log('[lab]', ...a);
-const run = (cmd, args, opts = {}) => String(execFileSync(cmd, args, { stdio: ['ignore', 'pipe', 'inherit'], maxBuffer: 1 << 28, ...opts }) ?? '');
-// versione asincrona: i fotogrammi di una striscia si estraggono insieme (ogni salto è una richiesta a Drive)
-const runA = (cmd, args) => new Promise((ok, ko) => execFile(cmd, args, { maxBuffer: 1 << 26 }, (e, out, err) => (e ? ko(new Error(`${e.message}\n${err}`)) : ok(out))));
+// ogni comando ha un tempo massimo: uno bloccato non deve fermare tutto il giro
+const run = (cmd, args, opts = {}) => String(execFileSync(cmd, args, { stdio: ['ignore', 'pipe', 'inherit'], maxBuffer: 1 << 28, timeout: 15 * 60 * 1000, ...opts }) ?? '');
+// versione asincrona: i fotogrammi di una striscia si estraggono insieme
+const runA = (cmd, args) => new Promise((ok, ko) => execFile(cmd, args, { maxBuffer: 1 << 26, timeout: 5 * 60 * 1000 }, (e, out, err) => (e ? ko(new Error(`${e.message}\n${err}`)) : ok(out))));
 // a gruppi di n alla volta
 async function aGruppi(voci, n, fn) {
   const coda = [...voci];
@@ -38,27 +39,19 @@ async function aGruppi(voci, n, fn) {
 }
 let uscitaDrive = null;
 const carica = () => { if (uscitaDrive) run('rclone', ['copy', OUT, `${REMOTE}:${uscitaDrive}`, '--exclude', 'tmp/**']); };
-const url = (p) => `http://127.0.0.1:${PORTA}/${p.split('/').map(encodeURIComponent).join('/')}`;
 const pulito = (t) => String(t).replace(/[^\w.-]+/g, '_').slice(0, 60);
 const testo = (t) => String(t).replace(/[\\':%,]/g, ' ');
 
-async function avviaServer() {
-  // buffer piccolo: per un fotogramma servono pochi MB, i 16 MB di lettura anticipata di default rallentano ogni salto
-  const srv = spawn('rclone', ['serve', 'http', `${REMOTE}:`, '--addr', `127.0.0.1:${PORTA}`, '--read-only', '--no-modtime', '--dir-cache-time', '1h',
-    '--buffer-size', '2M', '--vfs-read-chunk-size', '4M', '--vfs-read-chunk-size-limit', '64M'],
-    { stdio: ['ignore', 'ignore', 'inherit'] });
-  for (let i = 0; i < 60; i++) {
-    try { if ((await fetch(`http://127.0.0.1:${PORTA}/`)).ok) return srv; } catch { /* non ancora pronto */ }
-    await new Promise((ok) => setTimeout(ok, 500));
-  }
-  throw new Error('rclone serve http non risponde');
-}
-
-// sorgente: lettura (via http) + conversione tecnica come nel montaggio
+// sorgente: scaricata + conversione tecnica come nel montaggio
 const sorgenti = new Map();
 function sorgente(file) {
   if (sorgenti.has(file)) return sorgenti.get(file);
-  const u = url(file);
+  const u = path.join(SCARICO, `${sorgenti.size}-${pulito(path.basename(file))}`);
+  if (!fs.existsSync(u)) {
+    const t0 = Date.now();
+    run('rclone', ['copyto', `${REMOTE}:${file}`, u, '--multi-thread-streams', '4']);
+    log(`scaricato ${file} (${(fs.statSync(u).size / 1e6).toFixed(0)} MB, ${((Date.now() - t0) / 1000).toFixed(0)} s)`);
+  }
   const info = probe(u);
   const disp = dispositivo(path.basename(file), info.tags);
   const lg = riconosciLog(u, info, disp, '', path.join(OUT, 'tmp'));
@@ -76,6 +69,13 @@ const argsFotogramma = (s, t, out, extra = '') => ['-y', '-v', 'error', '-ss', M
 const fotogramma = (s, t, out, extra) => run('ffmpeg', argsFotogramma(s, t, out, extra));
 const fotogrammaA = (s, t, out, extra) => runA('ffmpeg', argsFotogramma(s, t, out, extra));
 
+// il file scaricato si cancella se le altre parti della ricetta non lo usano
+function libera(file, ric) {
+  const serve = [...(ric.fotogrammi || []), ...(ric.clip || [])].some((v) => v.file === file);
+  const s = sorgenti.get(file);
+  if (s && !serve) fs.rmSync(s.u, { force: true });
+}
+
 async function catalogo(ric) {
   const { cartelle = [], max = 8 } = ric.catalogo;
   const righe = [];
@@ -87,7 +87,7 @@ async function catalogo(ric) {
         .sort((a, b) => b.Size - a.Size).slice(0, max);
     } catch (e) { righe.push(`${cartella}: non letta (${e.message.split('\n')[0]})`); continue; }
     const strisce = new Map();
-    await aGruppi(files, 3, async (f) => {
+    await aGruppi(files, 2, async (f) => {
       const file = `${cartella}/${f.Path}`;
       try {
         const s = sorgente(file);
@@ -106,6 +106,7 @@ async function catalogo(ric) {
           '-q:v', '3', striscia]);
         strisce.set(f.Path, striscia);
       } catch (e) { righe.push(`${file}: errore ${e.message.split('\n')[0]}`); }
+      libera(file, ric);
     });
     const ordinate = files.map((f) => strisce.get(f.Path)).filter(Boolean);
     for (let i = 0; i < ordinate.length; i += 10) {
@@ -169,14 +170,10 @@ async function main() {
   fs.rmSync(OUT, { recursive: true, force: true });
   fs.mkdirSync(path.join(OUT, 'tmp'), { recursive: true });
   uscitaDrive = ric.uscita;
-  const srv = await avviaServer();
-  try {
-    if (ric.fotogrammi) { fotogrammiEVarianti(ric); carica(); }
-    if (ric.catalogo) await catalogo(ric);
-    if (ric.clip) clip(ric);
-  } finally {
-    srv.kill();
-  }
+  fs.mkdirSync(SCARICO, { recursive: true });
+  if (ric.fotogrammi) { fotogrammiEVarianti(ric); carica(); }
+  if (ric.clip) { clip(ric); carica(); }
+  if (ric.catalogo) await catalogo(ric);
   fs.rmSync(path.join(OUT, 'tmp'), { recursive: true, force: true });
   const elenco = [...sorgenti.values()].map((s) => s.riga).join('\n');
   if (elenco) fs.writeFileSync(path.join(OUT, 'sorgenti.txt'), `${elenco}\n`);

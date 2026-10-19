@@ -45,4 +45,8 @@ jobs:
       - name: Prove
         env:
           RICETTA: ${{ inputs.ricetta }}
-        run: node scripts/laboratorio.mjs
+          # il girato si scarica nel disco grande del runner (/mnt), un file alla volta
+          LAB_SCARICO: /mnt/lab
+        run: |
+          sudo mkdir -p /mnt/lab && sudo chown "$USER" /mnt/lab
+          node scripts/laboratorio.mjs
