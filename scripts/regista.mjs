@@ -358,7 +358,8 @@ async function ritagliPersona(piano) {
 
 // con tanti video in parallelo Groq può andare al limite orario: si passa al modello turbo (quota separata).
 // lingua null: la riconosce Whisper (video di esempio, spesso in inglese)
-async function trascrivi(file, lingua = 'it') {
+// nomi: marchi e prodotti del brief ("Prodotto: Ajazz AK980"), suggeriti a Whisper per scriverli giusti
+async function trascrivi(file, lingua = 'it', nomi = []) {
   const mp3 = path.join(WORK, `${path.parse(file).name}.trascrizione.mp3`);
   run('ffmpeg', ['-y', '-v', 'error', '-i', file, '-vn', '-ac', '1', '-ar', '16000', '-b:a', '48k', mp3]);
   for (const modello of ['whisper-large-v3', 'whisper-large-v3-turbo']) {
@@ -366,6 +367,7 @@ async function trascrivi(file, lingua = 'it') {
     form.append('file', new Blob([fs.readFileSync(mp3)]), path.basename(mp3));
     form.append('model', modello);
     if (lingua) form.append('language', lingua);
+    if (nomi.length) form.append('prompt', nomi.join(', '));
     form.append('response_format', 'verbose_json');
     form.append('timestamp_granularities[]', 'word');
     try {
@@ -380,6 +382,38 @@ async function trascrivi(file, lingua = 'it') {
       log(`trascrizione con ${modello} non riuscita (${e.message}), provo whisper-large-v3-turbo`);
     }
   }
+}
+
+// Marchi e nomi di prodotto: Whisper li sbaglia ("Ajax" per Ajazz, 980 del 20/10) e negli stili
+// con le parole a schermo l'errore si vede. Si scrivono nel brief ("Prodotto: Ajazz AK980" o
+// "Nomi: ..."): una parola trascritta con la maiuscola o con cifre quasi uguale a uno di questi
+// (stessa iniziale, 1–2 lettere di differenza) diventa quella giusta, punteggiatura compresa.
+export function nomiDelBrief(brief) {
+  const righe = [...String(brief || '').matchAll(/\b(?:prodott[oi]|nomi|marc(?:a|he))\s*:\s*([^.\n]+)/gi)].map((m) => m[1]);
+  return [...new Set(righe.flatMap((r) => r.match(/[\p{L}\p{N}][\p{L}\p{N}-]{2,}/gu) || []))];
+}
+const nucleo = (w) => String(w).toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9]/g, '');
+function distanzaParole(a, b) {
+  let riga = Array.from({ length: b.length + 1 }, (_, j) => j);
+  for (let i = 1; i <= a.length; i++) {
+    const nuova = [i];
+    for (let j = 1; j <= b.length; j++) nuova[j] = Math.min(riga[j] + 1, nuova[j - 1] + 1, riga[j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1));
+    riga = nuova;
+  }
+  return riga[b.length];
+}
+export function correggiNomi(parole, nomi) {
+  if (!nomi.length) return parole;
+  return parole.map((p) => {
+    const m = /^([^\p{L}\p{N}]*)([\p{L}\p{N}][\p{L}\p{N}'-]*)(.*)$/u.exec(String(p.w).trim());
+    if (!m || !(/^\p{Lu}/u.test(m[2]) || /\d/.test(m[2]))) return p;
+    const n = nucleo(m[2]);
+    const giusto = nomi.find((x) => {
+      const k = nucleo(x);
+      return k !== n && k.length >= 4 && k[0] === n[0] && distanzaParole(n, k) <= (k.length >= 5 ? 2 : 1);
+    });
+    return giusto ? { ...p, w: `${m[1]}${giusto}${m[3]}` } : p;
+  });
 }
 
 // traccia voce in WAV: Remotion la legge con tempi esatti
@@ -999,6 +1033,7 @@ export async function analizza(nome, brief, cache) {
   const principali = [];
   const prova = (s) => {
     for (const p of principali) {
+      if (!p.principale) continue; // voce scartata (niente parole): non aggancia più nessuno
       const r = sincronizza(db.get(p.id), db.get(s.id));
       log(`sync ${s.id} ↔ ${p.id}: offset ${r.offset} s, punteggio ${r.punteggio}, spicco ${r.spicco}${r.affidabile ? '' : ' (non affidabile)'}`);
       if (r.affidabile) { s.sync = { con: p.id, offset: r.offset, punteggio: r.punteggio }; return true; }
@@ -1014,19 +1049,26 @@ export async function analizza(nome, brief, cache) {
 
   // trascrizione solo delle voci principali (le altre camere non servono)
   const tutteFrasi = [];
-  for (const p of principali) {
+  for (let k = 0; k < principali.length; k++) {
+    const p = principali[k];
     if (!p.voce) { p.voce = `${p.id}.voce.wav`; estraiVoce(p.originale, path.join(MEDIA, p.voce)); }
     let parole = parolePrecedenti(p.file) || parolePrecedenti(p.voce);
     if (!parole && process.env.GROQ_API_KEY) {
-      parole = await trascrivi(path.join(MEDIA, p.voce));
+      parole = await trascrivi(path.join(MEDIA, p.voce), 'it', nomiDelBrief(brief));
       consumi.groqSec += p.durata;
     }
-    p.parole = parole || [];
+    p.parole = correggiNomi(parole || [], nomiDelBrief(brief));
     // vento, musica, rumore scambiati per voce: meno di 10 parole al minuto = B-roll
     if (p.parole.length < Math.max(3, (p.durata / 60) * 10)) {
       log(`${p.id}: quasi nessuna parola trascritta (${p.parole.length}), la tratto come B-roll`);
       p.principale = false; p.parlato = false; p.parole = [];
-      for (const s of sorgenti) if (s.sync?.con === p.id) delete s.sync;
+      // chi era agganciato a questa "voce" torna in gioco e può essere la voce vera (980, 19/10:
+      // la clip parlata Ak980 agganciata per sbaglio a una ripresa col solo rumore della tastiera,
+      // scartata quella, restava senza trascrizione e il montaggio usava solo 22 s di parlato)
+      for (const s of sorgenti.filter((x) => x.sync?.con === p.id)) {
+        delete s.sync;
+        if (s.parlato && !prova(s)) { s.principale = true; principali.push(s); log(`${s.id}: diventa voce principale`); }
+      }
       continue;
     }
     for (const f of frasi(p.parole, db.get(p.id), p.durata)) tutteFrasi.push({ ...f, principale: p.id });

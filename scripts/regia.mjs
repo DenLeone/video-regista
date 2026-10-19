@@ -70,6 +70,38 @@ export function risolviRegia(regia, analisi) {
     if (taglio < f.fine - 0.1) { fineTaglio.set(idx, { t: taglio, parole: k }); avvisi.push(`${f.id}: tolto "${pf.slice(-k).join(' ')}" ripetuto all'inizio di ${g.id}`); }
   });
 
+  // stacco: { dopo: "<parola detta>", broll: "<id>", da: <s> } oppure { dopo, camera: "<id>" }.
+  // Il taglio cade a metà tra la fine di quella parola e l'inizio della successiva; ogni pezzo
+  // almeno 0,6 s. Restituisce il punto di taglio nella clip e la seconda clip.
+  function staccoDentro(it, clip, paroleF) {
+    const f = frasi.get(normFrase(it.frase));
+    const st = it.stacco;
+    const cerca = paroleDi(st.dopo).join('');
+    const i = paroleF.findIndex((w) => paroleDi(w.w).join('') === cerca);
+    if (!cerca || i < 0) { avvisi.push(`stacco in ${f.id}: parola "${st.dopo}" non trovata, niente stacco`); return null; }
+    const dur = clip.end - clip.start;
+    const dopo = paroleF[i + 1];
+    const tc = q((dopo ? (paroleF[i].e + dopo.s) / 2 : paroleF[i].e) - f.inizio);
+    if (tc < 0.6 || dur - tc < 0.6) { avvisi.push(`stacco in ${f.id} dopo "${st.dopo}": pezzo troppo corto, niente stacco`); return null; }
+    const audio = { file: clip.audio.file, start: +(clip.audio.start + tc).toFixed(3) };
+    let nuova = null;
+    if (st.broll) {
+      const b = trovaSorgente(st.broll);
+      if (b && b.tipo === 'video' && b.durata >= dur - tc) {
+        let da = Math.max(0, Number(st.da) || 0);
+        if (da + dur - tc > b.durata) da = Math.max(0, b.durata - (dur - tc) - 0.05);
+        nuova = { file: b.file, start: +da.toFixed(3), end: +(da + dur - tc).toFixed(3), orient: b.orient, audio };
+      }
+    } else if (st.camera) {
+      const cam = trovaSorgente(st.camera);
+      const off = cam ? offsetCamera(cam, f) : null;
+      if (off != null) nuova = { file: cam.file, start: +(f.inizio + off + tc).toFixed(3), end: +(f.inizio + off + dur).toFixed(3), orient: cam.orient, audio };
+    }
+    if (!nuova) { avvisi.push(`stacco in ${f.id}: ${st.broll || st.camera || 'inquadratura'} non utilizzabile, niente stacco`); return null; }
+    if (nuova.file === clip.file && Math.abs(nuova.start - (clip.start + tc)) < 0.05) return null; // stessa inquadratura che prosegue
+    return { taglio: +(clip.start + tc).toFixed(3), clip: nuova };
+  }
+
   const clips = [];
   const inizioVoce = []; // per ogni elemento della sequenza: dove inizia sulla timeline finale
   const testo = [];
@@ -78,6 +110,7 @@ export function risolviRegia(regia, analisi) {
 
   sequenza.forEach((it, idx) => {
     let clip = null;
+    let paroleF = []; // parole della frase (per lo stacco dentro la frase)
     if (it.frase) {
       const f = frasi.get(normFrase(it.frase));
       if (!f) { avvisi.push(`frase ${it.frase} inesistente: saltata`); return; }
@@ -85,7 +118,8 @@ export function risolviRegia(regia, analisi) {
       const taglio = fineTaglio.get(idx);
       const dur = q((taglio ? taglio.t : f.fine) - f.inizio);
       testo.push(taglio ? f.testo.trim().split(/\s+/).slice(0, -taglio.parole).join(' ') : f.testo);
-      paroleFrase(voce, f, taglio).forEach((w) => parole.push({ at: q(t + Math.max(0, w.s - f.inizio)), dur: +Math.max(0.05, w.e - w.s).toFixed(3), w: w.w }));
+      paroleF = paroleFrase(voce, f, taglio);
+      paroleF.forEach((w) => parole.push({ at: q(t + Math.max(0, w.s - f.inizio)), dur: +Math.max(0.05, w.e - w.s).toFixed(3), w: w.w }));
       const audio = { file: voce.voce, start: +f.inizio.toFixed(3) };
       if (it.broll) {
         const b = trovaSorgente(it.broll);
@@ -146,6 +180,17 @@ export function risolviRegia(regia, analisi) {
       } else avvisi.push(`inserto ${nomeIns} ${b ? 'troppo corto' : 'inesistente'}: tolto`);
     }
     inizioVoce[idx] = t;
+    // stacco dentro la frase (ritmo veloce, stile Esplicativo): dopo la parola indicata si passa a
+    // un'altra inquadratura per il resto della frase, con la voce che continua
+    const secondo = it.stacco && !clip.inserto && it.frase ? staccoDentro(it, clip, paroleF) : null;
+    if (secondo) {
+      clips.push({ ...clip, end: secondo.taglio });
+      t = q(t + (secondo.taglio - clip.start));
+      secondo.clip.punch = false;
+      clips.push(secondo.clip);
+      t = q(t + (secondo.clip.end - secondo.clip.start));
+      return;
+    }
     clips.push(clip);
     t = q(t + (clip.end - clip.start));
   });
@@ -203,10 +248,14 @@ export function risolviRegia(regia, analisi) {
       avvisi.push(`parola chiave ${k.word}: ${k.frase ? `frase ${k.frase} non usata nel montaggio` : k.elemento != null ? `elemento ${k.elemento} inesistente` : 'senza frase né elemento'}, tolta`);
       continue;
     }
+    // frase forte detta (stile Esplicativo): l'AI copia le parole, i tempi esatti li prendo dal parlato
+    const dette = k.dette ? trovaDette(k.dette, parole, at) : null;
+    if (k.dette && !dette) avvisi.push(`frase forte "${String(k.dette).slice(0, 40)}": parole non trovate in ${k.frase || 'nessuna frase'}, messa a occhio`);
     // almeno un secondo prima della fine: una scritta sull'ultima parola durerebbe mezzo secondo
-    at = q(Math.max(0, Math.min(totale - 1, at + (Number(k.ritardo) || 0))));
-    const dur = k.fino_alla_fine ? totale - at : Math.min(4, Math.max(0.8, Number(k.dur) || 2));
-    const word = correggiParole(String(k.word || ''), parole.filter((w) => w.at > at - 3 && w.at < at + dur + 4));
+    at = dette ? q(dette.at) : q(Math.max(0, Math.min(totale - 1, at + (Number(k.ritardo) || 0))));
+    const dur = dette ? Math.min(6, Math.max(0.5, dette.fine - dette.at + 0.12))
+      : k.fino_alla_fine ? totale - at : Math.min(4, Math.max(0.8, Number(k.dur) || 2));
+    const word = correggiParole(String(k.word || k.dette || ''), parole.filter((w) => w.at > at - 3 && w.at < at + dur + 4));
     keywords.push({ at, dur: q(dur), word, note: k.note, tag: k.tag, filled: Boolean(k.filled), top: Number(k.top) || undefined }); // senza top: quello dello stile
   }
   keywords.sort((a, b) => a.at - b.at);
@@ -262,6 +311,26 @@ function correggiParole(testo, vicine) {
     const giusta = vicine.map((w) => w.w.replace(/^[^\p{L}\p{N}]+|[^\p{L}\p{N}]+$/gu, '')).find((w) => paroleDi(w).join('') === d[0]) || d[0];
     return t === t.toUpperCase() ? giusta.toUpperCase() : giusta;
   });
+}
+// le parole di una frase forte (`dette`, copiate dall'AI) sulla timeline: la prima sequenza
+// uguale dall'inizio della frase in poi. Basta che tornino quasi tutte (Whisper e l'AI possono
+// scrivere diverso "100%" o "AK980,"); tempi = dalla prima all'ultima parola trovata
+function trovaDette(dette, parole, da) {
+  const cerca = String(dette).split(/\s+/).map((w) => paroleDi(w).join('')).filter(Boolean);
+  const vicine = parole.filter((w) => w.at >= da - 0.3 && w.at < da + 30);
+  const n = (w) => paroleDi(w.w).join('');
+  // uguali, o quasi per le parole lunghe ("numerica" per "numerico")
+  const simile = (a, b) => a === b || (Math.min(a.length, b.length) >= 5 && distanza(a, b) <= (a.length >= 8 ? 2 : 1));
+  for (let i = 0; i < vicine.length && cerca.length; i++) {
+    if (!simile(n(vicine[i]), cerca[0])) continue;
+    let j = 0, ok = 0;
+    while (j < cerca.length && i + j < vicine.length) { if (simile(n(vicine[i + j]), cerca[j])) ok++; j++; }
+    if (ok >= Math.max(1, Math.ceil(cerca.length * 0.7))) {
+      const ult = vicine[Math.min(vicine.length, i + cerca.length) - 1];
+      return { at: vicine[i].at, fine: ult.at + ult.dur };
+    }
+  }
+  return null;
 }
 function distanza(a, b) {
   let riga = Array.from({ length: b.length + 1 }, (_, j) => j);

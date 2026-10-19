@@ -82,11 +82,13 @@ function frasiBrevi(parole: Piano['parole'] = [], maxParole = 5, maxCar = 28): P
   return out.filter((g) => g.testo.trim());
 }
 
+const caratteri = (testo: string, g: GraficaStile) => (g.maiuscolo ? testo.toUpperCase() : g.minuscolo ? testo.toLowerCase() : testo);
+
 const Sottotitolo: React.FC<{ testo: string; len: number; g: GraficaStile }> = ({ testo, len, g }) => {
   const fr = useCurrentFrame();
   const entra = interpolate(fr, [0, 4], [0, 1], { ...clamp, easing: Easing.out(Easing.cubic) });
   const esce = interpolate(fr, [len - 2, len], [1, 0], clamp);
-  const t = g.maiuscolo ? testo.toUpperCase() : testo;
+  const t = caratteri(testo, g);
   const fs = Math.min(g.dimensione, (W - 140) / Math.max(1, t.length * 0.52));
   return (
     <AbsoluteFill>
@@ -222,6 +224,42 @@ const Titolo: React.FC<{ k: Keyword; len: number; g: GraficaStile }> = ({ k, len
   );
 };
 
+// ---------- frasi forti dette, parola per parola (Esplicativo, 20/10) ----------
+// dagli esempi di Denis (reel tech americani): le frasi che reggono il video escono enormi al
+// centro, una parola alla volta mentre le dice, minuscole e con la punteggiatura; il resto del
+// parlato resta piccolo in basso. La parola entra con un piccolo scatto (da 82% a 100%)
+const Y_GRANDE: Record<Posizione, number> = { alto: 560, centro: 980, basso: 1300 };
+const ParolaGrande: React.FC<{ testo: string; len: number; ultima: boolean; g: GraficaStile }> = ({ testo, len, ultima, g }) => {
+  const fr = useCurrentFrame();
+  const entra = interpolate(fr, [0, 3], [0, 1], { ...clamp, easing: Easing.out(Easing.back(1.7)) });
+  const esce = ultima ? interpolate(fr, [len - 3, len], [1, 0], clamp) : 1;
+  const t = caratteri(testo, g);
+  // ~0,62 em a lettera nel Montserrat ExtraBold minuscolo: la parola non esce mai dai bordi
+  const fs = Math.min(150, (W - 120) / Math.max(1, t.length * 0.62));
+  return (
+    <AbsoluteFill>
+      <div style={{
+        position: 'absolute', top: Y_GRANDE[g.posTitoli] - fs * 0.6, left: 50, right: 50, textAlign: 'center', whiteSpace: 'nowrap',
+        ...stileFont(g.fontTitoli), fontSize: fs, lineHeight: 1.15, letterSpacing: '-0.02em', color: g.coloreTitoli,
+        textShadow: '0 6px 24px rgba(0,0,0,0.42), 0 2px 5px rgba(0,0,0,0.35)',
+        opacity: Math.min(1, entra * 1.6) * esce, transform: `scale(${0.82 + 0.18 * entra})`,
+      }}>
+        {t}
+      </div>
+    </AbsoluteFill>
+  );
+};
+
+// le parole dette dentro ogni frase forte, a gruppi come i sottotitoli (le parole di 1–2
+// lettere vanno con la successiva), ognuna fino alla successiva e l'ultima fino alla fine
+function paroleGrandi(parole: Piano['parole'] = [], frasi: Keyword[] = []) {
+  return frasi.flatMap((k) => {
+    const dentro = parole.filter((p) => p.at >= k.at - 0.05 && p.at < k.at + k.dur);
+    const gruppi = gruppiParole(dentro, [], true);
+    return gruppi.map((x, i) => ({ ...x, fine: i === gruppi.length - 1 ? Math.max(x.fine, k.at + k.dur) : gruppi[i + 1].at, ultima: i === gruppi.length - 1 }));
+  });
+}
+
 // inizio "prima e dopo" (12K Quality, 19/10): per un attimo l'immagine piatta, come esce dalla
 // camera in I-Log, poi una linea di luce la attraversa e dietro resta il colore finale
 const PIATTO = 'saturate(0.18) contrast(0.6) brightness(1.25) sepia(0.06)';
@@ -284,12 +322,14 @@ export const SuMisura: React.FC<Piano> = (piano) => {
   const sfx = g.sfx ? volumeSfx(piano) : 0;
   const frasi = g.titoli && g.tipoTitoli === 'frasi' ? piano.keywords : [];
   const titoli = g.titoli && g.tipoTitoli === 'titoli' ? piano.keywords : [];
+  const forti = g.titoli && g.tipoTitoli === 'parole' ? piano.keywords : [];
+  const grandi = paroleGrandi(piano.parole, forti);
   const aperture = g.apertura === 'grande' ? blocchiApertura(piano.parole, piano.enfasi) : [];
   const fineApertura = aperture.length ? aperture[aperture.length - 1].fine : 0;
   const dopoApertura = (piano.parole || []).filter((p) => p.at >= fineApertura - 0.01);
-  const occupato = [...titoli, ...frasi];
+  const occupato = [...titoli, ...frasi, ...forti];
   const pezzi = g.sottotitoli === 'nessuno' ? []
-    : g.sottotitoli === 'parola' ? gruppiParole(dopoApertura, occupato)
+    : g.sottotitoli === 'parola' ? gruppiParole(dopoApertura, occupato, Boolean(g.minuscolo))
     : frasiBrevi(dopoApertura).filter((p) => !occupato.some((t) => p.at >= t.at - 0.05 && p.at < t.at + t.dur));
   const m = g.musica;
   const len = (a: number, b: number) => Math.max(2, f(b) - f(a));
@@ -323,6 +363,11 @@ export const SuMisura: React.FC<Piano> = (piano) => {
           <Titolo k={k} len={Math.max(1, f(k.dur))} g={g} />
         </Sequence>
       ))}
+      {grandi.map((p, i) => (
+        <Sequence key={`g${i}`} from={f(p.at)} durationInFrames={len(p.at, p.fine)}>
+          <ParolaGrande testo={p.testo} len={len(p.at, p.fine)} ultima={p.ultima} g={g} />
+        </Sequence>
+      ))}
 
       {g.chiusura && totale > CHIUSURA * 2 ? (
         <Sequence from={totale - CHIUSURA} durationInFrames={CHIUSURA}><Chiusura nome={g.chiusura} g={g} /></Sequence>
@@ -336,6 +381,7 @@ export const SuMisura: React.FC<Piano> = (piano) => {
           {frasi.map((k, i) => <Sfx key={`sf${i}`} nome="whoosh" da={f(k.at) - 6} volume={0.45 * sfx} />)}
           {frasi.map((k, i) => <Sfx key={`pf${i}`} nome="colpo" da={f(k.at + 0.15)} volume={0.5 * sfx} />)}
           {titoli.map((k, i) => <Sfx key={`st${i}`} nome="whoosh" da={f(k.at) - 6} volume={0.55 * sfx} />)}
+          {forti.map((k, i) => <Sfx key={`sg${i}`} nome="whoosh" da={f(k.at) - 5} volume={0.3 * sfx} />)}
           {g.rivela ? <Sfx nome="whoosh" da={RIVELA.inizio - 4} volume={0.4 * sfx} /> : null}
           {g.chiusura && totale > CHIUSURA * 2 ? <Sfx nome="whoosh" da={totale - CHIUSURA - 4} volume={0.35 * sfx} /> : null}
         </>

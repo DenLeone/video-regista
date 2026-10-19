@@ -64,17 +64,20 @@ export type GraficaStile = {
   apertura: 'normale' | 'grande';           // grande = prima frase a lettere enormi, parola per parola
   fontApertura: FontStile; coloreApertura: string;
   sottotitoli: 'parola' | 'frase' | 'nessuno';
-  fontSottotitoli: FontStile; coloreSottotitoli: string; maiuscolo: boolean; posizione: Posizione; dimensione: number;
+  // minuscolo: tutto in minuscolo, punteggiatura compresa (reel tech americani, stile Esplicativo)
+  fontSottotitoli: FontStile; coloreSottotitoli: string; maiuscolo: boolean; minuscolo?: boolean; posizione: Posizione; dimensione: number;
   titoli: boolean; fontTitoli: FontStile; coloreTitoli: string; accento: string; posTitoli: Posizione;
   // titoli = nome prodotto e dati (come il Cinematico); frasi = scritte forti a due livelli,
-  // frase piccola in corsivo + parole chiave enormi (come l'apertura)
-  tipoTitoli: 'titoli' | 'frasi';
+  // frase piccola in corsivo + parole chiave enormi (come l'apertura); parole = le frasi forti
+  // dette, una parola alla volta enormi al centro, mentre il resto va piccolo in basso (Esplicativo)
+  tipoTitoli: 'titoli' | 'frasi' | 'parole';
   fontCorsivo: FontStile;                    // la frase piccola delle scritte a due livelli
   dietro: boolean;                           // le scritte grandi passano dietro alla persona
   look: 'naturale' | 'caldo' | 'freddo' | 'bianco e nero' | 'teal';  // teal = LUT teal e arancio (in ffmpeg, non CSS)
   risalto?: boolean;                         // soggetto in risalto: tu luminoso, sfondo buio e petrolio (scripts/look/risalto.py)
   sfoca?: boolean;                           // con il risalto, anche lo sfondo sfocato
   rivela?: boolean;                          // inizio "prima e dopo": l'immagine piatta che si colora
+  stacchi?: boolean;                         // ritmo veloce: la regia può cambiare inquadratura a metà frase
   chiusura?: string;                         // chiusura con logo Instagram e questo nome (es. @_black_den)
   biancoNero: 'no' | 'momenti' | 'sempre';
   vignetta: number;                          // 0–1

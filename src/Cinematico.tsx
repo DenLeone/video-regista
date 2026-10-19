@@ -27,16 +27,18 @@ const lettere = (w: string) => (w.match(/[a-zà-ÿ0-9]/gi) || []).length;
 // parole → gruppi da mostrare. Le parole di 1–2 lettere ("di", "è", "la") vanno con la
 // successiva (da sole lampeggerebbero per un decimo); ogni gruppo resta fino al successivo
 // se arriva presto. Durante un titolo i sottotitoli spariscono: si legge il titolo.
-export function gruppiParole(parole: Piano['parole'] = [], titoli: Keyword[] = []): Gruppo[] {
+// punteggiatura: le parole restano come dette, virgole e punti compresi (stile Esplicativo)
+export function gruppiParole(parole: Piano['parole'] = [], titoli: Keyword[] = [], punteggiatura = false): Gruppo[] {
   const out: Gruppo[] = [];
+  const pul = (w: string) => (punteggiatura ? w.trim() : pulisci(w));
   for (let i = 0; i < parole.length; i++) {
-    let testo = pulisci(parole[i].w);
-    if (!testo) continue;
+    let testo = pul(parole[i].w);
+    if (!testo || (punteggiatura && !lettere(testo))) continue;
     const at = parole[i].at;
     let fine = at + parole[i].dur;
     const dopo = parole[i + 1];
-    if (lettere(testo) <= 2 && dopo && pulisci(dopo.w) && dopo.at - fine < 0.35) {
-      testo = `${testo} ${pulisci(dopo.w)}`;
+    if (lettere(testo) <= 2 && dopo && (punteggiatura ? lettere(pul(dopo.w)) : pul(dopo.w)) && dopo.at - fine < 0.35) {
+      testo = `${testo} ${pul(dopo.w)}`;
       fine = dopo.at + dopo.dur;
       i++;
     }
