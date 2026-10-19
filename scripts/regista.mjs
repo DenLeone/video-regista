@@ -297,8 +297,9 @@ function preparaMediaPipe() {
   return mediapipePronto;
 }
 
-// "Soggetto in risalto" (stili su misura): sui pezzi già colorati la persona resta luminosa e lo
-// sfondo si sfoca, scende al buio e vira al petrolio (scripts/look/risalto.py). I pezzi senza una
+// "Soggetto in risalto" (stili su misura): sui pezzi già colorati la persona resta luminosa e nitida,
+// lo sfondo scende al buio e vira al petrolio, sfocato solo con "Sfondo sfocato: sì"
+// (scripts/look/risalto.py). I pezzi senza una
 // persona chiara (dettagli di prodotto) restano come sono; se qualcosa non va, video senza risalto.
 async function risaltoPersona(piano) {
   if (!piano.grafica?.risalto) return;
@@ -308,7 +309,7 @@ async function risaltoPersona(piano) {
     for (const c of piano.clips) {
       if (c.orient === 'h') continue;
       const src = path.join(MEDIA, c.file), out = path.join(MEDIA, `ris_${c.file}`);
-      const esito = run(py, [path.join(ROOT, 'scripts', 'look', 'risalto.py'), src, out, modello], { stdio: ['ignore', 'pipe', 'inherit'] });
+      const esito = run(py, [path.join(ROOT, 'scripts', 'look', 'risalto.py'), src, out, modello, ...(piano.grafica.sfoca ? ['sfoca'] : [])], { stdio: ['ignore', 'pipe', 'inherit'] });
       if (/^risalto/m.test(esito) && fs.existsSync(out)) { fs.renameSync(out, src); n++; }
     }
     log(`soggetto in risalto: ${n} pezzi su ${piano.clips.length}`);
@@ -1282,6 +1283,9 @@ async function main() {
     piano.sfx = process.env.REGISTA_SFX === '0' ? false
       : { volume: +Math.min(0.6, Math.max(0.1, livelloVoce > -60 ? 10 ** ((livelloVoce + 2) / 20) : 0.25)).toFixed(3) };
     if (stileSuMisura) piano.grafica = stileSuMisura.grafica;
+    // b/n solo se lo stile lo prevede: con "Bianco e nero: no" (o uno stile pronto) i "bn" della regia
+    // non valgono (12K Quality rifatto sulla regia del Narrativo, 19/10: un pezzo era uscito in b/n)
+    if (!stileSuMisura || stileSuMisura.grafica.biancoNero === 'no') for (const c of piano.clips) delete c.bn;
     const nomeStile = stileSuMisura?.nome || stile;
     const durataPiano = piano.clips.reduce((s, c) => s + (c.end - c.start), 0);
     const camereUsate = new Set(piano.clips.map((c) => c.file)).size;

@@ -36,7 +36,8 @@ Posizione titoli: alto        # alto | centro | basso
 
 # --- IMMAGINE ---
 Look: naturale                # naturale | caldo | freddo | bianco e nero | teal e arancio (spot notturno: neri profondi, sfondi petrolio, pelle calda)
-Soggetto in risalto: no       # sì = sfondo sfocato, più buio e freddo, tu luminoso (ritaglio automatico della persona)
+Soggetto in risalto: no       # sì = tu luminoso e nitido, sfondo più buio e freddo (ritaglio automatico della persona)
+Sfondo sfocato: no            # sì = con il soggetto in risalto, lo sfondo si sfoca anche (finto diaframma aperto)
 Bianco e nero: no             # no | momenti (l'AI mette in b/n i momenti di racconto) | sempre
 Vignettatura: 20              # 0–100
 Inizio: normale               # normale | prima e dopo (si parte dall'immagine piatta, come girata, che si colora)
@@ -89,7 +90,7 @@ export const BASE = {
 const GRAFICA = ['nome', 'apertura', 'font apertura', 'colore apertura', 'sottotitoli', 'font sottotitoli', 'colore sottotitoli',
   'maiuscolo sottotitoli', 'posizione sottotitoli', 'dimensione sottotitoli', 'titoli', 'font titoli', 'colore titoli',
   'colore accento', 'posizione titoli', 'look', 'bianco e nero', 'vignettatura', 'effetti sonori', 'musica', 'volume musica',
-  'font corsivo', 'scritte dietro di me', 'soggetto in risalto', 'inizio', 'chiusura'];
+  'font corsivo', 'scritte dietro di me', 'soggetto in risalto', 'sfondo sfocato', 'inizio', 'chiusura'];
 
 /** stile.txt → { grafica, testoAI, musica, campi } */
 export function leggiStile(testo, nomeCartella) {
@@ -134,6 +135,7 @@ export function leggiStile(testo, nomeCartella) {
   const look = norm(campi.look);
   if (look) g.look = /teal|petrol|arancio/.test(look) ? 'teal' : /cald/.test(look) ? 'caldo' : /fredd/.test(look) ? 'freddo' : /bianco|b\/n|bn/.test(look) ? 'bianco e nero' : 'naturale';
   if (campi['soggetto in risalto']) g.risalto = si(campi['soggetto in risalto']);
+  if (campi['sfondo sfocato']) g.sfoca = si(campi['sfondo sfocato']);
   if (campi.inizio) g.rivela = /prima|dopo|rivel/.test(norm(campi.inizio));
   const chiusura = (/@[\w.]+/.exec(campi.chiusura || '') || [])[0];
   if (chiusura) g.chiusura = chiusura;

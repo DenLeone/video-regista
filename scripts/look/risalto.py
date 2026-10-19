@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
 # "Soggetto in risalto" (stile 12K Quality, 19/10): sul pezzo già colorato (LUT teal e arancio)
-# la persona resta luminosa e calda, lo sfondo si sfoca (finto diaframma aperto), scende al buio
-# tenendo le luci come puntini (bokeh) e vira al petrolio. Persona = MediaPipe selfie multiclass,
+# la persona resta luminosa, calda e nitida, lo sfondo scende al buio tenendo le luci e vira al
+# petrolio; sfocato solo se richiesto (Denis lo sfoca lui se serve). Persona = MediaPipe selfie multiclass,
 # come per le scritte dietro (ritaglio.py). Se nei primi fotogrammi non c'è una persona chiara
 # (dettaglio di prodotto, primo piano strettissimo) il pezzo resta com'è.
 #
-# Uso: python3 risalto.py <pezzo.mp4> <uscita.mp4> <modello.tflite>   → stampa "risalto" o "saltato"
+# Uso: python3 risalto.py <pezzo.mp4> <uscita.mp4> <modello.tflite> [sfoca]   → stampa "risalto" o "saltato"
 
 import json
 import subprocess
@@ -19,9 +19,14 @@ from mediapipe.tasks.python import vision
 
 SFONDO_LUCE, LUCI_SFONDO, SFONDO_TINTA, SFOCATURA = 0.5, 0.5, (-0.03, 0.005, 0.035), 0.012
 VIGNETTA = 0.35
-# soggetto: i medi tornano su (la LUT li abbassa per lo sfondo) e un filo più caldi
-CURVA_SOGGETTO = ([0, 0.03, 0.1, 0.25, 0.45, 0.7, 1], [0, 0.03, 0.13, 0.32, 0.54, 0.78, 1])
-CALDO = (1.03, 1.0, 0.97)
+# soggetto: i medi tornano su (la LUT li abbassa per lo sfondo) e un filo più caldi; in più il
+# volto (pelle del viso, classe 3 di MediaPipe) va sempre alla stessa luminosità: con la giacca
+# nera e lo sfondo buio la prima prova lo lasciava troppo scuro (Giacca autunnale, 19/10)
+CURVA_SOGGETTO = ([0, 0.03, 0.1, 0.25, 0.45, 0.7, 1], [0, 0.04, 0.15, 0.36, 0.58, 0.8, 1])
+CALDO = (1.015, 1.0, 0.985)
+OMBRE_SOGGETTO = (0.015, 0.0, -0.03)  # toglie il petrolio della LUT dalle ombre del soggetto (giacca nera, non blu)
+NITIDEZZA = 0.45                       # maschera di contrasto sul soggetto (la "qualità" degli esempi)
+VOLTO = 0.5          # luminosità del viso a cui portare il soggetto (0–1)
 COPERTURA = (0.04, 0.62)  # quota di persona nell'inquadratura per cui ha senso
 
 
@@ -33,12 +38,26 @@ def info(src):
 
 def main():
     src, out, modello = sys.argv[1], sys.argv[2], sys.argv[3]
+    sfoca = len(sys.argv) > 4 and sys.argv[4] == 'sfoca'
     w, h, fps, audio = info(src)
     leggi = subprocess.Popen(['ffmpeg', '-v', 'error', '-i', src, '-f', 'rawvideo', '-pix_fmt', 'rgb24', '-'], stdout=subprocess.PIPE)
     opzioni = vision.ImageSegmenterOptions(base_options=BaseOptions(model_asset_path=modello),
                                            running_mode=vision.RunningMode.VIDEO, output_confidence_masks=True)
     x = np.arange(256, dtype=np.float32) / 255
-    tab = np.dstack([np.clip(np.interp(x * k, *CURVA_SOGGETTO) * 255, 0, 255).astype(np.uint8) for k in CALDO]).reshape(256, 1, 3)
+    def tabella(volto=None):
+        # senza volto: la curva fissa; con il volto: curva che porta il viso a VOLTO tenendo i neri
+        # al loro posto (un guadagno uniforme schiariva la giacca nera fino al blu)
+        if volto is None:
+            xs, ys = CURVA_SOGGETTO
+        else:
+            v = float(np.clip(volto, 0.08, 0.6))
+            xs, ys = [0, 0.05, v, min(0.97, v + 0.3), 1], [0, 0.045, max(v, VOLTO), min(0.985, max(v, VOLTO) + 0.28), 1]
+        canali = []
+        for k, o in zip(CALDO, OMBRE_SOGGETTO):
+            y = np.interp(np.clip(x * k, 0, 1), xs, ys)
+            canali.append(np.clip((y + o * (1 - y) ** 2) * 255, 0, 255).astype(np.uint8))
+        return np.dstack(canali).reshape(256, 1, 3)
+    tab = tabella()
     yy, xx = np.mgrid[0:h, 0:w].astype(np.float32)
     r = np.sqrt(((xx - w / 2) / (w / 2)) ** 2 + ((yy - h * 0.45) / (h / 2)) ** 2)
     vignetta = cv2.merge([(1 - VIGNETTA * np.clip(r - 0.55, 0, 1) ** 1.5).astype(np.float32)] * 3)
@@ -46,14 +65,22 @@ def main():
     tinta = np.array(SFONDO_TINTA, np.float32)
     nucleo = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (5, 5))
 
+    yb = np.minimum(x * SFONDO_LUCE + np.clip(x - 0.75, 0, 1) * 1.2, LUCI_SFONDO * (1 - np.exp(-x * 2.2)))
+    tab_sfondo = np.dstack([np.clip((yb + t) * 255, 0, 255).astype(np.uint8) for t in SFONDO_TINTA]).reshape(256, 1, 3)
+
     def componi(img, m):
         sog = cv2.LUT(img, tab)
-        s = cv2.resize(img, piccolo, interpolation=cv2.INTER_AREA).astype(np.float32) / 255
-        s = cv2.GaussianBlur(s, (0, 0), max(1.0, w * SFOCATURA / 4))
-        y = 0.2126 * s[..., 0] + 0.7152 * s[..., 1] + 0.0722 * s[..., 2]
-        y2 = np.minimum(y * SFONDO_LUCE + np.clip(y - 0.75, 0, 1) * 1.2, LUCI_SFONDO * (1 - np.exp(-y * 2.2)))
-        s = np.clip(s * (y2 / np.maximum(y, 1e-4))[..., None] + tinta, 0, 1)
-        bg = cv2.resize((s * 255).astype(np.uint8), (w, h), interpolation=cv2.INTER_LINEAR)
+        if NITIDEZZA:
+            sog = cv2.addWeighted(sog, 1 + NITIDEZZA, cv2.GaussianBlur(sog, (0, 0), 1.4), -NITIDEZZA, 0)
+        if sfoca:
+            s = cv2.resize(img, piccolo, interpolation=cv2.INTER_AREA).astype(np.float32) / 255
+            s = cv2.GaussianBlur(s, (0, 0), max(1.0, w * SFOCATURA / 4))
+            y = 0.2126 * s[..., 0] + 0.7152 * s[..., 1] + 0.0722 * s[..., 2]
+            y2 = np.minimum(y * SFONDO_LUCE + np.clip(y - 0.75, 0, 1) * 1.2, LUCI_SFONDO * (1 - np.exp(-y * 2.2)))
+            s = np.clip(s * (y2 / np.maximum(y, 1e-4))[..., None] + tinta, 0, 1)
+            bg = cv2.resize((s * 255).astype(np.uint8), (w, h), interpolation=cv2.INTER_LINEAR)
+        else:
+            bg = cv2.LUT(img, tab_sfondo)
         # maschera un filo ristretta (niente alone di sfondo chiaro attorno al corpo) e sfumata
         mp_ = cv2.erode(cv2.resize(m, piccolo, interpolation=cv2.INTER_AREA), nucleo)
         mp_ = cv2.GaussianBlur(mp_, (0, 0), 1.2)
@@ -61,8 +88,14 @@ def main():
         out = cv2.blendLinear(sog, bg, m1, 1 - m1)
         return cv2.multiply(out, vignetta, dtype=cv2.CV_8U)
 
+    def imposta_volto(volti):
+        if not volti:
+            return tab
+        print(f'volto {np.median(volti):.2f} → {max(float(np.median(volti)), VOLTO):.2f}', file=sys.stderr)
+        return tabella(float(np.median(volti)))
+
     with vision.ImageSegmenter.create_from_options(opzioni) as seg:
-        fotogrammi, coperture, n, prima = [], [], 0, None
+        fotogrammi, coperture, volti, n, prima = [], [], [], 0, None
         scrivi = None
         while True:
             buf = leggi.stdout.read(w * h * 3)
@@ -73,6 +106,11 @@ def main():
             r = seg.segment_for_video(mp.Image(image_format=mp.ImageFormat.SRGB, data=mezza), int(n * 1000 / eval(fps)))
             m = np.clip((1.0 - r.confidence_masks[0].numpy_view() - 0.35) / 0.3, 0, 1).astype(np.float32)
             m = m if prima is None else 0.55 * m + 0.45 * prima  # niente sfarfallio del bordo
+            if scrivi is None:
+                viso = np.squeeze(r.confidence_masks[3].numpy_view()) > 0.5
+                if viso.sum() > 200:
+                    luma = cv2.cvtColor(mezza, cv2.COLOR_RGB2GRAY)
+                    volti.append(float(np.median(luma[viso])) / 255)
             prima = m
             n += 1
             if scrivi is None:
@@ -86,6 +124,7 @@ def main():
                     leggi.kill()
                     print(f'saltato (persona {cop:.0%} dell\'inquadratura)')
                     return
+                tab = imposta_volto(volti)
                 scrivi = subprocess.Popen(['ffmpeg', '-v', 'error', '-y', '-f', 'rawvideo', '-pix_fmt', 'rgb24', '-s', f'{w}x{h}', '-r', fps, '-i', '-',
                                            *(['-i', src, '-map', '0:v', '-map', '1:a', '-c:a', 'copy'] if audio else []),
                                            '-c:v', 'libx264', '-preset', 'veryfast', '-crf', '16', '-pix_fmt', 'yuv420p', out], stdin=subprocess.PIPE)
@@ -99,6 +138,7 @@ def main():
         if not (COPERTURA[0] < cop < COPERTURA[1]):
             print(f'saltato (persona {cop:.0%} dell\'inquadratura)')
             return
+        tab = imposta_volto(volti)
         scrivi = subprocess.Popen(['ffmpeg', '-v', 'error', '-y', '-f', 'rawvideo', '-pix_fmt', 'rgb24', '-s', f'{w}x{h}', '-r', fps, '-i', '-',
                                    *(['-i', src, '-map', '0:v', '-map', '1:a', '-c:a', 'copy'] if audio else []),
                                    '-c:v', 'libx264', '-preset', 'veryfast', '-crf', '16', '-pix_fmt', 'yuv420p', out], stdin=subprocess.PIPE)
