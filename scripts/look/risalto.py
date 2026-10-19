@@ -67,7 +67,7 @@ def main():
     vignetta = cv2.merge([(1 - VIGNETTA * np.clip(r - 0.55, 0, 1) ** 1.5).astype(np.float32)] * 3)
     piccolo = (max(2, w // 4), max(2, h // 4))
     tinta = np.array(SFONDO_TINTA, np.float32)
-    nucleo = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (5, 5))
+    nucleo = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (9, 9))  # bordo ristretto: niente cielo chiaro attorno alle spalle
 
     yb = np.minimum(x * SFONDO_LUCE + np.clip(x - 0.75, 0, 1) * 1.2, LUCI_SFONDO * (1 - np.exp(-x * 2.2)))
     tab_sfondo = np.dstack([np.clip((yb + t) * 255, 0, 255).astype(np.uint8) for t in SFONDO_TINTA]).reshape(256, 1, 3)
