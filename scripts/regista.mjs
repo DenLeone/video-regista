@@ -1468,7 +1468,7 @@ async function main() {
 }
 
 // Video di anteprima per Telegram: i bot possono inviare al massimo 50 MB,
-// quindi 720p con bitrate calcolato per stare sotto ~45 MB.
+// quindi bitrate calcolato per stare sotto ~45 MB (1080 o 720 secondo quanto resta).
 async function inviaVideo(outFile, nome, testo, durata, info) {
   if (!process.env.NOTIFY_URL) return false;
   try {
