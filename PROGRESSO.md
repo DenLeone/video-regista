@@ -43,6 +43,13 @@ Primo giro reale: 58 min, di cui **40 per ricodificare tutto il girato 4K** in 1
 - Struttura nel codice: `src/comune.tsx` (clip con voce, effetti sonori, condivisi da tutti gli stili), una composizione per stile (`src/Blueprint.tsx`, `src/Cinematico.tsx`) registrata in `src/Root.tsx`, istruzioni di grafica per l'AI in `scripts/stili/<nome>.md` (inserite nel prompt al posto di `{{GRAFICA}}`), nome in `STILI` di `scripts/regista.mjs`. Lo stile si sceglie PRIMA della regia (anche nella prova veloce `azione: regia`).
 - Il piano ha ora `parole` (ogni parola detta sulla timeline finale, dai tempi di Whisper riportati dentro la frase): servono agli stili con sottotitoli.
 
+### Stili su misura da Drive (senza codice) — 19/10
+- Uno stile = cartella in `03 · Social — Risorse/Stili/<Nome>/` con `stile.txt` (righe "Chiave: valore": apertura grande, font/colori/posizione dei sottotitoli e dei titoli, look, bianco e nero nei momenti di racconto, vignettatura, effetti, musica + indicazioni di regia libere che vanno all'AI), `asset/` (font .ttf/.otf/.woff2 usati per nome file, musiche, LUT creativa .cube) ed `esempi/`. Modello e parser: `scripts/stile-su-misura.mjs` (MODELLO, `leggiStile`, `promptSuMisura`); composizione `src/SuMisura.tsx` (font da file o Google Fonts, sottotitoli a frasi/parole, apertura a lettere enormi parola per parola, titoli facoltativi, b/n per clip con `"bn": true`, musica in loop sotto la voce).
+- Pipeline: `scegliStile` cerca la cartella su Drive se lo stile non è Blueprint/Cinematico, `caricaStile` scarica stile.txt e asset (non gli esempi) e prepara `public/stili/corrente/`; la LUT creativa va dopo la conversione tecnica in `filtroColore`.
+- Il workflow manda al bot anche l'elenco degli stili (cartelle in Stili tranne quelle con "_"); il bot li mostra come "✨ Nome" in Nuovo montaggio, Più video e Impostazioni.
+- Primo stile così: **Narrativo** (dagli esempi TikTok di Denis: apertura gialla enorme parola per parola, sottotitoli EB Garamond oro a frasi brevi, momenti in bianco e nero, niente titoli).
+- Prove: render locale dello stile e montaggio completo su Drive finto (font da file, musica, LUT); 27 controlli del bot.
+
 ### Bot rifatto (veloce) — 18/10
 - Nuovo montaggio: cartella → stile (con immagine di anteprima degli stili, `/stili.jpg`, da `grafica/stili-anteprima.jpg` via `scripts/anteprima-stili.mjs`) → riepilogo con 🚀 Avvia. Sponsor, durata, tono, 🏁 giudizio finale (va nel brief come "Giudizio finale: X"), note e tavola (solo Blueprint) si aprono dal riepilogo.
 - Nome cartella scritto a mano: controllato sull'elenco di 97, se non esiste propone le più simili (o "Usa comunque").

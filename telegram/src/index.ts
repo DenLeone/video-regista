@@ -62,10 +62,21 @@ let ORIGINE_BOT = ''; // https://regista-telegram…workers.dev (dalla richiesta
 const ANTEPRIMA_URL = () => (ORIGINE_BOT ? `${ORIGINE_BOT}/stili.jpg?v=1` : undefined);
 const LINEA = '━━━━━━━━━━━━━━━━━━';
 
-// stili pronti: gli stessi nomi di STILI in scripts/regista.mjs
-const STILI = [{ nome: 'Blueprint', tasto: '📐 Blueprint', cosa: 'tavola tecnica, parole chiave in box, effetti digitali' },
+// stili pronti: gli stessi nomi di STILI in scripts/regista.mjs; in più quelli su misura che
+// Denis crea su Drive (cartelle in "03 · Social — Risorse/Stili", elenco mandato dal workflow)
+type Stile = { nome: string; tasto: string; cosa: string };
+const STILI: Stile[] = [{ nome: 'Blueprint', tasto: '📐 Blueprint', cosa: 'tavola tecnica, parole chiave in box, effetti digitali' },
   { nome: 'Cinematico', tasto: '🎬 Cinematico', cosa: 'spot di prodotto caldo, sottotitoli parola per parola, titoli grandi' }];
-const nomeStile = (x?: string) => STILI.find((y) => y.nome.toLowerCase() === String(x || '').toLowerCase())?.nome;
+let STILI_DRIVE: string[] = []; // letti dalla memoria a ogni richiesta
+const tuttiStili = (): Stile[] => [...STILI, ...STILI_DRIVE
+  .filter((n) => !STILI.some((x) => x.nome.toLowerCase() === n.toLowerCase()))
+  .map((n) => ({ nome: n, tasto: `✨ ${n}`, cosa: 'su misura, da Drive' }))];
+const nomeStile = (x?: string) => tuttiStili().find((y) => y.nome.toLowerCase() === String(x || '').toLowerCase())?.nome;
+// tasti degli stili, due per riga
+const righeStili = (fai: (x: Stile) => Button): Kb => {
+  const t = tuttiStili().map(fai);
+  return Array.from({ length: Math.ceil(t.length / 2) }, (_, i) => t.slice(i * 2, i * 2 + 2));
+};
 
 // ai = AI principale; l'altra fa sempre da riserva automatica; stile = quello proposto di default
 type Imp = { versione: 'stabile' | 'beta'; ai: 'gemini' | 'claude'; modello: 'haiku' | 'sonnet' | 'opus'; gemini: 'flash' | 'pro'; stile: string };
@@ -324,7 +335,7 @@ async function schermoImpostazioni(env: Env): Promise<Schermo> {
       `✨ <b>Modello Gemini</b> · ${NOME_GEMINI[i.gemini]}`, `<i>${DESC[i.gemini]}</i>`,
     ].join('\n'),
     tasti: [
-      STILI.map((x) => tasto(sel(i.stile === x.nome, x.tasto), `i:stile:${x.nome}`)),
+      ...righeStili((x) => tasto(sel(i.stile === x.nome, x.tasto), `i:stile:${x.nome}`)),
       [tasto(sel(i.ai === 'gemini', 'AI: Gemini'), 'i:ai:gemini'), tasto(sel(i.ai === 'claude', 'AI: Claude'), 'i:ai:claude')],
       [tasto(sel(i.gemini === 'flash', 'Gemini Flash'), 'i:gemini:flash'), tasto(sel(i.gemini === 'pro', 'Gemini Pro'), 'i:gemini:pro')],
       [tasto('🔧 Avanzate', 'i:avanzate'), MENU_TASTO],
@@ -368,6 +379,9 @@ const GUIDA: Schermo = {
     '🎨 Insta360 in i-Log: riconosciuta da sola e convertita con la LUT ufficiale, esposizione compensata.',
     '🏁 Esito finale: solo se dai un giudizio (nel video o nel riepilogo), con le tue parole.',
     '⚡ Un file <code>VAI</code> nella cartella la fa montare da sola (controllo 7–23).',
+    '',
+    '<b>Stili nuovi, senza codice</b>',
+    'Su Drive in <code>03 · Social — Risorse/Stili</code> copia la cartella <i>_Modello nuovo stile</i> e rinominala (es. <i>Narrativo</i>). Dentro: <code>stile.txt</code> (font, colori, sottotitoli, look, musica, indicazioni per la regia), <code>asset/</code> (tuoi font .ttf/.otf, musiche .mp3, LUT .cube), <code>esempi/</code> (video di riferimento). Al prossimo elenco compare qui come ✨ stile; per cambiarlo modifichi <code>stile.txt</code>.',
     '',
     '<b>Video in chat: attivazione (una volta)</b>',
     'Su my.telegram.org → API development tools crea un\'app e copia <i>api_id</i> e <i>api_hash</i>. Poi su GitHub (DenLeone/video-regista → Settings → Secrets and variables → Actions) aggiungi <code>TG_API_ID</code>, <code>TG_API_HASH</code> e <code>TELEGRAM_BOT_TOKEN</code> (il token del bot da @BotFather).',
@@ -454,7 +468,7 @@ async function schermoLotto(env: Env, a: Attesa & { tipo: 'lotto' }): Promise<Sc
   const tasti: Kb = elenco.map((n, i) => [tasto(`${a.scelte.includes(n) ? '✅' : '⬜'} ${c?.vai.includes(n) ? '⚡ ' : ''}${tronca(n, 34)}`, `l:t:${i}`)]);
   if (elenco.length) tasti.push([tasto('☑️ Tutte', 'l:tutte'), tasto('⬜ Nessuna', 'l:nessuna'), tasto('🔄 Aggiorna', 'l:aggiorna')]);
   else tasti.push([tasto('🔄 Aggiorna elenco', 'l:aggiorna')]);
-  tasti.push(STILI.map((x) => tasto(sel(stile === x.nome, x.tasto), `l:s:${x.nome}`)));
+  tasti.push(...righeStili((x) => tasto(sel(stile === x.nome, x.tasto), `l:s:${x.nome}`)));
   if (a.scelte.length) tasti.push([tasto(`🚀 Avvia ${a.scelte.length} ${a.scelte.length === 1 ? 'montaggio' : 'montaggi'} · ${stile}`, 'l:avvia')]);
   tasti.push([tasto('✖️ Annulla', 'annulla')]);
   return {
@@ -527,8 +541,8 @@ async function schermoPasso(env: Env, a: Attesa & { tipo: 'nuovo' }): Promise<Sc
     }
     case 'stile':
       return {
-        testo: `${testata(a)}\n🎨 <b>Che stile?</b>\n${STILI.map((x) => `${x.tasto}: <i>${x.cosa}</i>`).join('\n')}`,
-        tasti: [STILI.map((x) => tasto(`${x.tasto}${x.nome === (d.stile || imp.stile) ? ' ✓' : ''}`, `w:v:stile:${x.nome}`)), nav(a)],
+        testo: `${testata(a)}\n🎨 <b>Che stile?</b>\n${tuttiStili().map((x) => `${x.tasto}: <i>${x.cosa}</i>`).join('\n')}\n<i>Stili nuovi: una cartella in Drive → 03 · Social — Risorse/Stili (vedi ❓ Guida).</i>`,
+        tasti: [...righeStili((x) => tasto(`${x.tasto}${x.nome === (d.stile || imp.stile) ? ' ✓' : ''}`, `w:v:stile:${x.nome}`)), nav(a)],
         anteprima: ANTEPRIMA_URL(),
       };
     case 'sponsor':
@@ -927,7 +941,7 @@ type Info = {
 type Notify = {
   tipo?: 'fase' | 'esito' | 'cartelle' | 'vuoto'; esito?: string; nome: string; testo: string; ok?: boolean; foto?: string;
   run_url?: string; run_id?: string; step?: IdFase; minuti?: number; versione?: string; origine?: '97' | '98'; info?: Info; richiesto?: string;
-  cartelle?: string[]; vai?: string[]; tgFile?: boolean;
+  cartelle?: string[]; vai?: string[]; tgFile?: boolean; stili?: string[];
 };
 
 function didascalia(nome: string, info?: Info, testo = ''): string {
@@ -959,6 +973,7 @@ async function onNotify(env: Env, n: Notify) {
   if (typeof n.tgFile === 'boolean' && (await fileInChatPronti(env)) !== n.tgFile) await mem(env).scrivi('tg_file', n.tgFile);
   if (n.tipo === 'cartelle') {
     await mem(env).scrivi('cartelle', { elenco: n.cartelle || [], vai: n.vai || [], aggiornato: Date.now() } satisfies Cartelle);
+    if (Array.isArray(n.stili)) { await mem(env).scrivi('stili_drive', n.stili); STILI_DRIVE = n.stili; }
     const inAttesa = (await leggi<string[]>(env, 'attesa_elenco')) || [];
     await mem(env).scrivi('attesa_elenco', []);
     for (const chat of inAttesa) {
@@ -1140,6 +1155,7 @@ export default {
   async fetch(req: Request, env: Env, ctx: { waitUntil(p: Promise<unknown>): void }): Promise<Response> {
     const url = new URL(req.url);
     ORIGINE_BOT = url.origin;
+    if (req.method === 'POST') STILI_DRIVE = (await leggi<string[]>(env, 'stili_drive').catch(() => undefined)) || STILI_DRIVE;
 
     if (req.method === 'POST' && url.pathname === '/tg') {
       if (req.headers.get('x-telegram-bot-api-secret-token') !== env.TELEGRAM_SECRET) return new Response('no', { status: 401 });

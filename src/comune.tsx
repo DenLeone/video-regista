@@ -17,6 +17,8 @@ export const ClipView: React.FC<{ clip: Clip; len: number; fondo?: string; filtr
   const startFrom = f(clip.start);
   const endAt = startFrom + len;
   const scale = clip.punch ? 1.18 : 1;
+  // clip in bianco e nero (stili su misura): si aggiunge al filtro dello stile
+  if (clip.bn) filtro = `${filtro ?? ''} grayscale(1) contrast(1.06)`.trim();
   const mutaImmagine = Boolean(clip.audio || clip.muto);
   const voce = clip.audio ? (
     <Audio src={staticFile(`media/${clip.audio.file}`)} startFrom={f(clip.audio.start)} endAt={f(clip.audio.start) + len} volume={sfuma(len)} />

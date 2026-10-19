@@ -109,10 +109,13 @@ jobs:
           fi
           echo "cartella=$trovato" >> "$GITHUB_OUTPUT"
           if [ -n "$trovato" ]; then echo "Da montare: $trovato"; else echo "Niente da fare"; fi
-          # il bot tiene l'elenco delle cartelle per i tasti di "Nuovo montaggio"
+          # il bot tiene l'elenco delle cartelle per i tasti di "Nuovo montaggio" e degli stili su Drive
+          # (cartelle in Stili, tranne quelle che iniziano con "_" come il modello)
+          mapfile -t stili < <(rclone lsf "gdrive:03 · Social — Risorse/Stili" --dirs-only 2>/dev/null | sed 's:/$::' | grep -v '^_' || true)
           if [ -n "$NOTIFY_URL" ]; then
             jq -n --args '{tipo:"cartelle", cartelle:$ARGS.positional}' -- "${cartelle[@]}" \
               | jq --args '. + {vai:$ARGS.positional}' -- "${liberi[@]}" \
+              | jq --args '. + {stili:$ARGS.positional}' -- "${stili[@]}" \
               | curl -s -X POST "$NOTIFY_URL" -H 'content-type: application/json' -H "x-regista-token: $NOTIFY_TOKEN" -d @- > /dev/null || true
           fi
           # avvio manuale/dal bot senza niente da montare: avvisa, così non sembra un video fatto

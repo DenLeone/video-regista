@@ -126,6 +126,7 @@ export function risolviRegia(regia, analisi) {
     // jump cut sulla stessa inquadratura: alterno lo zoom se l'AI non l'ha deciso
     const prev = clips[clips.length - 1];
     clip.punch = typeof it.punch === 'boolean' ? it.punch : Boolean(prev && prev.file === clip.file && !prev.punch);
+    if (it.bn === true) clip.bn = true; // stili su misura con il bianco e nero nei momenti di racconto
     inizioVoce[idx] = t;
     clips.push(clip);
     t = q(t + (clip.end - clip.start));

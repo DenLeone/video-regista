@@ -2,6 +2,7 @@ import React from 'react';
 import { Composition } from 'remotion';
 import { Blueprint } from './Blueprint';
 import { Cinematico } from './Cinematico';
+import { SuMisura } from './SuMisura';
 import { durataTotale, FPS, H, Piano, W } from './piano';
 
 // Piano di esempio per lo Studio: il render vero riceve --props=work/piano.json
@@ -27,5 +28,8 @@ export const Root: React.FC = () => (
     <Composition id="Cinematico" component={Cinematico} fps={FPS} width={W} height={H}
       durationInFrames={90} calculateMetadata={metadati}
       defaultProps={{ ...esempio, keywords: [{ at: 0.4, dur: 2.5, word: 'ROG ALLY X', tag: 'ASUS', note: '20 anniversario' }] }} />
+    {/* stili creati da Drive: la grafica arriva in props.grafica (scripts/stile-su-misura.mjs) */}
+    <Composition id="SuMisura" component={SuMisura} fps={FPS} width={W} height={H}
+      durationInFrames={90} calculateMetadata={metadati} defaultProps={esempio} />
   </>
 );

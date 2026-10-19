@@ -11,6 +11,7 @@ export type Clip = {
   audio?: { file: string; start: number };
   muto?: boolean;   // nessun audio
   volume?: number;  // volume dell'audio della clip stessa (default 1)
+  bn?: boolean;     // in bianco e nero (stili su misura con "Bianco e nero: momenti")
 };
 
 export type Keyword = {
@@ -44,6 +45,25 @@ export type Piano = {
   sfx?: { volume: number } | false;
   // ogni parola detta, sulla timeline finale (sottotitoli parola per parola degli stili che li usano)
   parole?: { at: number; dur: number; w: string }[];
+  // stile su misura: la grafica letta da Drive (Stili/<nome>/stile.txt, vedi scripts/stile-su-misura.mjs)
+  grafica?: GraficaStile;
+};
+
+// font di uno stile su misura: file in public/stili/<stile>/ oppure Google Fonts per nome
+export type FontStile = { famiglia: string; peso: number; file?: string };
+export type Posizione = 'alto' | 'centro' | 'basso';
+export type GraficaStile = {
+  nome: string;
+  apertura: 'normale' | 'grande';           // grande = prima frase a lettere enormi, parola per parola
+  fontApertura: FontStile; coloreApertura: string;
+  sottotitoli: 'parola' | 'frase' | 'nessuno';
+  fontSottotitoli: FontStile; coloreSottotitoli: string; maiuscolo: boolean; posizione: Posizione; dimensione: number;
+  titoli: boolean; fontTitoli: FontStile; coloreTitoli: string; accento: string; posTitoli: Posizione;
+  look: 'naturale' | 'caldo' | 'freddo' | 'bianco e nero';
+  biancoNero: 'no' | 'momenti' | 'sempre';
+  vignetta: number;                          // 0–1
+  sfx: boolean;
+  musica?: { file: string; volume: number } | null;
 };
 
 export const FPS = 30;

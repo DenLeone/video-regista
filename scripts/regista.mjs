@@ -23,6 +23,7 @@ import path from 'node:path';
 import { audioMuto, frasi, inviluppo, sincronizza, sogliaVoce } from './audio.mjs';
 import { materialePerAI, risolviRegia } from './regia.mjs';
 import { movimento, syncMovimento } from './sync-visivo.mjs';
+import { leggiStile, promptSuMisura } from './stile-su-misura.mjs';
 import { AUDIO_EXT, IMAGE_EXT, NOMI_DISPOSITIVO, VIDEO_EXT, dispositivo, prioritaAudio, tagsPiatti } from './sorgenti.mjs';
 
 const REMOTE = process.env.REGISTA_REMOTE || 'gdrive';
@@ -162,6 +163,12 @@ const perFiltro = (p) => p.replace(/\\/g, '/').replace(/:/g, '\\:');
 // misurata della clip (da) verso ESPOSIZIONE_LOG (a), lasciando fermi nero e bianco
 const ESPOSIZIONE_LOG = 0.4;
 function filtroColore(c) {
+  const base = filtroTecnico(c);
+  if (!LUT_STILE) return base;
+  // LUT creativa di uno stile su misura (asset/*.cube): dopo la conversione tecnica
+  return `${base.replace(/,?format=yuv420p$/, '').replace(/^$/, 'null')},lut3d=file='${perFiltro(LUT_STILE)}':interp=tetrahedral,format=yuv420p`;
+}
+function filtroTecnico(c) {
   if (c?.log) return `lut3d=file='${perFiltro(LUT_ILOG)}':interp=tetrahedral${c.alza ? `,curves=master='0/0 ${c.alza.da}/${c.alza.a} 1/1'` : ''},format=yuv420p`;
   if (!c || !HDR.includes(c.trc)) return 'format=yuv420p';
   return `zscale=tin=${c.trc}:pin=${c.primaries || 'bt2020'}:min=${c.matrix || 'bt2020nc'}:t=linear:npl=100,format=gbrpf32le,`
@@ -287,7 +294,8 @@ function fogliProvino(file, id, durata, offset = 0, colore = null) {
 // ---------- 3. l'AI scrive la regia ----------
 function promptRegia({ modo, testoMateriale, regiaPrecedente }) {
   let p = fs.readFileSync(path.join(ROOT, 'scripts', 'prompt-regista.md'), 'utf8')
-    .replace('{{GRAFICA}}', fs.readFileSync(path.join(ROOT, 'scripts', 'stili', `${stileCorrente}.md`), 'utf8').trim());
+    .replace('{{GRAFICA}}', stileSuMisura ? promptSuMisura(stileSuMisura.grafica, stileSuMisura.testoAI)
+      : fs.readFileSync(path.join(ROOT, 'scripts', 'stili', `${stileCorrente}.md`), 'utf8').trim());
   if (regiaPrecedente) {
     p += `\n\n## MODALITÀ CORREZIONE\nEsiste già un montaggio, questa è la sua regia:\n\`\`\`json\n${JSON.stringify(regiaPrecedente, null, 1)}\n\`\`\`\nDenis l'ha guardato e chiede queste modifiche:\n\n> ${CORREZIONE.replace(/\n/g, '\n> ')}\n\nParti da questa regia e applica SOLO quello che chiede, lasciando invariato il resto. I tempi li ricalcola lo script. Nella \`note\` elenca in breve cosa hai cambiato.`;
   }
@@ -521,13 +529,75 @@ function validaPiano(p) {
 // stanno su Drive in "03 · Social — Risorse/Stili/<nome>/" (stile.txt, esempi/, asset/):
 // uno stile nuovo si costruisce da lì e si aggiunge qui, in Root.tsx e in scripts/stili/<nome>.md
 // (le istruzioni di grafica per l'AI, inserite nel prompt al posto di {{GRAFICA}}).
+// Gli altri stili sono "su misura": una cartella su Drive in DIR_STILI con stile.txt e asset/,
+// renderizzata dalla composizione SuMisura (scripts/stile-su-misura.mjs, src/SuMisura.tsx).
 const STILI = ['Blueprint', 'Cinematico'];
+const DIR_STILI = '03 · Social — Risorse/Stili';
 let stileCorrente = STILI[0];
+let stileSuMisura = null; // { nome, grafica, testoAI, avvisi }
+let LUT_STILE = null;     // LUT creativa dello stile su misura
+const normNome = (t) => String(t || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/\s+/g, ' ').trim();
 function scegliStile(brief) {
   const richiesto = (/stile\s*:\s*([^\n.,;]+)/i.exec(brief || '') || [])[1]?.trim();
+  stileSuMisura = null;
+  LUT_STILE = null;
   if (!richiesto) return { stile: STILI[0] };
   const trovato = STILI.find((x) => x.toLowerCase() === richiesto.toLowerCase());
-  return trovato ? { stile: trovato } : { stile: STILI[0], avviso: `lo stile "${richiesto}" non è ancora pronto: ho usato ${STILI[0]}` };
+  if (trovato) return { stile: trovato };
+  try {
+    const cartelle = JSON.parse(rclone('lsjson', remote(DIR_STILI), '--dirs-only')).map((d) => d.Name).filter((d) => !d.startsWith('_'));
+    const nome = cartelle.find((d) => normNome(d) === normNome(richiesto));
+    if (nome) {
+      caricaStile(nome);
+      return { stile: 'SuMisura', avviso: stileSuMisura.avvisi.join(' · ') || undefined };
+    }
+  } catch (e) { log('stili su Drive non leggibili', e.message); }
+  return { stile: STILI[0], avviso: `lo stile "${richiesto}" non esiste in ${DIR_STILI}: ho usato ${STILI[0]}` };
+}
+
+// scarica da Drive stile.txt e asset/ (niente video di esempio), legge la grafica e prepara
+// font, musica e LUT in public/stili/<nome>/ per il render
+function caricaStile(nome) {
+  const dir = path.join(WORK, 'stile');
+  const pub = path.join(ROOT, 'public', 'stili', 'corrente');
+  fs.rmSync(dir, { recursive: true, force: true });
+  fs.rmSync(pub, { recursive: true, force: true });
+  fs.mkdirSync(pub, { recursive: true });
+  rclone('copy', remote(DIR_STILI, nome), dir, '--exclude', 'esempi/**', '--exclude', '*.{mp4,MP4,mov,MOV,m4v,webm,insv}', '--max-size', '80M');
+  const tutti = [];
+  const giro = (d) => { for (const x of fs.existsSync(d) ? fs.readdirSync(d) : []) { const p = path.join(d, x); if (fs.statSync(p).isDirectory()) giro(p); else tutti.push(p); } };
+  giro(dir);
+  const txt = tutti.find((p) => /^stile\.txt$/i.test(path.basename(p)));
+  const avvisi = [];
+  if (!txt) avvisi.push(`stile ${nome}: manca stile.txt, uso le impostazioni base (copia quello del modello)`);
+  const { grafica, testoAI, musica, volumeMusica } = leggiStile(txt ? fs.readFileSync(txt, 'utf8') : '', nome);
+  // font: file in asset/ con il nome indicato, altrimenti Google Fonts
+  const fileFont = tutti.filter((p) => /\.(ttf|otf|woff2?)$/i.test(p));
+  for (const k of ['fontApertura', 'fontSottotitoli', 'fontTitoli']) {
+    const ft = grafica[k];
+    const file = fileFont.find((p) => normNome(path.parse(p).name).replace(/[-_ ]/g, '') === normNome(ft.famiglia).replace(/[-_ ]/g, ''))
+      || fileFont.find((p) => normNome(path.parse(p).name).replace(/[-_ ]/g, '').startsWith(normNome(ft.famiglia).replace(/[-_ ]/g, '')));
+    if (file) {
+      const dest = `font-${path.basename(file).replace(/[^\w.-]+/g, '_')}`;
+      fs.copyFileSync(file, path.join(pub, dest));
+      ft.file = `stili/corrente/${dest}`;
+    }
+  }
+  // musica: un brano a caso tra quelli in asset/, o quello indicato
+  const brani = tutti.filter((p) => /\.(mp3|m4a|aac|wav|ogg)$/i.test(p));
+  if (musica) {
+    const scelto = musica === '*' ? brani[Math.floor(Math.random() * brani.length)] : brani.find((p) => normNome(path.basename(p)).includes(normNome(musica)));
+    if (scelto) {
+      const dest = `musica${path.extname(scelto).toLowerCase()}`;
+      fs.copyFileSync(scelto, path.join(pub, dest));
+      grafica.musica = { file: `stili/corrente/${dest}`, volume: volumeMusica };
+      log(`stile ${nome}: musica ${path.basename(scelto)}`);
+    } else avvisi.push(`stile ${nome}: musica richiesta ma nessun brano in asset/`);
+  }
+  const lut = tutti.find((p) => /\.cube$/i.test(p));
+  if (lut) { LUT_STILE = lut; log(`stile ${nome}: LUT ${path.basename(lut)}`); }
+  stileSuMisura = { nome: grafica.nome || nome, grafica, testoAI, avvisi };
+  log(`stile su misura ${nome}: ${JSON.stringify(grafica)}`);
 }
 
 function renderizza(out, stile = STILI[0]) {
@@ -971,6 +1041,8 @@ async function main() {
     const livelloVoce = Math.max(-60, ...analisi.sorgenti.filter((s) => s.principale && s.livello != null).map((s) => s.livello));
     piano.sfx = process.env.REGISTA_SFX === '0' ? false
       : { volume: +Math.min(0.6, Math.max(0.1, livelloVoce > -60 ? 10 ** ((livelloVoce + 2) / 20) : 0.25)).toFixed(3) };
+    if (stileSuMisura) piano.grafica = stileSuMisura.grafica;
+    const nomeStile = stileSuMisura?.nome || stile;
     const durataPiano = piano.clips.reduce((s, c) => s + (c.end - c.start), 0);
     const camereUsate = new Set(piano.clips.map((c) => c.file)).size;
     await fase(nome, `🎬 Render: ${durataPiano.toFixed(0)} s, ${piano.clips.length} tagli da ${camereUsate} sorgenti, ${piano.keywords.length} parole chiave`, 'render');
@@ -996,7 +1068,7 @@ async function main() {
     const durata = durataN.toFixed(1);
     const note = [
       `${CORREZIONE ? `Correzione (“${CORREZIONE}”)` : 'Montato automaticamente'} il ${new Date().toLocaleString('it-IT', { timeZone: 'Europe/Rome' })} in ${trascorso()}`,
-      `Durata: ${durata} s · ${stile === 'Blueprint' ? piano.tavola : `stile ${stile}`} · ${piano.clips.length} tagli da ${camereUsate} sorgenti · voce: ${voci || 'audio delle clip'}`,
+      `Durata: ${durata} s · ${stile === 'Blueprint' ? piano.tavola : `stile ${nomeStile}`} · ${piano.clips.length} tagli da ${camereUsate} sorgenti · voce: ${voci || 'audio delle clip'}`,
       `Parole chiave: ${piano.keywords.map((k) => `${k.word} @${k.at.toFixed(1)}s`).join(', ') || '—'}`,
       piano.testo ? `Testo: ${piano.testo}` : '',
       piano.note ? `Note: ${piano.note}` : '',
@@ -1018,7 +1090,7 @@ async function main() {
     const info = {
       file: finale, durata: +durataN.toFixed(1), tagli: piano.clips.length, sorgenti: camereUsate, voce: voci,
       keywords: piano.keywords.map((k) => k.word), note: piano.note || '', ai: consumi.ai,
-      minuti: Math.round((Date.now() - T0) / 60000), correzione: CORREZIONE || '', versione: VERSIONE, stile,
+      minuti: Math.round((Date.now() - T0) / 60000), correzione: CORREZIONE || '', versione: VERSIONE, stile: nomeStile,
     };
     // anteprima: prima provo il video in chat, se non passa mando la foto
     const inviato = await inviaVideo(outFile, nome, note, durataN, info);
