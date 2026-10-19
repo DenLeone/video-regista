@@ -203,9 +203,11 @@ export function risolviRegia(regia, analisi) {
       avvisi.push(`parola chiave ${k.word}: ${k.frase ? `frase ${k.frase} non usata nel montaggio` : k.elemento != null ? `elemento ${k.elemento} inesistente` : 'senza frase né elemento'}, tolta`);
       continue;
     }
-    at = q(Math.min(totale - 0.5, at + (Number(k.ritardo) || 0)));
+    // almeno un secondo prima della fine: una scritta sull'ultima parola durerebbe mezzo secondo
+    at = q(Math.max(0, Math.min(totale - 1, at + (Number(k.ritardo) || 0))));
     const dur = k.fino_alla_fine ? totale - at : Math.min(4, Math.max(0.8, Number(k.dur) || 2));
-    keywords.push({ at, dur: q(dur), word: String(k.word || ''), note: k.note, tag: k.tag, filled: Boolean(k.filled), top: Number(k.top) || undefined }); // senza top: quello dello stile
+    const word = correggiParole(String(k.word || ''), parole.filter((w) => w.at > at - 3 && w.at < at + dur + 4));
+    keywords.push({ at, dur: q(dur), word, note: k.note, tag: k.tag, filled: Boolean(k.filled), top: Number(k.top) || undefined }); // senza top: quello dello stile
   }
   keywords.sort((a, b) => a.at - b.at);
   for (let i = 1; i < keywords.length; i++) {
@@ -247,6 +249,30 @@ export function risolviRegia(regia, analisi) {
 //   →F009             continua nella F009 senza pausa né punto: vanno prese insieme
 //   ripresa meglio in F003  falsa partenza o ripetizione che Denis ridice poco dopo
 //   interrotta / finisce a metà  frase lasciata in sospeso
+// le parole delle scritte che l'AI ha copiato male dal parlato ("PROMOSTISSIMO" per
+// "promossissimo", Giacca autunnale 19/10) si correggono con quelle dette lì vicino; solo
+// parole lunghe e quasi uguali, così nomi e marchi corti ("SONY" non diventa "sono") restano
+function correggiParole(testo, vicine) {
+  const dette = [...new Set(vicine.flatMap((w) => paroleDi(w.w)))];
+  return testo.replace(/[\p{L}\p{N}']+/gu, (t) => {
+    const n = paroleDi(t).join('');
+    if (n.length < 6 || dette.includes(n)) return t;
+    const d = dette.map((x) => [x, distanza(n, x)]).filter(([x, k]) => k <= (n.length >= 9 ? 2 : 1) && Math.abs(x.length - n.length) <= 2).sort((a, b) => a[1] - b[1])[0];
+    if (!d) return t;
+    const giusta = vicine.map((w) => w.w.replace(/^[^\p{L}\p{N}]+|[^\p{L}\p{N}]+$/gu, '')).find((w) => paroleDi(w).join('') === d[0]) || d[0];
+    return t === t.toUpperCase() ? giusta.toUpperCase() : giusta;
+  });
+}
+function distanza(a, b) {
+  let riga = Array.from({ length: b.length + 1 }, (_, j) => j);
+  for (let i = 1; i <= a.length; i++) {
+    const nuova = [i];
+    for (let j = 1; j <= b.length; j++) nuova[j] = Math.min(riga[j] + 1, nuova[j - 1] + 1, riga[j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1));
+    riga = nuova;
+  }
+  return riga[b.length];
+}
+
 const RIMANDO = /^(appunto|però|quindi|anche|ma|perché|poi|infatti|cioè|questo|questa|questi|queste|l'unica|l'unico|invece|allora|comunque)\b/i;
 const finita = (t) => /[.!?…]["»”)]?$/.test(String(t).trim());
 // le parole di Whisper della frase `f` (quelle del suo testo, nello stesso ordine), senza le

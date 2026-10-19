@@ -142,8 +142,8 @@ jobs:
           TELEGRAM: ${{ inputs.telegram }}
         run: |
           sudo apt-get update -qq
-          # libegl1: serve a MediaPipe (ritaglio della persona per le scritte dietro, stili su misura)
-          sudo apt-get install -y -qq ffmpeg fonts-noto-color-emoji libegl1
+          # libegl1 e libgles2: servono a MediaPipe (ritaglio della persona per le scritte dietro, stili su misura)
+          sudo apt-get install -y -qq ffmpeg fonts-noto-color-emoji libegl1 libgles2
           npm ci || npm install
           # Telethon (MTProto) per scaricare i file grandi mandati al bot; cryptg lo rende molto più veloce
           if [ -n "$TELEGRAM" ] && [ "$TELEGRAM" != "[]" ]; then pip install --quiet telethon cryptg; fi

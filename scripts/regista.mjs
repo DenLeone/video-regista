@@ -272,7 +272,7 @@ async function ritagliPersona(piano) {
   try {
     // MediaPipe in un ambiente a parte (il Python di sistema del runner non accetta pip install)
     let py = process.env.REGISTA_PYTHON || 'python3';
-    try { run(py, ['-c', 'import mediapipe']); } catch {
+    try { run(py, ['-c', 'import mediapipe'], { stdio: 'ignore' }); } catch {
       const venv = path.join(WORK, 'venv-ritaglio');
       run('python3', ['-m', 'venv', venv]);
       py = path.join(venv, 'bin', 'python');
@@ -752,7 +752,9 @@ async function notifica(esito, nome, testo, { ok = false, foto, info } = {}) {
 function fotogrammiFinale(outFile, durata) {
   const out = path.join(WORK, 'fotogrammi.jpg');
   try {
-    run('ffmpeg', ['-y', '-v', 'error', '-i', outFile, '-vf', `fps=${(8 / Math.max(1, durata)).toFixed(4)},scale=360:-2,tile=4x2`, '-frames:v', '1', '-q:v', '4', out]);
+    // dal secondo 1: a 0 le scritte d'apertura non sono ancora entrate
+    const da = durata > 4 ? 1 : 0;
+    run('ffmpeg', ['-y', '-v', 'error', '-ss', String(da), '-i', outFile, '-vf', `fps=${(8 / Math.max(1, durata - da)).toFixed(4)},scale=360:-2,tile=4x2`, '-frames:v', '1', '-q:v', '4', out]);
     return out;
   } catch (e) { log('fotogrammi del finale non riusciti', e.message); return null; }
 }

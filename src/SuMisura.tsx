@@ -158,11 +158,16 @@ const ScrittaDueLivelli: React.FC<{ righe: Riga[]; len: number; g: GraficaStile;
   const vistaGrande = righe.findIndex((r) => r.tipo === 'grande');
   return (
     <AbsoluteFill style={{ opacity: 1 - esce, filter: `blur(${esce * 10}px)` }}>
-      <div style={{ position: 'absolute', top, left: 70, right: 70, display: 'flex', flexDirection: 'column', color: g.coloreApertura, textShadow: '0 6px 30px rgba(0,0,0,0.3)' }}>
+      {/* il blocco è largo quanto le parole grandi: il corsivo parte dal loro bordo sinistro
+          (o finisce sul destro, sotto), non dal bordo dello schermo (Giacca autunnale, 19/10) */}
+      <div style={{ position: 'absolute', top, left: 0, right: 0, display: 'flex', justifyContent: 'center' }}>
+      <div style={{ display: 'inline-flex', flexDirection: 'column', maxWidth: W - 140, color: g.coloreApertura, textShadow: '0 6px 30px rgba(0,0,0,0.3)' }}>
         {righe.map((r, i) => (
           <div key={i} style={r.tipo === 'grande'
             ? { ...stileFont(g.fontApertura), fontSize: fsGrande, lineHeight: 0.92, letterSpacing: '-0.01em', textAlign: 'center', textTransform: 'uppercase' }
-            : { ...stileFont(g.fontCorsivo), fontSize: 60, lineHeight: 1.15, whiteSpace: 'nowrap', textAlign: vistaGrande >= 0 && i > vistaGrande ? 'right' : 'left', marginBottom: 6 }}>
+            // il corsivo è sottile: un'ombra più stretta lo stacca dal cielo chiaro
+            : { ...stileFont(g.fontCorsivo), fontSize: 64, lineHeight: 1.15, whiteSpace: 'nowrap', textAlign: vistaGrande >= 0 && i > vistaGrande ? 'right' : 'left', marginBottom: 6,
+              textShadow: '0 2px 12px rgba(0,0,0,0.55), 0 1px 3px rgba(0,0,0,0.45)' }}>
             {r.parole.map((p, j) => {
               const da = f(p.da);
               const v = interpolate(fr, [da, da + 6], [0, 1], { ...clamp, easing: Easing.out(Easing.cubic) });
@@ -175,6 +180,7 @@ const ScrittaDueLivelli: React.FC<{ righe: Riga[]; len: number; g: GraficaStile;
             })}
           </div>
         ))}
+      </div>
       </div>
     </AbsoluteFill>
   );
