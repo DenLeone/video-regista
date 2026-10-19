@@ -164,10 +164,15 @@ function confrontoColore(file, id, durata, colore) {
 
 // Si ricodificano solo i pezzi usati dal montaggio (1080p, colori SDR). Prima si convertiva
 // tutto il girato 4K: 40 dei 58 minuti del primo giro reale.
-function taglia(s, start, dur, out, conAudio, senzaLook = false) {
+// lanczos: dal 4K al 1080 resta più dettaglio del bicubico di default. `zoom` (punch-in del jump
+// cut): si ritaglia dall'originale prima di ridurre, invece di ingrandire nel browser il pezzo già a
+// 1080 (dal 4K il dettaglio c'è ancora). Colori dichiarati BT.709: senza, il render li indovina.
+const TAG_709 = ['-colorspace', 'bt709', '-color_primaries', 'bt709', '-color_trc', 'bt709', '-color_range', 'tv'];
+function taglia(s, start, dur, out, conAudio, senzaLook = false, zoom = 1) {
+  const ritaglio = zoom > 1 ? `crop=trunc(iw/${zoom}/2)*2:trunc(ih/${zoom}/2)*2,` : '';
   run('ffmpeg', ['-y', '-v', 'error', '-ss', start.toFixed(3), '-i', s.originale, '-t', (dur + 0.1).toFixed(3),
-    '-vf', `scale='if(gt(iw,ih),1920,1080)':-2,${senzaLook ? filtroTecnico(s.colore) : filtroColore(s.colore)}`,
-    '-c:v', 'libx264', '-preset', 'veryfast', '-crf', '16', '-pix_fmt', 'yuv420p',
+    '-vf', `${ritaglio}scale='if(gt(iw,ih),1920,1080)':-2:flags=lanczos,${senzaLook ? filtroTecnico(s.colore) : filtroColore(s.colore)}`,
+    '-c:v', 'libx264', '-preset', 'veryfast', '-crf', '16', '-pix_fmt', 'yuv420p', ...TAG_709,
     ...(conAudio ? ['-c:a', 'aac', '-b:a', '160k'] : ['-an']), '-movflags', '+faststart', out]);
 }
 
@@ -186,6 +191,7 @@ function troncaPiano(piano, secondi) {
   piano.flickers = (piano.flickers || []).filter((f) => f.at < t);
 }
 
+const ZOOM_PUNCH = 1.18; // come in src/comune.tsx
 function tagliaSegmenti(piano, analisi) {
   const perFile = new Map(analisi.sorgenti.filter((s) => s.tipo === 'video').map((s) => [s.file, s]));
   piano.clips.forEach((c, i) => {
@@ -193,8 +199,11 @@ function tagliaSegmenti(piano, analisi) {
     if (!s) throw new Error(`sorgente sconosciuta ${c.file}`);
     const dur = c.end - c.start;
     const seg = `seg_${String(i).padStart(3, '0')}.mp4`;
-    taglia(s, c.start, dur, path.join(MEDIA, seg), !c.audio && !c.muto && s.haAudio);
+    // punch-in delle clip verticali fatto qui (le orizzontali stanno "contenute": resta a Remotion)
+    const zoom = c.punch && s.orient !== 'h' ? ZOOM_PUNCH : 1;
+    taglia(s, c.start, dur, path.join(MEDIA, seg), !c.audio && !c.muto && s.haAudio, false, zoom);
     Object.assign(c, { file: seg, start: 0, end: +dur.toFixed(3), sorgente: s.id, daSorgente: c.start });
+    if (zoom > 1) c.punch = false;
     // inserto video: il suo pezzo, muto e senza look creativo (le schermate restano fedeli)
     if (c.inserto?.tipo === 'video') {
       const si = perFile.get(c.inserto.file);
@@ -724,17 +733,38 @@ function caricaStile(nome) {
   log(`stile su misura ${nome}: ${JSON.stringify(grafica)}`);
 }
 
+// Remotion scrive la matrice BT.709 ma lascia "sconosciuti" primari e curva: si dichiarano tutti
+// (flusso h264 e atomo colr dell'mp4) senza ricodificare, così Instagram non deve indovinarli
+function dichiaraColori(file) {
+  const tmp = file.replace(/(\.mp4)?$/i, '.colori.mp4');
+  try {
+    run('ffmpeg', ['-y', '-v', 'error', '-i', file, '-map', '0', '-c', 'copy',
+      '-bsf:v', 'h264_metadata=video_full_range_flag=0:colour_primaries=1:transfer_characteristics=1:matrix_coefficients=1',
+      ...TAG_709, '-movflags', '+faststart+write_colr', tmp]);
+    fs.renameSync(tmp, file);
+  } catch (e) {
+    fs.rmSync(tmp, { force: true });
+    log('metadati colore non scritti (il video resta com\'è)', e.message.split('\n')[0]);
+  }
+}
+
 function renderizza(out, stile = STILI[0]) {
   // Il primo render a volte fallisce per un errore transitorio del compositor
   // (visto nel test del 16/10): fino a 3 tentativi.
   for (let tentativo = 1; ; tentativo++) {
     try {
-      // 1080×1920 a ~15 Mbps: il formato che TikTok/Instagram caricano meglio (meglio di un 4K pesante)
+      // 1080×1920 a ~15 Mbps: il formato che TikTok/Instagram caricano meglio (meglio di un 4K pesante).
+      // Fotogrammi PNG (senza perdite: col JPEG 80 di default si perdeva dettaglio nelle ombre) e
+      // colori BT.709 a gamma limitata: prima usciva "yuvj420p" BT.601 a gamma piena, che app e
+      // lettori possono leggere con neri grigi o colori spostati (prova del 20/10: col JPEG 100 +
+      // BT.709 Remotion sbaglia i colori, col PNG sono esatti)
       run('npx', ['remotion', 'render', 'src/index.ts', stile, out, `--props=${path.join(WORK, 'piano.json')}`,
         '--codec=h264', '--video-bitrate=15M', '--max-rate=16M', '--buffer-size=32M', '--audio-bitrate=320k', '--concurrency=100%',
+        '--image-format=png', '--color-space=bt709',
         // browser già installato (es. Chrome sul PC) invece di quello che Remotion scarica
         ...(process.env.REMOTION_BROWSER ? [`--browser-executable=${process.env.REMOTION_BROWSER}`] : [])],
       { cwd: ROOT, stdio: 'inherit', shell: process.platform === 'win32' });
+      dichiaraColori(out);
       return;
     } catch (e) {
       if (tentativo >= 3) throw e;
@@ -1390,9 +1420,12 @@ async function inviaVideo(outFile, nome, testo, durata, info) {
   if (!process.env.NOTIFY_URL) return false;
   try {
     const anteprimaMp4 = path.join(WORK, 'anteprima.mp4');
-    const kbps = Math.max(600, Math.min(4000, Math.floor((45 * 8 * 1000) / Math.max(1, durata)) - 160));
-    run('ffmpeg', ['-y', '-v', 'error', '-i', outFile, '-vf', 'scale=720:-2', '-c:v', 'libx264', '-preset', 'veryfast',
-      '-b:v', `${kbps}k`, '-maxrate', `${kbps}k`, '-bufsize', `${kbps * 2}k`, '-c:a', 'aac', '-b:a', '128k', '-movflags', '+faststart', anteprimaMp4]);
+    // il bot accetta fino a 50 MB: a piena risoluzione (1080) quando il bitrate lo permette, così in
+    // Telegram si giudica la qualità vera e non un 720p sgranato; sotto i 3,5 Mbps meglio il 720
+    const kbps = Math.max(600, Math.min(8000, Math.floor((45 * 8 * 1000) / Math.max(1, durata)) - 160));
+    run('ffmpeg', ['-y', '-v', 'error', '-i', outFile, '-vf', `scale=${kbps >= 3500 ? 1080 : 720}:-2:flags=lanczos`, '-c:v', 'libx264', '-preset', 'medium',
+      '-b:v', `${kbps}k`, '-maxrate', `${kbps}k`, '-bufsize', `${kbps * 2}k`, '-pix_fmt', 'yuv420p', ...TAG_709,
+      '-c:a', 'aac', '-b:a', '128k', '-movflags', '+faststart', anteprimaMp4]);
     const size = fs.statSync(anteprimaMp4).size;
     if (size > 49 * 1e6) { log(`anteprima troppo grande (${mb(size)})`); return false; }
     const form = new FormData();
