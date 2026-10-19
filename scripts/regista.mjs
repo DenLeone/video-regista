@@ -21,7 +21,7 @@ import { execFileSync, spawn, spawnSync } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
 import { audioMuto, frasi, inviluppo, sincronizza, sogliaVoce } from './audio.mjs';
-import { HDR, filtroTecnico, perFiltro, probe, riconosciLog } from './colore.mjs';
+import { HDR, curvaEsposizione, filtroTecnico, misuraPezzo, perFiltro, probe, riconosciLog } from './colore.mjs';
 import { materialePerAI, risolviRegia } from './regia.mjs';
 import { movimento, syncMovimento } from './sync-visivo.mjs';
 import { leggiStile, promptSuMisura } from './stile-su-misura.mjs';
@@ -146,11 +146,15 @@ function trovaCartella() {
 
 // ---------- 2. prepara il materiale ----------
 // conversione tecnica (scripts/colore.mjs) + LUT creativa dello stile, se c'è
-function filtroColore(c) {
+// `curva`: correzione dell'esposizione del singolo pezzo (look 12K, colore.mjs curvaEsposizione)
+function filtroColore(c, curva = null) {
   const base = filtroTecnico(c);
   if (!LUT_STILE) return base;
-  // LUT creativa di uno stile su misura (asset/*.cube): dopo la conversione tecnica
-  return `${base.replace(/,?format=yuv420p$/, '').replace(/^$/, 'null')},lut3d=file='${perFiltro(LUT_STILE)}':interp=tetrahedral,format=yuv420p`;
+  // LUT creativa di uno stile su misura (asset/*.cube): dopo la conversione tecnica.
+  // Look 12K: prima l'esposizione del pezzo, dopo la LUT la nitidezza (CAS: incide i dettagli
+  // del soggetto senza aloni né rumore sulle zone lisce, come negli esempi)
+  return `${base.replace(/,?format=yuv420p$/, '').replace(/^$/, 'null')}${curva ? `,curves=master='${curva}'` : ''}`
+    + `,lut3d=file='${perFiltro(LUT_STILE)}':interp=tetrahedral${LOOK_12K ? `,cas=strength=${NITIDEZZA_12K}` : ''},format=yuv420p`;
 }
 // prima/dopo la conversione colore su un fotogramma (a metà clip): va in _regista per
 // controllare la resa della LUT I-Log senza scaricare il girato
@@ -170,8 +174,14 @@ function confrontoColore(file, id, durata, colore) {
 const TAG_709 = ['-colorspace', 'bt709', '-color_primaries', 'bt709', '-color_trc', 'bt709', '-color_range', 'tv'];
 function taglia(s, start, dur, out, conAudio, senzaLook = false, zoom = 1) {
   const ritaglio = zoom > 1 ? `crop=trunc(iw/${zoom}/2)*2:trunc(ih/${zoom}/2)*2,` : '';
+  let curva = null;
+  if (LOOK_12K && !senzaLook) {
+    const m = misuraPezzo(s.originale, start, dur, filtroTecnico(s.colore));
+    curva = curvaEsposizione(m);
+    if (m) log(`  ${path.basename(out)}: soggetto ${m.medio.toFixed(2)}, neri ${m.nero.toFixed(2)}, bianchi ${m.bianco.toFixed(2)}${curva ? ` → curva ${curva}` : ''}`);
+  }
   run('ffmpeg', ['-y', '-v', 'error', '-ss', start.toFixed(3), '-i', s.originale, '-t', (dur + 0.1).toFixed(3),
-    '-vf', `${ritaglio}scale='if(gt(iw,ih),1920,1080)':-2:flags=lanczos,${senzaLook ? filtroTecnico(s.colore) : filtroColore(s.colore)}`,
+    '-vf', `${ritaglio}scale='if(gt(iw,ih),1920,1080)':-2:flags=lanczos,${senzaLook ? filtroTecnico(s.colore) : filtroColore(s.colore, curva)}`,
     '-c:v', 'libx264', '-preset', 'veryfast', '-crf', '16', '-pix_fmt', 'yuv420p', ...TAG_709,
     ...(conAudio ? ['-c:a', 'aac', '-b:a', '160k'] : ['-an']), '-movflags', '+faststart', out]);
 }
@@ -668,11 +678,15 @@ const DIR_STILI = '03 · Social — Risorse/Stili';
 let stileCorrente = STILI[0];
 let stileSuMisura = null; // { nome, grafica, testoAI, avvisi }
 let LUT_STILE = null;     // LUT creativa dello stile su misura
+// look 12K (Look: teal e arancio): esposizione misurata pezzo per pezzo + lut/12k.cube + nitidezza
+let LOOK_12K = false;
+const NITIDEZZA_12K = 0.5;
 const normNome = (t) => String(t || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/\s+/g, ' ').trim();
 function scegliStile(brief) {
   const richiesto = (/stile\s*:\s*([^\n.,;]+)/i.exec(brief || '') || [])[1]?.trim();
   stileSuMisura = null;
   LUT_STILE = null;
+  LOOK_12K = false;
   if (!richiesto) return { stile: STILI[0] };
   const trovato = STILI.find((x) => x.toLowerCase() === richiesto.toLowerCase());
   if (trovato) return { stile: trovato };
@@ -726,9 +740,12 @@ function caricaStile(nome) {
       log(`stile ${nome}: musica ${path.basename(scelto)}`);
     } else avvisi.push(`stile ${nome}: musica richiesta ma nessun brano in asset/`);
   }
-  // LUT: quella in asset/ dello stile; con "Look: teal e arancio" quella del repo (lut/teal-arancio.cube)
-  const lut = tutti.find((p) => /\.cube$/i.test(p)) || (grafica.look === 'teal' ? path.join(ROOT, 'lut', 'teal-arancio.cube') : null);
-  if (lut) { LUT_STILE = lut; log(`stile ${nome}: LUT ${path.basename(lut)}`); }
+  // LUT: quella in asset/ dello stile; con "Look: teal e arancio" il look 12K del repo (lut/12k.cube,
+  // scripts/look/lut12k.py) con l'esposizione adattata a ogni pezzo
+  const lutAsset = tutti.find((p) => /\.cube$/i.test(p));
+  LOOK_12K = !lutAsset && grafica.look === 'teal';
+  const lut = lutAsset || (LOOK_12K ? path.join(ROOT, 'lut', '12k.cube') : null);
+  if (lut) { LUT_STILE = lut; log(`stile ${nome}: LUT ${path.basename(lut)}${LOOK_12K ? ' (look 12K: esposizione per pezzo e nitidezza)' : ''}`); }
   stileSuMisura = { nome: grafica.nome || nome, grafica, testoAI, avvisi };
   log(`stile su misura ${nome}: ${JSON.stringify(grafica)}`);
 }
