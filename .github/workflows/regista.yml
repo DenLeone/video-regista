@@ -36,7 +36,7 @@ on:
         required: false
         default: ''
       azione:
-        description: 'monta (default) | elenco = manda solo al bot le cartelle di 97 - Editare | regia = prova veloce della sola regia (testo, niente render) su una cartella già montata'
+        description: 'monta (default) | elenco = manda solo al bot le cartelle di 97 - Editare | regia = prova veloce della sola regia (testo, niente render) su una cartella già montata | render = rifà solo il render con la regia salvata (origine 98) | esempi = fogli di fotogrammi degli esempi di uno stile (cartella = nome dello stile)'
         required: false
         default: 'monta'
       telegram:
@@ -48,7 +48,7 @@ on:
 # quelli in attesa più vecchi. Con un gruppo unico, tre avvii di fila ne perdevano uno.
 # Cartelle diverse girano in parallelo; i controlli automatici e l'elenco hanno la loro coda.
 concurrency:
-  group: regista-${{ inputs.azione == 'elenco' && 'elenco' || inputs.azione == 'regia' && format('regia-{0}', inputs.cartella) || inputs.cartella || 'auto' }}
+  group: regista-${{ inputs.azione == 'elenco' && 'elenco' || (inputs.azione == 'regia' || inputs.azione == 'esempi') && format('{0}-{1}', inputs.azione, inputs.cartella) || inputs.cartella || 'auto' }}
   cancel-in-progress: false
 
 # il giro automatico avvia un giro per ogni cartella con VAI (gh workflow run)
@@ -98,7 +98,7 @@ jobs:
           # file da Telegram: la cartella la crea lo script (nome libero in 97 e 98)
           [ -n "$TELEGRAM" ] && [ "$TELEGRAM" != "[]" ] && trovato="${CARTELLA:-Video da Telegram}"
           liberi=("${con_vai[@]}")
-          if [ "$AZIONE" != "elenco" ] && [ "$AZIONE" != "regia" ] && [ -z "$trovato" ] && [ ${#con_vai[@]} -gt 0 ]; then
+          if [ "$AZIONE" != "elenco" ] && [ "$AZIONE" != "regia" ] && [ "$AZIONE" != "esempi" ] && [ -z "$trovato" ] && [ ${#con_vai[@]} -gt 0 ]; then
             trovato="${con_vai[0]}"
             prenota "$trovato" || true
             # tutte le altre cartelle con VAI partono subito, ognuna nel suo giro (in parallelo)

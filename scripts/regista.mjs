@@ -933,7 +933,44 @@ async function provaRegia() {
   await notifica('📝 prova regia', nome, testo);
 }
 
+// azione "esempi": fogli di fotogrammi dei video di riferimento di uno stile (CARTELLA = nome dello
+// stile), salvati su Drive in Stili/<nome>/esempi/_analisi: leggeri, così Claude li studia tutti
+// (il collegamento a Drive da cui lavora Claude non scarica video oltre ~5 MB)
+async function analizzaEsempi() {
+  const nome = process.env.CARTELLA;
+  const dir = path.join(WORK, 'esempi');
+  const out = path.join(WORK, 'analisi');
+  fs.rmSync(dir, { recursive: true, force: true });
+  fs.mkdirSync(out, { recursive: true });
+  rclone('copy', remote(DIR_STILI, nome), dir, '--include', '*.{mp4,MP4,mov,MOV,m4v,webm}', '--exclude', '_analisi/**');
+  const video = [];
+  const giro = (d) => { for (const x of fs.existsSync(d) ? fs.readdirSync(d) : []) { const p = path.join(d, x); if (fs.statSync(p).isDirectory()) giro(p); else video.push(p); } };
+  giro(dir);
+  if (!video.length) throw new Error(`nessun video di esempio in ${DIR_STILI}/${nome}`);
+  const righe = [];
+  for (const [i, v] of video.entries()) {
+    const info = probe(v);
+    const base = `es${i + 1}`;
+    // tutto il video: 24 fotogrammi; l'apertura: i primi 6 s, un fotogramma ogni 0,5 s a risoluzione piena
+    run('ffmpeg', ['-y', '-v', 'error', '-i', v, '-vf', `fps=${(24 / Math.max(1, info.durata)).toFixed(4)},scale=216:-2,tile=6x4`, '-frames:v', '1', '-q:v', '4', path.join(out, `${base}-tutto.jpg`)]);
+    run('ffmpeg', ['-y', '-v', 'error', '-t', '6', '-i', v, '-vf', 'fps=2,scale=360:-2,tile=6x2', '-frames:v', '1', '-q:v', '4', path.join(out, `${base}-apertura.jpg`)]);
+    // dettaglio a metà video (scritte, inserti) a piena risoluzione
+    for (const q of [0.3, 0.5, 0.7]) run('ffmpeg', ['-y', '-v', 'error', '-ss', (info.durata * q).toFixed(2), '-i', v, '-frames:v', '1', '-vf', 'scale=540:-2', '-q:v', '3', path.join(out, `${base}-${Math.round(q * 100)}.jpg`)]);
+    righe.push(`${base}: ${path.basename(v)} · ${info.durata.toFixed(1)} s · ${info.w}x${info.h}${info.audio ? ' · audio' : ''}`);
+  }
+  fs.writeFileSync(path.join(out, 'indice.txt'), righe.join('\n'));
+  rclone('copy', out, remote(DIR_STILI, nome, 'esempi', '_analisi'));
+  await notifica('🔎 esempi analizzati', nome, `${video.length} video di riferimento: fogli di fotogrammi in Stili/${nome}/esempi/_analisi.\n${righe.join('\n')}`, { ok: true });
+}
+
 async function main() {
+  if (process.env.AZIONE === 'esempi') {
+    return analizzaEsempi().catch(async (e) => {
+      log(e.stack || e.message);
+      await notifica('⚠️ analisi esempi', process.env.CARTELLA || '—', `Errore: ${e.message}`);
+      process.exitCode = 1;
+    });
+  }
   if (process.env.AZIONE === 'regia') {
     return provaRegia().catch(async (e) => {
       log(e.stack || e.message);
