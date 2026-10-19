@@ -128,12 +128,20 @@ function righeDi(parole: { w: string; at: number }[], enfasi: Set<string>, inizi
   return righe;
 }
 
-// l'apertura dura la prima frase (fino al primo punto), almeno 1,5 s e al massimo 5 s; si va a un
-// blocco nuovo a ogni pausa o virgola, o dopo 3 righe
+// fine dell'apertura: la prima frase (fino al primo punto) se sta in 5 s, altrimenti l'ultima
+// virgola o pausa entro 5 s, mai a metà frase ("…giubbotto e questo qui me", Giacca autunnale
+// 19/10); almeno 1,5 s. Stessa regola in ritagliPersona (scripts/regista.mjs)
+export function fineApertura(parole: Piano['parole'] = []): number {
+  const fineFrase = parole.find((p) => /[.!?]$/.test(p.w));
+  if (fineFrase && fineFrase.at + fineFrase.dur <= 5) return Math.max(1.5, fineFrase.at + fineFrase.dur);
+  const pause = parole.filter((p, i) => p.at + p.dur <= 5 && p.at + p.dur >= 1.5 && (/[,;:.!?]$/.test(p.w) || (parole[i + 1] && parole[i + 1].at - (p.at + p.dur) > 0.35)));
+  return pause.length ? pause[pause.length - 1].at + pause[pause.length - 1].dur : 5;
+}
+
+// l'apertura: si va a un blocco nuovo a ogni pausa o virgola, o dopo 7 parole
 export function blocchiApertura(parole: Piano['parole'] = [], enfasi: string[] = []): Blocco[] {
   if (!parole.length) return [];
-  const fineFrase = parole.find((p) => /[.!?]$/.test(p.w));
-  const limite = Math.min(5, Math.max(1.5, fineFrase ? fineFrase.at + fineFrase.dur : 5));
+  const limite = fineApertura(parole);
   const usate = parole.filter((p) => p.at < limite);
   const enf = new Set(enfasi.map(norm));
   const gruppi: { at: number; fine: number; parole: { w: string; at: number }[] }[] = [];

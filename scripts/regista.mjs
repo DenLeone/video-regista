@@ -263,8 +263,12 @@ async function ritagliPersona(piano) {
   if (!g?.dietro) return;
   const intervalli = [];
   if (g.apertura === 'grande' && piano.parole?.length) {
-    const fine = piano.parole.find((p) => /[.!?]$/.test(p.w));
-    intervalli.push([0, Math.min(5, Math.max(1.5, fine ? fine.at + fine.dur : 5)) + 0.6]);
+    // stessa regola di fineApertura in src/SuMisura.tsx
+    const parole = piano.parole, fineFrase = parole.find((p) => /[.!?]$/.test(p.w));
+    const pause = parole.filter((p, i) => p.at + p.dur <= 5 && p.at + p.dur >= 1.5 && (/[,;:.!?]$/.test(p.w) || (parole[i + 1] && parole[i + 1].at - (p.at + p.dur) > 0.35)));
+    const fine = fineFrase && fineFrase.at + fineFrase.dur <= 5 ? Math.max(1.5, fineFrase.at + fineFrase.dur)
+      : pause.length ? pause[pause.length - 1].at + pause[pause.length - 1].dur : 5;
+    intervalli.push([0, fine + 0.6]);
   }
   if (g.titoli && g.tipoTitoli === 'frasi') for (const k of piano.keywords) intervalli.push([k.at, k.at + k.dur]);
   if (!intervalli.length) return;
@@ -749,12 +753,22 @@ async function notifica(esito, nome, testo, { ok = false, foto, info } = {}) {
 
 // 8 fotogrammi del video finito in una griglia 4×2: va in _regista per controllare il risultato
 // (colore, scritte) senza scaricare il video
-function fotogrammiFinale(outFile, durata) {
+// 8 fotogrammi del finale per controllarlo senza scaricarlo: l'apertura, il centro di ogni
+// scritta grande (si vede se passa dietro alla persona) e il resto distribuito sul video
+function fotogrammiFinale(outFile, durata, piano) {
   const out = path.join(WORK, 'fotogrammi.jpg');
+  const dir = path.join(WORK, 'fotogrammi');
   try {
-    // dal secondo 1: a 0 le scritte d'apertura non sono ancora entrate
-    const da = durata > 4 ? 1 : 0;
-    run('ffmpeg', ['-y', '-v', 'error', '-ss', String(da), '-i', outFile, '-vf', `fps=${(8 / Math.max(1, durata - da)).toFixed(4)},scale=360:-2,tile=4x2`, '-frames:v', '1', '-q:v', '4', out]);
+    const tempi = [Math.min(1.2, durata / 2), ...(piano.keywords || []).map((k) => k.at + Math.min(1, k.dur * 0.6))].filter((t) => t < durata - 0.1);
+    for (let i = 0; i < 8 && tempi.length < 8; i++) {
+      const t = (durata * (i + 0.5)) / 8;
+      if (tempi.every((x) => Math.abs(x - t) > 1.5)) tempi.push(t);
+    }
+    const scelti = tempi.slice(0, 8).sort((a, b) => a - b);
+    fs.rmSync(dir, { recursive: true, force: true });
+    fs.mkdirSync(dir, { recursive: true });
+    scelti.forEach((t, i) => run('ffmpeg', ['-y', '-v', 'error', '-ss', t.toFixed(2), '-i', outFile, '-frames:v', '1', '-vf', 'scale=360:-2', '-q:v', '4', path.join(dir, `${String(i).padStart(2, '0')}.jpg`)]));
+    run('ffmpeg', ['-y', '-v', 'error', '-i', path.join(dir, '%02d.jpg'), '-vf', `tile=4x${Math.ceil(scelti.length / 4)}`, '-frames:v', '1', '-q:v', '4', out]);
     return out;
   } catch (e) { log('fotogrammi del finale non riusciti', e.message); return null; }
 }
@@ -1207,7 +1221,7 @@ async function main() {
     rclone('copyto', path.join(WORK, 'NOTE.txt'), remote(DEST, nome, 'NOTE.txt'));
     for (const f of ['regia.json', 'piano.json', 'materiale.json']) rclone('copyto', path.join(WORK, f), remote(DEST, nome, CACHE, f));
     for (const f of fs.readdirSync(WORK).filter((x) => /^colore-.+\.jpg$/.test(x))) rclone('copyto', path.join(WORK, f), remote(DEST, nome, CACHE, f));
-    if (fotogrammiFinale(outFile, durataN)) rclone('copyto', path.join(WORK, 'fotogrammi.jpg'), remote(DEST, nome, CACHE, 'fotogrammi.jpg'));
+    if (fotogrammiFinale(outFile, durataN, piano)) rclone('copyto', path.join(WORK, 'fotogrammi.jpg'), remote(DEST, nome, CACHE, 'fotogrammi.jpg'));
     if (vai) rclone('moveto', remote(SRC_DIR, nome, vai), remote(SRC_DIR, nome, vaiUsato));
     if (SRC_DIR === IN_DIR && !DA_TELEGRAM) rclone('moveto', remote(IN_DIR, nome), remote(OUT_DIR, nome));
 
