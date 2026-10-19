@@ -356,15 +356,16 @@ async function ritagliPersona(piano) {
   }
 }
 
-// con tanti video in parallelo Groq può andare al limite orario: si passa al modello turbo (quota separata)
-async function trascrivi(file) {
+// con tanti video in parallelo Groq può andare al limite orario: si passa al modello turbo (quota separata).
+// lingua null: la riconosce Whisper (video di esempio, spesso in inglese)
+async function trascrivi(file, lingua = 'it') {
   const mp3 = path.join(WORK, `${path.parse(file).name}.trascrizione.mp3`);
   run('ffmpeg', ['-y', '-v', 'error', '-i', file, '-vn', '-ac', '1', '-ar', '16000', '-b:a', '48k', mp3]);
   for (const modello of ['whisper-large-v3', 'whisper-large-v3-turbo']) {
     const form = new FormData();
     form.append('file', new Blob([fs.readFileSync(mp3)]), path.basename(mp3));
     form.append('model', modello);
-    form.append('language', 'it');
+    if (lingua) form.append('language', lingua);
     form.append('response_format', 'verbose_json');
     form.append('timestamp_granularities[]', 'word');
     try {
@@ -1148,6 +1149,20 @@ async function analizzaEsempi() {
     // risoluzione nativa (nitidezza, grana: stili "di qualità" come 12K Quality, 19/10)
     for (const q of [0.15, 0.3, 0.5, 0.7, 0.85]) run('ffmpeg', ['-y', '-v', 'error', '-ss', (info.durata * q).toFixed(2), '-i', v, '-frames:v', '1', '-vf', 'scale=540:-2', '-q:v', '2', path.join(out, `${base}-${Math.round(q * 100)}.jpg`)]);
     run('ffmpeg', ['-y', '-v', 'error', '-ss', (info.durata * 0.5).toFixed(2), '-i', v, '-frames:v', '1', '-vf', 'crop=min(iw\\,720):min(ih\\,720)', '-q:v', '2', path.join(out, `${base}-dettaglio.jpg`)]);
+    // copia piccola (432 px, ~3 MB al minuto al massimo) da studiare fotogramma per fotogramma: il
+    // collegamento a Drive di Claude non scarica file oltre ~5 MB (stile Esplicativo, 19/10)
+    run('ffmpeg', ['-y', '-v', 'error', '-i', v, '-vf', 'scale=432:-2', '-c:v', 'libx264', '-preset', 'veryfast', '-crf', '30', '-maxrate', '400k', '-bufsize', '800k',
+      '-c:a', 'aac', '-b:a', '48k', '-movflags', '+faststart', path.join(out, `${base}-piccolo.mp4`)]);
+    // il parlato con i tempi delle parole: come spiegano e quanto in fretta (lingua riconosciuta da sola)
+    let parlato = '';
+    if (info.audio && process.env.GROQ_API_KEY) {
+      try {
+        const parole = await trascrivi(v, null);
+        fs.writeFileSync(path.join(out, `${base}-parlato.txt`), parole.map((p) => `${p.s.toFixed(2)}–${p.e.toFixed(2)}\t${p.w.trim()}`).join('\n'));
+        const tempo = parole.length ? parole.at(-1).e - parole[0].s : 0;
+        parlato = ` · parlato: ${parole.length} parole${tempo ? ` (${(parole.length / tempo).toFixed(1)} al secondo)` : ''}`;
+      } catch (e) { log('parlato non trascritto', e.message); }
+    }
     // ritmo: cambi di inquadratura (scene change) e durata media delle inquadrature
     let tagli = [];
     try {
@@ -1158,7 +1173,7 @@ async function analizzaEsempi() {
     } catch (e) { log('tagli non rilevati', e.message); }
     const c = probe(v).colore || {};
     righe.push(`${base}: ${path.basename(v)} · ${info.durata.toFixed(1)} s · ${info.w}x${info.h} · ${c.pix || '?'} ${c.trc || ''}${info.audio ? ' · audio' : ''}`
-      + ` · ${tagli.length} tagli (inquadratura media ${(info.durata / (tagli.length + 1)).toFixed(2)} s): ${tagli.map((t) => t.toFixed(1)).join(' ')}`);
+      + ` · ${tagli.length} tagli (inquadratura media ${(info.durata / (tagli.length + 1)).toFixed(2)} s): ${tagli.map((t) => t.toFixed(1)).join(' ')}${parlato}`);
   }
   fs.writeFileSync(path.join(out, 'indice.txt'), righe.join('\n'));
   rclone('copy', out, remote(DIR_STILI, nome, 'esempi', '_analisi'));
