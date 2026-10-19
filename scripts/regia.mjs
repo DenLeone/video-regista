@@ -127,6 +127,24 @@ export function risolviRegia(regia, analisi) {
     const prev = clips[clips.length - 1];
     clip.punch = typeof it.punch === 'boolean' ? it.punch : Boolean(prev && prev.file === clip.file && !prev.punch);
     if (it.bn === true) clip.bn = true; // stili su misura con il bianco e nero nei momenti di racconto
+    // inserto: scheda arrotondata sopra l'inquadratura mentre Denis parla di quello che mostra
+    if (it.inserto) {
+      const nomeIns = String(it.inserto);
+      const img = (analisi.immagini || []).find((x) => baseNome(x.id) === baseNome(nomeIns) || baseNome(x.file) === baseNome(nomeIns));
+      const durClip = clip.end - clip.start;
+      const b = img ? null : trovaSorgente(nomeIns);
+      if (img) clip.inserto = { file: img.file, tipo: 'immagine', orient: img.orient };
+      else if (b && b.tipo === 'video' && b.durata >= durClip) {
+        let da = Math.max(0, Number(it.inserto_da) || 0);
+        if (da + durClip > b.durata) da = Math.max(0, b.durata - durClip - 0.05);
+        // almeno 1,6 s di video: se la frase è corta la scheda prosegue sopra la clip dopo
+        const durIns = Math.min(b.durata - da, Math.max(durClip, 1.6));
+        clip.inserto = { file: b.file, tipo: 'video', orient: b.orient, start: +da.toFixed(3), end: +(da + durIns).toFixed(3) };
+        // stesso video di seguito: la scheda resta e il video prosegue
+        const precIns = clips[clips.length - 1]?.inserto;
+        if (precIns && precIns.file === b.file && precIns.tipo === 'video' && Math.abs(precIns.end - da) < 0.3) clip.inserto.continua = true;
+      } else avvisi.push(`inserto ${nomeIns} ${b ? 'troppo corto' : 'inesistente'}: tolto`);
+    }
     inizioVoce[idx] = t;
     clips.push(clip);
     t = q(t + (clip.end - clip.start));
@@ -217,6 +235,7 @@ export function risolviRegia(regia, analisi) {
       note: [regia.note, ...avvisi.map((a) => `⚠️ ${a}`)].filter(Boolean).join(' · '),
       testo: testo.join(' '),
       parole: parole.filter((w) => w.at < totale - 0.05),
+      ...(Array.isArray(regia.enfasi) && regia.enfasi.length ? { enfasi: regia.enfasi.map(String).slice(0, 8) } : {}),
     },
     avvisi,
     durata: totale,
@@ -299,14 +318,15 @@ export function materialePerAI(analisi) {
       parti.push(coperte.length
         ? `inquadratura sincronizzata con la voce di ${s.sync.con}: usabile come "camera" su ${intervalli(coperte.map((f) => f.id))}`
         : `sincronizzata con ${s.sync.con} ma non copre nessuna frase intera: usala come B-roll`);
-    } else if (s.soloImmagini) parti.push(`SOLO IMMAGINI (${s.soloImmagini}): usala solo come B-roll muto, la sua voce non entra mai nel montaggio`);
+    } else if (s.schermo) parti.push('REGISTRAZIONE DELLO SCHERMO: usala come "inserto" (scheda sopra l\'inquadratura) mentre Denis parla di quello che mostra');
+    else if (s.soloImmagini) parti.push(`SOLO IMMAGINI (${s.soloImmagini}): usala solo come B-roll muto, la sua voce non entra mai nel montaggio`);
     else if (s.tipo === 'video') parti.push(s.parlato ? 'ha parlato non sincronizzabile: usala solo come B-roll'
       : s.audioMuto ? 'audio muto, NON sincronizzata: solo B-roll, e mai nei momenti in cui si vede qualcuno parlare (il labiale non tornerebbe)'
         : 'B-roll (non sincronizzata): mettila sopra la voce con "broll" + "da"');
     if (s.fogli?.length) parti.push(`fogli: ${s.fogli.join(', ')} (un riquadro ogni ${s.passoFogli} s; tempi ${s.sync || s.principale ? 'nel tempo della voce' : 'della clip, da usare in "da"'})`);
     r.push(parti.join(' · '));
   }
-  if (analisi.foto?.length) r.push(`- foto: ${analisi.foto.join(', ')} (non ancora usabili nel montaggio)`);
+  for (const im of analisi.immagini || []) r.push(`- **${im.id}** · immagine ${im.orient === 'v' ? 'verticale' : 'orizzontale'} · solo come "inserto"${analisi.foglioImmagini ? ` · foglio: ${analisi.foglioImmagini}` : ''}`);
   for (const p of analisi.sorgenti.filter((s) => s.principale)) {
     const fr = frasiDi(p.id);
     if (!fr.length) continue;

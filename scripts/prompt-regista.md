@@ -31,6 +31,12 @@ Prima delle inquadrature costruisci il TESTO. Chi guarda deve capire di cosa par
 - Inizia con l'inquadratura più forte (volto in camera o prodotto ben visibile) e chiudi sull'inquadratura più "eroica" del prodotto.
 - `punch` (zoom 1,18x) puoi ometterlo: sui jump cut della stessa camera lo script lo alterna da solo.
 
+## Inserti (schede sopra l'inquadratura)
+- Quando Denis parla di qualcosa che si vede in un file a parte (registrazione dello schermo, screenshot, foto del prodotto, B-roll di un dettaglio), mostralo come **inserto**: una scheda arrotondata, tipo schermo di telefono, che entra sopra l'inquadratura della frase ed esce quando la frase finisce. Sotto resta l'inquadratura della frase (`camera` o `broll`), che si intravede intorno alla scheda.
+- Sull'elemento della frase: `"inserto": "<id>"` e, per i video, `"inserto_da": <secondi>` letti dal foglio provino; il video deve durare almeno quanto la frase. Le IMMAGINI si usano solo così.
+- Le REGISTRAZIONI DELLO SCHERMO vanno sempre come inserto, mai a tutto schermo.
+- Una scheda per volta: 1–5 inserti in un video, ognuno su 1–3 frasi di fila (stesso file con `inserto_da` consecutivi = la scheda resta e il video prosegue). Mai insieme a una scritta grande o a un titolo.
+
 ## Senza parlato (solo B-roll)
 - Di solito Denis registra la voce dopo, sopra al video finito: l'audio delle clip lo toglie lo script (tienilo solo se il brief lo chiede, con `"audio": "ambiente"` sull'elemento).
 - 25–45 s in tutto (o la durata del brief), elementi `{"broll": "<id>", "da": <s>, "dur": <s>}` da 1–3 s ciascuno, alternando dettagli e inquadrature larghe, come un racconto del prodotto (presentazione → dettagli e funzioni → prodotto in uso → inquadratura finale); finisci sull'inquadratura più eroica del prodotto.
@@ -60,6 +66,7 @@ Prima delle inquadrature costruisci il TESTO. Chi guarda deve capire di cosa par
     { "frase": "F014", "camera": "C0928" },
     { "frase": "F015", "camera": "IMG_4151" },
     { "frase": "F021", "broll": "C0929", "da": 12.5 },
+    { "frase": "F022", "camera": "C0928", "inserto": "ScreenRecording_01", "inserto_da": 3.0 },
     { "broll": "C0930", "da": 40.0, "dur": 1.8 }
   ],
   "keywords": [

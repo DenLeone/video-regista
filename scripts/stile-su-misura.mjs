@@ -15,7 +15,7 @@ Quando usarlo: (argomenti, tipo di video)
 Tono: (es. intimo, ironico, tecnico)
 
 # --- SCRITTE ---
-# Font: un nome di Google Fonts (fonts.google.com) con il peso, es. "EB Garamond 600",
+# Font: un nome di Google Fonts (fonts.google.com) con il peso, es. "EB Garamond 600" (senza peso = normale),
 # oppure il nome di un file di font messo in asset/ (es. "MioFont" per asset/MioFont.otf)
 Apertura: normale             # normale | grande (prima frase a lettere enormi, parola per parola)
 Font apertura: Inter Tight 800
@@ -26,8 +26,10 @@ Colore sottotitoli: #FFFFFF
 Maiuscolo sottotitoli: no     # sì | no
 Posizione sottotitoli: basso  # alto | centro | basso
 Dimensione sottotitoli: 56    # in pixel su 1080 di larghezza (40–90)
-Titoli: sì                    # sì = 3–5 titoli grandi (nome prodotto, dati) | no
+Titoli: sì                    # sì = 3–5 titoli (nome prodotto, dati) | frasi = 3–5 frasi forti a due livelli (corsivo piccolo + parole enormi) | no
 Font titoli: Montserrat 900
+Font corsivo: Playfair Display Italic 400   # la frase piccola delle scritte a due livelli
+Scritte dietro di me: no      # sì = le scritte grandi passano dietro alla persona (ritaglio automatico)
 Colore titoli: #FFFFFF
 Colore accento: #FFE62E       # sottotitolo dei titoli
 Posizione titoli: alto        # alto | centro | basso
@@ -56,14 +58,17 @@ const colore = (v, base) => (/^#?[0-9a-f]{6}$/i.test(String(v || '').trim()) ? `
 const numero = (v, base, min, max) => { const n = Number(String(v || '').replace(',', '.').match(/-?\d+(\.\d+)?/)?.[0]); return Number.isFinite(n) ? Math.min(max, Math.max(min, n)) : base; };
 const posizione = (v, base) => (['alto', 'centro', 'basso'].find((p) => norm(v).startsWith(p)) || base);
 const PESI = { thin: 100, light: 300, regular: 400, normal: 400, medium: 500, semibold: 600, bold: 700, extrabold: 800, black: 900 };
-/** "EB Garamond 600" / "Inter Tight Black" → { famiglia, peso } */
+/** "EB Garamond 600" / "Inter Tight Black" / "Playfair Display Italic 400" → { famiglia, peso, corsivo } */
 export function font(v, base) {
   let t = String(v || '').trim();
   if (!t) return base;
-  let peso = base.peso;
+  let peso = 400; // senza peso scritto: normale (molti font da titolo, come Anton, hanno solo quello)
+  let corsivo = false;
+  const c = /\s+(italic|corsivo)\b/i.exec(t);
+  if (c) { corsivo = true; t = (t.slice(0, c.index) + t.slice(c.index + c[0].length)).trim(); }
   const m = /\s+(\d{3})$/.exec(t) || /\s+(thin|light|regular|normal|medium|semibold|bold|extrabold|black)$/i.exec(t);
   if (m) { peso = /^\d+$/.test(m[1]) ? Number(m[1]) : PESI[m[1].toLowerCase()]; t = t.slice(0, m.index).trim(); }
-  return { famiglia: t, peso };
+  return corsivo ? { famiglia: t, peso, corsivo } : { famiglia: t, peso };
 }
 
 /** @type {GraficaStile} */
@@ -73,13 +78,15 @@ export const BASE = {
   sottotitoli: 'frase', fontSottotitoli: { famiglia: 'Montserrat', peso: 700 }, coloreSottotitoli: '#FFFFFF',
   maiuscolo: false, posizione: 'basso', dimensione: 56,
   titoli: true, fontTitoli: { famiglia: 'Montserrat', peso: 900 }, coloreTitoli: '#FFFFFF', accento: '#FFE62E', posTitoli: 'alto',
+  tipoTitoli: 'titoli', fontCorsivo: { famiglia: 'Playfair Display', peso: 400, corsivo: true }, dietro: false,
   look: 'naturale', biancoNero: 'no', vignetta: 0.2, sfx: true, musica: null,
 };
 
 // campi che decidono la grafica; tutto il resto va all'AI come indicazione di regia
 const GRAFICA = ['nome', 'apertura', 'font apertura', 'colore apertura', 'sottotitoli', 'font sottotitoli', 'colore sottotitoli',
   'maiuscolo sottotitoli', 'posizione sottotitoli', 'dimensione sottotitoli', 'titoli', 'font titoli', 'colore titoli',
-  'colore accento', 'posizione titoli', 'look', 'bianco e nero', 'vignettatura', 'effetti sonori', 'musica', 'volume musica'];
+  'colore accento', 'posizione titoli', 'look', 'bianco e nero', 'vignettatura', 'effetti sonori', 'musica', 'volume musica',
+  'font corsivo', 'scritte dietro di me'];
 
 /** stile.txt → { grafica, testoAI, musica, campi } */
 export function leggiStile(testo, nomeCartella) {
@@ -111,7 +118,12 @@ export function leggiStile(testo, nomeCartella) {
   if (campi['maiuscolo sottotitoli']) g.maiuscolo = si(campi['maiuscolo sottotitoli']);
   g.posizione = posizione(campi['posizione sottotitoli'], g.posizione);
   g.dimensione = numero(campi['dimensione sottotitoli'], g.dimensione, 30, 120);
-  if (campi.titoli) g.titoli = si(campi.titoli);
+  if (campi.titoli) {
+    g.tipoTitoli = /fras|scritt/.test(norm(campi.titoli)) ? 'frasi' : 'titoli';
+    g.titoli = g.tipoTitoli === 'frasi' || si(campi.titoli);
+  }
+  g.fontCorsivo = font(campi['font corsivo'], g.fontCorsivo);
+  if (campi['scritte dietro di me']) g.dietro = si(campi['scritte dietro di me']);
   g.fontTitoli = font(campi['font titoli'], g.fontTitoli);
   g.coloreTitoli = colore(campi['colore titoli'], g.coloreTitoli);
   g.accento = colore(campi['colore accento'], g.accento);
@@ -133,8 +145,16 @@ export function leggiStile(testo, nomeCartella) {
 export function promptSuMisura(g, testoAI) {
   const righe = [`## Grafica: stile «${g.nome}» (su misura)`];
   righe.push(`- Le scritte delle parole dette (${g.apertura === 'grande' ? 'scritta d\'apertura e ' : ''}sottotitoli) le mette lo script da solo: non scriverle.`);
-  if (g.apertura === 'grande') righe.push('- **Apertura a lettere enormi**: la prima frase del montaggio (le prime 1–2 frasi, al massimo ~5 s) diventa una scritta grande a tutto schermo, parola per parola. Scegli come apertura un aggancio forte e breve, che si capisce da solo.');
-  if (g.titoli) {
+  if (g.apertura === 'grande') {
+    righe.push('- **Apertura a lettere enormi**: la prima frase del montaggio (le prime 1–2 frasi, al massimo ~5 s) diventa una scritta a due livelli, parola per parola: le parole chiave enormi, le altre piccole in corsivo. Scegli come apertura un aggancio forte e breve, che si capisce da solo, con Denis in camera.',
+      '- `enfasi` (campo in cima alla regia, accanto a `titolo`): 2–4 parole dell\'apertura da fare enormi, esattamente come le dice (es. `["STANCO", "MEZZ\'ORA"]`): i concetti, non articoli o verbi di servizio.');
+  }
+  if (g.dietro) righe.push('- Le scritte grandi passano dietro a Denis (ritaglio automatico): mettile su inquadrature dove lui è in campo, a figura intera o mezzo busto.');
+  if (g.titoli && g.tipoTitoli === 'frasi') {
+    righe.push('- `keywords` = le FRASI FORTI: 3–5 momenti del video (dopo l\'apertura) in cui Denis dice qualcosa di forte (una promessa, un numero, una svolta del racconto, la chiusura). Ognuna ancorata alla frase in cui la dice (`frase`, `ritardo` 0–1 s), `dur` 2–3,5 s, a distanza di almeno 6 s una dall\'altra.',
+      '  - Sono le SUE parole, prese dalla frase: `tag` = la parte piccola che introduce (in corsivo, 2–6 parole, es. "e la cosa che mi ha"), `word` = 1–3 parole chiave enormi (es. "STUPITO", "45 EURO"), `note` = coda piccola facoltativa (es. "più di tutto"). Mai inventare parole che non dice.',
+      '  - L\'ultima può chiudere il video sulla frase finale, con `"fino_alla_fine": true`.');
+  } else if (g.titoli) {
     righe.push('- `keywords` = i TITOLI: 3–5 in tutto, mai la trascrizione. Ognuno ancorato a una frase usata (`frase`, `ritardo` 0–1 s; senza parlato `elemento`), `dur` 2–3,5 s.',
       '  - `word`: nome del prodotto o un dato brevissimo (max ~16 caratteri); `tag`: etichetta piccola sopra (marca o categoria, facoltativa); `note`: sottotitolo sotto, 1–4 parole (senza "// ").',
       '  - Il primo titolo è il prodotto o il tema; poi i numeri e le specifiche che Denis dice; l\'esito solo se c\'è un giudizio (vedi "L\'esito"), con `"fino_alla_fine": true`.');

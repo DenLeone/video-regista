@@ -12,6 +12,12 @@ export type Clip = {
   muto?: boolean;   // nessun audio
   volume?: number;  // volume dell'audio della clip stessa (default 1)
   bn?: boolean;     // in bianco e nero (stili su misura con "Bianco e nero: momenti")
+  // scheda arrotondata sopra l'inquadratura (registrazione dello schermo, screenshot, foto, B-roll
+  // del prodotto) mentre Denis ne parla; video: start/end nella sorgente
+  inserto?: { file: string; tipo: 'video' | 'immagine'; orient?: 'v' | 'h'; start?: number; end?: number; continua?: boolean };
+  // la persona ritagliata (video con trasparenza) per far passare le scritte grandi dietro di lei;
+  // da = secondi dall'inizio della clip
+  ritaglio?: { file: string; da: number; dur: number };
 };
 
 export type Keyword = {
@@ -47,10 +53,11 @@ export type Piano = {
   parole?: { at: number; dur: number; w: string }[];
   // stile su misura: la grafica letta da Drive (Stili/<nome>/stile.txt, vedi scripts/stile-su-misura.mjs)
   grafica?: GraficaStile;
+  enfasi?: string[];        // parole dell'apertura da fare enormi (scelte dall'AI negli stili su misura)
 };
 
 // font di uno stile su misura: file in public/stili/<stile>/ oppure Google Fonts per nome
-export type FontStile = { famiglia: string; peso: number; file?: string };
+export type FontStile = { famiglia: string; peso: number; corsivo?: boolean; file?: string };
 export type Posizione = 'alto' | 'centro' | 'basso';
 export type GraficaStile = {
   nome: string;
@@ -59,6 +66,11 @@ export type GraficaStile = {
   sottotitoli: 'parola' | 'frase' | 'nessuno';
   fontSottotitoli: FontStile; coloreSottotitoli: string; maiuscolo: boolean; posizione: Posizione; dimensione: number;
   titoli: boolean; fontTitoli: FontStile; coloreTitoli: string; accento: string; posTitoli: Posizione;
+  // titoli = nome prodotto e dati (come il Cinematico); frasi = scritte forti a due livelli,
+  // frase piccola in corsivo + parole chiave enormi (come l'apertura)
+  tipoTitoli: 'titoli' | 'frasi';
+  fontCorsivo: FontStile;                    // la frase piccola delle scritte a due livelli
+  dietro: boolean;                           // le scritte grandi passano dietro alla persona
   look: 'naturale' | 'caldo' | 'freddo' | 'bianco e nero';
   biancoNero: 'no' | 'momenti' | 'sempre';
   vignetta: number;                          // 0–1

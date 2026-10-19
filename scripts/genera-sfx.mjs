@@ -10,6 +10,7 @@
 // strappo     flicker con la carta strappata: strappo di carta
 // whoosh      (Cinematico) titolo che entra: soffio d'aria morbido, picco a 0,3 s
 // impatto     (Cinematico) primo titolo: colpo basso profondo con coda, da trailer
+// colpo       (su misura) parola enorme che entra: tonfo corto e morbido con un clic d'attacco
 
 import fs from 'node:fs';
 import path from 'node:path';
@@ -164,6 +165,14 @@ function impatto() {
   return riverbero(y, 0.35, 0.85);
 }
 
+function colpo() {
+  const y = vuoto(0.5);
+  somma(y, tono(0.4, (t) => 55 + 70 * Math.exp(-t / 0.03), (t) => Math.min(1, t / 0.003) * Math.exp(-t / 0.11)), 0, 1);
+  const n = new Float32Array(Math.round(0.03 * SR)).map((_, i) => rnd() * Math.exp(-i / (SR * 0.004)));
+  somma(y, passaBanda(n, 2400, 1.2), 0, 0.35);
+  return riverbero(y, 0.18, 0.6);
+}
+
 function salva(nome, y) {
   let picco = 0; for (const v of y) picco = Math.max(picco, Math.abs(v));
   const g = picco > 0 ? 10 ** (-3 / 20) / picco : 1;
@@ -192,3 +201,5 @@ salva('strappo', strappo());
 seme = 4242;
 salva('whoosh', whoosh());
 salva('impatto', impatto());
+seme = 99;
+salva('colpo', colpo());

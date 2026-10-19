@@ -205,9 +205,9 @@ function statisticheColore(file, durata, filtro = 'null') {
 
 // Si ricodificano solo i pezzi usati dal montaggio (1080p, colori SDR). Prima si convertiva
 // tutto il girato 4K: 40 dei 58 minuti del primo giro reale.
-function taglia(s, start, dur, out, conAudio) {
+function taglia(s, start, dur, out, conAudio, senzaLook = false) {
   run('ffmpeg', ['-y', '-v', 'error', '-ss', start.toFixed(3), '-i', s.originale, '-t', (dur + 0.1).toFixed(3),
-    '-vf', `scale='if(gt(iw,ih),1920,1080)':-2,${filtroColore(s.colore)}`,
+    '-vf', `scale='if(gt(iw,ih),1920,1080)':-2,${senzaLook ? filtroTecnico(s.colore) : filtroColore(s.colore)}`,
     '-c:v', 'libx264', '-preset', 'veryfast', '-crf', '16', '-pix_fmt', 'yuv420p',
     ...(conAudio ? ['-c:a', 'aac', '-b:a', '160k'] : ['-an']), '-movflags', '+faststart', out]);
 }
@@ -221,7 +221,86 @@ function tagliaSegmenti(piano, analisi) {
     const seg = `seg_${String(i).padStart(3, '0')}.mp4`;
     taglia(s, c.start, dur, path.join(MEDIA, seg), !c.audio && !c.muto && s.haAudio);
     Object.assign(c, { file: seg, start: 0, end: +dur.toFixed(3), sorgente: s.id, daSorgente: c.start });
+    // inserto video: il suo pezzo, muto e senza look creativo (le schermate restano fedeli)
+    if (c.inserto?.tipo === 'video') {
+      const si = perFile.get(c.inserto.file);
+      if (!si) { delete c.inserto; return; }
+      const ins = `ins_${String(i).padStart(3, '0')}.mp4`;
+      const d = c.inserto.end - c.inserto.start;
+      taglia(si, c.inserto.start, d, path.join(MEDIA, ins), false, true);
+      Object.assign(c.inserto, { file: ins, start: 0, end: +d.toFixed(3) });
+    }
   });
+}
+
+// immagini della cartella (screenshot, foto del prodotto): usabili come inserto. Si convertono in
+// JPG in public/media e si fa un foglio provino con il nome di ognuna, da far vedere all'AI
+function preparaImmagini(foto) {
+  const out = [];
+  const dir = path.join(WORK, 'fogli', '_immagini');
+  fs.mkdirSync(dir, { recursive: true });
+  const etichetta = (t) => (FONT ? `,drawtext=fontfile='${FONT.replace(/:/g, '\\:')}':text='${t.replace(/[':\\]/g, ' ')}':x=6:y=6:fontsize=22:fontcolor=white:box=1:boxcolor=black@0.65:boxborderw=4` : '');
+  for (const f of foto) {
+    const id = path.parse(f).name;
+    const file = `img_${id.replace(/[^\w-]+/g, '_')}.jpg`;
+    try {
+      run('ffmpeg', ['-y', '-v', 'error', '-i', path.join(SCARICO, f), '-frames:v', '1', '-vf', "scale='min(1600,iw)':-2", '-q:v', '3', path.join(MEDIA, file)]);
+      const info = probe(path.join(MEDIA, file));
+      run('ffmpeg', ['-y', '-v', 'error', '-i', path.join(MEDIA, file), '-vf', `scale=240:426:force_original_aspect_ratio=decrease,pad=240:426:(ow-iw)/2:(oh-ih)/2:black${etichetta(id)}`, '-q:v', '4', path.join(dir, `${String(out.length).padStart(3, '0')}.jpg`)]);
+      out.push({ id, file, orient: info.w > info.h ? 'h' : 'v' });
+    } catch (e) { log(`immagine ${f} non leggibile (HEIC?): saltata`, e.message.split('\n')[0]); }
+  }
+  if (!out.length) return { immagini: out, foglio: null };
+  const foglio = path.join(WORK, 'fogli', 'immagini.jpg');
+  run('ffmpeg', ['-y', '-v', 'error', '-i', path.join(dir, '%03d.jpg'), '-vf', `tile=${Math.min(4, out.length)}x${Math.ceil(out.length / 4)}`, '-frames:v', '1', '-q:v', '4', foglio]);
+  return { immagini: out, foglio: path.relative(ROOT, foglio).replace(/\\/g, '/') };
+}
+
+// la persona ritagliata nei momenti delle scritte grandi (stili su misura con "Scritte dietro di me"):
+// MediaPipe in scripts/ritaglio.py; se qualcosa non va le scritte restano davanti, il video esce lo stesso
+async function ritagliPersona(piano) {
+  const g = piano.grafica;
+  if (!g?.dietro) return;
+  const intervalli = [];
+  if (g.apertura === 'grande' && piano.parole?.length) {
+    const fine = piano.parole.find((p) => /[.!?]$/.test(p.w));
+    intervalli.push([0, Math.min(5, Math.max(1.5, fine ? fine.at + fine.dur : 5)) + 0.6]);
+  }
+  if (g.titoli && g.tipoTitoli === 'frasi') for (const k of piano.keywords) intervalli.push([k.at, k.at + k.dur]);
+  if (!intervalli.length) return;
+  const modello = path.join(WORK, 'selfie_multiclass.tflite');
+  try {
+    // MediaPipe in un ambiente a parte (il Python di sistema del runner non accetta pip install)
+    let py = process.env.REGISTA_PYTHON || 'python3';
+    try { run(py, ['-c', 'import mediapipe']); } catch {
+      const venv = path.join(WORK, 'venv-ritaglio');
+      run('python3', ['-m', 'venv', venv]);
+      py = path.join(venv, 'bin', 'python');
+      run(py, ['-m', 'pip', 'install', '--quiet', 'mediapipe']);
+    }
+    if (!fs.existsSync(modello)) {
+      const r = await fetchRiprova('https://storage.googleapis.com/mediapipe-models/image_segmenter/selfie_multiclass_256x256/float32/latest/selfie_multiclass_256x256.tflite', {}, 3);
+      if (!r.ok) throw new Error(`modello di segmentazione: ${r.status}`);
+      fs.writeFileSync(modello, Buffer.from(await r.arrayBuffer()));
+    }
+    let t = 0, n = 0;
+    for (const [i, c] of piano.clips.entries()) {
+      const dur = c.end - c.start;
+      const sovrapposti = intervalli.map(([a, b]) => [Math.max(a, t), Math.min(b, t + dur)]).filter(([a, b]) => b - a > 0.1);
+      if (sovrapposti.length && c.orient !== 'h' && !c.inserto) {
+        const da = Math.min(...sovrapposti.map(([a]) => a)) - t, a = Math.max(...sovrapposti.map(([, b]) => b)) - t;
+        const out = `rit_${String(i).padStart(3, '0')}.webm`;
+        run(py, [path.join(ROOT, 'scripts', 'ritaglio.py'), path.join(MEDIA, c.file), path.join(MEDIA, out), modello, (a - da).toFixed(3), da.toFixed(3)], { stdio: ['ignore', 'pipe', 'inherit'] });
+        c.ritaglio = { file: out, da: +da.toFixed(3), dur: +(a - da).toFixed(3) };
+        n++;
+      }
+      t += dur;
+    }
+    log(`ritagli della persona: ${n}`);
+  } catch (e) {
+    log('ritaglio della persona non riuscito: scritte davanti', e.message.split('\n')[0]);
+    for (const c of piano.clips) delete c.ritaglio;
+  }
 }
 
 // con tanti video in parallelo Groq può andare al limite orario: si passa al modello turbo (quota separata)
@@ -748,8 +827,11 @@ export async function analizza(nome, brief, cache) {
         confrontoColore(src, id, info.durata, info.colore);
       }
       // `file` è il nome logico usato dalla regia; i pezzi veri si tagliano dall'originale dopo la regia
+      // registrazione dello schermo (nome tipico o formato da telefono più stretto di 9:16): ottima come inserto
+      const schermo = /screen|registraz|rpreplay|schermo|scherm/i.test(f) || (info.h > info.w && info.w / info.h < 0.5);
       sorgenti.push({ id, file: `${id}.mp4`, originale: src, tipo: 'video', dispositivo: disp, nomeDispositivo: NOMI_DISPOSITIVO[disp],
-        durata: +info.durata.toFixed(2), orient: info.w > info.h ? 'h' : 'v', haAudio: info.audio, colore: info.colore, data: dataRipresa(info.tags, f) });
+        durata: +info.durata.toFixed(2), orient: info.w > info.h ? 'h' : 'v', haAudio: info.audio, colore: info.colore, data: dataRipresa(info.tags, f),
+        ...(schermo ? { schermo: true } : {}) });
     } else if (AUDIO_EXT.includes(ext)) {
       const info = probe(src);
       log(`audio ${f} (mic esterno, ${info.durata.toFixed(1)} s)`);
@@ -1048,10 +1130,13 @@ async function main() {
     const brief = [briefFile, process.env.BRIEF_EXTRA ? `Dal telegram: ${process.env.BRIEF_EXTRA}` : '', cache?.brief && (CORREZIONE || RIRENDER) ? cache.brief : '']
       .filter(Boolean).join('\n');
     const analisi = await analizza(nome, brief, cache);
+    const { immagini, foglio: foglioImmagini } = preparaImmagini(analisi.foto || []);
+    analisi.immagini = immagini;
+    analisi.foglioImmagini = foglioImmagini;
     fs.writeFileSync(path.join(WORK, 'materiale.json'), JSON.stringify(analisi, null, 1));
     const testoMateriale = materialePerAI(analisi);
     fs.writeFileSync(path.join(WORK, 'materiale.md'), testoMateriale);
-    const fogli = analisi.sorgenti.flatMap((s) => s.fogli || []);
+    const fogli = [...analisi.sorgenti.flatMap((s) => s.fogli || []), ...(analisi.foglioImmagini ? [analisi.foglioImmagini] : [])];
 
     const sinc = analisi.sorgenti.filter((s) => s.sync).length;
     const voci = analisi.sorgenti.filter((s) => s.principale).map((s) => `${s.id} (${s.nomeDispositivo})`).join(', ');
@@ -1085,6 +1170,7 @@ async function main() {
     await fase(nome, `🎬 Render: ${durataPiano.toFixed(0)} s, ${piano.clips.length} tagli da ${camereUsate} sorgenti, ${piano.keywords.length} parole chiave`, 'render');
     // solo adesso si ricodificano i pezzi scelti, poi gli originali non servono più
     tagliaSegmenti(piano, analisi);
+    await ritagliPersona(piano);
     // prima di cancellarli, gli originali devono essere su Drive; se la copia fallisce il video si consegna lo stesso
     if (copiaOriginali) {
       try { await copiaOriginali; } catch (e) { avvisoOriginali = `⚠️ originali non copiati in ${IN_DIR}/${nome} (${e.message}): restano nella chat Telegram`; log(avvisoOriginali); }
