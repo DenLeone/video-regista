@@ -928,6 +928,20 @@ function inSottofondo(cmd, args) {
 const mb = (bytes) => (bytes / 1e6 >= 1000 ? `${(bytes / 1e9).toFixed(1)} GB` : `${Math.round(bytes / 1e6)} MB`);
 
 // ---------- analisi: sorgenti, audio principale, sincronizzazione, frasi ----------
+// fps del video finito: quelli della camera principale (la voce), altrimenti del girato più lungo.
+// 23,98 → 24 (la differenza è un fotogramma ogni 40 s), 50 → 25 e 60 → 30 (uno sì e uno no, fluido).
+// A 30 fps fissi la Sony a 23,98 (980, 20/10) ripeteva un fotogramma ogni quattro: movimenti a scatti
+export function fpsVideo(sorgenti) {
+  const video = sorgenti.filter((s) => s.tipo === 'video' && s.fps > 0);
+  const base = video.some((s) => s.principale) ? video.filter((s) => s.principale) : video;
+  const durata = new Map();
+  for (const s of base) {
+    const n = s.fps < 24.5 ? 24 : s.fps < 26 ? 25 : s.fps < 48 ? 30 : s.fps < 55 ? 25 : 30;
+    durata.set(n, (durata.get(n) || 0) + (s.durata || 1));
+  }
+  return [...durata.entries()].sort((a, b) => b[1] - a[1])[0]?.[0] || 30;
+}
+
 export async function analizza(nome, brief, cache) {
   const parolePrecedenti = (file) => (file ? (cache?.sorgenti || cache?.video || []).find((v) => v.file === file || v.voce === file)?.parole : undefined);
   const sorgenti = [];
@@ -964,7 +978,7 @@ export async function analizza(nome, brief, cache) {
       // registrazione dello schermo (nome tipico o formato da telefono più stretto di 9:16): ottima come inserto
       const schermo = /screen|registraz|rpreplay|schermo|scherm/i.test(f) || (info.h > info.w && info.w / info.h < 0.5);
       sorgenti.push({ id, file: `${id}.mp4`, originale: src, tipo: 'video', dispositivo: disp, nomeDispositivo: NOMI_DISPOSITIVO[disp],
-        durata: +info.durata.toFixed(2), orient: info.w > info.h ? 'h' : 'v', haAudio: info.audio, colore: info.colore, data: dataRipresa(info.tags, f),
+        durata: +info.durata.toFixed(2), orient: info.w > info.h ? 'h' : 'v', haAudio: info.audio, colore: info.colore, data: dataRipresa(info.tags, f), fps: info.fps,
         ...(schermo ? { schermo: true } : {}) });
     } else if (AUDIO_EXT.includes(ext)) {
       const info = probe(src);
@@ -1001,7 +1015,7 @@ export async function analizza(nome, brief, cache) {
       const fp = fogliProvino(s.originale, s.id, s.durata, s.sync ? s.sync.offset : 0, s.colore);
       s.fogli = fp.fogli; s.passoFogli = fp.passo;
     }
-    return { cartella: nome, brief, sorgenti, frasi: cache.frasi, foto };
+    return { cartella: nome, brief, sorgenti, frasi: cache.frasi, foto, fps: fpsVideo(sorgenti) };
   }
 
   // inviluppi audio (dall'originale: si legge solo la traccia audio) e rilevamento parlato
@@ -1109,7 +1123,7 @@ export async function analizza(nome, brief, cache) {
   if (/\bi-?log\b/i.test(brief || '') && !/\b(senza|no)\s+i-?log\b/i.test(brief || '') && !sorgenti.some((s) => s.colore?.log)) {
     avvisi.push('nel brief c\'è "i-Log" ma nessuna clip è riconosciuta come Insta360: colori lasciati come sono');
   }
-  return { cartella: nome, brief, sorgenti, frasi: tutteFrasi, foto, avvisi };
+  return { cartella: nome, brief, sorgenti, frasi: tutteFrasi, foto, avvisi, fps: fpsVideo(sorgenti) };
 }
 
 // ---------- main ----------
@@ -1339,6 +1353,8 @@ async function main() {
     piano.sfx = process.env.REGISTA_SFX === '0' ? false
       : { volume: +Math.min(0.6, Math.max(0.1, livelloVoce > -60 ? 10 ** ((livelloVoce + 2) / 20) : 0.25)).toFixed(3) };
     if (stileSuMisura) piano.grafica = stileSuMisura.grafica;
+    piano.fps = analisi.fps || 30;
+    if (piano.fps !== 30) log(`video a ${piano.fps} fps (come la camera principale)`);
     // b/n solo se lo stile lo prevede: con "Bianco e nero: no" (o uno stile pronto) i "bn" della regia
     // non valgono (12K Quality rifatto sulla regia del Narrativo, 19/10: un pezzo era uscito in b/n)
     if (!stileSuMisura || stileSuMisura.grafica.biancoNero === 'no') for (const c of piano.clips) delete c.bn;

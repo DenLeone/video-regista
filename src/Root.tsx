@@ -3,7 +3,7 @@ import { Composition } from 'remotion';
 import { Blueprint } from './Blueprint';
 import { Cinematico } from './Cinematico';
 import { SuMisura } from './SuMisura';
-import { durataTotale, FPS, H, Piano, W } from './piano';
+import { durataTotale, FPS, fpsDi, H, Piano, W } from './piano';
 
 // Piano di esempio per lo Studio: il render vero riceve --props=work/piano.json
 const esempio: Piano = {
@@ -17,8 +17,10 @@ const esempio: Piano = {
 };
 
 // ogni stile è una composizione con lo stesso piano (vedi STILI in scripts/regista.mjs)
+// fps del piano (camera principale): il girato a 24p resta fluido invece di ripetere fotogrammi
 const metadati = ({ props }: { props: Piano }) => ({
-  durationInFrames: Math.max(30, Math.round(durataTotale(props) * FPS)),
+  fps: fpsDi(props),
+  durationInFrames: Math.max(30, Math.round(durataTotale(props) * fpsDi(props))),
 });
 
 export const Root: React.FC = () => (

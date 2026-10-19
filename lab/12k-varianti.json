@@ -1,0 +1,16 @@
+{
+  "uscita": "03 · Social — Risorse/Stili/12K Quality/_laboratorio/2-varianti",
+  "fotogrammi": [
+    { "file": "98 - Fatti/980/Ak980.MP4", "tempi": [6, 24] },
+    { "file": "98 - Fatti/980/980 10.MP4", "tempi": [38] },
+    { "file": "98 - Fatti/980/980 6.MP4", "tempi": [24] },
+    { "file": "98 - Fatti/Giacca autunnale/VID_20261018_153423_057.mp4", "tempi": [10, 38] },
+    { "file": "98 - Fatti/Giacca autunnale/VID_20261018_153332_055.mp4", "tempi": [2] }
+  ],
+  "varianti": [
+    { "id": "v1 (vecchio)", "filtro": "lut3d=file=lut/teal-arancio.cube:interp=tetrahedral" },
+    { "id": "12K v2", "adatta": true, "filtro": "lut3d=file=lut/12k.cube:interp=tetrahedral,cas=strength=0.5" },
+    { "id": "v2 nitido", "adatta": true, "filtro": "lut3d=file=lut/12k.cube:interp=tetrahedral,cas=strength=0.85" },
+    { "id": "v2 bagliore", "adatta": true, "filtro": "lut3d=file=lut/12k.cube:interp=tetrahedral,cas=strength=0.5,format=gbrp,split[a][b];[b]curves=all='0/0 0.7/0 1/1',gblur=sigma=26[g];[a][g]blend=all_mode=screen:all_opacity=0.28" }
+  ]
+}

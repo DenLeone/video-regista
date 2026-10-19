@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { AbsoluteFill, Audio, continueRender, delayRender, Easing, interpolate, Sequence, staticFile, useCurrentFrame } from 'remotion';
-import { Clips, f, Inserti, Ritagli, Sfx, volumeSfx } from './comune';
+import { Clips, f, Inserti, Ritagli, Sfx, usaFps, volumeSfx } from './comune';
 import { gruppiParole } from './Cinematico';
 import { durataTotale, FontStile, GraficaStile, Keyword, Piano, Posizione, W } from './piano';
 
@@ -329,6 +329,7 @@ const Chiusura: React.FC<{ nome: string; g: GraficaStile }> = ({ nome, g }) => {
 };
 
 export const SuMisura: React.FC<Piano> = (piano) => {
+  usaFps(piano);
   const g: GraficaStile = { ...BASE, ...(piano.grafica || {}) };
   useFont([g.fontApertura, g.fontSottotitoli, g.fontTitoli, g.fontCorsivo]);
   const totale = f(durataTotale(piano));

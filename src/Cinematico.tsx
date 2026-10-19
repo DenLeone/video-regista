@@ -1,7 +1,7 @@
 import React from 'react';
 import { AbsoluteFill, Easing, interpolate, Sequence, useCurrentFrame } from 'remotion';
 import { loadFont } from '@remotion/google-fonts/Montserrat';
-import { Clips, f, Inserti, Sfx, volumeSfx } from './comune';
+import { Clips, f, Inserti, Sfx, usaFps, volumeSfx } from './comune';
 import { Keyword, Piano, W } from './piano';
 
 // Stile "Cinematico" (dai 3 esempi di Denis, 18/10): spot di prodotto, immagini calde con
@@ -104,6 +104,7 @@ const Titolo: React.FC<{ k: Keyword; len: number }> = ({ k, len }) => {
 };
 
 export const Cinematico: React.FC<Piano> = (piano) => {
+  usaFps(piano);
   const sfx = volumeSfx(piano);
   const titoli = piano.keywords;
   const gruppi = gruppiParole(piano.parole, titoli);

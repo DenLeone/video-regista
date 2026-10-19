@@ -2,8 +2,9 @@
 // esegue (tempi esatti). L'AI non fa mai conti sui tempi: sceglie cosa dire e
 // cosa mostrare, i secondi li calcola questo file.
 
-const FPS = 30;
-const q = (s) => +(Math.round(s * FPS) / FPS).toFixed(4); // tempi allineati ai fotogrammi
+// tempi allineati ai fotogrammi del video (analisi.fps: quelli della camera principale, 30 se manca)
+let fpsRegia = 30;
+const q = (s) => +(Math.round(s * fpsRegia) / fpsRegia).toFixed(4);
 
 export const normFrase = (id) => {
   const m = /(\d+)/.exec(String(id || ''));
@@ -21,6 +22,7 @@ export function offsetCamera(c, f) {
 }
 
 export function risolviRegia(regia, analisi) {
+  fpsRegia = analisi.fps || 30;
   const avvisi = [];
   const sorgenti = analisi.sorgenti;
   const trovaSorgente = (nome) => sorgenti.find((s) => baseNome(s.id) === baseNome(nome) || baseNome(s.file) === baseNome(nome));

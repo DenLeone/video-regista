@@ -5,13 +5,14 @@ import { BlueprintFrame } from './components/BlueprintFrame';
 import { BlueprintIntroSheet } from './components/BlueprintIntroSheet';
 import { BlueprintKeyword } from './components/BlueprintKeyword';
 import { BlueprintTitleBlock } from './components/BlueprintTitleBlock';
-import { Clips, f, Inserti, Sfx, volumeSfx } from './comune';
+import { Clips, f, Inserti, Sfx, usaFps, volumeSfx } from './comune';
 import { durataTotale, Piano } from './piano';
 
 // Effetti sonori sincronizzati con la grafica, volumi relativi tra loro
 const SFX = { riser: 0.75, ui_in: 0.45, ui_conferma: 0.55, glitch: 0.5, strappo: 0.6 } as const;
 
 export const Blueprint: React.FC<Piano> = (piano) => {
+  usaFps(piano);
   const totale = f(durataTotale(piano));
   const sfx = volumeSfx(piano);
 

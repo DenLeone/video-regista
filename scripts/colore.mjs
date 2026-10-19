@@ -135,26 +135,34 @@ export function misuraPezzo(file, start, dur, filtroTec) {
   return { nero: percentile(tutto, 0.02), bianco: percentile(tutto, 0.985), medio: percentile(centro, 0.5), medioTutto: percentile(tutto, 0.5) };
 }
 
-// curva di correzione (punti per il filtro curves di ffmpeg) o null se il pezzo va già bene
-export function curvaEsposizione(m, obiettivo = 0.45) {
+// curva di correzione (punti per il filtro curves di ffmpeg) o null se il pezzo va già bene.
+// Il look 12K è scuro di suo (negli esempi metà dell'immagine sta sotto 0,15): la correzione non
+// porta tutto a "esposizione normale" (prima prova: immagini slavate), sistema solo i difetti:
+// neri sollevati (girato piatto, foschia), soggetto davvero sottoesposto, bianchi spenti
+export function curvaEsposizione(m, obiettivo = 0.32) {
   if (!m) return null;
   const punti = [[0, 0]];
-  // neri sollevati (foschia, controluce, residuo del log): giù verso 0,02
-  if (m.nero > 0.06) punti.push([m.nero, Math.max(0.02, m.nero * 0.35)]);
-  // soggetto: 70% della distanza dall'obiettivo, solo se è davvero fuori (tra 0,36 e 0,6 si lascia)
+  // neri sollevati: giù, quasi a zero
+  if (m.nero > 0.03) punti.push([m.nero, m.nero * 0.3]);
+  // soggetto: solo se sotto 0,2 (al buio) o sopra 0,62 (bruciato), e al 60% della distanza
   let medio = m.medio;
-  if (m.medio < 0.36 || m.medio > 0.6) medio = m.medio + 0.7 * (obiettivo - m.medio);
-  // al massimo ~1 stop in su e mezzo in giù: oltre si vede rumore o si spegne tutto
-  medio = Math.min(m.medio * 1.9, Math.max(m.medio * 0.75, medio));
-  if (Math.abs(medio - m.medio) > 0.015 && m.medio > 0.03 && m.medio < 0.97) punti.push([m.medio, medio]);
-  // bianchi spenti (giornata grigia, I-Log): su, senza bruciare
-  if (m.bianco < 0.82 && m.bianco > m.medio + 0.1) punti.push([m.bianco, Math.min(0.94, m.bianco + 0.6 * (0.94 - m.bianco))]);
+  if (m.medio < 0.2) medio = m.medio + 0.6 * (obiettivo - m.medio);
+  else if (m.medio > 0.62) medio = m.medio + 0.6 * (0.5 - m.medio);
+  medio = Math.min(m.medio * 1.8, Math.max(m.medio * 0.8, medio));
+  if (Math.abs(medio - m.medio) > 0.015 && m.medio > 0.03) {
+    // le ombre restano ferme sotto metà del soggetto: si schiarisce il soggetto, non il buio
+    if (medio > m.medio && m.medio * 0.45 > punti[punti.length - 1][0] + 0.03) punti.push([m.medio * 0.45, m.medio * 0.45]);
+    punti.push([m.medio, medio]);
+  }
+  // bianchi molto spenti (I-Log al buio, controluce sbagliato): un po' su. Non di più: negli esempi
+  // le luci restano sotto 0,9 e alzarle in una scena scura la rende slavata (prova 980, 20/10)
+  if (m.bianco < 0.5 && m.bianco > m.medio + 0.1) punti.push([m.bianco, Math.min(0.75, m.bianco + 0.4 * (0.75 - m.bianco))]);
   punti.push([1, 1]);
   // monotona e con punti distanti: altrimenti la spline di ffmpeg rimbalza
   const buoni = [punti[0]];
   for (const p of punti.slice(1)) {
     const u = buoni[buoni.length - 1];
-    if (p[0] - u[0] >= 0.06 && p[1] > u[1]) buoni.push(p);
+    if (p[0] - u[0] >= 0.03 && p[1] > u[1]) buoni.push(p);
   }
   if (buoni[buoni.length - 1][0] !== 1) buoni[buoni.length - 1] = [1, 1];
   if (buoni.length <= 2) return null;

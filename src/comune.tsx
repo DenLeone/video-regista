@@ -1,10 +1,14 @@
 import React from 'react';
 import { AbsoluteFill, Audio, Easing, Img, interpolate, OffthreadVideo, Sequence, staticFile, useCurrentFrame } from 'remotion';
-import { Clip, durataClip, FPS, Piano } from './piano';
+import { Clip, durataClip, fpsDi, Piano } from './piano';
 
 // Pezzi comuni a tutti gli stili: le clip con la voce, gli effetti sonori.
 
-export const f = (s: number) => Math.round(s * FPS);
+// secondi → fotogrammi agli fps del video. Ogni composizione chiama usaFps(piano) per prima cosa:
+// un render fa una composizione sola, con fps fissi
+let fpsVideo = fpsDi({});
+export const usaFps = (piano: Pick<Piano, 'fps'>) => { fpsVideo = fpsDi(piano); };
+export const f = (s: number) => Math.round(s * fpsVideo);
 
 // micro dissolvenza (2 fotogrammi) a inizio e fine: niente "click" sui tagli
 export const sfuma = (len: number, base = 1) => (fr: number) => base * Math.max(0, Math.min(1, (fr + 1) / 2, (len - fr) / 2));
@@ -70,7 +74,7 @@ export const volumeSfx = (piano: Piano) => (piano.sfx === false ? 0 : Math.max(0
 
 // un effetto sonoro (public/sfx, generati da scripts/genera-sfx.mjs) a partire dal fotogramma `da`
 export const Sfx: React.FC<{ nome: string; da: number; volume: number }> = ({ nome, da, volume }) => (
-  <Sequence from={Math.max(0, da)} durationInFrames={FPS * 2} layout="none">
+  <Sequence from={Math.max(0, da)} durationInFrames={f(2)} layout="none">
     <Audio src={staticFile(`sfx/${nome}.wav`)} volume={volume} />
   </Sequence>
 );
