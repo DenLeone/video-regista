@@ -85,14 +85,20 @@ const GRAFICA = ['nome', 'apertura', 'font apertura', 'colore apertura', 'sottot
 export function leggiStile(testo, nomeCartella) {
   const campi = {};
   const perAI = [];
+  let continua = false; // una riga senza "Chiave:" prosegue il campo di regia sopra
   for (const riga of String(testo || '').split(/\r?\n/)) {
     if (/^\s*#/.test(riga)) continue;
-    const m = /^\s*([^:]{2,40}):\s*(.*)$/.exec(riga);
-    if (!m) { if (riga.trim() && !/^STILE SU MISURA/i.test(riga)) perAI.push(riga.trim()); continue; }
+    const m = /^\s*([^:\d][^:]{1,39}):\s*(.*)$/.exec(riga);
+    if (!m) {
+      if (continua && riga.trim()) perAI[perAI.length - 1] += ` ${riga.trim()}`;
+      else continua = false;
+      continue;
+    }
     const chiave = norm(m[1]);
     const valore = m[2].replace(/\s+#.*$/, '').replace(/\s*\([^)]*\)\s*$/, '').trim();
+    continua = false;
     if (GRAFICA.includes(chiave)) campi[chiave] = valore;
-    else if (valore && !/^per usarlo$/.test(chiave)) perAI.push(`${m[1].trim()}: ${valore}`);
+    else if (valore && !/^per usarlo$/.test(chiave)) { perAI.push(`${m[1].trim()}: ${valore}`); continua = true; }
   }
   const g = structuredClone(BASE);
   g.nome = campi.nome || nomeCartella || BASE.nome;
