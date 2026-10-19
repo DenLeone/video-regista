@@ -774,14 +774,54 @@ function fotogrammiFinale(outFile, durata, piano) {
 }
 
 // anteprima: il fotogramma a metà della prima parola chiave (o a 1/3 del video)
-function anteprima(outFile, piano, durata) {
+// il fotogramma di copertina: a metà della prima parola chiave (o a 1/3 del video); serve anche
+// come copertina del Reel quando si pubblica dal bot
+const tempoCopertina = (piano, durata) => {
   const k = piano.keywords?.[0];
-  const t = k ? Math.min(durata - 0.1, k.at + Math.min(1, k.dur / 2)) : durata / 3;
+  return k ? Math.min(durata - 0.1, k.at + Math.min(1, k.dur / 2)) : durata / 3;
+};
+
+function anteprima(outFile, piano, durata) {
+  const t = tempoCopertina(piano, durata);
   const jpg = path.join(WORK, 'anteprima.jpg');
   try {
     run('ffmpeg', ['-y', '-v', 'error', '-ss', String(t), '-i', outFile, '-frames:v', '1', '-vf', 'scale=540:-2', '-q:v', '4', jpg]);
     return fs.readFileSync(jpg).toString('base64');
   } catch { return undefined; }
+}
+
+// ---------- didascalie per i social (tasto 📤 Pubblica del bot) ----------
+// Una chiamata breve a Gemini sul testo montato: didascalia di Instagram e titolo/descrizione
+// per YouTube, nella voce di Denis. Senza Gemini (o se non risponde) niente didascalie: il bot
+// le fa scrivere a mano prima di pubblicare.
+const PROMPT_DIDASCALIE = `Scrivi i testi per pubblicare questo video verticale di Denis, creator italiano che parla di prodotti e della sua vita.
+Rispondi SOLO con JSON: {"instagram": "...", "youtube_titolo": "...", "youtube_descrizione": "..."}
+
+Regole:
+- Italiano, in prima persona come se scrivesse Denis; mai "Denis" in terza persona.
+- Solo cose dette nel video o scritte nel brief: niente prezzi, dati tecnici o giudizi inventati. Se dà un giudizio, usa le sue parole.
+- instagram: prima riga = gancio breve (massimo 70 caratteri) che fa fermare chi scorre; poi 1–3 righe brevi su cosa si vede e cosa ne pensa; poi una riga vuota e 4–6 hashtag pertinenti (soprattutto italiani). Al massimo 3 emoji. Niente link, niente "link in bio".
+- Se il brief parla di sponsor o collaborazione pagata: "#adv" all'inizio della prima riga.
+- youtube_titolo: massimo 70 caratteri, chiaro e cercabile (prodotto + cosa succede), senza hashtag.
+- youtube_descrizione: 2–3 righe, poi 3 hashtag tra cui #shorts.`;
+
+async function scriviDidascalie({ titolo, testo, brief, keywords }) {
+  if (!process.env.GEMINI_API_KEY || !testo) return null;
+  const headers = { 'content-type': 'application/json', 'x-goog-api-key': process.env.GEMINI_API_KEY };
+  const dati = [`Titolo del video: ${titolo}`, `Testo detto nel video (montato): ${testo}`, `Scritte a schermo: ${keywords.join(' · ') || '—'}`, `Brief: ${brief || '—'}`].join('\n');
+  const body = JSON.stringify({ contents: [{ role: 'user', parts: [{ text: `${PROMPT_DIDASCALIE}\n\n${dati}` }] }], generationConfig: { responseMimeType: 'application/json', temperature: 0.7 } });
+  for (const modello of await modelliGemini(headers)) {
+    const esito = await chiamaGemini(modello, body, headers);
+    if (!esito.risposta) { log(`didascalie: ${modello} ${esito.motivo}`); continue; }
+    try {
+      const j = await esito.risposta.json();
+      const d = JSON.parse((j.candidates?.[0]?.content?.parts || []).map((x) => x.text || '').join('').replace(/^```(?:json)?\s*|\s*```$/g, ''));
+      const testoDi = (x, max) => String(x || '').trim().slice(0, max);
+      const out = { instagram: testoDi(d.instagram, 2200), youtube_titolo: testoDi(d.youtube_titolo, 100), youtube_descrizione: testoDi(d.youtube_descrizione, 4000) };
+      if (out.instagram) return out;
+    } catch (e) { log(`didascalie: risposta di ${modello} non usabile`, e.message); }
+  }
+  return null;
 }
 
 // comando lungo in parallelo al resto (es. copia degli originali su Drive)
@@ -1225,11 +1265,26 @@ async function main() {
     if (vai) rclone('moveto', remote(SRC_DIR, nome, vai), remote(SRC_DIR, nome, vaiUsato));
     if (SRC_DIR === IN_DIR && !DA_TELEGRAM) rclone('moveto', remote(IN_DIR, nome), remote(OUT_DIR, nome));
 
+    // per il tasto 📤 Pubblica: didascalie (con 🎨 Solo render quelle già scritte) e ID del file su Drive
+    let didascalie = null;
+    try {
+      const salvate = path.join(WORK, 'cache', 'didascalie.json');
+      didascalie = RIRENDER && fs.existsSync(salvate) ? JSON.parse(fs.readFileSync(salvate, 'utf8'))
+        : await scriviDidascalie({ titolo: piano.titolo || nome, testo: piano.testo, brief, keywords: piano.keywords.map((k) => k.word) });
+      if (didascalie) {
+        fs.writeFileSync(path.join(WORK, 'didascalie.json'), JSON.stringify(didascalie, null, 1));
+        rclone('copyto', path.join(WORK, 'didascalie.json'), remote(OUT_DIR, nome, CACHE, 'didascalie.json'));
+      }
+    } catch (e) { log('didascalie non scritte', e.message); }
+    let fileId = null;
+    try { fileId = JSON.parse(run('rclone', ['lsjson', remote(OUT_DIR, nome, finale)]))[0]?.ID || null; } catch (e) { log('ID del video su Drive non trovato', e.message); }
+
     // dati per la scheda del bot
     const info = {
       file: finale, durata: +durataN.toFixed(1), tagli: piano.clips.length, sorgenti: camereUsate, voce: voci,
       keywords: piano.keywords.map((k) => k.word), note: piano.note || '', ai: consumi.ai,
       minuti: Math.round((Date.now() - T0) / 60000), correzione: CORREZIONE || '', versione: VERSIONE, stile: nomeStile,
+      ...(fileId ? { pubblica: { fileId, didascalia: didascalie?.instagram || '', copertina: Math.round(tempoCopertina(piano, durataN) * 1000), youtube: didascalie ? { titolo: didascalie.youtube_titolo, descrizione: didascalie.youtube_descrizione } : null } } : {}),
     };
     // anteprima: prima provo il video in chat, se non passa mando la foto
     const inviato = await inviaVideo(outFile, nome, note, durataN, info);
@@ -1281,4 +1336,4 @@ async function inviaVideo(outFile, nome, testo, durata, info) {
 
 // avviato come script (non importato dai test)
 if (process.argv[1] && path.resolve(process.argv[1]) === path.resolve(ROOT, 'scripts', 'regista.mjs')) main();
-export { fogliProvino, chiediRegia, rigaConsumi, tagliaSegmenti, WORK, MEDIA, SCARICO };
+export { fogliProvino, chiediRegia, rigaConsumi, tagliaSegmenti, scriviDidascalie, WORK, MEDIA, SCARICO };
