@@ -87,6 +87,27 @@ function dataRipresa(tags, nome) {
   return m ? Date.UTC(+m[1], +m[2] - 1, +m[3]) : null;
 }
 
+// brief del giro: brief.txt + quello dal bot + (correzione / solo render) quello del giro prima.
+// Senza doppioni e con una sola riga "Dal telegram": prima ogni rifacimento riaccodava il brief
+// vecchio al nuovo (30 righe "Stile: …" ripetute dopo una decina di prove). Quella del bot è sempre
+// la più recente; senza, vale l'ultima del giro prima (la prima riga "Dal telegram" salvata).
+export function unisciBrief(briefFile = '', extra = '', briefPrima = '') {
+  const righe = [];
+  const visti = new Set();
+  const aggiungi = (r) => {
+    const t = String(r).trim();
+    const k = t.toLowerCase().replace(/\s+/g, ' ');
+    if (t && !visti.has(k)) { visti.add(k); righe.push(t); }
+  };
+  String(briefFile || '').split('\n').forEach(aggiungi);
+  let telegram = String(extra || '').trim() ? `Dal telegram: ${String(extra).trim()}` : null;
+  for (const r of String(briefPrima || '').split('\n')) {
+    if (/^dal telegram:/i.test(r.trim())) { if (!telegram) telegram = r.trim(); } else aggiungi(r);
+  }
+  if (telegram) aggiungi(telegram);
+  return righe.join('\n');
+}
+
 // ---------- 1. trova la cartella da fare ----------
 // video da Telegram: la cartella non esiste ancora, scelgo un nome libero in 97 e 98
 function nomeLibero(richiesto) {
@@ -1315,8 +1336,7 @@ async function main() {
     await fase(nome, '🎞️ Analizzo il girato (audio, sincronizzazione, trascrizione, fogli provino)', 'prepara');
 
     const briefFile = fs.existsSync(path.join(SCARICO, 'brief.txt')) ? fs.readFileSync(path.join(SCARICO, 'brief.txt'), 'utf8') : '';
-    const brief = [briefFile, process.env.BRIEF_EXTRA ? `Dal telegram: ${process.env.BRIEF_EXTRA}` : '', cache?.brief && (CORREZIONE || RIRENDER) ? cache.brief : '']
-      .filter(Boolean).join('\n');
+    const brief = unisciBrief(briefFile, process.env.BRIEF_EXTRA, CORREZIONE || RIRENDER ? cache?.brief : '');
     const analisi = await analizza(nome, brief, cache);
     const { immagini, foglio: foglioImmagini } = preparaImmagini(analisi.foto || []);
     analisi.immagini = immagini;

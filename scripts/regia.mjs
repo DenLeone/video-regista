@@ -403,7 +403,11 @@ export function segniFrasi(frasi) {
 export function materialePerAI(analisi) {
   const r = [];
   r.push(`# Materiale: ${analisi.cartella}`);
-  r.push(`Brief di Denis: ${analisi.brief ? `\n${analisi.brief}` : '(nessuno)'}`);
+  // le righe "Stile: …" non servono all'AI (lo stile scelto è già nella sezione Grafica) e con un
+  // brief.txt diverso dalla scelta fatta nel bot si contraddirebbero
+  const brief = String(analisi.brief || '').split('\n').map((x) => x.replace(/^(dal telegram:\s*)?stile\s*:\s*[^.\n]*\.?\s*/i, '$1').trim())
+    .filter((x) => x && !/^dal telegram:$/i.test(x)).join('\n');
+  r.push(`Brief di Denis: ${brief ? `\n${brief}` : '(nessuno)'}`);
   r.push('', '## Sorgenti');
   const frasiDi = (id) => analisi.frasi.filter((f) => f.principale === id);
   const segni = segniFrasi(analisi.frasi);
