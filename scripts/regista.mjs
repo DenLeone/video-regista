@@ -31,6 +31,9 @@ const IN_DIR = '97 - Editare';
 const OUT_DIR = '98 - Fatti';
 const CORREZIONE = (process.env.CORREZIONE || '').trim();
 const RIRENDER = process.env.AZIONE === 'render'; // rifà solo il render con la regia salvata (origine 98)
+// render di prova (input "secondi"): solo i primi N secondi del montaggio, per provare look e
+// grafica di uno stile in pochi minuti; esce come "<nome> - PROVA Ns.mp4", senza didascalie
+const PROVA_SECONDI = Math.max(0, Number(process.env.PROVA_SECONDI) || 0);
 // file mandati direttamente al bot: [{"m": id_messaggio, "n": "nome.mov"}, ...]
 const TELEGRAM_FILE = (process.env.TELEGRAM_FILE || '').trim();
 const DA_TELEGRAM = Boolean(TELEGRAM_FILE && TELEGRAM_FILE !== '[]');
@@ -210,6 +213,21 @@ function taglia(s, start, dur, out, conAudio, senzaLook = false) {
     '-vf', `scale='if(gt(iw,ih),1920,1080)':-2,${senzaLook ? filtroTecnico(s.colore) : filtroColore(s.colore)}`,
     '-c:v', 'libx264', '-preset', 'veryfast', '-crf', '16', '-pix_fmt', 'yuv420p',
     ...(conAudio ? ['-c:a', 'aac', '-b:a', '160k'] : ['-an']), '-movflags', '+faststart', out]);
+}
+
+function troncaPiano(piano, secondi) {
+  let t = 0;
+  const clips = [];
+  for (const c of piano.clips) {
+    if (t >= secondi - 0.05) break;
+    const dur = c.end - c.start, resta = secondi - t;
+    clips.push(dur > resta ? { ...c, end: +(c.start + resta).toFixed(3) } : c);
+    t += Math.min(dur, resta);
+  }
+  piano.clips = clips;
+  piano.keywords = piano.keywords.filter((k) => k.at < t - 0.3).map((k) => ({ ...k, dur: +Math.min(k.dur, t - k.at).toFixed(3) }));
+  piano.parole = (piano.parole || []).filter((w) => w.at < t);
+  piano.flickers = (piano.flickers || []).filter((f) => f.at < t);
 }
 
 function tagliaSegmenti(piano, analisi) {
@@ -1092,9 +1110,21 @@ async function analizzaEsempi() {
     // tutto il video: 24 fotogrammi; l'apertura: i primi 6 s, un fotogramma ogni 0,5 s a risoluzione piena
     run('ffmpeg', ['-y', '-v', 'error', '-i', v, '-vf', `fps=${(24 / Math.max(1, info.durata)).toFixed(4)},scale=216:-2,tile=6x4`, '-frames:v', '1', '-q:v', '4', path.join(out, `${base}-tutto.jpg`)]);
     run('ffmpeg', ['-y', '-v', 'error', '-t', '6', '-i', v, '-vf', 'fps=2,scale=360:-2,tile=6x2', '-frames:v', '1', '-q:v', '4', path.join(out, `${base}-apertura.jpg`)]);
-    // dettaglio a metà video (scritte, inserti) a piena risoluzione
-    for (const q of [0.3, 0.5, 0.7]) run('ffmpeg', ['-y', '-v', 'error', '-ss', (info.durata * q).toFixed(2), '-i', v, '-frames:v', '1', '-vf', 'scale=540:-2', '-q:v', '3', path.join(out, `${base}-${Math.round(q * 100)}.jpg`)]);
-    righe.push(`${base}: ${path.basename(v)} · ${info.durata.toFixed(1)} s · ${info.w}x${info.h}${info.audio ? ' · audio' : ''}`);
+    // fotogrammi singoli lungo il video (scritte, inserti, colore) e un ritaglio al centro a
+    // risoluzione nativa (nitidezza, grana: stili "di qualità" come 12K Quality, 19/10)
+    for (const q of [0.15, 0.3, 0.5, 0.7, 0.85]) run('ffmpeg', ['-y', '-v', 'error', '-ss', (info.durata * q).toFixed(2), '-i', v, '-frames:v', '1', '-vf', 'scale=540:-2', '-q:v', '2', path.join(out, `${base}-${Math.round(q * 100)}.jpg`)]);
+    run('ffmpeg', ['-y', '-v', 'error', '-ss', (info.durata * 0.5).toFixed(2), '-i', v, '-frames:v', '1', '-vf', 'crop=min(iw\\,720):min(ih\\,720)', '-q:v', '2', path.join(out, `${base}-dettaglio.jpg`)]);
+    // ritmo: cambi di inquadratura (scene change) e durata media delle inquadrature
+    let tagli = [];
+    try {
+      const tmp = path.join(WORK, 'tagli.txt');
+      fs.rmSync(tmp, { force: true });
+      run('ffmpeg', ['-y', '-v', 'error', '-i', v, '-vf', `scale=320:-2,select='gt(scene,0.3)',metadata=print:file='${perFiltro(tmp)}'`, '-an', '-f', 'null', '-']);
+      tagli = [...fs.readFileSync(tmp, 'utf8').matchAll(/pts_time:([\d.]+)/g)].map((m) => Number(m[1]));
+    } catch (e) { log('tagli non rilevati', e.message); }
+    const c = probe(v).colore || {};
+    righe.push(`${base}: ${path.basename(v)} · ${info.durata.toFixed(1)} s · ${info.w}x${info.h} · ${c.pix || '?'} ${c.trc || ''}${info.audio ? ' · audio' : ''}`
+      + ` · ${tagli.length} tagli (inquadratura media ${(info.durata / (tagli.length + 1)).toFixed(2)} s): ${tagli.map((t) => t.toFixed(1)).join(' ')}`);
   }
   fs.writeFileSync(path.join(out, 'indice.txt'), righe.join('\n'));
   rclone('copy', out, remote(DIR_STILI, nome, 'esempi', '_analisi'));
@@ -1224,6 +1254,7 @@ async function main() {
     const durataPiano = piano.clips.reduce((s, c) => s + (c.end - c.start), 0);
     const camereUsate = new Set(piano.clips.map((c) => c.file)).size;
     await fase(nome, `🎬 Render: ${durataPiano.toFixed(0)} s, ${piano.clips.length} tagli da ${camereUsate} sorgenti, ${piano.keywords.length} parole chiave`, 'render');
+    if (PROVA_SECONDI) { troncaPiano(piano, PROVA_SECONDI); log(`render di prova: primi ${PROVA_SECONDI} s (${piano.clips.length} tagli)`); }
     // solo adesso si ricodificano i pezzi scelti, poi gli originali non servono più
     tagliaSegmenti(piano, analisi);
     await ritagliPersona(piano);
@@ -1237,7 +1268,7 @@ async function main() {
 
     // nome con versione: FINALE, FINALE v2, FINALE v3...
     const versioni = files.filter((f) => /FINALE( v\d+)?\.mp4$/i.test(f.Name)).length;
-    const finale = `${nome} - FINALE${versioni ? ` v${versioni + 1}` : ''}.mp4`;
+    const finale = PROVA_SECONDI ? `${nome} - PROVA ${PROVA_SECONDI}s ${nomeStile}.mp4` : `${nome} - FINALE${versioni ? ` v${versioni + 1}` : ''}.mp4`;
     const outFile = path.join(ROOT, 'out', finale);
     fs.mkdirSync(path.dirname(outFile), { recursive: true });
     renderizza(outFile, stile);
@@ -1267,7 +1298,7 @@ async function main() {
 
     // per il tasto 📤 Pubblica: didascalie (con 🎨 Solo render quelle già scritte) e ID del file su Drive
     let didascalie = null;
-    try {
+    if (!PROVA_SECONDI) try {
       const salvate = path.join(WORK, 'cache', 'didascalie.json');
       didascalie = RIRENDER && fs.existsSync(salvate) ? JSON.parse(fs.readFileSync(salvate, 'utf8'))
         : await scriviDidascalie({ titolo: piano.titolo || nome, testo: piano.testo, brief, keywords: piano.keywords.map((k) => k.word) });
@@ -1277,7 +1308,7 @@ async function main() {
       }
     } catch (e) { log('didascalie non scritte', e.message); }
     let fileId = null;
-    try { fileId = JSON.parse(run('rclone', ['lsjson', remote(OUT_DIR, nome, finale)]))[0]?.ID || null; } catch (e) { log('ID del video su Drive non trovato', e.message); }
+    if (!PROVA_SECONDI) try { fileId = JSON.parse(run('rclone', ['lsjson', remote(OUT_DIR, nome, finale)]))[0]?.ID || null; } catch (e) { log('ID del video su Drive non trovato', e.message); }
 
     // dati per la scheda del bot
     const info = {

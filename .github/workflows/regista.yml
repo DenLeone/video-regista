@@ -43,6 +43,10 @@ on:
         description: 'File mandati al bot (JSON [{"m": id_messaggio, "n": nome}]): originali in 97/<cartella>, risultato in 98/<cartella>'
         required: false
         default: ''
+      secondi:
+        description: 'Render di prova: solo i primi N secondi del montaggio (vuoto = tutto)'
+        required: false
+        default: ''
 
 # Una coda PER CARTELLA: GitHub tiene un solo giro "in attesa" per gruppo e scarta
 # quelli in attesa più vecchi. Con un gruppo unico, tre avvii di fila ne perdevano uno.
@@ -177,6 +181,7 @@ jobs:
           ORIGINE: ${{ inputs.origine }}
           CORREZIONE: ${{ inputs.correzione }}
           AZIONE: ${{ inputs.azione }}
+          PROVA_SECONDI: ${{ inputs.secondi }}
         run: node scripts/regista.mjs
 
       - name: Conserva piano e note (debug)
