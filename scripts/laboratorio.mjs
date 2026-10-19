@@ -15,7 +15,7 @@
 // I fotogrammi escono già convertiti come nel montaggio (HDR → SDR, I-Log → Rec709): "<n>-base.jpg"
 // è il punto di partenza del look, "<n>-<variante>.jpg" il risultato.
 
-import { execFileSync, spawn } from 'node:child_process';
+import { execFile, execFileSync, spawn } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
 import { filtroTecnico, probe, riconosciLog } from './colore.mjs';
@@ -29,12 +29,23 @@ const FONT = '/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf';
 
 const log = (...a) => console.log('[lab]', ...a);
 const run = (cmd, args, opts = {}) => String(execFileSync(cmd, args, { stdio: ['ignore', 'pipe', 'inherit'], maxBuffer: 1 << 28, ...opts }) ?? '');
+// versione asincrona: i fotogrammi di una striscia si estraggono insieme (ogni salto è una richiesta a Drive)
+const runA = (cmd, args) => new Promise((ok, ko) => execFile(cmd, args, { maxBuffer: 1 << 26 }, (e, out, err) => (e ? ko(new Error(`${e.message}\n${err}`)) : ok(out))));
+// a gruppi di n alla volta
+async function aGruppi(voci, n, fn) {
+  const coda = [...voci];
+  await Promise.all(Array.from({ length: n }, async () => { while (coda.length) await fn(coda.shift()); }));
+}
+let uscitaDrive = null;
+const carica = () => { if (uscitaDrive) run('rclone', ['copy', OUT, `${REMOTE}:${uscitaDrive}`, '--exclude', 'tmp/**']); };
 const url = (p) => `http://127.0.0.1:${PORTA}/${p.split('/').map(encodeURIComponent).join('/')}`;
 const pulito = (t) => String(t).replace(/[^\w.-]+/g, '_').slice(0, 60);
 const testo = (t) => String(t).replace(/[\\':%,]/g, ' ');
 
 async function avviaServer() {
-  const srv = spawn('rclone', ['serve', 'http', `${REMOTE}:`, '--addr', `127.0.0.1:${PORTA}`, '--read-only', '--no-modtime', '--dir-cache-time', '1h'],
+  // buffer piccolo: per un fotogramma servono pochi MB, i 16 MB di lettura anticipata di default rallentano ogni salto
+  const srv = spawn('rclone', ['serve', 'http', `${REMOTE}:`, '--addr', `127.0.0.1:${PORTA}`, '--read-only', '--no-modtime', '--dir-cache-time', '1h',
+    '--buffer-size', '2M', '--vfs-read-chunk-size', '4M', '--vfs-read-chunk-size-limit', '64M'],
     { stdio: ['ignore', 'ignore', 'inherit'] });
   for (let i = 0; i < 60; i++) {
     try { if ((await fetch(`http://127.0.0.1:${PORTA}/`)).ok) return srv; } catch { /* non ancora pronto */ }
@@ -60,13 +71,12 @@ function sorgente(file) {
 }
 
 // un fotogramma al tempo t, convertito, alla misura del montaggio (verticale 1080, orizzontale 1920)
-function fotogramma(s, t, out, extra = '') {
-  const scala = "scale='if(gt(iw,ih),1920,1080)':-2:flags=lanczos";
-  run('ffmpeg', ['-y', '-v', 'error', '-ss', Math.max(0, t).toFixed(3), '-i', s.u, '-frames:v', '1',
-    '-vf', `${scala},${s.tecnico.replace(/,?format=yuv420p$/, '') || 'null'}${extra ? `,${extra}` : ''}`, '-q:v', '2', out]);
-}
+const argsFotogramma = (s, t, out, extra = '') => ['-y', '-v', 'error', '-ss', Math.max(0, t).toFixed(3), '-i', s.u, '-frames:v', '1',
+  '-vf', `scale='if(gt(iw,ih),1920,1080)':-2:flags=lanczos,${s.tecnico.replace(/,?format=yuv420p$/, '') || 'null'}${extra ? `,${extra}` : ''}`, '-q:v', '2', out];
+const fotogramma = (s, t, out, extra) => run('ffmpeg', argsFotogramma(s, t, out, extra));
+const fotogrammaA = (s, t, out, extra) => runA('ffmpeg', argsFotogramma(s, t, out, extra));
 
-function catalogo(ric) {
+async function catalogo(ric) {
   const { cartelle = [], max = 8 } = ric.catalogo;
   const righe = [];
   for (const cartella of cartelle) {
@@ -76,38 +86,38 @@ function catalogo(ric) {
         .filter((f) => VIDEO_EXT.includes(path.extname(f.Name).toLowerCase()) && !/FINALE|PROVA \d+s|^_/i.test(f.Name) && !/(^|\/)_/.test(f.Path))
         .sort((a, b) => b.Size - a.Size).slice(0, max);
     } catch (e) { righe.push(`${cartella}: non letta (${e.message.split('\n')[0]})`); continue; }
-    const strisce = [];
-    for (const f of files) {
+    const strisce = new Map();
+    await aGruppi(files, 3, async (f) => {
       const file = `${cartella}/${f.Path}`;
       try {
         const s = sorgente(file);
         righe.push(`${s.riga} · ${(f.Size / 1e6).toFixed(0)} MB`);
         const n = `${pulito(path.basename(cartella))}-${pulito(path.parse(f.Name).name)}`;
-        // striscia di 6 fotogrammi, ognuno dentro un quadrato 200x200
-        const tmp = [];
-        for (let k = 0; k < 6; k++) {
-          const o = path.join(OUT, 'tmp', `${n}-${k}.jpg`);
-          fotogramma(s, s.info.durata * (k + 0.5) / 6, o, 'scale=200:200:force_original_aspect_ratio=decrease,pad=200:200:(ow-iw)/2:(oh-ih)/2');
-          tmp.push(o);
-        }
+        // striscia di 6 fotogrammi, ognuno dentro un quadrato 200x200, più uno grande a metà
+        // (punto di partenza per le prove del look)
+        const tmp = Array.from({ length: 6 }, (_, k) => path.join(OUT, 'tmp', `${n}-${k}.jpg`));
+        await Promise.all([
+          ...tmp.map((o, k) => fotogrammaA(s, s.info.durata * (k + 0.5) / 6, o, 'scale=200:200:force_original_aspect_ratio=decrease,pad=200:200:(ow-iw)/2:(oh-ih)/2')),
+          fotogrammaA(s, s.info.durata / 2, path.join(OUT, `${n}-meta.jpg`)),
+        ]);
         const striscia = path.join(OUT, 'tmp', `${n}-striscia.jpg`);
-        run('ffmpeg', ['-y', '-v', 'error', ...tmp.flatMap((o) => ['-i', o]), '-filter_complex',
+        await runA('ffmpeg', ['-y', '-v', 'error', ...tmp.flatMap((o) => ['-i', o]), '-filter_complex',
           `${tmp.map((_, k) => `[${k}]`).join('')}hstack=${tmp.length},pad=iw:ih+28:0:28:black,drawtext=fontfile=${FONT}:text='${testo(s.riga.replace(`${cartella}/`, ''))}':x=6:y=6:fontsize=16:fontcolor=white`,
           '-q:v', '3', striscia]);
-        strisce.push(striscia);
-        // un fotogramma grande a metà: punto di partenza per le prove del look
-        fotogramma(s, s.info.durata / 2, path.join(OUT, `${n}-meta.jpg`));
+        strisce.set(f.Path, striscia);
       } catch (e) { righe.push(`${file}: errore ${e.message.split('\n')[0]}`); }
-    }
-    for (let i = 0; i < strisce.length; i += 10) {
-      const parte = strisce.slice(i, i + 10);
+    });
+    const ordinate = files.map((f) => strisce.get(f.Path)).filter(Boolean);
+    for (let i = 0; i < ordinate.length; i += 10) {
+      const parte = ordinate.slice(i, i + 10);
       run('ffmpeg', ['-y', '-v', 'error', ...parte.flatMap((o) => ['-i', o]), '-filter_complex',
         parte.length > 1 ? `${parte.map((_, k) => `[${k}]`).join('')}vstack=${parte.length}` : 'null', '-q:v', '3',
         path.join(OUT, `catalogo-${pulito(path.basename(cartella))}-${i / 10 + 1}.jpg`)]);
     }
+    fs.writeFileSync(path.join(OUT, 'catalogo.txt'), `${righe.join('\n')}\n`);
+    carica();
+    log(`${cartella}: ${ordinate.length} video`);
   }
-  fs.writeFileSync(path.join(OUT, 'catalogo.txt'), `${righe.join('\n')}\n`);
-  log(`catalogo: ${righe.length} righe`);
 }
 
 function fotogrammiEVarianti(ric) {
@@ -158,10 +168,11 @@ async function main() {
   if (!ric.uscita) throw new Error('la ricetta non dice dove mettere i risultati (uscita)');
   fs.rmSync(OUT, { recursive: true, force: true });
   fs.mkdirSync(path.join(OUT, 'tmp'), { recursive: true });
+  uscitaDrive = ric.uscita;
   const srv = await avviaServer();
   try {
-    if (ric.catalogo) catalogo(ric);
-    if (ric.fotogrammi) fotogrammiEVarianti(ric);
+    if (ric.fotogrammi) { fotogrammiEVarianti(ric); carica(); }
+    if (ric.catalogo) await catalogo(ric);
     if (ric.clip) clip(ric);
   } finally {
     srv.kill();
@@ -169,7 +180,7 @@ async function main() {
   fs.rmSync(path.join(OUT, 'tmp'), { recursive: true, force: true });
   const elenco = [...sorgenti.values()].map((s) => s.riga).join('\n');
   if (elenco) fs.writeFileSync(path.join(OUT, 'sorgenti.txt'), `${elenco}\n`);
-  run('rclone', ['copy', OUT, `${REMOTE}:${ric.uscita}`], { stdio: 'inherit' });
+  carica();
   log(`risultati in ${ric.uscita}: ${fs.readdirSync(OUT).length} file`);
 }
 

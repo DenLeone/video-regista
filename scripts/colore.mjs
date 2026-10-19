@@ -90,3 +90,73 @@ export function riconosciLog(src, info, disp, brief = '', tmpDir) {
   }
   return { iLog: true, riconosciuto, sat, luce, scuro: luce !== null && luce < 0.12 };
 }
+
+// ---------- 12K Quality: esposizione adattata a ogni pezzo ----------
+// La LUT del look (lut/12k.cube) si aspetta un'immagine "normale": soggetto a metà luce, neri
+// veri, bianchi pieni. Il girato di Denis va dal controluce nuvoloso (Giacca autunnale, I-Log
+// scuro) alla scrivania con le luci RGB (980): la v1 scuriva tutto allo stesso modo e i volti
+// finivano nel buio. Qui si misura ogni pezzo (già convertito) e si corregge con una curva:
+// centro dell'inquadratura (dove sta il soggetto) verso 0,45, neri sollevati giù, bianchi spenti su.
+
+// luma 0–1 di un fotogramma rimpicciolito: { tutto: [...], centro: [...] } ordinati
+function lumaFotogramma(file, t, filtro) {
+  const w = 96, h = 170;
+  const buf = execFileSync('ffmpeg', ['-v', 'error', '-ss', Math.max(0, t).toFixed(3), '-i', file, '-frames:v', '1',
+    '-vf', `scale=${w}:${h}:flags=area,${filtro || 'null'},format=gray`, '-f', 'rawvideo', '-'], { maxBuffer: 1 << 24, stdio: ['ignore', 'pipe', 'ignore'] });
+  if (buf.length < w * h) return null;
+  const tutto = [], centro = [];
+  for (let y = 0; y < h; y++) {
+    for (let x = 0; x < w; x++) {
+      // il segnale è a gamma limitata (16–235)
+      const v = Math.min(1, Math.max(0, (buf[y * w + x] - 16) / 219));
+      tutto.push(v);
+      // ellisse centrale un po' alta: dove stanno volto e prodotto nei verticali
+      const dx = (x - w / 2) / (w * 0.32), dy = (y - h * 0.45) / (h * 0.3);
+      if (dx * dx + dy * dy <= 1) centro.push(v);
+    }
+  }
+  return { tutto, centro };
+}
+
+const percentile = (ordinati, p) => ordinati[Math.min(ordinati.length - 1, Math.max(0, Math.round(p * (ordinati.length - 1))))];
+
+// misura di un pezzo [start, start+dur] dopo la conversione tecnica
+export function misuraPezzo(file, start, dur, filtroTec) {
+  const tutto = [], centro = [];
+  for (const q of [0.2, 0.5, 0.8]) {
+    try {
+      const m = lumaFotogramma(file, start + dur * q, filtroTec.replace(/,?format=yuv420p$/, ''));
+      if (m) { tutto.push(...m.tutto); centro.push(...m.centro); }
+    } catch { /* fotogramma illeggibile: si usa il resto */ }
+  }
+  if (tutto.length < 100) return null;
+  tutto.sort((a, b) => a - b);
+  centro.sort((a, b) => a - b);
+  return { nero: percentile(tutto, 0.02), bianco: percentile(tutto, 0.985), medio: percentile(centro, 0.5), medioTutto: percentile(tutto, 0.5) };
+}
+
+// curva di correzione (punti per il filtro curves di ffmpeg) o null se il pezzo va già bene
+export function curvaEsposizione(m, obiettivo = 0.45) {
+  if (!m) return null;
+  const punti = [[0, 0]];
+  // neri sollevati (foschia, controluce, residuo del log): giù verso 0,02
+  if (m.nero > 0.06) punti.push([m.nero, Math.max(0.02, m.nero * 0.35)]);
+  // soggetto: 70% della distanza dall'obiettivo, solo se è davvero fuori (tra 0,36 e 0,6 si lascia)
+  let medio = m.medio;
+  if (m.medio < 0.36 || m.medio > 0.6) medio = m.medio + 0.7 * (obiettivo - m.medio);
+  // al massimo ~1 stop in su e mezzo in giù: oltre si vede rumore o si spegne tutto
+  medio = Math.min(m.medio * 1.9, Math.max(m.medio * 0.75, medio));
+  if (Math.abs(medio - m.medio) > 0.015 && m.medio > 0.03 && m.medio < 0.97) punti.push([m.medio, medio]);
+  // bianchi spenti (giornata grigia, I-Log): su, senza bruciare
+  if (m.bianco < 0.82 && m.bianco > m.medio + 0.1) punti.push([m.bianco, Math.min(0.94, m.bianco + 0.6 * (0.94 - m.bianco))]);
+  punti.push([1, 1]);
+  // monotona e con punti distanti: altrimenti la spline di ffmpeg rimbalza
+  const buoni = [punti[0]];
+  for (const p of punti.slice(1)) {
+    const u = buoni[buoni.length - 1];
+    if (p[0] - u[0] >= 0.06 && p[1] > u[1]) buoni.push(p);
+  }
+  if (buoni[buoni.length - 1][0] !== 1) buoni[buoni.length - 1] = [1, 1];
+  if (buoni.length <= 2) return null;
+  return buoni.map(([x, y]) => `${x.toFixed(3)}/${y.toFixed(3)}`).join(' ');
+}
