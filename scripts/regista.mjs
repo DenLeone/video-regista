@@ -781,7 +781,9 @@ async function invia(payload) {
       method: 'POST', headers: { 'content-type': 'application/json', 'x-regista-token': process.env.NOTIFY_TOKEN || '' },
       // richiesto = nome chiesto dal bot (la cartella può essere diventata "Nome (2)"): serve ad agganciare la scheda
       // tgFile: ci sono le chiavi per scaricare i video mandati in chat (il bot avvisa se mancano)
-      body: JSON.stringify({ run_url: RUN_URL, run_id: process.env.GITHUB_RUN_ID, origine: SRC_DIR === OUT_DIR ? '98' : '97', richiesto: process.env.CARTELLA || '', tgFile: CHIAVI_TELEGRAM, ...payload }),
+      // azione e prova: il bot sceglie la scheda giusta (video, render di prova, esempi, prova regia)
+      body: JSON.stringify({ run_url: RUN_URL, run_id: process.env.GITHUB_RUN_ID, origine: SRC_DIR === OUT_DIR ? '98' : '97', richiesto: process.env.CARTELLA || '', tgFile: CHIAVI_TELEGRAM,
+        azione: process.env.AZIONE || 'monta', ...(PROVA_SECONDI ? { prova: PROVA_SECONDI } : {}), ...payload }),
     });
   } catch (e) { log('notifica fallita', e.message); }
 }
@@ -1118,7 +1120,7 @@ async function provaRegia() {
     rclone('copyto', path.join(WORK, 'prova-regia.txt'), remote(dir, nome, CACHE, 'prova-regia.txt'));
     rclone('copyto', path.join(WORK, 'regia.json'), remote(dir, nome, CACHE, 'regia-prova.json'));
   } catch (e) { log('prova regia non salvata su Drive', e.message); }
-  await notifica('📝 prova regia', nome, testo);
+  await notifica('📝 prova regia', nome, testo, { ok: true });
 }
 
 // azione "esempi": fogli di fotogrammi dei video di riferimento di uno stile (CARTELLA = nome dello
@@ -1160,7 +1162,13 @@ async function analizzaEsempi() {
   }
   fs.writeFileSync(path.join(out, 'indice.txt'), righe.join('\n'));
   rclone('copy', out, remote(DIR_STILI, nome, 'esempi', '_analisi'));
-  await notifica('🔎 esempi analizzati', nome, `${video.length} video di riferimento: fogli di fotogrammi in Stili/${nome}/esempi/_analisi.\n${righe.join('\n')}`, { ok: true });
+  let link = '';
+  try {
+    const id = JSON.parse(rclone('lsjson', remote(DIR_STILI, nome, 'esempi'), '--dirs-only')).find((d) => d.Name === '_analisi')?.ID;
+    if (id) link = `https://drive.google.com/drive/folders/${id}`;
+  } catch (e) { log('cartella _analisi senza ID', e.message); }
+  await notifica('🔎 esempi analizzati', nome, `${video.length} video di riferimento: fogli di fotogrammi in Stili/${nome}/esempi/_analisi.\n${righe.join('\n')}`,
+    { ok: true, info: { esempi: video.length, link } });
 }
 
 async function main() {
@@ -1345,14 +1353,16 @@ async function main() {
       }
     } catch (e) { log('didascalie non scritte', e.message); }
     let fileId = null;
-    if (!PROVA_SECONDI) try { fileId = JSON.parse(run('rclone', ['lsjson', remote(OUT_DIR, nome, finale)]))[0]?.ID || null; } catch (e) { log('ID del video su Drive non trovato', e.message); }
+    try { fileId = JSON.parse(run('rclone', ['lsjson', remote(OUT_DIR, nome, finale)]))[0]?.ID || null; } catch (e) { log('ID del video su Drive non trovato', e.message); }
 
     // dati per la scheda del bot
     const info = {
       file: finale, durata: +durataN.toFixed(1), tagli: piano.clips.length, sorgenti: camereUsate, voce: voci,
       keywords: piano.keywords.map((k) => k.word), note: piano.note || '', ai: consumi.ai,
       minuti: Math.round((Date.now() - T0) / 60000), correzione: CORREZIONE || '', versione: VERSIONE, stile: nomeStile,
-      ...(fileId ? { pubblica: { fileId, file: finale, didascalia: didascalie?.instagram || '', copertina: Math.round(tempoCopertina(piano, durataN) * 1000), youtube: didascalie ? { titolo: didascalie.youtube_titolo, descrizione: didascalie.youtube_descrizione } : null } } : {}),
+      ...(fileId ? { link: `https://drive.google.com/file/d/${fileId}/view` } : {}),
+      ...(PROVA_SECONDI ? { prova: PROVA_SECONDI } : {}),
+      ...(fileId && !PROVA_SECONDI ? { pubblica: { fileId, file: finale, didascalia: didascalie?.instagram || '', copertina: Math.round(tempoCopertina(piano, durataN) * 1000), youtube: didascalie ? { titolo: didascalie.youtube_titolo, descrizione: didascalie.youtube_descrizione } : null } } : {}),
     };
     // anteprima: prima provo il video in chat, se non passa mando la foto
     const inviato = await inviaVideo(outFile, nome, note, durataN, info);

@@ -88,6 +88,8 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           NOTIFY_URL: ${{ secrets.NOTIFY_URL }}
           NOTIFY_TOKEN: ${{ secrets.NOTIFY_TOKEN }}
+          # solo vero/falso (il valore resta segreto): il bot mostra se YouTube è collegato
+          YT_PRONTO: ${{ secrets.YT_CLIENT_ID != '' && secrets.YT_CLIENT_SECRET != '' && secrets.YT_REFRESH_TOKEN != '' }}
         run: |
           mapfile -t cartelle < <(rclone lsf "gdrive:97 - Editare" --dirs-only | sed 's:/$::')
           declare -A vai_di=()
@@ -114,12 +116,24 @@ jobs:
           echo "cartella=$trovato" >> "$GITHUB_OUTPUT"
           if [ -n "$trovato" ]; then echo "Da montare: $trovato"; else echo "Niente da fare"; fi
           # il bot tiene l'elenco delle cartelle per i tasti di "Nuovo montaggio" e degli stili su Drive
-          # (cartelle in Stili, tranne quelle che iniziano con "_" come il modello)
-          mapfile -t stili < <(rclone lsf "gdrive:03 · Social — Risorse/Stili" --dirs-only 2>/dev/null | sed 's:/$::' | grep -v '^_' || true)
+          # (cartelle in Stili, tranne quelle che iniziano con "_" come il modello): nome, cartella e
+          # la riga "Quando usarlo" di stile.txt, che il bot mostra come descrizione
+          STILI_DIR="gdrive:03 · Social — Risorse/Stili"
+          stili_info=$(rclone lsjson "$STILI_DIR" --dirs-only 2>/dev/null | jq -c '[.[] | select(.Name | startswith("_") | not) | {nome: .Name, id: .ID}]') || stili_info='[]'
+          [ -n "$stili_info" ] || stili_info='[]'
+          rclone copy "$STILI_DIR" "$RUNNER_TEMP/stili" --include '/*/stile.txt' 2>/dev/null || true
+          for f in "$RUNNER_TEMP"/stili/*/stile.txt; do
+            [ -f "$f" ] || continue
+            d=$(grep -aim1 '^quando usarlo' "$f" | sed 's/^[^:]*:[[:space:]]*//; s/\r$//; s/[[:space:]]*$//' || true)
+            case "$d" in ''|'('*) continue ;; esac
+            stili_info=$(jq -c --arg s "$(basename "$(dirname "$f")")" --arg d "$d" 'map(if .nome == $s then . + {desc: $d} else . end)' <<< "$stili_info")
+          done
+          mapfile -t stili < <(jq -r '.[].nome' <<< "$stili_info")
           if [ -n "$NOTIFY_URL" ]; then
             jq -n --args '{tipo:"cartelle", cartelle:$ARGS.positional}' -- "${cartelle[@]}" \
               | jq --args '. + {vai:$ARGS.positional}' -- "${liberi[@]}" \
               | jq --args '. + {stili:$ARGS.positional}' -- "${stili[@]}" \
+              | jq --argjson info "$stili_info" --argjson yt "${YT_PRONTO:-false}" '. + {stili_info:$info, yt:$yt}' \
               | curl -s -X POST "$NOTIFY_URL" -H 'content-type: application/json' -H "x-regista-token: $NOTIFY_TOKEN" -d @- > /dev/null || true
           fi
           # avvio manuale/dal bot senza niente da montare: avvisa, così non sembra un video fatto

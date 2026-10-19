@@ -47,6 +47,11 @@ export class Memoria extends DurableObject {
     await this.ctx.storage.put(k, true);
     return true;
   }
+  // in cima a un elenco (senza doppioni dello stesso giro), al massimo n elementi
+  async inCima(k: string, v: { runId: string }, n: number) {
+    const a = ((await this.ctx.storage.get(k)) as { runId: string }[] | undefined) || [];
+    await this.ctx.storage.put(k, [v, ...a.filter((x) => x.runId !== v.runId)].slice(0, n));
+  }
 }
 const mem = (env: Env) => env.MEMORIA.get(env.MEMORIA.idFromName('denis'));
 // i metodi chiamati da remoto (RPC) non portano il tipo generico: lo rimetto qui
@@ -58,7 +63,10 @@ const ok = (env: Env, chat: string) => autorizzati(env).includes(chat);
 const WORKFLOW = 'regista.yml';
 const URL_97 = 'https://drive.google.com/drive/folders/1wKYoQPmiuu7H65pr1lqiMi8bcefWmtaB';
 const URL_98 = 'https://drive.google.com/drive/folders/1icN7ww-f6CrClZ5nhxi9eiX3_rO3MC4D';
-const VERSIONE_COMANDI = 4; // cambia → il bot ri-registra da solo il menu comandi
+const URL_STILI = 'https://drive.google.com/drive/folders/1HD6Qv-KO3tmAQORJXuvsSnCALpK85e8w';
+const cartellaDrive = (id: string) => `https://drive.google.com/drive/folders/${id}`;
+const PROVA_S = 10; // render di prova di uno stile: i primi N secondi del video
+const VERSIONE_COMANDI = 5; // cambia → il bot ri-registra da solo il menu comandi
 let ORIGINE_BOT = ''; // https://regista-telegram…workers.dev (dalla richiesta in corso)
 const ANTEPRIMA_URL = () => (ORIGINE_BOT ? `${ORIGINE_BOT}/stili.jpg?v=1` : undefined);
 const LINEA = '━━━━━━━━━━━━━━━━━━';
@@ -69,10 +77,25 @@ type Stile = { nome: string; tasto: string; cosa: string };
 const STILI: Stile[] = [{ nome: 'Blueprint', tasto: '📐 Blueprint', cosa: 'tavola tecnica, parole chiave in box, effetti digitali' },
   { nome: 'Cinematico', tasto: '🎬 Cinematico', cosa: 'spot di prodotto caldo, sottotitoli parola per parola, titoli grandi' }];
 let STILI_DRIVE: string[] = []; // letti dalla memoria a ogni richiesta
+// cartella su Drive e riga "Quando usarlo" di stile.txt (dal workflow), per descrizioni e link
+type InfoStile = { nome: string; id?: string; desc?: string };
+let INFO_STILI: InfoStile[] = [];
+const infoStile = (nome: string) => INFO_STILI.find((x) => x.nome.toLowerCase() === nome.toLowerCase());
 const tuttiStili = (): Stile[] => [...STILI, ...STILI_DRIVE
   .filter((n) => !STILI.some((x) => x.nome.toLowerCase() === n.toLowerCase()))
-  .map((n) => ({ nome: n, tasto: `✨ ${n}`, cosa: 'su misura, da Drive' }))];
-const nomeStile = (x?: string) => tuttiStili().find((y) => y.nome.toLowerCase() === String(x || '').toLowerCase())?.nome;
+  .map((n) => ({ nome: n, tasto: `✨ ${n}`, cosa: infoStile(n)?.desc || 'su misura, da Drive' }))];
+// nome esatto; se il tasto l'ha accorciato (64 byte), l'unico stile che inizia così
+function nomeStile(x?: string) {
+  const t = String(x || '').toLowerCase();
+  if (!t) return undefined;
+  const tutti = tuttiStili();
+  const inizio = tutti.filter((y) => y.nome.toLowerCase().startsWith(t));
+  return (tutti.find((y) => y.nome.toLowerCase() === t) || (inizio.length === 1 ? inizio[0] : undefined))?.nome;
+}
+const stileDelBrief = (brief?: string) => nomeStile(/\bstile\s*:\s*([^.\n]+)/i.exec(brief || '')?.[1]?.trim());
+// stesso brief con un altro stile (Cambia stile)
+const conAltroStile = (brief: string | undefined, stile: string) =>
+  [`Stile: ${stile}`, (brief || '').replace(/\bstile\s*:\s*[^.\n]*\.?\s*/i, '').trim()].filter(Boolean).join('. ');
 // tasti degli stili, due per riga
 const righeStili = (fai: (x: Stile) => Button): Kb => {
   const t = tuttiStili().map(fai);
@@ -118,19 +141,21 @@ async function tg<T = unknown>(env: Env, method: string, body: unknown): Promise
   });
   return r.json();
 }
+// righe vuote (tasti facoltativi tutti assenti): Telegram rifiuterebbe il messaggio
+const tastiera = (t?: Kb) => ({ inline_keyboard: (t || []).filter((r) => r.length) });
 async function invia(env: Env, chat: string, s: Schermo, silenzioso = false): Promise<number | undefined> {
   const r = await tg<{ message_id: number }>(env, 'sendMessage', {
     chat_id: chat, text: s.testo, parse_mode: 'HTML', link_preview_options: opzioniAnteprima(s), disable_notification: silenzioso,
-    reply_markup: { inline_keyboard: s.tasti || [] },
+    reply_markup: tastiera(s.tasti),
   });
   return r.result?.message_id;
 }
-// modifica sul posto; se il messaggio non esiste più ne manda uno nuovo. Restituisce l'id valido.
+// modifica sul posto; se il messaggio non esiste più (o è un video) ne manda uno nuovo. Restituisce l'id valido.
 async function mostra(env: Env, chat: string, s: Schermo, msgId?: number, silenzioso = false): Promise<number | undefined> {
   if (msgId) {
     const r = await tg(env, 'editMessageText', {
       chat_id: chat, message_id: msgId, text: s.testo, parse_mode: 'HTML', link_preview_options: opzioniAnteprima(s),
-      reply_markup: { inline_keyboard: s.tasti || [] },
+      reply_markup: tastiera(s.tasti),
     });
     if (r.ok || /not modified/i.test(r.description || '')) return msgId;
   }
@@ -143,7 +168,14 @@ const tronca = (s: string, n: number) => (s.length > n ? `${s.slice(0, n - 1)}�
 const kTok = (n: number) => (n >= 1000 ? `${Math.round(n / 1000)}k` : String(n));
 const ora = (iso: string | number) => new Date(iso).toLocaleString('it-IT', { timeZone: 'Europe/Rome', day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
 const minuti = (from: string, to = new Date().toISOString()) => Math.max(0, Math.round((Date.parse(to) - Date.parse(from)) / 60000));
-const tasto = (text: string, callback_data: string): Button => ({ text, callback_data: callback_data.slice(0, 64) });
+// callback_data: al massimo 64 byte (non caratteri), altrimenti Telegram rifiuta tutto il messaggio
+const byte = (s: string) => new TextEncoder().encode(s).length;
+function corto(s: string, n = 64) {
+  let t = s;
+  while (byte(t) > n) t = t.slice(0, -1);
+  return t;
+}
+const tasto = (text: string, callback_data: string): Button => ({ text, callback_data: corto(callback_data) });
 const link = (text: string, url: string): Button => ({ text, url });
 const MENU_TASTO = tasto('◀ Menu', 'menu');
 
@@ -157,8 +189,9 @@ async function gh(env: Env, path: string, init: RequestInit = {}) {
     },
   });
 }
-// azione "render": rifà solo il render con la regia salvata (origine 98), senza AI
-type Inputs = { cartella?: string; brief?: string; origine?: '97' | '98'; correzione?: string; telegram?: string; azione?: 'render' };
+// azione "render": rifà solo il render con la regia salvata (origine 98), senza AI;
+// secondi: render di prova, solo i primi N secondi (Cambia stile → 🧪 Prova)
+type Inputs = { cartella?: string; brief?: string; origine?: '97' | '98'; correzione?: string; telegram?: string; azione?: 'render'; secondi?: number };
 const dispatch = (env: Env, ref: string, inputs: Record<string, string>) =>
   gh(env, `/actions/workflows/${WORKFLOW}/dispatches`, { method: 'POST', body: JSON.stringify({ ref, inputs }) });
 
@@ -166,11 +199,13 @@ async function avvia(env: Env, i: Inputs, imp: Imp): Promise<string | null> {
   const base: Record<string, string> = { cartella: i.cartella || '', brief: i.brief || '', origine: i.origine || '97', correzione: i.correzione || '' };
   if (i.telegram) base.telegram = i.telegram; // indispensabile: se il workflow non lo conosce, meglio fallire che montare altro
   if (i.azione) base.azione = i.azione;
+  if (i.secondi) base.secondi = String(i.secondi); // idem: senza, partirebbe il render intero
   let r = await dispatch(env, RAMO[imp.versione], { ...base, ai: imp.ai, modello: imp.modello, modello_gemini: imp.gemini });
   // il workflow della versione stabile non conosce ancora ai/modello: riprovo senza
   if (r.status === 422) {
     const t = await r.text();
     if (!/unexpected inputs/i.test(t)) return `GitHub 422: ${t}`;
+    if (i.secondi && /secondi/.test(t)) return 'La versione Beta non ha ancora il render di prova: passa a Stabile da ⚙️ Impostazioni → 🔧 Avanzate.';
     r = await dispatch(env, RAMO[imp.versione], base);
   }
   return r.status === 204 ? null : `GitHub ${r.status}: ${await r.text()}`;
@@ -195,6 +230,7 @@ type IdFase = (typeof FASI)[number]['id'];
 type Card = {
   nome: string; fasi: Partial<Record<IdFase, string>>; corrente?: IdFase; minuti: number;
   msg: Record<string, number>; versione?: string; brief?: string; correzione?: string; fine?: 'ok' | 'ko'; inCoda?: boolean;
+  prova?: number; soloRender?: boolean;
 };
 // pubblica: dati del video finito (dal workflow) e scelte di Denis per Instagram/YouTube;
 // pubblicato: 'in corso' o il riepilogo con i link
@@ -202,8 +238,12 @@ type Pubblica = {
   fileId: string; file?: string; didascalia: string; copertina?: number; youtube?: { titolo?: string; descrizione?: string } | null;
   ig?: boolean; yt?: boolean;
 };
-type RunMemo = { nome: string; origine?: '97' | '98'; correzione?: string; brief?: string; pubblica?: Pubblica; pubblicato?: string };
-type Pendente = { nome: string; chat: string; msg?: number; quando: number; card: Card; origine?: '97' | '98' };
+// azione/secondi: com'era partito il giro (🔁 Riprova di un render di prova rifà la prova, non un montaggio)
+type RunMemo = {
+  nome: string; origine?: '97' | '98'; correzione?: string; brief?: string; pubblica?: Pubblica; pubblicato?: string;
+  azione?: 'render'; secondi?: number; stile?: string;
+};
+type Pendente = { nome: string; chat: string; msg?: number; quando: number; card: Card; origine?: '97' | '98'; azione?: 'render'; secondi?: number };
 
 function faseDaTesto(t: string): IdFase | undefined {
   if (t.includes('📥')) return 'scarico';
@@ -224,6 +264,8 @@ function scheda(c: Card): string {
     : c.inCoda ? `🚀 <b>${esc(c.nome)}</b> · in coda` : `⚙️ <b>${esc(c.nome)}</b> · in lavorazione`;
   const sotto = c.inCoda ? 'avvio del server GitHub (1–3 min)' : `${fatte}/${FASI.length} · ${c.minuti} min`;
   const righe = [titolo, `<code>${barra}</code>  ${sotto}${c.versione ? ` · ${esc(c.versione)}` : ''}`];
+  if (c.prova) righe.push(`🧪 <i>render di prova: solo i primi ${c.prova} s</i>`);
+  else if (c.soloRender) righe.push('🔄 <i>solo render: stessa regia, grafica e colore rifatti</i>');
   if (c.correzione) righe.push(`✏️ <i>${esc(tronca(c.correzione, 120))}</i>`);
   else if (c.brief) righe.push(`📝 <i>${esc(tronca(c.brief, 120))}</i>`);
   righe.push('');
@@ -254,7 +296,12 @@ async function cardDelGiro(env: Env, runId: string, nome: string, versione?: str
   if (i >= 0) {
     const p = pendenti.splice(i, 1)[0];
     card = { ...p.card, nome, inCoda: false, msg: p.msg ? { [p.chat]: p.msg } : {}, versione: p.card.versione || versione };
-    await mem(env).scrivi(`run:${runId}`, { nome, origine: p.origine, correzione: p.card.correzione, brief: p.card.brief } satisfies RunMemo);
+    // quello già saputo dal giro (dati per pubblicare, stile) resta: l'avvio aggiunge brief e scelte
+    const giro = await leggi<RunMemo | string>(env, `run:${runId}`);
+    await mem(env).scrivi(`run:${runId}`, {
+      nome, origine: p.origine, correzione: p.card.correzione, brief: p.card.brief, azione: p.azione, secondi: p.secondi,
+      ...(typeof giro === 'object' ? giro : {}),
+    } satisfies RunMemo);
   }
   await mem(env).scrivi('pendenti', pendenti);
   return card;
@@ -295,6 +342,7 @@ async function pannello(env: Env): Promise<Schermo> {
     ].join('\n'),
     tasti: [
       [tasto('🆕 Nuovo montaggio', 'nuovo'), tasto('📦 Più video', 'lotto')],
+      [tasto('📼 Ultimi video', 'video'), tasto('🎨 Stili', 'stili')],
       [tasto('📊 Stato', 'stato'), tasto('⚙️ Impostazioni', 'imp')],
       [link('📂 97 · Da montare', URL_97), link('✅ 98 · Fatti', URL_98)],
       [tasto('❓ Guida', 'guida')],
@@ -341,6 +389,7 @@ const DESC = {
 
 async function schermoImpostazioni(env: Env): Promise<Schermo> {
   const i = await impostazioni(env);
+  const c = await collegamenti(env);
   return {
     testo: [
       '⚙️ <b>Impostazioni</b>', LINEA,
@@ -348,15 +397,133 @@ async function schermoImpostazioni(env: Env): Promise<Schermo> {
       `🧠 <b>AI principale</b> · ${i.ai === 'claude' ? 'Claude' : 'Gemini'}`, `<i>${DESC[i.ai]}</i>`, '',
       `✨ <b>Modello Gemini</b> · ${NOME_GEMINI[i.gemini]}`, `<i>${DESC[i.gemini]}</i>`, '',
       `📸 <b>Instagram</b> · ${PROVA[i.prova].nome}`, '<i>come esce il Reel quando premi 📤 Pubblica</i>',
+      `🔗 <b>Collegamenti</b> · Instagram ${statoIg(c)} · YouTube ${statoYt(c)}`,
     ].join('\n'),
     tasti: [
       ...righeStili((x) => tasto(sel(i.stile === x.nome, x.tasto), `i:stile:${x.nome}`)),
       [tasto(sel(i.ai === 'gemini', 'AI: Gemini'), 'i:ai:gemini'), tasto(sel(i.ai === 'claude', 'AI: Claude'), 'i:ai:claude')],
       [tasto(sel(i.gemini === 'flash', 'Gemini Flash'), 'i:gemini:flash'), tasto(sel(i.gemini === 'pro', 'Gemini Pro'), 'i:gemini:pro')],
       [tasto(sel(i.prova === 'manuale', 'Prova: decido io'), 'i:prova:manuale'), tasto(sel(i.prova === 'auto', 'Prova: automatica'), 'i:prova:auto'), tasto(sel(i.prova === 'no', 'Reel normale'), 'i:prova:no')],
-      [tasto('🔧 Avanzate', 'i:avanzate'), MENU_TASTO],
+      [tasto('🔗 Instagram e YouTube', 'col'), tasto('🔧 Avanzate', 'i:avanzate')],
+      [MENU_TASTO],
     ],
   };
+}
+
+// ---------- collegamenti per 📤 Pubblica ----------
+// Instagram: la chiave la custodisce il bot (secret IG_TOKEN, poi rinnovata ogni settimana).
+// YouTube: i secret sono su GitHub, il workflow dice a ogni giro se ci sono (undefined = non ancora saputo).
+type Collegamenti = { ig: boolean; igRinnovata?: number; yt?: boolean };
+async function collegamenti(env: Env): Promise<Collegamenti> {
+  const chiave = await leggi<ChiaveIg>(env, 'ig_token');
+  return { ig: Boolean(chiave?.token || env.IG_TOKEN), igRinnovata: chiave?.rinnovata, yt: await leggi<boolean>(env, 'yt_pronto') };
+}
+const statoIg = (c: Collegamenti) => (c.ig ? '✅' : '⚠️ da collegare');
+const statoYt = (c: Collegamenti) => (c.yt ? '✅' : c.yt === false ? '⚠️ da collegare' : '❔ da verificare');
+
+async function schermoCollegamenti(env: Env, runId?: string): Promise<Schermo> {
+  const c = await collegamenti(env);
+  const richiesto = (await leggi<number>(env, 'elenco_richiesto')) || 0;
+  const verifica = Date.now() - richiesto < 3 * 60000 ? '\n⏳ <i>Controllo i secret su GitHub (≈1 min)…</i>' : '';
+  return {
+    testo: [
+      '🔗 <b>Collegare Instagram e YouTube</b> · una volta sola', LINEA,
+      `📸 <b>Instagram</b> · ${c.ig ? `✅ collegato${c.igRinnovata ? ` (chiave rinnovata il ${ora(c.igRinnovata).split(',')[0]})` : ''}` : '⚠️ da collegare'}`,
+      '1. Account Instagram <b>professionale</b> (creator o business).',
+      '2. developers.facebook.com → la tua app → Instagram → <i>API setup with Instagram business login</i> → <b>Generate token</b>.',
+      '3. Cloudflare → Workers → <code>regista-telegram</code> → Settings → Variables and Secrets → secret <code>IG_TOKEN</code> con quella chiave.',
+      '<i>Poi la rinnovo io ogni settimana.</i>', '',
+      `▶️ <b>YouTube</b> · ${c.yt ? '✅ collegato' : c.yt === false ? '⚠️ da collegare' : '❔ da verificare (premi 🔄)'}`,
+      '1. console.cloud.google.com → nuovo progetto → abilita <b>YouTube Data API v3</b>.',
+      '2. Schermata di consenso OAuth: esterna, stato <b>In production</b>.',
+      '3. Credenziali → ID client OAuth <i>Applicazione web</i>, URI di reindirizzamento <code>https://developers.google.com/oauthplayground</code>.',
+      '4. OAuth Playground → ⚙️ <i>Use your own OAuth credentials</i> → scope <code>https://www.googleapis.com/auth/youtube.upload</code> → Authorize → <i>Exchange authorization code for tokens</i> → copia il <b>refresh token</b>.',
+      '5. GitHub → Settings → Secrets → Actions: <code>YT_CLIENT_ID</code>, <code>YT_CLIENT_SECRET</code>, <code>YT_REFRESH_TOKEN</code>.',
+      `<i>Finché Google non verifica l'app, YouTube tiene i video privati: li rendi pubblici da YouTube Studio.</i>${verifica}`,
+    ].join('\n'),
+    tasti: [
+      [link('📸 Meta for Developers', 'https://developers.facebook.com/apps/'), link('☁️ Cloudflare', 'https://dash.cloudflare.com/')],
+      [link('▶️ Google Cloud', 'https://console.cloud.google.com/apis/library/youtube.googleapis.com'), link('🔑 OAuth Playground', 'https://developers.google.com/oauthplayground')],
+      [link('🐙 Secret su GitHub', `https://github.com/${env.GITHUB_REPO}/settings/secrets/actions`), tasto('🔄 Verifica', runId ? `colv:${runId}` : 'colv')],
+      [runId ? tasto('◀ Pubblica', `pubr:${runId}`) : tasto('◀ Impostazioni', 'imp')],
+    ],
+  };
+}
+
+// ---------- 🎨 stili ----------
+async function schermoStili(env: Env): Promise<Schermo> {
+  const imp = await impostazioni(env);
+  const c = await leggi<Cartelle>(env, 'cartelle');
+  const richiesto = (await leggi<number>(env, 'elenco_richiesto')) || 0;
+  const aggiorno = Date.now() - richiesto < 3 * 60000 && (!c || c.aggiornato < richiesto);
+  const tutti = tuttiStili();
+  return {
+    testo: [
+      '🎨 <b>Stili</b>', LINEA,
+      ...tutti.map((x) => `${x.tasto}${x.nome === imp.stile ? ' ⭐' : ''}\n<i>${esc(tronca(x.cosa, 150))}</i>`), '',
+      '⭐ = predefinito, lo propongo nei nuovi montaggi: tocca uno stile per sceglierlo.',
+      `🎬 <b>Su un video già fatto</b>: 🎨 Cambia stile sotto il video, con una prova di ${PROVA_S} s prima del video intero.`,
+      '✨ <b>Stile nuovo</b>: su Drive copia <i>_Modello nuovo stile</i> dentro Stili, rinominala e compila <code>stile.txt</code>: la riga <i>Quando usarlo</i> diventa la descrizione qui.',
+      ...(aggiorno ? ['⏳ <i>Aggiorno l\'elenco (≈1 min)…</i>'] : c ? [`<i>Elenco di Drive delle ${ora(c.aggiornato).split(', ')[1]}</i>`] : []),
+    ].join('\n'),
+    tasti: [
+      ...tutti.map((x) => {
+        const id = infoStile(x.nome)?.id;
+        return [tasto(sel(x.nome === imp.stile, x.tasto), `st:def:${x.nome}`), ...(id ? [link('📂 Drive', cartellaDrive(id))] : [])];
+      }),
+      [link('📂 Cartella Stili', URL_STILI), tasto('🔄 Aggiorna', 'st:agg')],
+      [MENU_TASTO],
+    ],
+  };
+}
+
+// ---------- 📼 ultimi video ----------
+// Ogni video finito (anche le prove) resta qui: dall'elenco lo si rimanda giù in chat con i suoi
+// tasti, senza cercarlo tra i messaggi. video/foto: file_id di Telegram, si rimanda all'istante.
+type VideoFatto = {
+  runId: string; nome: string; file?: string; stile?: string; durata?: number; prova?: number; link?: string;
+  runUrl?: string; quando: number; video?: string; foto?: string; corpo: string;
+};
+const MAX_VIDEO = 12;
+const versioneDi = (nome: string, file?: string, prova?: number) =>
+  (prova ? `prova ${prova} s` : file ? file.replace(/\.mp4$/i, '').replace(`${nome} - `, '') : 'FINALE');
+async function ricordaVideo(env: Env, v: VideoFatto) {
+  if (v.runId) await mem(env).inCima('video', v, MAX_VIDEO);
+}
+
+async function schermoVideo(env: Env): Promise<Schermo> {
+  const elenco = (await leggi<VideoFatto[]>(env, 'video')) || [];
+  if (!elenco.length) {
+    return {
+      testo: ['📼 <b>Ultimi video</b>', LINEA, 'Ancora nessuno: i video finiti compaiono qui da adesso in poi.', '<i>Quelli di prima sono su Drive in 98 - Fatti.</i>'].join('\n'),
+      tasti: [[link('✅ 98 · Fatti', URL_98), MENU_TASTO]],
+    };
+  }
+  const righe: string[] = [];
+  const tasti: Kb = [];
+  for (const v of elenco) {
+    const memo = await leggi<RunMemo | string>(env, `run:${v.runId}`);
+    const pubblicato = typeof memo === 'object' && Boolean(memo.pubblicato) && memo.pubblicato !== 'in corso';
+    const icona = v.prova ? '🧪' : '🎬';
+    const versione = versioneDi(v.nome, v.file, v.prova);
+    righe.push(`${icona} <b>${esc(v.nome)}</b> · ${esc(versione)}${v.stile ? ` · ${esc(v.stile)}` : ''} · ${ora(v.quando)}${pubblicato ? ' · 📤' : ''}`);
+    tasti.push([tasto(`${icona} ${tronca(`${v.nome} · ${versione}`, 42)}`, `vid:${v.runId}`)]);
+  }
+  return {
+    testo: ['📼 <b>Ultimi video</b>', LINEA, ...righe, '', '<i>Tocca un video: te lo rimando qui sotto con i suoi tasti (📤 Pubblica, 🎨 Cambia stile, ✏️ Correggi…). 🧪 = prova, 📤 = pubblicato.</i>'].join('\n'),
+    tasti: [...tasti, [link('✅ 98 · Fatti', URL_98), MENU_TASTO]],
+  };
+}
+
+async function rimandaVideo(env: Env, chat: string, v: VideoFatto) {
+  const tasti = tastiRisultato(v.runId, v.runUrl, { prova: v.prova, stile: v.stile, link: v.link });
+  if (v.video || v.foto) {
+    const r = await tg(env, v.video ? 'sendVideo' : 'sendPhoto', {
+      chat_id: chat, [v.video ? 'video' : 'photo']: v.video || v.foto, caption: v.corpo, parse_mode: 'HTML', reply_markup: tastiera(tasti),
+    });
+    if (r.ok) return;
+  }
+  await invia(env, chat, { testo: v.corpo, tasti });
 }
 
 async function schermoAvanzate(env: Env): Promise<Schermo> {
@@ -384,12 +551,15 @@ const GUIDA: Schermo = {
     '',
     '<b>2. Il montaggio</b>',
     '🆕 <b>Nuovo montaggio</b>: cartella → stile → 🚀 Avvia. Sponsor, durata, tono, giudizio e note sono facoltativi, dal riepilogo.',
+    '✍️ Più veloce: scrivimi il nome della cartella e ti propongo di montarla.',
     '📦 <b>Più video</b>: spunti tante cartelle, scegli lo stile, partono tutte insieme.',
     'La scheda di avanzamento si aggiorna da sola (10–30 min).',
     '',
     '<b>3. Il video finito</b>',
-    '👍 Approva · ✏️ Correggi (scrivi cosa cambiare) · 🎨 Solo render (stessa regia, colori e grafica aggiornati, pochi minuti) · 🔁 Rifai da zero.',
-    '📤 <b>Pubblica</b>: Instagram (reel di prova, da ⚙️ Impostazioni) e YouTube Shorts. Ti mostro didascalia e titolo scritti dall\'AI (li puoi cambiare, link compresi), poi ti mando i link. Il video passa in 99 - Pubblicare.',
+    '👍 Approva · 📤 Pubblica · ✏️ Correggi (scrivi cosa cambiare) · 🔄 Solo render (stessa regia, grafica e colori aggiornati, pochi minuti) · 🔁 Rifai da zero.',
+    `🎨 <b>Cambia stile</b>: stessa regia con un altro stile. Prima 🧪 una prova dei primi ${PROVA_S} s (arriva prima), poi 🎬 il video intero se ti piace.`,
+    '📤 <b>Pubblica</b>: Instagram (reel di prova, da ⚙️ Impostazioni) e YouTube Shorts. Ti mostro didascalia e titolo scritti dall\'AI (li puoi cambiare, link compresi), poi ti mando i link. Il video passa in 99 - Pubblicare. Da collegare una volta: ⚙️ Impostazioni → 🔗 Instagram e YouTube.',
+    '📼 <b>Ultimi video</b>: tutti i video finiti (anche le prove); toccane uno e te lo rimando giù con i suoi tasti.',
     '',
     '<b>Da sapere</b>',
     '🎙 Audio: microfono esterno > Insta360 > iPhone > Sony. Le camere si sincronizzano da sole.',
@@ -398,15 +568,15 @@ const GUIDA: Schermo = {
     '⚡ Un file <code>VAI</code> nella cartella la fa montare da sola (controllo 7–23).',
     '',
     '<b>Stili nuovi, senza codice</b>',
-    'Su Drive in <code>03 · Social — Risorse/Stili</code> copia la cartella <i>_Modello nuovo stile</i> e rinominala (es. <i>Narrativo</i>). Dentro: <code>stile.txt</code> (font, colori, sottotitoli, look, musica, indicazioni per la regia), <code>asset/</code> (tuoi font .ttf/.otf, musiche .mp3, LUT .cube), <code>esempi/</code> (video di riferimento). Al prossimo elenco compare qui come ✨ stile; per cambiarlo modifichi <code>stile.txt</code>.',
+    'Su Drive in <code>03 · Social — Risorse/Stili</code> copia la cartella <i>_Modello nuovo stile</i> e rinominala (es. <i>Narrativo</i>). Dentro: <code>stile.txt</code> (font, colori, sottotitoli, look, musica, indicazioni per la regia), <code>asset/</code> (tuoi font .ttf/.otf, musiche .mp3, LUT .cube), <code>esempi/</code> (video di riferimento). Compare in 🎨 Stili come ✨ stile (🔄 Aggiorna per non aspettare); per cambiarlo modifichi <code>stile.txt</code>.',
     '',
     '<b>Video in chat: attivazione (una volta)</b>',
     'Su my.telegram.org → API development tools crea un\'app e copia <i>api_id</i> e <i>api_hash</i>. Poi su GitHub (DenLeone/video-regista → Settings → Secrets and variables → Actions) aggiungi <code>TG_API_ID</code>, <code>TG_API_HASH</code> e <code>TELEGRAM_BOT_TOKEN</code> (il token del bot da @BotFather).',
     '',
-    '<b>Comandi</b> · /menu · /nuovo · /stato · /impostazioni · /annulla',
+    '<b>Comandi</b> · /menu · /nuovo · /video · /stato · /stili · /impostazioni · /annulla',
     '<code>/monta Nome | indicazioni</code> avvio rapido (stile predefinito, o <code>Stile: Cinematico</code> nelle indicazioni)',
   ].join('\n'),
-  tasti: [[tasto('🆕 Nuovo montaggio', 'nuovo'), MENU_TASTO]],
+  tasti: [[tasto('🆕 Nuovo montaggio', 'nuovo'), tasto('📼 Ultimi video', 'video')], [MENU_TASTO]],
 };
 
 // ---------- nuovo montaggio: passi ----------
@@ -422,7 +592,11 @@ type Attesa =
   | { tipo: 'lotto'; scelte: string[]; stile?: string; msg?: number }
   | { tipo: 'nome_raccolta'; poi: 'subito' | 'domande' | 'scheda'; msg?: number }
   | { tipo: 'correzione'; nome: string; runId?: string; msg?: number }
-  | { tipo: 'didascalia'; runId: string; campo: 'didascalia' | 'titolo'; msg?: number };
+  | { tipo: 'didascalia'; runId: string; campo: 'didascalia' | 'titolo'; msg?: number }
+  // nome di una cartella scritto senza domande in sospeso: "La monto?"
+  | { tipo: 'rapido'; cartella: string; msg?: number }
+  // schermata da ridisegnare quando arriva l'elenco aggiornato dal workflow (stili, secret YouTube)
+  | { tipo: 'schermo'; quale: 'stili' | 'collegamenti'; runId?: string; msg?: number };
 const kAttesa = (chat: string) => `attesa:${chat}`;
 const ORDINE: Passo[] = ['cartella', 'stile', 'riepilogo'];
 // primo passo dei video mandati in chat (la cartella è già il nome dato al bot)
@@ -653,11 +827,38 @@ async function lancia(env: Env, chat: string, i: Inputs, msgId?: number) {
   const card: Card = {
     nome: i.cartella || '⚡ cartelle con VAI', fasi: {}, minuti: 0, msg: {}, inCoda: true,
     versione: imp.versione === 'beta' ? 'v2 beta' : undefined, brief: i.brief, correzione: i.correzione,
+    prova: i.secondi, soloRender: i.azione === 'render',
   };
   const id = await mostra(env, chat, { testo: scheda(card), tasti: [[tasto('📊 Stato', 'stato'), MENU_TASTO]] }, msgId);
   const pendenti = ((await leggi<Pendente[]>(env, 'pendenti')) || []).filter((p) => Date.now() - p.quando < 40 * 60000);
-  pendenti.push({ nome: i.cartella || '', chat, msg: id, quando: Date.now(), card, origine: i.origine || '97' });
+  pendenti.push({ nome: i.cartella || '', chat, msg: id, quando: Date.now(), card, origine: i.origine || '97', azione: i.azione, secondi: i.secondi });
   await mem(env).scrivi('pendenti', pendenti);
+}
+
+// nome di una cartella di 97 scritto in chat (senza domande in sospeso): propongo di montarla.
+// Testo lungo, domande o niente di simile: false (si mostra il pannello come prima).
+async function proponiCartella(env: Env, chat: string, testo: string): Promise<boolean> {
+  if (!testo || testo.length > 60 || /[?\n]/.test(testo)) return false;
+  const elenco = (await leggi<Cartelle>(env, 'cartelle'))?.elenco || [];
+  const esatta = elenco.find((n) => normNome(n) === normNome(testo));
+  if (esatta) { await mostraRapido(env, chat, esatta); return true; }
+  if (normNome(testo).length < 4) return false;
+  const sim = simili(testo, elenco);
+  if (!sim.length) return false;
+  await invia(env, chat, {
+    testo: `📁 <b>Non trovo «${esc(testo)}»</b> in 97 - Editare. Intendevi:`,
+    tasti: [...sim.map((x) => [tasto(`👉 ${tronca(x, 40)}`, `q:c:${elenco.indexOf(x)}`)]), [MENU_TASTO]],
+  });
+  return true;
+}
+async function mostraRapido(env: Env, chat: string, cartella: string, msgId?: number) {
+  const imp = await impostazioni(env);
+  const c = await leggi<Cartelle>(env, 'cartelle');
+  const id = await mostra(env, chat, {
+    testo: `📁 <b>${esc(cartella)}</b> · in 97 - Editare${c?.vai.includes(cartella) ? ' · ⚡ ha il VAI' : ''}\nLa monto adesso?\n\n${riassunto({ cartella }, imp)}`,
+    tasti: [[tasto(`🚀 Monta · ${imp.stile}`, 'q:m')], [tasto('⚙️ Stile e opzioni', 'q:o'), tasto('✖️ No', 'annulla')]],
+  }, msgId);
+  await mem(env).scrivi(kAttesa(chat), { tipo: 'rapido', cartella, msg: id } satisfies Attesa);
 }
 
 // ---------- messaggi ----------
@@ -780,6 +981,8 @@ async function onMessage(env: Env, msg: Msg) {
     const [, nome, resto] = cmd;
     if (nome === 'annulla') { await mem(env).cancella(kAttesa(chat)); return invia(env, chat, await pannello(env)); }
     if (nome === 'stato') return invia(env, chat, await schermoStato(env));
+    if (nome === 'video') return invia(env, chat, await schermoVideo(env));
+    if (nome === 'stili') return invia(env, chat, await schermoStili(env));
     if (nome === 'impostazioni') return invia(env, chat, await schermoImpostazioni(env));
     if (nome === 'aiuto' || nome === 'guida') return invia(env, chat, GUIDA);
     if (nome === 'nuovo') return vaiAPasso(env, chat, { tipo: 'nuovo', passo: 'cartella', dati: {} });
@@ -803,7 +1006,7 @@ async function onMessage(env: Env, msg: Msg) {
       : { ...memo.pubblica, didascalia: text.slice(0, 2200) };
     const nuovo = { ...memo, pubblica } satisfies RunMemo;
     await mem(env).scrivi(`run:${attesa.runId}`, nuovo);
-    return invia(env, chat, schermoPubblica(attesa.runId, nuovo, await impostazioni(env)));
+    return invia(env, chat, await schermoPubblica(env, attesa.runId, nuovo));
   }
   if (attesa?.tipo === 'correzione') {
     await togliTasti(env, chat, attesa.msg);
@@ -811,6 +1014,7 @@ async function onMessage(env: Env, msg: Msg) {
     return lancia(env, chat, { cartella: attesa.nome, origine: '98', correzione: text, brief: typeof memo === 'object' ? memo?.brief : undefined });
   }
   if (attesa?.tipo === 'nuovo' && A_TESTO.includes(attesa.passo) && text) return rispondiPasso(env, chat, attesa, text, undefined, true);
+  if (await proponiCartella(env, chat, text)) return;
   return invia(env, chat, await pannello(env));
 }
 
@@ -831,6 +1035,55 @@ async function onCallback(env: Env, cb: Callback) {
   if (data === 'annulla') { await avviso('Annullato'); await mem(env).cancella(kAttesa(chat)); return mostra(env, chat, await pannello(env), msgId); }
   if (data === 'nuovo') { await avviso(); return vaiAPasso(env, chat, { tipo: 'nuovo', passo: 'cartella', dati: {} }, msgId); }
   if (data === 'lotto') { await avviso(); return mostraLotto(env, chat, { tipo: 'lotto', scelte: [] }, msgId); }
+  if (data === 'video') { await avviso(); return mostra(env, chat, await schermoVideo(env), msgId); }
+  if (data === 'stili') { await avviso(); return mostra(env, chat, await schermoStili(env), msgId); }
+  if (data === 'col') { await avviso(); return mostra(env, chat, await schermoCollegamenti(env), msgId); }
+
+  // 📼 ultimi video: rimando giù il video con i suoi tasti
+  if (data.startsWith('vid:')) {
+    const v = ((await leggi<VideoFatto[]>(env, 'video')) || []).find((x) => x.runId === data.slice(4));
+    if (!v) { await avviso('Non lo trovo più'); return mostra(env, chat, await schermoVideo(env), msgId); }
+    await avviso();
+    return rimandaVideo(env, chat, v);
+  }
+
+  // 🎨 stili: predefinito e aggiornamento dell'elenco da Drive
+  if (data.startsWith('st:')) {
+    const [, azione, ...resto] = data.split(':');
+    if (azione === 'def') {
+      const stile = nomeStile(resto.join(':'));
+      if (stile) await mem(env).scrivi('impostazioni', { ...(await impostazioni(env)), stile } satisfies Imp);
+      await avviso(stile ? `Predefinito: ${stile}` : 'Stile non trovato');
+    } else if (azione === 'agg') {
+      await avviso((await richiediElenco(env, chat, true)) ? 'Aggiorno da Drive, ≈1 min' : 'Elenco non disponibile');
+      await mem(env).scrivi(kAttesa(chat), { tipo: 'schermo', quale: 'stili', msg: msgId } satisfies Attesa);
+    } else await avviso();
+    return mostra(env, chat, await schermoStili(env), msgId);
+  }
+
+  // 🔗 collegamenti: "Verifica" chiede al workflow se i secret di YouTube ci sono (giro "elenco")
+  if (data === 'colv' || data.startsWith('colv:')) {
+    const runId = data.split(':')[1];
+    await avviso((await richiediElenco(env, chat, true)) ? 'Controllo su GitHub, ≈1 min' : 'Non riesco a controllare adesso');
+    await mem(env).scrivi(kAttesa(chat), { tipo: 'schermo', quale: 'collegamenti', runId, msg: msgId } satisfies Attesa);
+    return mostra(env, chat, await schermoCollegamenti(env, runId), msgId);
+  }
+
+  // nome di cartella scritto in chat: 👉 suggerimento, 🚀 monta, ⚙️ opzioni
+  if (data.startsWith('q:')) {
+    const [, azione, x = ''] = data.split(':');
+    if (azione === 'c') {
+      const nome = (await leggi<Cartelle>(env, 'cartelle'))?.elenco[Number(x)];
+      if (!nome) { await avviso('Elenco cambiato, riscrivi il nome'); return; }
+      await avviso();
+      return mostraRapido(env, chat, nome, msgId);
+    }
+    const a = await leggi<Attesa>(env, kAttesa(chat));
+    if (a?.tipo !== 'rapido') { await avviso('Questa proposta è scaduta'); return mostra(env, chat, await pannello(env), msgId); }
+    if (azione === 'm') { await avviso('Avvio…'); return lancia(env, chat, { cartella: a.cartella, brief: `Stile: ${(await impostazioni(env)).stile}` }, msgId); }
+    if (azione === 'o') { await avviso(); return vaiAPasso(env, chat, { tipo: 'nuovo', passo: 'stile', dati: { cartella: a.cartella } }, msgId); }
+    return avviso();
+  }
 
   if (data.startsWith('r:')) {
     const [, azione, poi = ''] = data.split(':');
@@ -928,8 +1181,8 @@ async function onCallback(env: Env, cb: Callback) {
     return avviso(); // tasto di un passo già superato
   }
 
-  // tasti sul video finito / sull'errore
-  const [azione, runId] = data.split(':');
+  // tasti sul video finito / sull'errore (stile: terza parte, per Cambia stile)
+  const [azione, runId, ...resto] = data.split(':');
   const memoGrezzo = runId ? await leggi<RunMemo | string>(env, `run:${runId}`) : undefined;
   const memo: RunMemo | undefined = typeof memoGrezzo === 'string' ? { nome: memoGrezzo } : memoGrezzo;
   if (!memo) return avviso('Non trovo più questo montaggio');
@@ -938,6 +1191,15 @@ async function onCallback(env: Env, cb: Callback) {
     return tg(env, 'editMessageReplyMarkup', { chat_id: chat, message_id: msgId, reply_markup: { inline_keyboard: [[tasto('✔︎ Approvato', 'noop'), tasto('📤 Pubblica', `pub:${runId}`)], [link('📂 Drive', URL_98)]] } });
   }
   if (azione.startsWith('pub')) return tastoPubblica(env, chat, azione, runId, memo, msgId, avviso);
+  // 🎨 Cambia stile: scelta dello stile → 🧪 prova dei primi secondi o 🎬 video intero, con la stessa regia
+  if (azione === 'stl') { await avviso(); return mostra(env, chat, schermoCambiaStile(runId, memo), msgId); }
+  if (azione === 'sts' || azione === 'sp' || azione === 'sv') {
+    const stile = nomeStile(resto.join(':'));
+    if (!stile) { await avviso('Stile non trovato'); return mostra(env, chat, schermoCambiaStile(runId, memo), msgId); }
+    if (azione === 'sts') { await avviso(); return mostra(env, chat, schermoProvaStile(runId, memo, stile), msgId); }
+    await avviso(azione === 'sp' ? `Prova ${PROVA_S} s · ${stile}…` : `Video intero · ${stile}…`);
+    return lancia(env, chat, { cartella: memo.nome, origine: '98', brief: conAltroStile(memo.brief, stile), azione: 'render', secondi: azione === 'sp' ? PROVA_S : undefined }, msgId);
+  }
   if (azione === 'fix') {
     await avviso();
     const id = await invia(env, chat, {
@@ -950,7 +1212,7 @@ async function onCallback(env: Env, cb: Callback) {
     await avviso();
     const imp = await impostazioni(env);
     return invia(env, chat, {
-      testo: `🔁 <b>Rifaccio ${esc(memo.nome)} da zero?</b>\nNuova regia con ${esc(motore(imp))}: tagli e testo possono cambiare.\n<i>Per tenere la stessa regia e aggiornare solo colore e grafica usa 🎨 Solo render. Il video attuale resta su Drive.</i>`,
+      testo: `🔁 <b>Rifaccio ${esc(memo.nome)} da zero?</b>\nNuova regia con ${esc(motore(imp))}: tagli e testo possono cambiare.\n<i>Per tenere la stessa regia usa 🔄 Solo render (colore e grafica aggiornati) o 🎨 Cambia stile. Il video attuale resta su Drive.</i>`,
       tasti: [[tasto('✅ Sì, rifai', `redo!:${runId}`), tasto('✖️ No', 'annulla')]],
     });
   }
@@ -959,9 +1221,39 @@ async function onCallback(env: Env, cb: Callback) {
   if (azione === 'ren') { await avviso('Rifaccio il render…'); return lancia(env, chat, { cartella: memo.nome, origine: '98', brief: memo.brief, azione: 'render' }); }
   if (azione === 'retry') {
     await avviso('Riprovo…');
-    return lancia(env, chat, { cartella: memo.nome, origine: memo.origine || (memo.correzione ? '98' : '97'), correzione: memo.correzione, brief: memo.brief });
+    return lancia(env, chat, {
+      cartella: memo.nome, origine: memo.origine || (memo.correzione || memo.azione ? '98' : '97'), correzione: memo.correzione, brief: memo.brief,
+      azione: memo.azione, secondi: memo.secondi,
+    });
   }
   return avviso();
+}
+
+function schermoCambiaStile(runId: string, memo: RunMemo): Schermo {
+  const attuale = memo.stile || stileDelBrief(memo.brief);
+  return {
+    testo: [
+      `🎨 <b>Cambia stile</b> · ${esc(memo.nome)}`, LINEA,
+      'Stessa regia (tagli, testo, parole chiave): cambiano grafica, colore e sottotitoli.',
+      ...(attuale ? [`Adesso: <b>${esc(attuale)}</b>`] : []), '',
+      ...tuttiStili().map((x) => `${x.tasto}: <i>${esc(tronca(x.cosa, 90))}</i>`),
+    ].join('\n'),
+    tasti: [...righeStili((x) => tasto(`${x.tasto}${x.nome === attuale ? ' ✓' : ''}`, `sts:${runId}:${x.nome}`)), [tasto('✖️ Annulla', 'annulla')]],
+  };
+}
+function schermoProvaStile(runId: string, memo: RunMemo, stile: string): Schermo {
+  return {
+    testo: [
+      `🎨 <b>${esc(memo.nome)}</b> in stile <b>${esc(stile)}</b>`, LINEA,
+      `🧪 <b>Prova ${PROVA_S} s</b>: solo l'inizio, arriva prima. Per vedere colore e grafica.`,
+      '🎬 <b>Video intero</b>: tutto il video con il nuovo stile, come nuova versione in 98.',
+      '<i>Il video attuale resta su Drive.</i>',
+    ].join('\n'),
+    tasti: [
+      [tasto(`🧪 Prova ${PROVA_S} s`, `sp:${runId}:${stile}`), tasto('🎬 Video intero', `sv:${runId}:${stile}`)],
+      [tasto('◀ Stili', `stl:${runId}`), tasto('✖️ Annulla', 'annulla')],
+    ],
+  };
 }
 
 // ---------- 📤 Pubblica: Instagram (reel di prova) e YouTube Shorts ----------
@@ -970,23 +1262,30 @@ async function onCallback(env: Env, cb: Callback) {
 // stesso codice monouso (nonce), così l'esito arriva sul messaggio giusto.
 const PUB_WORKFLOW = 'pubblica.yml';
 
-function schermoPubblica(runId: string, memo: RunMemo, imp: Imp): Schermo {
+// dove si pubblica davvero: scelto da Denis e collegato (YouTube non ancora saputo = si prova)
+const destinazioni = (p: Pubblica, c: Collegamenti) => ({ ig: p.ig !== false && c.ig, yt: p.yt !== false && c.yt !== false });
+
+async function schermoPubblica(env: Env, runId: string, memo: RunMemo): Promise<Schermo> {
   const p = memo.pubblica!;
-  const ig = p.ig !== false, yt = p.yt !== false;
+  const imp = await impostazioni(env);
+  const c = await collegamenti(env);
+  const { ig, yt } = destinazioni(p, c);
   const titolo = p.youtube?.titolo || memo.nome;
+  const daCollegare = !c.ig || c.yt === false;
   return {
     testo: [
       `📤 <b>Pubblico ${esc(memo.nome)}</b>`, LINEA,
-      `📸 Instagram: ${ig ? esc(PROVA[imp.prova].nome) : '<i>no</i>'}`,
-      `▶️ YouTube Shorts: ${yt ? `«${esc(titolo)}»` : '<i>no</i>'}`,
+      `📸 Instagram: ${!c.ig ? '⚠️ <i>da collegare</i>' : ig ? esc(PROVA[imp.prova].nome) : '<i>no</i>'}`,
+      `▶️ YouTube Shorts: ${c.yt === false ? '⚠️ <i>da collegare</i>' : yt ? `«${esc(titolo)}»` : '<i>no</i>'}`,
       p.didascalia ? `<blockquote expandable>${esc(p.didascalia)}</blockquote>` : '<i>Nessuna didascalia: scrivila con ✏️ (o pubblica senza).</i>',
       '<i>La didascalia vale anche come descrizione su YouTube. Per cambiarla (o aggiungere un link) premi ✏️ e mandami il testo nuovo.</i>',
+      ...(daCollegare ? ['🔗 <i>Per collegare quello che manca (una volta sola): tasto qui sotto.</i>'] : []),
     ].join('\n'),
     tasti: [
-      [tasto('✅ Pubblica', `pub!:${runId}`)],
-      [tasto(`${ig ? '✅' : '⬜️'} Instagram`, `pubig:${runId}`), tasto(`${yt ? '✅' : '⬜️'} YouTube`, `pubyt:${runId}`)],
+      ...(ig || yt ? [[tasto(`✅ Pubblica${ig && yt ? '' : ig ? ' su Instagram' : ' su YouTube'}`, `pub!:${runId}`)]] : []),
+      [...(c.ig ? [tasto(`${ig ? '✅' : '⬜️'} Instagram`, `pubig:${runId}`)] : []), ...(c.yt !== false ? [tasto(`${yt ? '✅' : '⬜️'} YouTube`, `pubyt:${runId}`)] : [])],
       [tasto('✏️ Didascalia', `pubm:${runId}`), tasto('✏️ Titolo YouTube', `pubt:${runId}`)],
-      [tasto('✖️ Annulla', 'annulla')],
+      [...(daCollegare ? [tasto('🔗 Collega', `pubguida:${runId}`)] : []), tasto('✖️ Annulla', 'annulla')],
     ],
   };
 }
@@ -994,20 +1293,22 @@ function schermoPubblica(runId: string, memo: RunMemo, imp: Imp): Schermo {
 async function tastoPubblica(env: Env, chat: string, azione: string, runId: string, memo: RunMemo, msgId: number | undefined, avviso: (t?: string) => Promise<unknown>) {
   if (!memo.pubblica?.fileId || !memo.pubblica.file) {
     await avviso();
-    return invia(env, chat, { testo: `📤 Per <b>${esc(memo.nome)}</b> non ho i dati per pubblicare (video fatto prima del tasto Pubblica).\nRifallo con 🎨 <b>Solo render</b>: pochi minuti, stessa regia, e arriva con didascalia e titolo pronti.`, tasti: [[tasto('🎨 Solo render', `ren:${runId}`)]] });
+    return invia(env, chat, { testo: `📤 Per <b>${esc(memo.nome)}</b> non ho i dati per pubblicare (video fatto prima del tasto Pubblica, o render di prova).\nRifallo con 🔄 <b>Solo render</b>: pochi minuti, stessa regia, e arriva con didascalia e titolo pronti.`, tasti: [[tasto('🔄 Solo render', `ren:${runId}`)]] });
   }
   if (memo.pubblicato) {
     await avviso(memo.pubblicato === 'in corso' ? 'Pubblicazione già in corso' : 'Già pubblicato');
     return memo.pubblicato === 'in corso' ? undefined : invia(env, chat, { testo: `✅ <b>${esc(memo.nome)}</b> è già pubblicato.\n${memo.pubblicato}`, tasti: [[MENU_TASTO]] });
   }
   const imp = await impostazioni(env);
-  if (azione === 'pub') { await avviso(); return invia(env, chat, schermoPubblica(runId, memo, imp)); }
+  if (azione === 'pub') { await avviso(); return invia(env, chat, await schermoPubblica(env, runId, memo)); }
+  if (azione === 'pubr') { await avviso(); return mostra(env, chat, await schermoPubblica(env, runId, memo), msgId); }
+  if (azione === 'pubguida') { await avviso(); return mostra(env, chat, await schermoCollegamenti(env, runId), msgId); }
   if (azione === 'pubig' || azione === 'pubyt') {
     const k = azione === 'pubig' ? 'ig' : 'yt';
     const nuovo = { ...memo, pubblica: { ...memo.pubblica, [k]: memo.pubblica[k] === false } } satisfies RunMemo;
     await mem(env).scrivi(`run:${runId}`, nuovo);
     await avviso();
-    return mostra(env, chat, schermoPubblica(runId, nuovo, imp), msgId);
+    return mostra(env, chat, await schermoPubblica(env, runId, nuovo), msgId);
   }
   if (azione === 'pubm' || azione === 'pubt') {
     await avviso();
@@ -1021,12 +1322,13 @@ async function tastoPubblica(env: Env, chat: string, azione: string, runId: stri
   }
   if (azione !== 'pub!') return avviso();
   const p = memo.pubblica;
-  if (p.ig === false && p.yt === false) { await avviso('Scegli almeno Instagram o YouTube'); return; }
+  const dest = destinazioni(p, await collegamenti(env));
+  if (!dest.ig && !dest.yt) { await avviso(p.ig === false && p.yt === false ? 'Scegli almeno Instagram o YouTube' : 'Prima collega Instagram o YouTube'); return; }
   await avviso('Avvio la pubblicazione…');
   const nonce = crypto.randomUUID().replace(/-/g, '');
   const dati = {
     nonce, nome: memo.nome, file: p.file, fileId: p.fileId, didascalia: p.didascalia, titolo: p.youtube?.titolo || memo.nome,
-    copertina: p.copertina ?? 0, ig: p.ig !== false, yt: p.yt !== false, prova: PROVA[imp.prova].api,
+    copertina: p.copertina ?? 0, ig: dest.ig, yt: dest.yt, prova: PROVA[imp.prova].api,
   };
   const r = await gh(env, `/actions/workflows/${PUB_WORKFLOW}/dispatches`, { method: 'POST', body: JSON.stringify({ ref: 'main', inputs: { dati: JSON.stringify(dati) } }) });
   if (r.status !== 204) return mostra(env, chat, { testo: `⚠️ <b>Non sono riuscito ad avviare la pubblicazione</b>\n<code>${esc(tronca(`GitHub ${r.status}: ${await r.text()}`, 400))}</code>`, tasti: [[tasto('🔁 Riprova', `pub!:${runId}`), MENU_TASTO]] }, msgId);
@@ -1089,16 +1391,19 @@ async function rinnovaChiaveInstagram(env: Env) {
 }
 
 // ---------- notifiche da regista.mjs ----------
+// prova: render di prova (primi N s); link: il video su Drive; esempi/link: analisi degli esempi di uno stile
 type Info = {
   file?: string; durata?: number; tagli?: number; sorgenti?: number; voce?: string; keywords?: string[]; note?: string; stile?: string;
   ai?: { chi: string; modello: string; input: number; output: number; usd?: number } | null; minuti?: number; correzione?: string; errore?: string;
-  pubblica?: Pubblica;
+  pubblica?: Pubblica; prova?: number; link?: string; esempi?: number;
 };
+// azione: com'è partito il giro (monta, render, esempi, regia, elenco); prova: secondi del render di prova
 type Notify = {
   tipo?: 'fase' | 'esito' | 'cartelle' | 'vuoto' | 'pubblicato'; esito?: string; nome: string; testo: string; ok?: boolean; foto?: string;
   nonce?: string; instagram?: EsitoPiattaforma; youtube?: EsitoPiattaforma; spostato?: boolean; errore?: string;
   run_url?: string; run_id?: string; step?: IdFase; minuti?: number; versione?: string; origine?: '97' | '98'; info?: Info; richiesto?: string;
-  cartelle?: string[]; vai?: string[]; tgFile?: boolean; stili?: string[];
+  cartelle?: string[]; vai?: string[]; tgFile?: boolean; stili?: string[]; stili_info?: InfoStile[]; yt?: boolean;
+  azione?: string; prova?: number;
 };
 
 function didascalia(nome: string, info?: Info, testo = ''): string {
@@ -1106,25 +1411,47 @@ function didascalia(nome: string, info?: Info, testo = ''): string {
   const versione = info.file ? info.file.replace(/\.mp4$/i, '').replace(`${nome} - `, '') : 'FINALE';
   const ai = info.ai ? `🧠 ${esc(info.ai.chi)} ${esc(info.ai.modello.replace(/^claude-/, '').replace(/-\d{8}$/, ''))} · ${kTok(info.ai.input + info.ai.output)} token${info.ai.usd != null ? ` (≈ $${info.ai.usd.toFixed(2)} API)` : ''}` : '';
   const righe = [
-    `✅ <b>${esc(nome)}</b> · ${esc(versione)}`,
+    info.prova ? `🧪 <b>${esc(nome)}</b> · prova: i primi ${info.prova} s` : `✅ <b>${esc(nome)}</b> · ${esc(versione)}`,
     `${info.stile ? `🎨 ${esc(info.stile)}  ·  ` : ''}⏱ ${info.durata} s  ·  ✂️ ${info.tagli} tagli  ·  🎥 ${info.sorgenti} sorgenti`,
     info.voce ? `🎙 voce ${esc(info.voce)}` : '',
     info.keywords?.length ? `🔑 ${esc(tronca(info.keywords.join(' · '), 160))}` : '',
     ai,
     `⌛ ${info.minuti ?? '?'} min${info.correzione ? `  ·  ✏️ ${esc(tronca(info.correzione, 80))}` : ''}`,
+    info.prova ? `<i>Ti piace? 🎬 Video intero con ${info.stile ? esc(info.stile) : 'questo stile'}, oppure 🎨 prova un altro stile.</i>` : '',
   ].filter(Boolean);
   const note = info.note ? `\n📝 <i>${esc(tronca(info.note, Math.max(80, 900 - righe.join('\n').length)))}</i>` : '';
   return righe.join('\n') + note;
 }
 
-const tastiRisultato = (runId?: string, runUrl?: string): Kb => [
-  ...(runId ? [
-    [tasto('👍 Approva', `ok:${runId}`), tasto('✏️ Correggi', `fix:${runId}`)],
-    [tasto('🎨 Solo render', `ren:${runId}`), tasto('🔁 Rifai da zero', `redo:${runId}`)],
-    [tasto('📤 Pubblica (Instagram · YouTube)', `pub:${runId}`)],
-  ] : []),
-  [link('📂 Drive', URL_98), ...(runUrl ? [link('🔧 Log', runUrl)] : [])],
-];
+// tasti sotto il video: render di prova → video intero o altro stile; video vero → tutto il resto
+function tastiRisultato(runId?: string, runUrl?: string, info?: Pick<Info, 'prova' | 'stile' | 'link'>): Kb {
+  const fondo = [link('📂 Drive', info?.link || URL_98), ...(runUrl ? [link('🔧 Log', runUrl)] : [])];
+  if (!runId) return [fondo];
+  if (info?.prova) {
+    return [
+      [tasto(`🎬 Video intero${info.stile ? ` · ${info.stile}` : ''}`, info.stile ? `sv:${runId}:${info.stile}` : `ren:${runId}`)],
+      [tasto('🎨 Prova un altro stile', `stl:${runId}`)],
+      fondo,
+    ];
+  }
+  return [
+    [tasto('👍 Approva', `ok:${runId}`), tasto('📤 Pubblica', `pub:${runId}`)],
+    [tasto('✏️ Correggi', `fix:${runId}`), tasto('🎨 Cambia stile', `stl:${runId}`)],
+    [tasto('🔄 Solo render', `ren:${runId}`), tasto('🔁 Rifai da zero', `redo:${runId}`)],
+    fondo,
+  ];
+}
+
+// memo del giro alla fine: dati per pubblicare, stile e (se non partito da qui) com'era partito
+const memoFinale = (vecchio: RunMemo | string | undefined, nome: string, origine?: '97' | '98', info?: Info, azione?: string): RunMemo => ({
+  ...(typeof vecchio === 'object' ? vecchio : {}), nome,
+  ...(origine ? { origine } : {}),
+  ...(info?.correzione ? { correzione: info.correzione } : {}),
+  ...(info?.pubblica ? { pubblica: info.pubblica, pubblicato: undefined } : {}),
+  ...(info?.stile ? { stile: info.stile } : {}),
+  ...(azione === 'render' ? { azione: 'render' as const } : {}),
+  ...(info?.prova ? { secondi: info.prova } : {}),
+});
 
 async function onNotify(env: Env, n: Notify) {
   if (n.tipo === 'pubblicato') return onPubblicato(env, n);
@@ -1133,12 +1460,20 @@ async function onNotify(env: Env, n: Notify) {
   if (n.tipo === 'cartelle') {
     await mem(env).scrivi('cartelle', { elenco: n.cartelle || [], vai: n.vai || [], aggiornato: Date.now() } satisfies Cartelle);
     if (Array.isArray(n.stili)) { await mem(env).scrivi('stili_drive', n.stili); STILI_DRIVE = n.stili; }
+    if (Array.isArray(n.stili_info)) { await mem(env).scrivi('stili_info', n.stili_info); INFO_STILI = n.stili_info; }
+    if (typeof n.yt === 'boolean') await mem(env).scrivi('yt_pronto', n.yt);
     const inAttesa = (await leggi<string[]>(env, 'attesa_elenco')) || [];
     await mem(env).scrivi('attesa_elenco', []);
+    // il giro è arrivato: niente più "⏳ aggiorno" nelle schermate ridisegnate qui sotto
+    await mem(env).scrivi('elenco_richiesto', 0);
     for (const chat of inAttesa) {
       const a = await leggi<Attesa>(env, kAttesa(chat));
       if (a?.tipo === 'nuovo' && a.passo === 'cartella') await mostra(env, chat, await schermoPasso(env, a), a.msg);
       else if (a?.tipo === 'lotto') await mostra(env, chat, await schermoLotto(env, a), a.msg);
+      else if (a?.tipo === 'schermo') {
+        await mostra(env, chat, a.quale === 'stili' ? await schermoStili(env) : await schermoCollegamenti(env, a.runId), a.msg);
+        await mem(env).cancella(kAttesa(chat));
+      }
     }
     return;
   }
@@ -1150,6 +1485,18 @@ async function onNotify(env: Env, n: Notify) {
     else for (const chat of chats) await invia(env, chat, s, true);
     return;
   }
+  // analisi degli esempi di uno stile e prova della sola regia: niente scheda di montaggio, solo l'esito
+  if (n.azione === 'esempi' || n.azione === 'regia') {
+    if (n.tipo === 'fase') return;
+    const log = n.run_url ? [link('🔧 Log', n.run_url)] : [];
+    const s: Schermo = !n.ok
+      ? { testo: `⚠️ <b>${n.azione === 'esempi' ? 'Analisi degli esempi' : 'Prova della regia'} non riuscita</b> — ${esc(n.nome)}\n<blockquote>${esc(tronca(n.testo.replace(/^Errore:\s*/, ''), 700))}</blockquote>`, tasti: [[...log, MENU_TASTO]] }
+      : n.azione === 'esempi'
+        ? { testo: `🔎 <b>Esempi di ${esc(n.nome)} analizzati</b>\n${n.info?.esempi ?? 'I'} video di riferimento: fogli di fotogrammi in <code>Stili/${esc(n.nome)}/esempi/_analisi</code>, pronti da studiare per lo stile.`, tasti: [[...(n.info?.link ? [link('📂 Apri su Drive', n.info.link)] : []), ...log]] }
+        : { testo: `📝 <b>Prova della regia</b> · ${esc(n.nome)}\n<blockquote expandable>${esc(tronca(n.testo, 3500))}</blockquote>`, tasti: [[...log, MENU_TASTO]] };
+    for (const chat of chats) await invia(env, chat, s, true);
+    return;
+  }
   if (n.tipo === 'fase') {
     if (!n.run_id) { for (const chat of chats) await invia(env, chat, { testo: `<b>${esc(n.nome)}</b> · ${esc(n.testo)}` }, true); return; }
     const c = await cardDelGiro(env, n.run_id, n.nome, n.versione === 'v2' ? 'v2' : undefined, n.richiesto);
@@ -1157,28 +1504,33 @@ async function onNotify(env: Env, n: Notify) {
     if (step) { c.corrente = step; c.fasi[step] = pulisci(n.testo); }
     c.minuti = n.minuti ?? Number(/\((\d+) min\)\s*$/.exec(n.testo)?.[1] ?? c.minuti);
     c.inCoda = false;
+    if (n.prova) c.prova = n.prova;
+    if (n.azione === 'render') c.soloRender = true;
     if (n.origine) {
       const memo = await leggi<RunMemo | string>(env, `run:${n.run_id}`);
-      await mem(env).scrivi(`run:${n.run_id}`, { ...(typeof memo === 'object' ? memo : {}), nome: n.nome, origine: n.origine } satisfies RunMemo);
+      await mem(env).scrivi(`run:${n.run_id}`, {
+        ...(typeof memo === 'object' ? memo : {}), nome: n.nome, origine: n.origine,
+        ...(n.azione === 'render' ? { azione: 'render' as const } : {}), ...(n.prova ? { secondi: n.prova } : {}),
+      } satisfies RunMemo);
     }
     return aggiornaCard(env, n.run_id, c, n.run_url);
   }
 
   // esito
   if (n.run_id) {
-    const vecchio = await leggi<RunMemo | string>(env, `run:${n.run_id}`);
-    const base = typeof vecchio === 'object' ? vecchio : {};
-    await mem(env).scrivi(`run:${n.run_id}`, { ...base, nome: n.nome, ...(n.origine ? { origine: n.origine } : {}), ...(n.info?.correzione ? { correzione: n.info.correzione } : {}), ...(n.info?.pubblica ? { pubblica: n.info.pubblica, pubblicato: undefined } : {}) } satisfies RunMemo);
+    await mem(env).scrivi(`run:${n.run_id}`, memoFinale(await leggi<RunMemo | string>(env, `run:${n.run_id}`), n.nome, n.origine, n.info, n.azione));
     const c = await cardDelGiro(env, n.run_id, n.nome);
     c.fine = n.ok ? 'ok' : 'ko';
     if (n.step) c.corrente = n.step;
     if (n.minuti != null) c.minuti = n.minuti;
+    if (n.prova) c.prova = n.prova;
     await aggiornaCard(env, n.run_id, c, n.run_url);
   }
   if (!n.ok) {
     const causa = n.info?.errore || n.testo.replace(/^Errore:\s*/, '').split('\n\n')[0];
+    const cosa = n.prova ? 'Render di prova' : n.azione === 'render' ? 'Render' : 'Montaggio';
     const s: Schermo = {
-      testo: `⚠️ <b>Montaggio non riuscito</b> — ${esc(n.nome)}${n.step ? `\nFase: ${FASI.find((f) => f.id === n.step)?.nome}` : ''}\n<blockquote>${esc(tronca(causa, 700))}</blockquote>`,
+      testo: `⚠️ <b>${cosa} non riuscito</b> — ${esc(n.nome)}${n.step ? `\nFase: ${FASI.find((f) => f.id === n.step)?.nome}` : ''}\n<blockquote>${esc(tronca(causa, 700))}</blockquote>`,
       tasti: [
         [...(n.run_id ? [tasto('🔁 Riprova', `retry:${n.run_id}`)] : []), ...(n.run_url ? [link('🔧 Log', n.run_url)] : [])],
         [...(/non trovo la cartella/i.test(causa) ? [tasto('🆕 Scegli la cartella', 'nuovo')] : []), MENU_TASTO],
@@ -1189,7 +1541,7 @@ async function onNotify(env: Env, n: Notify) {
   }
   // riuscito ma il video non è passato: foto di anteprima
   const corpo = didascalia(n.nome, n.info, n.testo);
-  const tasti = tastiRisultato(n.run_id, n.run_url);
+  const tasti = tastiRisultato(n.run_id, n.run_url, n.info);
   let fotoId: string | undefined; // la foto si carica una volta, poi si riusa il file_id
   for (const chat of chats) {
     if (n.foto) {
@@ -1197,7 +1549,7 @@ async function onNotify(env: Env, n: Notify) {
       form.append('chat_id', chat);
       form.append('caption', corpo);
       form.append('parse_mode', 'HTML');
-      form.append('reply_markup', JSON.stringify({ inline_keyboard: tasti }));
+      form.append('reply_markup', JSON.stringify(tastiera(tasti)));
       if (fotoId) form.append('photo', fotoId);
       else form.append('photo', new Blob([Uint8Array.from(atob(n.foto), (ch) => ch.charCodeAt(0))], { type: 'image/jpeg' }), 'anteprima.jpg');
       const r = await fetch(`https://api.telegram.org/bot${env.TELEGRAM_BOT_TOKEN}/sendPhoto`, { method: 'POST', body: form });
@@ -1208,6 +1560,12 @@ async function onNotify(env: Env, n: Notify) {
       }
     }
     await invia(env, chat, { testo: corpo, tasti });
+  }
+  if (n.run_id && n.info?.durata != null) {
+    await ricordaVideo(env, {
+      runId: n.run_id, nome: n.nome, file: n.info.file, stile: n.info.stile, durata: n.info.durata, prova: n.info.prova, link: n.info.link,
+      runUrl: n.run_url, quando: Date.now(), foto: fotoId, corpo,
+    });
   }
 }
 
@@ -1251,16 +1609,16 @@ async function onVideo(env: Env, form: FormData) {
   const video = form.get('video');
   if (!video || typeof video === 'string') return false;
   if (runId) {
-    const vecchio = await leggi<RunMemo | string>(env, `run:${runId}`);
-    await mem(env).scrivi(`run:${runId}`, { ...(typeof vecchio === 'object' ? vecchio : {}), nome, ...(info?.correzione ? { correzione: info.correzione } : {}), ...(info?.pubblica ? { pubblica: info.pubblica, pubblicato: undefined } : {}) } satisfies RunMemo);
+    await mem(env).scrivi(`run:${runId}`, memoFinale(await leggi<RunMemo | string>(env, `run:${runId}`), nome, undefined, info, info?.prova ? 'render' : undefined));
     const c = await cardDelGiro(env, runId, nome);
     c.fine = 'ok';
     c.corrente = 'carico';
     if (info?.minuti != null) c.minuti = info.minuti;
+    if (info?.prova) c.prova = info.prova;
     await aggiornaCard(env, runId, c, runUrl);
   }
   const corpo = didascalia(nome, info, testo);
-  const tasti = tastiRisultato(runId || undefined, runUrl || undefined);
+  const tasti = tastiRisultato(runId || undefined, runUrl || undefined, info);
   let fileId: string | undefined;
   let almenoUno = false;
   for (const chat of autorizzati(env)) {
@@ -1272,7 +1630,7 @@ async function onVideo(env: Env, form: FormData) {
     out.append('width', '720');
     out.append('height', '1280');
     if (form.get('durata')) out.append('duration', String(Math.round(Number(form.get('durata')))));
-    out.append('reply_markup', JSON.stringify({ inline_keyboard: tasti }));
+    out.append('reply_markup', JSON.stringify(tastiera(tasti)));
     if (fileId) out.append('video', fileId);
     else out.append('video', video, `${nome}.mp4`);
     const r = await fetch(`https://api.telegram.org/bot${env.TELEGRAM_BOT_TOKEN}/sendVideo`, { method: 'POST', body: out });
@@ -1284,6 +1642,12 @@ async function onVideo(env: Env, form: FormData) {
       await invia(env, chat, { testo: corpo, tasti }); // se il video non passa, almeno la scheda
     }
   }
+  if (runId && almenoUno) {
+    await ricordaVideo(env, {
+      runId, nome, file: info?.file, stile: info?.stile, durata: info?.durata, prova: info?.prova, link: info?.link,
+      runUrl: runUrl || undefined, quando: Date.now(), video: fileId, corpo,
+    });
+  }
   return almenoUno;
 }
 
@@ -1291,8 +1655,10 @@ async function onVideo(env: Env, form: FormData) {
 const COMANDI = [
   { command: 'menu', description: 'Pannello di controllo' },
   { command: 'nuovo', description: 'Nuovo montaggio: cartella, stile, via' },
+  { command: 'video', description: 'Ultimi video: pubblica, cambia stile, correggi' },
   { command: 'stato', description: 'Montaggi in corso e ultimi risultati' },
-  { command: 'impostazioni', description: 'Stile predefinito e AI' },
+  { command: 'stili', description: 'Stili disponibili e predefinito' },
+  { command: 'impostazioni', description: 'Stile predefinito, AI, Instagram e YouTube' },
   { command: 'aiuto', description: 'Come funziona' },
   { command: 'annulla', description: 'Annulla la procedura in corso' },
 ];
@@ -1314,7 +1680,10 @@ export default {
   async fetch(req: Request, env: Env, ctx: { waitUntil(p: Promise<unknown>): void }): Promise<Response> {
     const url = new URL(req.url);
     ORIGINE_BOT = url.origin;
-    if (req.method === 'POST') STILI_DRIVE = (await leggi<string[]>(env, 'stili_drive').catch(() => undefined)) || STILI_DRIVE;
+    if (req.method === 'POST') {
+      STILI_DRIVE = (await leggi<string[]>(env, 'stili_drive').catch(() => undefined)) || STILI_DRIVE;
+      INFO_STILI = (await leggi<InfoStile[]>(env, 'stili_info').catch(() => undefined)) || INFO_STILI;
+    }
 
     if (req.method === 'POST' && url.pathname === '/tg') {
       if (req.headers.get('x-telegram-bot-api-secret-token') !== env.TELEGRAM_SECRET) return new Response('no', { status: 401 });
