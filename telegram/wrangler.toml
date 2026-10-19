@@ -14,6 +14,10 @@ class_name = "Memoria"
 tag = "v1"
 new_sqlite_classes = ["Memoria"]
 
-# Segreti (wrangler secret put <NOME>):
+# rinnovo settimanale della chiave Instagram (lunedì mattina, UTC)
+[triggers]
+crons = ["17 6 * * 1"]
+
+# Segreti (wrangler secret put <NOME>, o dashboard Cloudflare → Variables and Secrets):
 #   TELEGRAM_BOT_TOKEN, TELEGRAM_SECRET, ALLOWED_CHAT_ID,
-#   GITHUB_TOKEN, GITHUB_REPO, NOTIFY_TOKEN
+#   GITHUB_TOKEN, GITHUB_REPO, NOTIFY_TOKEN, IG_TOKEN (chiave Instagram per 📤 Pubblica)

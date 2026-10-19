@@ -1284,7 +1284,7 @@ async function main() {
       file: finale, durata: +durataN.toFixed(1), tagli: piano.clips.length, sorgenti: camereUsate, voce: voci,
       keywords: piano.keywords.map((k) => k.word), note: piano.note || '', ai: consumi.ai,
       minuti: Math.round((Date.now() - T0) / 60000), correzione: CORREZIONE || '', versione: VERSIONE, stile: nomeStile,
-      ...(fileId ? { pubblica: { fileId, didascalia: didascalie?.instagram || '', copertina: Math.round(tempoCopertina(piano, durataN) * 1000), youtube: didascalie ? { titolo: didascalie.youtube_titolo, descrizione: didascalie.youtube_descrizione } : null } } : {}),
+      ...(fileId ? { pubblica: { fileId, file: finale, didascalia: didascalie?.instagram || '', copertina: Math.round(tempoCopertina(piano, durataN) * 1000), youtube: didascalie ? { titolo: didascalie.youtube_titolo, descrizione: didascalie.youtube_descrizione } : null } } : {}),
     };
     // anteprima: prima provo il video in chat, se non passa mando la foto
     const inviato = await inviaVideo(outFile, nome, note, durataN, info);

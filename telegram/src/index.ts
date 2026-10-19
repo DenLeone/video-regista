@@ -25,7 +25,7 @@ export interface Env {
   GITHUB_TOKEN: string;      // fine-grained, Actions read & write sul repo
   GITHUB_REPO: string;       // "DenLeone/video-regista"
   NOTIFY_TOKEN: string;      // condiviso con il workflow
-  MAKE_WEBHOOK?: string;     // indirizzo del webhook Make "regista-pubblica" (secret): tasto 📤 Pubblica
+  IG_TOKEN?: string;         // chiave Instagram (secret, 60 giorni): poi la tiene e la rinnova il bot
   MEMORIA: DurableObjectNamespace<Memoria>;
 }
 
@@ -80,8 +80,15 @@ const righeStili = (fai: (x: Stile) => Button): Kb => {
 };
 
 // ai = AI principale; l'altra fa sempre da riserva automatica; stile = quello proposto di default
-type Imp = { versione: 'stabile' | 'beta'; ai: 'gemini' | 'claude'; modello: 'haiku' | 'sonnet' | 'opus'; gemini: 'flash' | 'pro'; stile: string };
-const IMP_BASE: Imp = { versione: 'stabile', ai: 'gemini', modello: 'sonnet', gemini: 'flash', stile: 'Blueprint' };
+// prova = come esce il Reel: reel di prova che passa ai follower quando lo decide Denis (manuale)
+// o da solo se va bene con i non follower (auto), oppure Reel normale (no)
+type Imp = { versione: 'stabile' | 'beta'; ai: 'gemini' | 'claude'; modello: 'haiku' | 'sonnet' | 'opus'; gemini: 'flash' | 'pro'; stile: string; prova: 'manuale' | 'auto' | 'no' };
+const IMP_BASE: Imp = { versione: 'stabile', ai: 'gemini', modello: 'sonnet', gemini: 'flash', stile: 'Blueprint', prova: 'manuale' };
+const PROVA: Record<Imp['prova'], { nome: string; api: string }> = {
+  manuale: { nome: 'reel di prova · ai follower quando decidi tu', api: 'MANUAL' },
+  auto: { nome: 'reel di prova · ai follower da solo se va bene', api: 'SS_PERFORMANCE' },
+  no: { nome: 'Reel normale (subito ai follower)', api: '' },
+};
 const RAMO: Record<Imp['versione'], string> = { stabile: 'main', beta: 'regista-v2' };
 const NOME_MODELLO: Record<Imp['modello'], string> = { haiku: 'Haiku', sonnet: 'Sonnet', opus: 'Opus' };
 const NOME_GEMINI: Record<Imp['gemini'], string> = { flash: 'Flash', pro: 'Pro' };
@@ -189,8 +196,12 @@ type Card = {
   nome: string; fasi: Partial<Record<IdFase, string>>; corrente?: IdFase; minuti: number;
   msg: Record<string, number>; versione?: string; brief?: string; correzione?: string; fine?: 'ok' | 'ko'; inCoda?: boolean;
 };
-// pubblica: dati del video finito per Instagram (dal workflow); pubblicato: 'in corso' o link del Reel
-type Pubblica = { fileId: string; didascalia: string; copertina?: number; youtube?: { titolo?: string; descrizione?: string } | null };
+// pubblica: dati del video finito (dal workflow) e scelte di Denis per Instagram/YouTube;
+// pubblicato: 'in corso' o il riepilogo con i link
+type Pubblica = {
+  fileId: string; file?: string; didascalia: string; copertina?: number; youtube?: { titolo?: string; descrizione?: string } | null;
+  ig?: boolean; yt?: boolean;
+};
 type RunMemo = { nome: string; origine?: '97' | '98'; correzione?: string; brief?: string; pubblica?: Pubblica; pubblicato?: string };
 type Pendente = { nome: string; chat: string; msg?: number; quando: number; card: Card; origine?: '97' | '98' };
 
@@ -335,12 +346,14 @@ async function schermoImpostazioni(env: Env): Promise<Schermo> {
       '⚙️ <b>Impostazioni</b>', LINEA,
       `🎨 <b>Stile predefinito</b> · ${esc(i.stile)}`, '<i>proposto in Nuovo montaggio, Più video e video mandati in chat</i>', '',
       `🧠 <b>AI principale</b> · ${i.ai === 'claude' ? 'Claude' : 'Gemini'}`, `<i>${DESC[i.ai]}</i>`, '',
-      `✨ <b>Modello Gemini</b> · ${NOME_GEMINI[i.gemini]}`, `<i>${DESC[i.gemini]}</i>`,
+      `✨ <b>Modello Gemini</b> · ${NOME_GEMINI[i.gemini]}`, `<i>${DESC[i.gemini]}</i>`, '',
+      `📸 <b>Instagram</b> · ${PROVA[i.prova].nome}`, '<i>come esce il Reel quando premi 📤 Pubblica</i>',
     ].join('\n'),
     tasti: [
       ...righeStili((x) => tasto(sel(i.stile === x.nome, x.tasto), `i:stile:${x.nome}`)),
       [tasto(sel(i.ai === 'gemini', 'AI: Gemini'), 'i:ai:gemini'), tasto(sel(i.ai === 'claude', 'AI: Claude'), 'i:ai:claude')],
       [tasto(sel(i.gemini === 'flash', 'Gemini Flash'), 'i:gemini:flash'), tasto(sel(i.gemini === 'pro', 'Gemini Pro'), 'i:gemini:pro')],
+      [tasto(sel(i.prova === 'manuale', 'Prova: decido io'), 'i:prova:manuale'), tasto(sel(i.prova === 'auto', 'Prova: automatica'), 'i:prova:auto'), tasto(sel(i.prova === 'no', 'Reel normale'), 'i:prova:no')],
       [tasto('🔧 Avanzate', 'i:avanzate'), MENU_TASTO],
     ],
   };
@@ -376,7 +389,7 @@ const GUIDA: Schermo = {
     '',
     '<b>3. Il video finito</b>',
     '👍 Approva · ✏️ Correggi (scrivi cosa cambiare) · 🎨 Solo render (stessa regia, colori e grafica aggiornati, pochi minuti) · 🔁 Rifai da zero.',
-    '📤 <b>Pubblica</b>: ti mostro la didascalia scritta dall\'AI (la puoi cambiare, link compresi), poi il Reel va su Instagram e ti mando il link.',
+    '📤 <b>Pubblica</b>: Instagram (reel di prova, da ⚙️ Impostazioni) e YouTube Shorts. Ti mostro didascalia e titolo scritti dall\'AI (li puoi cambiare, link compresi), poi ti mando i link. Il video passa in 99 - Pubblicare.',
     '',
     '<b>Da sapere</b>',
     '🎙 Audio: microfono esterno > Insta360 > iPhone > Sony. Le camere si sincronizzano da sole.',
@@ -409,7 +422,7 @@ type Attesa =
   | { tipo: 'lotto'; scelte: string[]; stile?: string; msg?: number }
   | { tipo: 'nome_raccolta'; poi: 'subito' | 'domande' | 'scheda'; msg?: number }
   | { tipo: 'correzione'; nome: string; runId?: string; msg?: number }
-  | { tipo: 'didascalia'; runId: string; msg?: number };
+  | { tipo: 'didascalia'; runId: string; campo: 'didascalia' | 'titolo'; msg?: number };
 const kAttesa = (chat: string) => `attesa:${chat}`;
 const ORDINE: Passo[] = ['cartella', 'stile', 'riepilogo'];
 // primo passo dei video mandati in chat (la cartella è già il nome dato al bot)
@@ -782,11 +795,15 @@ async function onMessage(env: Env, msg: Msg) {
   if (attesa?.tipo === 'nome_raccolta' && text) return nomeRaccolta(env, chat, attesa, nomeDaDidascalia(text) || nomeAutomatico());
   if (attesa?.tipo === 'didascalia' && text) {
     await togliTasti(env, chat, attesa.msg);
-    const memo = await leggi<RunMemo>(env, `run:${attesa.runId}`);
-    if (!memo?.pubblica) { await mem(env).cancella(kAttesa(chat)); return invia(env, chat, { testo: 'Non trovo più questo video.', tasti: [[MENU_TASTO]] }); }
-    await mem(env).scrivi(`run:${attesa.runId}`, { ...memo, pubblica: { ...memo.pubblica, didascalia: text.slice(0, 2200) } } satisfies RunMemo);
     await mem(env).cancella(kAttesa(chat));
-    return invia(env, chat, schermoPubblica(attesa.runId, memo.nome, text.slice(0, 2200)));
+    const memo = await leggi<RunMemo>(env, `run:${attesa.runId}`);
+    if (!memo?.pubblica) return invia(env, chat, { testo: 'Non trovo più questo video.', tasti: [[MENU_TASTO]] });
+    const pubblica = attesa.campo === 'titolo'
+      ? { ...memo.pubblica, youtube: { ...(memo.pubblica.youtube || {}), titolo: text.replace(/\s+/g, ' ').slice(0, 100) } }
+      : { ...memo.pubblica, didascalia: text.slice(0, 2200) };
+    const nuovo = { ...memo, pubblica } satisfies RunMemo;
+    await mem(env).scrivi(`run:${attesa.runId}`, nuovo);
+    return invia(env, chat, schermoPubblica(attesa.runId, nuovo, await impostazioni(env)));
   }
   if (attesa?.tipo === 'correzione') {
     await togliTasti(env, chat, attesa.msg);
@@ -920,7 +937,7 @@ async function onCallback(env: Env, cb: Callback) {
     await avviso('Approvato ✔︎');
     return tg(env, 'editMessageReplyMarkup', { chat_id: chat, message_id: msgId, reply_markup: { inline_keyboard: [[tasto('✔︎ Approvato', 'noop'), tasto('📤 Pubblica', `pub:${runId}`)], [link('📂 Drive', URL_98)]] } });
   }
-  if (azione === 'pub' || azione === 'pubm' || azione === 'pub!') return tastoPubblica(env, chat, azione, runId, memo, msgId, avviso);
+  if (azione.startsWith('pub')) return tastoPubblica(env, chat, azione, runId, memo, msgId, avviso);
   if (azione === 'fix') {
     await avviso();
     const id = await invia(env, chat, {
@@ -947,68 +964,128 @@ async function onCallback(env: Env, cb: Callback) {
   return avviso();
 }
 
-// ---------- 📤 Pubblica: Instagram via Make ----------
-// Il bot manda al webhook Make l'ID del video su Drive e la didascalia; Make pubblica il Reel,
-// toglie il link pubblico, sposta il file in 99 - Pubblicare e richiama /make con il codice
-// monouso (nonce) di questa pubblicazione: così la conferma arriva nella stessa chat.
-const schermoPubblica = (runId: string, nome: string, didascalia: string): Schermo => ({
-  testo: [
-    `📤 <b>Pubblico ${esc(nome)} su Instagram?</b>`,
-    didascalia ? `<blockquote expandable>${esc(didascalia)}</blockquote>` : '<i>Nessuna didascalia: scrivila con ✏️ (o pubblica senza).</i>',
-    '<i>Reel nel profilo e nella scheda Reels. Per cambiare il testo (o aggiungere un link) premi ✏️ e mandami quello nuovo.</i>',
-  ].join('\n'),
-  tasti: [[tasto('✅ Pubblica ora', `pub!:${runId}`), tasto('✏️ Didascalia', `pubm:${runId}`)], [tasto('✖️ Annulla', 'annulla')]],
-});
+// ---------- 📤 Pubblica: Instagram (reel di prova) e YouTube Shorts ----------
+// Il bot avvia il workflow "pubblica" (scripts/pubblica.mjs) con l'ID del video su Drive, la
+// didascalia e le scelte di Denis; il workflow risponde su /notify (tipo 'pubblicato') con lo
+// stesso codice monouso (nonce), così l'esito arriva sul messaggio giusto.
+const PUB_WORKFLOW = 'pubblica.yml';
+
+function schermoPubblica(runId: string, memo: RunMemo, imp: Imp): Schermo {
+  const p = memo.pubblica!;
+  const ig = p.ig !== false, yt = p.yt !== false;
+  const titolo = p.youtube?.titolo || memo.nome;
+  return {
+    testo: [
+      `📤 <b>Pubblico ${esc(memo.nome)}</b>`, LINEA,
+      `📸 Instagram: ${ig ? esc(PROVA[imp.prova].nome) : '<i>no</i>'}`,
+      `▶️ YouTube Shorts: ${yt ? `«${esc(titolo)}»` : '<i>no</i>'}`,
+      p.didascalia ? `<blockquote expandable>${esc(p.didascalia)}</blockquote>` : '<i>Nessuna didascalia: scrivila con ✏️ (o pubblica senza).</i>',
+      '<i>La didascalia vale anche come descrizione su YouTube. Per cambiarla (o aggiungere un link) premi ✏️ e mandami il testo nuovo.</i>',
+    ].join('\n'),
+    tasti: [
+      [tasto('✅ Pubblica', `pub!:${runId}`)],
+      [tasto(`${ig ? '✅' : '⬜️'} Instagram`, `pubig:${runId}`), tasto(`${yt ? '✅' : '⬜️'} YouTube`, `pubyt:${runId}`)],
+      [tasto('✏️ Didascalia', `pubm:${runId}`), tasto('✏️ Titolo YouTube', `pubt:${runId}`)],
+      [tasto('✖️ Annulla', 'annulla')],
+    ],
+  };
+}
 
 async function tastoPubblica(env: Env, chat: string, azione: string, runId: string, memo: RunMemo, msgId: number | undefined, avviso: (t?: string) => Promise<unknown>) {
-  if (!memo.pubblica?.fileId) {
+  if (!memo.pubblica?.fileId || !memo.pubblica.file) {
     await avviso();
-    return invia(env, chat, { testo: `📤 Per <b>${esc(memo.nome)}</b> non ho i dati per pubblicare (video fatto prima del tasto Pubblica).\nRifallo con 🎨 <b>Solo render</b>: pochi minuti, stessa regia, e arriva con la didascalia pronta.`, tasti: [[tasto('🎨 Solo render', `ren:${runId}`)]] });
+    return invia(env, chat, { testo: `📤 Per <b>${esc(memo.nome)}</b> non ho i dati per pubblicare (video fatto prima del tasto Pubblica).\nRifallo con 🎨 <b>Solo render</b>: pochi minuti, stessa regia, e arriva con didascalia e titolo pronti.`, tasti: [[tasto('🎨 Solo render', `ren:${runId}`)]] });
   }
   if (memo.pubblicato) {
     await avviso(memo.pubblicato === 'in corso' ? 'Pubblicazione già in corso' : 'Già pubblicato');
-    return memo.pubblicato === 'in corso' ? undefined : invia(env, chat, { testo: `✅ <b>${esc(memo.nome)}</b> è già su Instagram.`, tasti: [[link('📱 Apri il Reel', memo.pubblicato)]] });
+    return memo.pubblicato === 'in corso' ? undefined : invia(env, chat, { testo: `✅ <b>${esc(memo.nome)}</b> è già pubblicato.\n${memo.pubblicato}`, tasti: [[MENU_TASTO]] });
   }
-  if (azione === 'pub') { await avviso(); return invia(env, chat, schermoPubblica(runId, memo.nome, memo.pubblica.didascalia)); }
-  if (azione === 'pubm') {
+  const imp = await impostazioni(env);
+  if (azione === 'pub') { await avviso(); return invia(env, chat, schermoPubblica(runId, memo, imp)); }
+  if (azione === 'pubig' || azione === 'pubyt') {
+    const k = azione === 'pubig' ? 'ig' : 'yt';
+    const nuovo = { ...memo, pubblica: { ...memo.pubblica, [k]: memo.pubblica[k] === false } } satisfies RunMemo;
+    await mem(env).scrivi(`run:${runId}`, nuovo);
     await avviso();
-    const id = await mostra(env, chat, { testo: `✏️ <b>Mandami la didascalia nuova</b> per ${esc(memo.nome)} (hashtag e link compresi).\nAttuale:\n<code>${esc(memo.pubblica.didascalia || '—')}</code>`, tasti: [[tasto('✖️ Annulla', 'annulla')]] }, msgId);
-    return mem(env).scrivi(kAttesa(chat), { tipo: 'didascalia', runId, msg: id } satisfies Attesa);
+    return mostra(env, chat, schermoPubblica(runId, nuovo, imp), msgId);
   }
-  // pub!: si parte
-  if (!env.MAKE_WEBHOOK) {
+  if (azione === 'pubm' || azione === 'pubt') {
     await avviso();
-    return mostra(env, chat, { testo: '⚙️ <b>Manca il collegamento con Make</b>: su Cloudflare → Workers → regista-telegram → Settings → Variables and Secrets aggiungi il secret <code>MAKE_WEBHOOK</code> con l\'indirizzo del webhook "regista-pubblica" (Make → Webhooks → Copy address).', tasti: [[MENU_TASTO]] }, msgId);
+    const campo = azione === 'pubt' ? 'titolo' : 'didascalia';
+    const attuale = campo === 'titolo' ? memo.pubblica.youtube?.titolo || memo.nome : memo.pubblica.didascalia;
+    const id = await mostra(env, chat, {
+      testo: `✏️ <b>Mandami ${campo === 'titolo' ? 'il titolo nuovo per YouTube' : 'la didascalia nuova'}</b> per ${esc(memo.nome)}${campo === 'didascalia' ? ' (hashtag e link compresi)' : ' (max 100 caratteri)'}.\nAttuale:\n<code>${esc(attuale || '—')}</code>`,
+      tasti: [[tasto('✖️ Annulla', 'annulla')]],
+    }, msgId);
+    return mem(env).scrivi(kAttesa(chat), { tipo: 'didascalia', runId, campo, msg: id } satisfies Attesa);
   }
-  await avviso('Invio a Instagram…');
+  if (azione !== 'pub!') return avviso();
+  const p = memo.pubblica;
+  if (p.ig === false && p.yt === false) { await avviso('Scegli almeno Instagram o YouTube'); return; }
+  await avviso('Avvio la pubblicazione…');
   const nonce = crypto.randomUUID().replace(/-/g, '');
-  const r = await fetch(env.MAKE_WEBHOOK, {
-    method: 'POST', headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ fileId: memo.pubblica.fileId, didascalia: memo.pubblica.didascalia, copertina: memo.pubblica.copertina ?? 0, nonce, ritorno: `${ORIGINE_BOT}/make` }),
-  }).catch((e: Error) => ({ ok: false, status: 0, statusText: e.message }) as const);
-  if (!r.ok) return mostra(env, chat, { testo: `⚠️ Make non ha accettato la richiesta (${r.status || r.statusText}). Lo scenario è attivo?`, tasti: [[tasto('🔁 Riprova', `pub!:${runId}`), MENU_TASTO]] }, msgId);
+  const dati = {
+    nonce, nome: memo.nome, file: p.file, fileId: p.fileId, didascalia: p.didascalia, titolo: p.youtube?.titolo || memo.nome,
+    copertina: p.copertina ?? 0, ig: p.ig !== false, yt: p.yt !== false, prova: PROVA[imp.prova].api,
+  };
+  const r = await gh(env, `/actions/workflows/${PUB_WORKFLOW}/dispatches`, { method: 'POST', body: JSON.stringify({ ref: 'main', inputs: { dati: JSON.stringify(dati) } }) });
+  if (r.status !== 204) return mostra(env, chat, { testo: `⚠️ <b>Non sono riuscito ad avviare la pubblicazione</b>\n<code>${esc(tronca(`GitHub ${r.status}: ${await r.text()}`, 400))}</code>`, tasti: [[tasto('🔁 Riprova', `pub!:${runId}`), MENU_TASTO]] }, msgId);
   await mem(env).scrivi(`run:${runId}`, { ...memo, pubblicato: 'in corso' } satisfies RunMemo);
-  await mem(env).scrivi(`pub:${nonce}`, { runId, chat, msg: msgId, quando: Date.now() });
-  return mostra(env, chat, { testo: `⏳ <b>${esc(memo.nome)}</b>: Instagram sta caricando il Reel (di solito 1–2 minuti). Ti scrivo qui appena è online.` }, msgId);
+  await mem(env).scrivi(`pub:${nonce}`, { runId, chat, msg: msgId });
+  const dove = [dati.ig ? `📸 Instagram (${PROVA[imp.prova].nome})` : '', dati.yt ? '▶️ YouTube Shorts' : ''].filter(Boolean).join('\n');
+  return mostra(env, chat, { testo: `⏳ <b>Pubblico ${esc(memo.nome)}</b>\n${dove}\n<i>2–4 minuti: ti scrivo qui i link appena è online.</i>` }, msgId);
 }
 
-// conferma da Make (modulo HTTP alla fine dello scenario o nel ramo d'errore)
-async function onMake(env: Env, b: { nonce?: string; esito?: string; link?: string }) {
-  const k = `pub:${String(b.nonce || '').replace(/[^0-9a-f]/gi, '')}`;
-  const p = b.nonce ? await leggi<{ runId: string; chat: string; msg?: number }>(env, k) : undefined;
-  if (!p) return false;
+type EsitoPiattaforma = { ok: boolean; link?: string; errore?: string; saltato?: boolean; prova?: boolean; privato?: boolean };
+async function onPubblicato(env: Env, n: { nonce?: string; nome?: string; instagram?: EsitoPiattaforma; youtube?: EsitoPiattaforma; spostato?: boolean; errore?: string; run_url?: string }) {
+  const k = `pub:${String(n.nonce || '').replace(/[^0-9a-f]/gi, '')}`;
+  const p = n.nonce ? await leggi<{ runId: string; chat: string; msg?: number }>(env, k) : undefined;
+  if (!p) return;
   await mem(env).cancella(k);
   const memo = await leggi<RunMemo>(env, `run:${p.runId}`);
-  const nome = memo?.nome || 'Il video';
-  if (b.esito === 'ok') {
-    const url = /^https:\/\/(www\.)?instagram\.com\//.test(b.link || '') ? b.link! : 'https://www.instagram.com/';
-    if (memo) await mem(env).scrivi(`run:${p.runId}`, { ...memo, pubblicato: url } satisfies RunMemo);
-    await mostra(env, p.chat, { testo: `✅ <b>${esc(nome)}</b> è su Instagram.\n<i>Il file è in 99 - Pubblicare.</i>`, tasti: [[link('📱 Apri il Reel', url)], [MENU_TASTO]] }, p.msg);
-  } else {
-    if (memo) await mem(env).scrivi(`run:${p.runId}`, { ...memo, pubblicato: undefined } satisfies RunMemo);
-    await mostra(env, p.chat, { testo: `❌ <b>${esc(nome)}</b>: Instagram non ha accettato il video. Il link pubblico su Drive è stato tolto; il dettaglio dell'errore è nella cronologia dello scenario su Make.`, tasti: [[tasto('🔁 Riprova', `pub!:${p.runId}`), MENU_TASTO]] }, p.msg);
+  const nome = memo?.nome || n.nome || 'Il video';
+  const riga = (icona: string, chi: string, e?: EsitoPiattaforma, extra = '') => !e ? ''
+    : e.ok ? `${icona} ${chi}: ✅ online${extra}` : e.saltato ? `${icona} ${chi}: <i>${esc(e.errore || 'saltato')}</i>` : `${icona} ${chi}: ❌ ${esc(tronca(e.errore || 'errore', 300))}`;
+  const righe = [
+    riga('📸', 'Instagram', n.instagram, n.instagram?.prova ? ' come reel di prova (lo vedono prima i non follower)' : ''),
+    riga('▶️', 'YouTube', n.youtube, n.youtube?.privato ? '\n<i>⚠️ YouTube lo tiene privato finché il collegamento non è verificato: rendilo pubblico da YouTube Studio.</i>' : ''),
+    n.errore ? `⚠️ ${esc(tronca(n.errore, 300))}` : '',
+    n.spostato ? '<i>Il video è in 99 - Pubblicare.</i>' : '',
+  ].filter(Boolean);
+  const riuscito = Boolean(n.instagram?.ok || n.youtube?.ok);
+  const links = [
+    ...(n.instagram?.ok && n.instagram.link ? [link('📸 Apri su Instagram', n.instagram.link)] : []),
+    ...(n.youtube?.ok && n.youtube.link ? [link('▶️ Apri su YouTube', n.youtube.link)] : []),
+  ];
+  if (memo) {
+    const fatto = [n.instagram?.ok ? `📸 ${n.instagram.link}` : '', n.youtube?.ok ? `▶️ ${n.youtube.link}` : ''].filter(Boolean).join('\n');
+    // pubblicato da una parte sola: l'altra si può ritentare (il video è già in 99, quindi solo da qui)
+    await mem(env).scrivi(`run:${p.runId}`, { ...memo, pubblicato: riuscito ? fatto : undefined } satisfies RunMemo);
   }
-  return true;
+  await mostra(env, p.chat, {
+    testo: `${riuscito ? '✅' : '❌'} <b>${esc(nome)}</b>\n${righe.join('\n')}`,
+    tasti: [
+      ...(links.length ? [links] : []),
+      [...(!riuscito ? [tasto('🔁 Riprova', `pub!:${p.runId}`)] : []), ...(n.run_url ? [link('🔧 Log', n.run_url)] : []), MENU_TASTO],
+    ],
+  }, p.msg);
+}
+
+// chiave Instagram: la prima arriva dal secret IG_TOKEN, poi il bot la rinnova ogni settimana
+// (dura 60 giorni) e tiene in memoria quella nuova
+type ChiaveIg = { token: string; rinnovata: number };
+async function chiaveInstagram(env: Env): Promise<string | undefined> {
+  return (await leggi<ChiaveIg>(env, 'ig_token'))?.token || env.IG_TOKEN || undefined;
+}
+async function rinnovaChiaveInstagram(env: Env) {
+  const token = await chiaveInstagram(env);
+  if (!token) return;
+  const r = await fetch(`https://graph.instagram.com/refresh_access_token?grant_type=ig_refresh_token&access_token=${encodeURIComponent(token)}`);
+  const j = (await r.json().catch(() => ({}))) as { access_token?: string; error?: { message?: string } };
+  if (r.ok && j.access_token) { await mem(env).scrivi('ig_token', { token: j.access_token, rinnovata: Date.now() } satisfies ChiaveIg); return; }
+  for (const chat of autorizzati(env)) {
+    await invia(env, chat, { testo: `⚠️ <b>Chiave di Instagram non rinnovata</b>\n<code>${esc(tronca(j.error?.message || `HTTP ${r.status}`, 300))}</code>\nSe è scaduta, generane una nuova (Meta for Developers) e aggiorna il secret IG_TOKEN su Cloudflare.`, tasti: [[MENU_TASTO]] }, true);
+  }
 }
 
 // ---------- notifiche da regista.mjs ----------
@@ -1018,7 +1095,8 @@ type Info = {
   pubblica?: Pubblica;
 };
 type Notify = {
-  tipo?: 'fase' | 'esito' | 'cartelle' | 'vuoto'; esito?: string; nome: string; testo: string; ok?: boolean; foto?: string;
+  tipo?: 'fase' | 'esito' | 'cartelle' | 'vuoto' | 'pubblicato'; esito?: string; nome: string; testo: string; ok?: boolean; foto?: string;
+  nonce?: string; instagram?: EsitoPiattaforma; youtube?: EsitoPiattaforma; spostato?: boolean; errore?: string;
   run_url?: string; run_id?: string; step?: IdFase; minuti?: number; versione?: string; origine?: '97' | '98'; info?: Info; richiesto?: string;
   cartelle?: string[]; vai?: string[]; tgFile?: boolean; stili?: string[];
 };
@@ -1043,12 +1121,13 @@ const tastiRisultato = (runId?: string, runUrl?: string): Kb => [
   ...(runId ? [
     [tasto('👍 Approva', `ok:${runId}`), tasto('✏️ Correggi', `fix:${runId}`)],
     [tasto('🎨 Solo render', `ren:${runId}`), tasto('🔁 Rifai da zero', `redo:${runId}`)],
-    [tasto('📤 Pubblica su Instagram', `pub:${runId}`)],
+    [tasto('📤 Pubblica (Instagram · YouTube)', `pub:${runId}`)],
   ] : []),
   [link('📂 Drive', URL_98), ...(runUrl ? [link('🔧 Log', runUrl)] : [])],
 ];
 
 async function onNotify(env: Env, n: Notify) {
+  if (n.tipo === 'pubblicato') return onPubblicato(env, n);
   const chats = autorizzati(env);
   if (typeof n.tgFile === 'boolean' && (await fileInChatPronti(env)) !== n.tgFile) await mem(env).scrivi('tg_file', n.tgFile);
   if (n.tipo === 'cartelle') {
@@ -1265,10 +1344,10 @@ export default {
       return new Response(inviato ? 'ok' : 'video non inviato', { status: inviato ? 200 : 502 });
     }
 
-    // conferma della pubblicazione da Make: vale solo con un nonce emesso da questo bot
-    if (req.method === 'POST' && url.pathname === '/make') {
-      const b = (await req.json().catch(() => ({}))) as { nonce?: string; esito?: string; link?: string };
-      return (await onMake(env, b)) ? new Response('ok') : new Response('sconosciuto', { status: 404 });
+    // chiave Instagram per il workflow "pubblica" (che non la conosce: la custodisce il bot)
+    if (req.method === 'GET' && url.pathname === '/ig-token') {
+      if (req.headers.get('x-regista-token') !== env.NOTIFY_TOKEN) return new Response('no', { status: 401 });
+      return Response.json({ token: (await chiaveInstagram(env)) || null });
     }
 
     if (url.pathname === '/setup' && url.searchParams.get('k') === env.TELEGRAM_SECRET) {
@@ -1279,5 +1358,10 @@ export default {
     }
 
     return new Response('regista bot', { status: 200 });
+  },
+
+  // cron di wrangler.toml: rinnovo settimanale della chiave Instagram
+  async scheduled(_evento: unknown, env: Env, ctx: { waitUntil(p: Promise<unknown>): void }) {
+    ctx.waitUntil(rinnovaChiaveInstagram(env).catch((e) => console.error(e)));
   },
 };
