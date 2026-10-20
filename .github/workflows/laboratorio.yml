@@ -14,8 +14,9 @@ concurrency:
   group: laboratorio-${{ inputs.ricetta }}
   cancel-in-progress: false
 
+# write: i confronti leggeri vanno anche sul ramo laboratorio-esiti (si guardano da git, senza Drive)
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   prova:
@@ -50,3 +51,16 @@ jobs:
         run: |
           sudo mkdir -p /mnt/lab && sudo chown "$USER" /mnt/lab
           node scripts/laboratorio.mjs
+
+      - name: Confronti sul ramo laboratorio-esiti
+        if: always()
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RICETTA: ${{ inputs.ricetta }}
+        run: |
+          [ -d work/lab-git ] || exit 0
+          cd work/lab-git
+          git init -q -b laboratorio-esiti
+          git add -A
+          git -c user.name='laboratorio' -c user.email='41898282+github-actions[bot]@users.noreply.github.com' commit -qm "laboratorio: $RICETTA"
+          git push -qf "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" laboratorio-esiti

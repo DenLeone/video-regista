@@ -91,6 +91,38 @@ export function riconosciLog(src, info, disp, brief = '', tmpDir) {
   return { iLog: true, riconosciuto, sat, luce, scuro: luce !== null && luce < 0.12 };
 }
 
+// ---------- look chiari: esposizione del soggetto portata a "ben esposto" ----------
+// Moero air (Narrativo, 20/10): girato I-Log al chiuso, dopo la LUT tecnica il volto restava al
+// buio ("sono stra scuro, così non è pubblicabile"). La schiarita I-Log guarda la media di tutta
+// l'immagine (una finestra o un muro chiaro la alzano e il volto resta scuro); qui conta il centro,
+// dove sta il soggetto. Soggetto verso `obiettivo` (volto ben esposto ~0,48), al massimo ×`guadagno`
+// (oltre si vede il rumore), ombre alzate meno del soggetto (radice del guadagno: niente grigio
+// slavato), neri a terra, bianchi spenti su. Se il pezzo va già bene: null.
+export function curvaChiara(m, { obiettivo = 0.48, guadagno = 2.2 } = {}) {
+  if (!m) return null;
+  const punti = [[0, 0]];
+  if (m.nero > 0.02) punti.push([m.nero, m.nero * (1 - 0.6 * rampa(m.nero, 0.02, 0.06))]);
+  let medio = m.medio;
+  if (m.medio < obiettivo) medio = Math.min(m.medio * guadagno, m.medio + (obiettivo - m.medio) * rampa(obiettivo - m.medio, 0, 0.04));
+  else medio = m.medio + 0.6 * (0.58 - m.medio) * rampa(m.medio, 0.62, 0.7);
+  if (Math.abs(medio - m.medio) > 0.008 && m.medio > 0.03) {
+    const g = medio / m.medio, ombra = m.medio * 0.4;
+    if (ombra > punti[punti.length - 1][0] + 0.03) punti.push([ombra, ombra * Math.sqrt(g)]);
+    punti.push([m.medio, medio]);
+  }
+  const suBianchi = rampa(m.bianco, 0.88, 0.75) * rampa(m.bianco - m.medio, 0.06, 0.12);
+  if (suBianchi > 0) punti.push([m.bianco, m.bianco + suBianchi * 0.6 * (0.93 - m.bianco)]);
+  punti.push([1, 1]);
+  const buoni = [punti[0]];
+  for (const q of punti.slice(1)) {
+    const u = buoni[buoni.length - 1];
+    if (q[0] - u[0] >= 0.03 && q[1] > u[1]) buoni.push(q);
+  }
+  if (buoni[buoni.length - 1][0] !== 1) buoni[buoni.length - 1] = [1, 1];
+  if (buoni.length <= 2) return null;
+  return buoni.map(([x, y]) => `${x.toFixed(3)}/${y.toFixed(3)}`).join(' ');
+}
+
 // ---------- 12K Quality: esposizione adattata a ogni pezzo ----------
 // La LUT del look (lut/12k.cube) si aspetta un'immagine "normale": soggetto a metà luce, neri
 // veri, bianchi pieni. Il girato di Denis va dal controluce nuvoloso (Giacca autunnale, I-Log

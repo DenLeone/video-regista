@@ -8,23 +8,29 @@
 // {
 //   "uscita": "03 · Social — Risorse/Stili/12K Quality/_laboratorio/catalogo",
 //   "catalogo": { "cartelle": ["98 - Fatti/980"], "max": 8 },      // fogli con tutti i video
-//   "fotogrammi": [{ "file": "98 - Fatti/980/IMG_1.MOV", "tempi": [2.5, 7] }],
+//   "fotogrammi": [{ "file": "98 - Fatti/980/IMG_1.MOV", "tempi": [2.5, 7] }],   // o "punti": [0.3, 0.6] (frazioni della durata)
 //   "varianti": [{ "id": "A", "filtro": "lut3d=file=lut/12k.cube", "adatta": true }], // su ogni fotogramma;
-//                 adatta = prima la curva di esposizione del pezzo, come fa il montaggio col look 12K
+//                 adatta = prima la curva di esposizione del pezzo: true come il look 12K,
+//                 "chiaro" o { "obiettivo": 0.5, "guadagno": 2.2 } per i look chiari (curvaChiara)
+//   "griglia": 3,                                                    // confronto anche a griglia (colonne)
 //   "clip": [{ "file": "...", "da": 3, "dur": 4, "variante": "A" }]   // pezzi brevi in mp4
 // }
+// I percorsi nei filtri (file=lut/…, file=lab/lut/…) sono relativi al repo.
 // I fotogrammi escono già convertiti come nel montaggio (HDR → SDR, I-Log → Rec709): "<n>-base.jpg"
 // è il punto di partenza del look, "<n>-<variante>.jpg" il risultato.
 
 import { execFile, execFileSync } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
-import { curvaEsposizione, filtroTecnico, misuraPezzo, probe, riconosciLog } from './colore.mjs';
+import { curvaChiara, curvaEsposizione, filtroTecnico, misuraPezzo, probe, riconosciLog } from './colore.mjs';
 import { VIDEO_EXT, dispositivo } from './sorgenti.mjs';
 
 const ROOT = path.resolve(path.dirname(new URL(import.meta.url).pathname.replace(/^\/([A-Za-z]:)/, '$1')), '..');
 const REMOTE = process.env.REGISTA_REMOTE || 'gdrive';
 const OUT = path.join(ROOT, 'work', 'lab');
+// copia leggera dei confronti (griglie e testi): il workflow la pubblica sul ramo laboratorio-esiti,
+// così si controllano anche senza scaricarli da Drive
+const GIT = path.join(ROOT, 'work', 'lab-git');
 const SCARICO = process.env.LAB_SCARICO || path.join(ROOT, 'work', 'lab-in');
 const FONT = '/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf';
 
@@ -42,6 +48,10 @@ let uscitaDrive = null;
 const carica = () => { if (uscitaDrive) run('rclone', ['copy', OUT, `${REMOTE}:${uscitaDrive}`, '--exclude', 'tmp/**']); };
 const pulito = (t) => String(t).replace(/[^\w.-]+/g, '_').slice(0, 60);
 const testo = (t) => String(t).replace(/[\\':%,]/g, ' ');
+// file= relativi al repo (lut/…, lab/lut/…) → assoluti
+const conPercorsi = (f) => f.replace(/file='?(?!\/)([^:,']+)'?/g, (_, p) => `file='${ROOT}/${p}'`);
+// curva di esposizione della variante: 12K (true) o look chiaro ("chiaro" / { obiettivo, guadagno })
+const curvaVariante = (v, m) => (!v.adatta || !m ? null : v.adatta === true ? curvaEsposizione(m) : curvaChiara(m, typeof v.adatta === 'object' ? v.adatta : {}));
 
 // sorgente: scaricata + conversione tecnica come nel montaggio
 const sorgenti = new Map();
@@ -128,7 +138,8 @@ function fotogrammiEVarianti(ric) {
   for (const voce of ric.fotogrammi || []) {
     const s = sorgente(voce.file);
     log(s.riga);
-    for (const t of voce.tempi || [s.info.durata / 2]) {
+    const tempi = voce.tempi || (voce.punti || [0.5]).map((q) => +(s.info.durata * q).toFixed(2));
+    for (const t of tempi) {
       n++;
       const nome = `${String(n).padStart(2, '0')}-${pulito(path.parse(voce.file).name)}-${String(t).replace('.', ',')}s`;
       const base = path.join(OUT, `${nome}-base.jpg`);
@@ -136,22 +147,36 @@ function fotogrammiEVarianti(ric) {
       const fatti = [base];
       // curva di esposizione del pezzo intorno al fotogramma (2 s), come nel montaggio
       const m = misuraPezzo(s.u, Math.max(0, t - 1), 2, s.tecnico);
-      const curva = curvaEsposizione(m);
-      if (m) log(`  ${nome}: soggetto ${m.medio.toFixed(2)}, neri ${m.nero.toFixed(2)}, bianchi ${m.bianco.toFixed(2)}${curva ? ` → ${curva}` : ''}`);
+      if (m) log(`  ${nome}: soggetto ${m.medio.toFixed(2)}, neri ${m.nero.toFixed(2)}, bianchi ${m.bianco.toFixed(2)}`);
+      const nomi = [ric.nomeBase || 'base'];
       for (const v of varianti) {
         const o = path.join(OUT, `${nome}-${pulito(v.id)}.jpg`);
         try {
-          const filtro = v.filtro.replace(/lut\//g, `${ROOT}/lut/`);
-          fotogramma(s, t, o, v.adatta && curva ? `curves=master='${curva}',${filtro}` : filtro);
+          const curva = curvaVariante(v, m);
+          if (curva) log(`    ${v.id}: curva ${curva}`);
+          const filtro = conPercorsi(v.filtro || 'null');
+          fotogramma(s, t, o, curva ? `curves=master='${curva}',${filtro}` : filtro);
           fatti.push(o);
+          nomi.push(v.id);
         } catch (e) { log(`variante ${v.id} su ${nome}: ${e.message.split('\n')[0]}`); }
       }
       // confronto affiancato (540 di larghezza l'uno) con il nome della variante
-      const nomi = ['base', ...varianti.map((v) => v.id)];
       run('ffmpeg', ['-y', '-v', 'error', ...fatti.flatMap((o) => ['-i', o]), '-filter_complex',
         `${fatti.map((_, k) => `[${k}]scale=540:-2,drawtext=fontfile=${FONT}:text='${testo(nomi[k])}':x=12:y=12:fontsize=28:fontcolor=white:box=1:boxcolor=black@0.5[v${k}]`).join(';')};`
         + `${fatti.map((_, k) => `[v${k}]`).join('')}${fatti.length > 1 ? `hstack=${fatti.length}` : 'null'}`,
         '-q:v', '3', path.join(OUT, `${nome}-confronto.jpg`)]);
+      // a griglia (comoda dal telefono): riquadri 360×640 numerati, `griglia` colonne
+      if (ric.griglia && fatti.length > 1) {
+        const col = ric.griglia, righe = Math.ceil(fatti.length / col), w = 360, h = 640;
+        const pos = fatti.map((_, k) => `${(k % col) * w}_${Math.floor(k / col) * h}`).join('|');
+        const griglia = path.join(OUT, `${nome}-griglia.jpg`);
+        run('ffmpeg', ['-y', '-v', 'error', ...fatti.flatMap((o) => ['-i', o]), '-filter_complex',
+          `${fatti.map((_, k) => `[${k}]scale=${w}:${h}:force_original_aspect_ratio=decrease,pad=${w}:${h}:(ow-iw)/2:(oh-ih)/2,drawtext=fontfile=${FONT}:text='${testo(nomi[k])}':x=10:y=10:fontsize=30:fontcolor=white:box=1:boxcolor=black@0.6:boxborderw=6[g${k}]`).join(';')};`
+          + `${fatti.map((_, k) => `[g${k}]`).join('')}xstack=inputs=${fatti.length}:layout=${pos}:fill=black,pad=${col * w}:${righe * h}`,
+          '-q:v', '3', griglia]);
+        fs.mkdirSync(GIT, { recursive: true });
+        fs.copyFileSync(griglia, path.join(GIT, path.basename(griglia)));
+      }
     }
   }
 }
@@ -163,7 +188,7 @@ function clip(ric) {
     const v = c.variante ? varianti[c.variante] : null;
     const out = path.join(OUT, `clip-${pulito(path.parse(c.file).name)}-${c.da}s-${pulito(c.variante || 'base')}.mp4`);
     run('ffmpeg', ['-y', '-v', 'error', '-ss', String(c.da), '-i', s.u, '-t', String(c.dur || 4),
-      '-vf', `scale='if(gt(iw,ih),1920,1080)':-2:flags=lanczos,${s.tecnico.replace(/,?format=yuv420p$/, '') || 'null'}${v ? `,${v.filtro.replace(/lut\//g, `${ROOT}/lut/`)}` : ''},format=yuv420p`,
+      '-vf', `scale='if(gt(iw,ih),1920,1080)':-2:flags=lanczos,${s.tecnico.replace(/,?format=yuv420p$/, '') || 'null'}${v ? `,${conPercorsi(v.filtro)}` : ''},format=yuv420p`,
       '-c:v', 'libx264', '-preset', 'slow', '-crf', '16', '-an', '-movflags', '+faststart',
       '-colorspace', 'bt709', '-color_primaries', 'bt709', '-color_trc', 'bt709', '-color_range', 'tv', out]);
   }
@@ -174,6 +199,7 @@ async function main() {
   const ric = JSON.parse(fs.readFileSync(path.join(ROOT, file), 'utf8'));
   if (!ric.uscita) throw new Error('la ricetta non dice dove mettere i risultati (uscita)');
   fs.rmSync(OUT, { recursive: true, force: true });
+  fs.rmSync(GIT, { recursive: true, force: true });
   fs.mkdirSync(path.join(OUT, 'tmp'), { recursive: true });
   uscitaDrive = ric.uscita;
   fs.mkdirSync(SCARICO, { recursive: true });
@@ -183,6 +209,7 @@ async function main() {
   fs.rmSync(path.join(OUT, 'tmp'), { recursive: true, force: true });
   const elenco = [...sorgenti.values()].map((s) => s.riga).join('\n');
   if (elenco) fs.writeFileSync(path.join(OUT, 'sorgenti.txt'), `${elenco}\n`);
+  if (elenco && fs.existsSync(GIT)) fs.copyFileSync(path.join(OUT, 'sorgenti.txt'), path.join(GIT, 'sorgenti.txt'));
   carica();
   log(`risultati in ${ric.uscita}: ${fs.readdirSync(OUT).length} file`);
 }

@@ -1,0 +1,18 @@
+{
+  "uscita": "03 · Social — Risorse/Stili/_prove colore/Manifestazioni",
+  "nomeBase": "1 attuale",
+  "griglia": 3,
+  "fotogrammi": [
+    { "file": "97 - Editare/Manifestazioni /VID_20261020_131720_044_02_17.mp4", "punti": [0.2, 0.45, 0.7] }
+  ],
+  "varianti": [
+    { "id": "2 chiaro naturale", "adatta": { "obiettivo": 0.48 }, "filtro": "eq=saturation=1.05" },
+    { "id": "3 chiaro caldo", "adatta": { "obiettivo": 0.5 }, "filtro": "colortemperature=temperature=5600,eq=saturation=1.08" },
+    { "id": "4 luminoso morbido", "adatta": { "obiettivo": 0.55 }, "filtro": "curves=master='0/0.05 0.5/0.52 1/0.97',eq=saturation=0.92" },
+    { "id": "5 chiaro brillante", "adatta": { "obiettivo": 0.5 }, "filtro": "curves=master='0/0 0.25/0.22 0.75/0.79 1/1',eq=saturation=1.18" },
+    { "id": "6 pelle luminosa", "adatta": { "obiettivo": 0.48 }, "filtro": "lut3d=file=lab/lut/pelle.cube:interp=tetrahedral" },
+    { "id": "7 cinematico chiaro", "adatta": { "obiettivo": 0.46 }, "filtro": "lut3d=file=lab/lut/cinematico-chiaro.cube:interp=tetrahedral" },
+    { "id": "8 freddo pulito", "adatta": { "obiettivo": 0.5 }, "filtro": "colortemperature=temperature=7400,eq=contrast=1.04:saturation=1.02" },
+    { "id": "9 film caldo", "adatta": { "obiettivo": 0.5 }, "filtro": "lut3d=file=lab/lut/film-caldo.cube:interp=tetrahedral" }
+  ]
+}
