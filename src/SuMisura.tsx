@@ -25,6 +25,8 @@ const LOOK: Record<GraficaStile['look'], string | undefined> = {
 };
 const Y: Record<Posizione, number> = { alto: 420, centro: 1060, basso: 1440 };
 const OMBRA = '0 3px 14px rgba(0,0,0,0.55), 0 1px 3px rgba(0,0,0,0.7)';
+// sottotitoli: contorno scuro stretto in più, leggibili anche sui B-roll chiari (tasti lilla, cielo)
+const OMBRA_SOTTO = '0 0 2px rgba(0,0,0,0.75), 0 2px 8px rgba(0,0,0,0.55), 0 3px 16px rgba(0,0,0,0.45)';
 const clamp = { extrapolateLeft: 'clamp', extrapolateRight: 'clamp' } as const;
 const famiglia = (ft: FontStile) => `"${ft.famiglia}", "Montserrat", sans-serif`;
 const stileFont = (ft: FontStile) => ({ fontFamily: famiglia(ft), fontWeight: ft.peso, fontStyle: ft.corsivo ? 'italic' : 'normal' });
@@ -64,20 +66,29 @@ type Pezzo = { at: number; fine: number; testo: string };
 const pulisci = (w: string) => w.replace(/^[«"“(]+|[»"”).,;:…]+$/g, '');
 const norm = (w: string) => pulisci(w).toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
 
-// sottotitoli a frasi brevi: 2–5 parole, si va a capo su pause e punteggiatura
+// sottotitoli a frasi brevi: 2–5 parole, si va a capo su pause e punteggiatura. Quando si va a
+// capo solo per lunghezza, una parola "debole" in fondo (articolo, preposizione, congiunzione) passa
+// alla riga dopo: "una tastiera 100% quindi col | pad numerico" → "…quindi | col pad numerico"
+const DEBOLI = new Set(('il lo la i gli le l un uno una di a da in con su per tra fra e ed o ma che del dello della dei degli delle ' +
+  'al allo alla ai agli alle dal dallo dalla dai nel nello nella nei sul sulla col coi mio mia tuo tua suo sua non').split(' '));
 function frasiBrevi(parole: Piano['parole'] = [], maxParole = 5, maxCar = 28): Pezzo[] {
+  type P = { w: string; at: number; fine: number };
   const out: Pezzo[] = [];
-  let cur: { at: number; fine: number; w: string[] } | null = null;
+  const chiudi = (ws: P[]) => { if (ws.length) out.push({ at: ws[0].at, fine: ws[ws.length - 1].fine, testo: ws.map((x) => x.w).join(' ') }); };
+  let cur: P[] = [];
   parole.forEach((p, i) => {
     const prima = parole[i - 1];
     const stacco = prima && (p.at - (prima.at + prima.dur) > 0.35 || /[.,;:!?…]$/.test(prima.w));
-    const lungo = cur && (cur.w.length >= maxParole || cur.w.join(' ').length + p.w.length + 1 > maxCar);
-    if (!cur || stacco || lungo) { if (cur) out.push({ at: cur.at, fine: cur.fine, testo: cur.w.join(' ') }); cur = { at: p.at, fine: p.at + p.dur, w: [] }; }
-    cur!.w.push(pulisci(p.w));
-    cur!.fine = p.at + p.dur;
+    const lungo = cur.length >= maxParole || cur.map((x) => x.w).join(' ').length + p.w.length + 1 > maxCar;
+    if (cur.length && (stacco || lungo)) {
+      let resto: P[] = [];
+      while (!stacco && cur.length > 1 && DEBOLI.has(norm(cur[cur.length - 1].w))) resto.unshift(cur.pop() as P);
+      chiudi(cur);
+      cur = resto;
+    }
+    cur.push({ w: pulisci(p.w), at: p.at, fine: p.at + p.dur });
   });
-  const c = cur as { at: number; fine: number; w: string[] } | null;
-  if (c) out.push({ at: c.at, fine: c.fine, testo: c.w.join(' ') });
+  chiudi(cur);
   out.forEach((g, k) => { const dopo = out[k + 1]; g.fine = dopo && dopo.at - g.fine < 0.5 ? dopo.at : g.fine + 0.25; });
   return out.filter((g) => g.testo.trim());
 }
@@ -95,7 +106,7 @@ const Sottotitolo: React.FC<{ testo: string; len: number; g: GraficaStile }> = (
       <div style={{
         position: 'absolute', top: Y[g.posizione] - fs * 0.6, left: 70, right: 70, textAlign: 'center',
         ...stileFont(g.fontSottotitoli), fontSize: fs, lineHeight: 1.2,
-        color: g.coloreSottotitoli, textShadow: OMBRA, opacity: Math.min(entra, esce), transform: `translateY(${(1 - entra) * 10}px)`,
+        color: g.coloreSottotitoli, textShadow: OMBRA_SOTTO, opacity: Math.min(entra, esce), transform: `translateY(${(1 - entra) * 10}px)`,
       }}>
         {t}
       </div>

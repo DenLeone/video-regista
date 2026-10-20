@@ -12,6 +12,9 @@ const { fontFamily: MONTSERRAT } = loadFont('normal', { weights: ['500', '600', 
 const GIALLO = '#FFE62E';
 const FONDO = '#0A0806';
 const OMBRA = '0 4px 24px rgba(0,0,0,0.45), 0 1px 3px rgba(0,0,0,0.6)';
+// sottotitoli: contorno scuro stretto in più, così restano leggibili anche sui B-roll chiari
+// (tasti lilla della 980, prova locale del 20/10: bianco su lilla con la sola ombra morbida)
+const OMBRA_PAROLE = '0 0 2px rgba(0,0,0,0.7), 0 2px 8px rgba(0,0,0,0.55), 0 4px 26px rgba(0,0,0,0.4)';
 // look caldo sulle clip: un filo di contrasto e saturazione, tinta calda leggera; senza
 // scurire (Giacca autunnale, 18/10: con l'I-Log convertito il volto quasi non si vedeva)
 const LOOK = 'contrast(1.03) saturate(1.08) sepia(0.1)';
@@ -67,7 +70,7 @@ const Parola: React.FC<{ testo: string; len: number }> = ({ testo, len }) => {
       <div style={{
         position: 'absolute', top: CENTRO_PAROLE - fs * 0.6, left: 80, right: 80, textAlign: 'center',
         fontFamily: MONTSERRAT, fontWeight: 700, fontSize: fs, lineHeight: 1.2, color: '#FFFFFF', letterSpacing: '-0.01em',
-        textShadow: OMBRA, opacity: Math.min(entra, esce), transform: `translateY(${(1 - entra) * 12}px) scale(${0.9 + 0.1 * entra})`,
+        textShadow: OMBRA_PAROLE, opacity: Math.min(entra, esce), transform: `translateY(${(1 - entra) * 12}px) scale(${0.9 + 0.1 * entra})`,
       }}>
         {testo}
       </div>
