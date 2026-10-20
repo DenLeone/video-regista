@@ -306,8 +306,9 @@ const PIXABAY = () => process.env.PIXABAY_URL || 'https://pixabay.com';
 const PEXELS = () => process.env.PEXELS_URL || 'https://api.pexels.com';
 const FONTI_STOCK = {
   // candidati: { id, durata, link, w, h, autore, pagina }
+  // Pixabay: solo riprese vere, niente animazioni ("supermarket price tags" dava un buono sconto disegnato, 21/10)
   Pixabay: async (q) => {
-    const r = await fetchRiprova(`${PIXABAY()}/api/videos/?key=${encodeURIComponent(process.env.PIXABAY_API_KEY)}&q=${encodeURIComponent(q)}&safesearch=true&per_page=20`, {}, 2);
+    const r = await fetchRiprova(`${PIXABAY()}/api/videos/?key=${encodeURIComponent(process.env.PIXABAY_API_KEY)}&q=${encodeURIComponent(q)}&video_type=film&safesearch=true&per_page=20`, {}, 2);
     if (!r.ok) throw new Error(`HTTP ${r.status}`);
     const { hits = [] } = await r.json();
     return hits.map((h) => {
@@ -619,10 +620,12 @@ function promptRegia({ modo, testoMateriale, regiaPrecedente }) {
   }
   if (discorso && !regiaPrecedente) {
     const durata = discorso.durata;
-    const quante = Math.max(3, Math.min(20, Math.round(durata / 20)));
+    // cartelli a tutto schermo (Motion): pochi, uno ogni ~45 s (Manifestazioni, 21/10: 7 in 2 minuti erano troppi)
+    const cartelli = stileSuMisura?.grafica.tipoTitoli === 'cartelli';
+    const quante = cartelli ? Math.max(1, Math.min(4, Math.round(durata / 45))) : Math.max(3, Math.min(20, Math.round(durata / 20)));
     // stili senza scritte grandi (12K Quality): niente keywords da distribuire
     const scritte = !stileSuMisura || stileSuMisura.grafica.titoli
-      ? `Il video dura circa ${Math.round(durata)} s: distribuisci circa ${quante} scritte grandi su tutta la durata (una ogni ~20 s), sulle frasi più forti; questo vale più del numero indicato nella sezione Grafica.`
+      ? `Il video dura circa ${Math.round(durata)} s: distribuisci ${cartelli ? 'al massimo' : 'circa'} ${quante} ${cartelli ? 'cartelli' : 'scritte grandi'} su tutta la durata (${cartelli ? 'uno ogni ~45 s' : 'una ogni ~20 s'}), sulle frasi più forti; questo vale più del numero indicato nella sezione Grafica.`
       : 'Questo stile non ha scritte grandi: `keywords` vuoto.';
     p += `\n\n## MODALITÀ DISCORSO (regola di Denis: nella cartella c'è un solo video)\nÈ un discorso di Denis da montare così com'è: NIENTE regia. Non togliere frasi per accorciare, non riordinare, non scegliere cosa tenere: la sequenza l'ha già decisa lo script (tutte le frasi in ordine, tolte solo pause, false partenze e ripetizioni) e nella regia va copiata identica:\n\`\`\`json\n"sequenza": ${JSON.stringify(discorso.sequenza)}\n\`\`\`\nIl tuo lavoro è SOLO la grafica dello stile (sezione Grafica): \`titolo\`, \`soggetto\`, \`enfasi\` se lo stile ha l'apertura a lettere enormi (sulle prime parole del discorso), le \`keywords\` con le regole dello stile e, se lo stile ha il bianco e nero nei momenti, \`"bn": true\` su qualche elemento della sequenza${stileSuMisura?.grafica.fumo || stileSuMisura?.grafica.stock ? '; se la sezione Grafica li prevede, puoi aggiungere agli elementi anche `fumo`, `stock` e `inserto` (sempre con la stessa `frase`)' : ''}. ${scritte} Ignora le regole su durata, scaletta, inquadrature e B-roll. \`scaletta\` = i 3–6 temi del discorso, \`testo_montato\` vuoto.`;
   }
