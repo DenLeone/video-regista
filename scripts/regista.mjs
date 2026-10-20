@@ -11,6 +11,7 @@
 //   REGISTA_AI              gemini (default) | claude: l'AI principale; l'altra fa da riserva automatica
 //   REGISTA_MODEL           modello Claude (default sonnet) · GEMINI_MODEL flash (default) | pro
 //   GEMINI_MODELLI          (facoltativo) elenco fisso "a,b,c" al posto della rotazione automatica dei Flash
+//   PEXELS_API_KEY          (facoltativo) B-roll di repertorio per gli stili con "B-roll stock: sì" (Motion)
 //   NOTIFY_URL / NOTIFY_TOKEN (opzionali) bot Telegram: fasi, esito, anteprima video
 //
 // Modalità correzione (dal bottone ✏️ del bot): ORIGINE=98, CARTELLA=<nome>,
@@ -23,7 +24,7 @@ import path from 'node:path';
 import { audioMuto, frasi, inviluppo, sincronizza, sogliaVoce } from './audio.mjs';
 import { DIR_EDITARE, DIR_FATTI, DIR_STILI } from './cartelle.mjs';
 import { HDR, curvaChiara, curvaEsposizione, filtroTecnico, misuraPezzo, perFiltro, probe, riconosciLog } from './colore.mjs';
-import { materialePerAI, normFrase, risolviRegia, sequenzaDiscorso } from './regia.mjs';
+import { chiaveStock, materialePerAI, normFrase, risolviRegia, sequenzaDiscorso } from './regia.mjs';
 import { movimento, syncMovimento } from './sync-visivo.mjs';
 import { LOOK_FFMPEG, leggiStile, promptSuMisura } from './stile-su-misura.mjs';
 import { AUDIO_EXT, IMAGE_EXT, NOMI_DISPOSITIVO, VIDEO_EXT, dispositivo, prioritaAudio, tagsPiatti } from './sorgenti.mjs';
@@ -127,10 +128,15 @@ function preparaDiscorso(analisi) {
   discorso = { ...d, durata };
   return discorso;
 }
-// la sequenza del discorso vince su quella dell'AI (tiene solo i suoi "bn"); `discorso: true` dice a
-// risolviRegia di alternare lo zoom solo dove c'è un salto. Anche per correzioni e "Solo render"
-// di un discorso (DISCORSO senza la sequenza nuova)
-const conSequenza = (r) => (discorso ? { ...r, sequenza: discorso.sequenza.map((it) => ({ ...it, ...((r.sequenza || []).some((x) => normFrase(x.frase) === it.frase && x.bn === true) ? { bn: true } : {}) })) } : r);
+// la sequenza del discorso vince su quella dell'AI (tiene solo le sue aggiunte di stile: "bn", e nel
+// Motion "fumo", "stock" e gli inserti); `discorso: true` dice a risolviRegia di alternare lo zoom solo
+// dove c'è un salto. Anche per correzioni e "Solo render" di un discorso (DISCORSO senza la sequenza nuova)
+const AGGIUNTE_DISCORSO = ['bn', 'fumo', 'stock', 'inserto', 'inserto_da'];
+const aggiunteDi = (x) => Object.fromEntries(AGGIUNTE_DISCORSO.filter((k) => (k === 'bn' || k === 'fumo' ? x[k] === true : x[k] != null && x[k] !== '')).map((k) => [k, x[k]]));
+const conSequenza = (r) => (discorso ? { ...r, sequenza: discorso.sequenza.map((it) => {
+  const x = (r.sequenza || []).find((y) => normFrase(y.frase) === it.frase);
+  return { ...it, ...(x ? aggiunteDi(x) : {}) };
+}) } : r);
 const perRegia = (r) => (DISCORSO ? { ...conSequenza(r), discorso: true } : r);
 
 // ---------- 1. trova la cartella da fare ----------
@@ -261,7 +267,8 @@ function taglia(s, start, dur, out, conAudio, senzaLook = false, zoom = 1, lento
   if (!senzaLook) {
     // look 12K: la sua curva; look chiari ("chiaro caldo" del Narrativo): centro e volto ben esposti;
     // gli altri stili: solo se il soggetto è proprio al buio (Moero air, 20/10: volto a 0,14 in controluce)
-    const m = misuraPerLook(s, start, dur);
+    // repertorio (Pexels): già esposto bene, prende solo il colore dello stile
+    const m = s.stock ? null : misuraPerLook(s, start, dur);
     curva = !m ? null : LOOK_12K ? curvaEsposizione(m) : LOOK_STILE?.esposizione ? curvaChiara(m, LOOK_STILE.esposizione)
       : (m.pelle != null && m.pelle < 0.2) || m.medio < 0.25 ? curvaChiara(m, { obiettivo: 0.45, obiettivoPelle: 0.3 }) : null;
     if (m) log(`  ${path.basename(out)}: soggetto ${m.medio.toFixed(2)}${m.pelle != null ? `, volto ${m.pelle.toFixed(2)}` : ''}, neri ${m.nero.toFixed(2)}, bianchi ${m.bianco.toFixed(2)}${curva ? ` → curva ${curva}` : ''}`);
@@ -286,6 +293,56 @@ function troncaPiano(piano, secondi) {
   piano.keywords = piano.keywords.filter((k) => k.at < t - 0.3).map((k) => ({ ...k, dur: +Math.min(k.dur, t - k.at).toFixed(3) }));
   piano.parole = (piano.parole || []).filter((w) => w.at < t);
   piano.flickers = (piano.flickers || []).filter((f) => f.at < t);
+}
+
+// B-roll di repertorio (stili con "B-roll stock: sì", come il Motion): per ogni "stock" della regia
+// (una ricerca in inglese) un video verticale da Pexels, aggiunto alle sorgenti. La chiave è il secret
+// PEXELS_API_KEY, messo da Denis su GitHub: senza, o senza risultati, la frase resta sulla sua
+// inquadratura. Restituisce quanti video ha scaricato
+const PEXELS = () => process.env.PEXELS_URL || 'https://api.pexels.com';
+async function scaricaStock(regia, analisi) {
+  const richieste = [...new Set((regia.sequenza || []).map((it) => String(it.stock || '').trim()).filter(Boolean))].slice(0, 12);
+  if (!richieste.length) return 0;
+  if (!process.env.PEXELS_API_KEY) { log(`stock: ${richieste.length} B-roll di repertorio chiesti ma manca PEXELS_API_KEY: restano le inquadrature`); return 0; }
+  analisi.stock = analisi.stock || {};
+  const dir = path.join(WORK, 'stock');
+  fs.mkdirSync(dir, { recursive: true });
+  const usati = new Set(analisi.sorgenti.filter((s) => s.stock).map((s) => s.pexels));
+  let scaricati = 0;
+  for (const q of richieste) {
+    const chiave = chiaveStock(q);
+    if (!chiave || analisi.stock[chiave]) continue;
+    try {
+      const r = await fetchRiprova(`${PEXELS()}/videos/search?query=${encodeURIComponent(q)}&orientation=portrait&size=medium&per_page=10`,
+        { headers: { Authorization: process.env.PEXELS_API_KEY } }, 2);
+      if (!r.ok) throw new Error(`HTTP ${r.status}`);
+      const { videos = [] } = await r.json();
+      // il primo video verticale di almeno 4 s non già usato, nel file più vicino a 1080×1920 (mai sotto 720)
+      let scelto = null;
+      for (const v of videos) {
+        if (v.duration < 4 || usati.has(v.id)) continue;
+        const file = (v.video_files || []).filter((x) => x.height > x.width && x.width >= 720 && /mp4/.test(x.file_type || 'mp4') && x.link)
+          .sort((a, b) => Math.abs(a.width - 1080) - Math.abs(b.width - 1080))[0];
+        if (file) { scelto = { v, file }; break; }
+      }
+      if (!scelto) { log(`stock "${q}": nessun video verticale adatto`); continue; }
+      const id = `stock${analisi.sorgenti.filter((s) => s.stock).length + 1}`;
+      const dest = path.join(dir, `${id}.mp4`);
+      const d = await fetchRiprova(scelto.file.link, {}, 3);
+      if (!d.ok) throw new Error(`download HTTP ${d.status}`);
+      fs.writeFileSync(dest, Buffer.from(await d.arrayBuffer()));
+      const info = probe(dest);
+      if (!info.durata) throw new Error('file non leggibile');
+      usati.add(scelto.v.id);
+      analisi.sorgenti.push({ id, file: `${id}.mp4`, originale: dest, tipo: 'video', dispositivo: 'stock', nomeDispositivo: 'Pexels',
+        durata: +info.durata.toFixed(2), orient: info.w > info.h ? 'h' : 'v', haAudio: false, colore: info.colore, fps: info.fps,
+        soloImmagini: 'repertorio', stock: true, pexels: scelto.v.id, crediti: `${scelto.v.user?.name || 'Pexels'} (${scelto.v.url || 'pexels.com'})` });
+      analisi.stock[chiave] = id;
+      scaricati++;
+      log(`stock "${q}": ${id} ${info.w}×${info.h} ${info.durata.toFixed(1)} s di ${scelto.v.user?.name || '—'}`);
+    } catch (e) { log(`stock "${q}" non scaricato: ${e.message}`); }
+  }
+  return scaricati;
 }
 
 const ZOOM_PUNCH = 1.18; // come in src/comune.tsx
@@ -526,7 +583,7 @@ function fogliProvino(file, id, durata, offset = 0, colore = null) {
 // ---------- 3. l'AI scrive la regia ----------
 function promptRegia({ modo, testoMateriale, regiaPrecedente }) {
   let p = fs.readFileSync(path.join(ROOT, 'scripts', 'prompt-regista.md'), 'utf8')
-    .replace('{{GRAFICA}}', stileSuMisura ? promptSuMisura(stileSuMisura.grafica, stileSuMisura.testoAI)
+    .replace('{{GRAFICA}}', stileSuMisura ? promptSuMisura(stileSuMisura.grafica, stileSuMisura.testoAI, { stock: Boolean(process.env.PEXELS_API_KEY) })
       : fs.readFileSync(path.join(ROOT, 'scripts', 'stili', `${stileCorrente}.md`), 'utf8').trim());
   if (regiaPrecedente) {
     p += `\n\n## MODALITÀ CORREZIONE\nEsiste già un montaggio, questa è la sua regia:\n\`\`\`json\n${JSON.stringify(regiaPrecedente, null, 1)}\n\`\`\`\nDenis l'ha guardato e chiede queste modifiche:\n\n> ${CORREZIONE.replace(/\n/g, '\n> ')}\n\nParti da questa regia e applica SOLO quello che chiede, lasciando invariato il resto. I tempi li ricalcola lo script. Nella \`note\` elenca in breve cosa hai cambiato.`;
@@ -538,7 +595,7 @@ function promptRegia({ modo, testoMateriale, regiaPrecedente }) {
     const scritte = !stileSuMisura || stileSuMisura.grafica.titoli
       ? `Il video dura circa ${Math.round(durata)} s: distribuisci circa ${quante} scritte grandi su tutta la durata (una ogni ~20 s), sulle frasi più forti; questo vale più del numero indicato nella sezione Grafica.`
       : 'Questo stile non ha scritte grandi: `keywords` vuoto.';
-    p += `\n\n## MODALITÀ DISCORSO (regola di Denis: nella cartella c'è un solo video)\nÈ un discorso di Denis da montare così com'è: NIENTE regia. Non togliere frasi per accorciare, non riordinare, non scegliere cosa tenere: la sequenza l'ha già decisa lo script (tutte le frasi in ordine, tolte solo pause, false partenze e ripetizioni) e nella regia va copiata identica:\n\`\`\`json\n"sequenza": ${JSON.stringify(discorso.sequenza)}\n\`\`\`\nIl tuo lavoro è SOLO la grafica dello stile (sezione Grafica): \`titolo\`, \`soggetto\`, \`enfasi\` se lo stile ha l'apertura a lettere enormi (sulle prime parole del discorso), le \`keywords\` con le regole dello stile e, se lo stile ha il bianco e nero nei momenti, \`"bn": true\` su qualche elemento della sequenza. ${scritte} Ignora le regole su durata, scaletta, inquadrature e B-roll. \`scaletta\` = i 3–6 temi del discorso, \`testo_montato\` vuoto.`;
+    p += `\n\n## MODALITÀ DISCORSO (regola di Denis: nella cartella c'è un solo video)\nÈ un discorso di Denis da montare così com'è: NIENTE regia. Non togliere frasi per accorciare, non riordinare, non scegliere cosa tenere: la sequenza l'ha già decisa lo script (tutte le frasi in ordine, tolte solo pause, false partenze e ripetizioni) e nella regia va copiata identica:\n\`\`\`json\n"sequenza": ${JSON.stringify(discorso.sequenza)}\n\`\`\`\nIl tuo lavoro è SOLO la grafica dello stile (sezione Grafica): \`titolo\`, \`soggetto\`, \`enfasi\` se lo stile ha l'apertura a lettere enormi (sulle prime parole del discorso), le \`keywords\` con le regole dello stile e, se lo stile ha il bianco e nero nei momenti, \`"bn": true\` su qualche elemento della sequenza${stileSuMisura?.grafica.fumo || stileSuMisura?.grafica.stock ? '; se la sezione Grafica li prevede, puoi aggiungere agli elementi anche `fumo`, `stock` e `inserto` (sempre con la stessa `frase`)' : ''}. ${scritte} Ignora le regole su durata, scaletta, inquadrature e B-roll. \`scaletta\` = i 3–6 temi del discorso, \`testo_montato\` vuoto.`;
   }
   // discorso: niente fogli provino (le inquadrature non si scelgono)
   p += modo === 'claude'
@@ -1466,7 +1523,7 @@ async function main() {
     else if (!discorso) await fase(nome, CORREZIONE ? `🧠 Applico la correzione: “${CORREZIONE.slice(0, 120)}”${pesoAI}`
       : `🧠 Scelgo i tagli: ${analisi.sorgenti.length} sorgenti, voce da ${voci || '—'}, ${sinc} camere sincronizzate, ${analisi.frasi.length} frasi${brief ? ', con brief' : ''}${pesoAI}`, 'regia');
     // azione "render": stessa regia del giro prima, si rifanno solo colore, tagli e grafica
-    const { regia, risultato: { piano, avvisi } } = !nuovaRegia
+    const { regia, risultato: primo } = !nuovaRegia
       ? (fs.writeFileSync(path.join(WORK, 'regia.json'), JSON.stringify(regiaPrecedente, null, 1)), { regia: regiaPrecedente, risultato: risolviRegia(perRegia(regiaPrecedente), analisi) })
       : await chiediRegia(testoMateriale, discorso ? [] : fogli, CORREZIONE ? regiaPrecedente : null, (r) => risolviRegia(perRegia(r), analisi)).catch((e) => {
         // discorso: senza AI il video esce lo stesso, con i sottotitoli dello stile ma senza scritte grandi
@@ -1475,6 +1532,9 @@ async function main() {
         const r = { titolo: nome, soggetto: '', sequenza: discorso.sequenza, keywords: [], flickers: [], note: 'scritte grandi non scelte: AI non disponibile', discorso: true };
         return { regia: r, risultato: risolviRegia(r, analisi) };
       });
+    let { piano, avvisi } = primo;
+    // B-roll di repertorio: si scaricano le ricerche dell'AI e si rifà il piano con quei video
+    if (stileSuMisura?.grafica.stock && await scaricaStock(conSequenza(regia), analisi)) ({ piano, avvisi } = risolviRegia(perRegia(regia), analisi));
     // salvata con la sequenza vera: "Solo render" e "Correggi" ripartono da questa
     if (DISCORSO && nuovaRegia) { Object.assign(regia, { sequenza: conSequenza(regia).sequenza, discorso: true }); fs.writeFileSync(path.join(WORK, 'regia.json'), JSON.stringify(regia, null, 1)); }
     if (avvisi.length) log('avvisi regia:', avvisi.join(' | '));
@@ -1526,6 +1586,7 @@ async function main() {
       `Parole chiave: ${piano.keywords.map((k) => `${k.word} @${k.at.toFixed(1)}s`).join(', ') || '—'}`,
       piano.testo ? `Testo: ${piano.testo}` : '',
       piano.note ? `Note: ${piano.note}` : '',
+      analisi.sorgenti.some((s) => s.stock && piano.clips.some((c) => c.sorgente === s.id)) ? `Repertorio Pexels: ${analisi.sorgenti.filter((s) => s.stock && piano.clips.some((c) => c.sorgente === s.id)).map((s) => s.crediti).join(', ')}` : '',
       `File: ${OUT_DIR}/${nome}/${finale}`,
       DA_TELEGRAM ? (avvisoOriginali || `Originali: ${IN_DIR}/${nome}`) : '',
       rigaConsumi(),

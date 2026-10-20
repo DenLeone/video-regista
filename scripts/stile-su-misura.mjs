@@ -20,13 +20,14 @@ Tono: (es. intimo, ironico, tecnico)
 Apertura: normale             # normale | grande (prima frase a lettere enormi, parola per parola)
 Font apertura: Inter Tight 800
 Colore apertura: #FFD86B
-Sottotitoli: frase            # frase (2–5 parole) | parola (una alla volta) | nessuno
+Sottotitoli: frase            # frase (2–5 parole) | parola (una alla volta) | blocchi (tutto il parlato a blocchi davanti al petto: corsivo piccolo parola per parola e parole chiave enormi, come il Motion) | nessuno
 Font sottotitoli: Montserrat 700
 Colore sottotitoli: #FFFFFF
 Maiuscolo sottotitoli: no     # sì | no | minuscole (tutto minuscolo con la punteggiatura, come i reel tech americani)
 Posizione sottotitoli: basso  # alto | centro | basso
 Dimensione sottotitoli: 56    # in pixel su 1080 di larghezza (40–90)
-Titoli: sì                    # sì = 3–5 titoli (nome prodotto, dati) | frasi = 3–5 frasi forti a due livelli (corsivo piccolo + parole enormi) | parole grandi = le frasi forti che dici, una parola alla volta enormi al centro (il resto piccolo in basso) | no
+Titoli: sì                    # sì = 3–5 titoli (nome prodotto, dati) | frasi = 3–5 frasi forti a due livelli (corsivo piccolo + parole enormi) | parole grandi = le frasi forti che dici, una parola alla volta enormi al centro (il resto piccolo in basso) | cartelli = 1–3 scritte a tutto schermo su fondo scuro, battute a macchina | no
+Entrata parole grandi: sfocata  # sfocata | scramble (lettere a caso che si fissano in mezzo secondo)
 Font titoli: Montserrat 900
 Font corsivo: Playfair Display Italic 400   # la frase piccola delle scritte a due livelli
 Scritte dietro di me: no      # sì = le scritte grandi passano dietro alla persona (ritaglio automatico)
@@ -43,6 +44,10 @@ Vignettatura: 20              # 0–100
 Inizio: normale               # normale | prima e dopo (si parte dall'immagine piatta, come girata, che si colora)
 Tagli dentro le frasi: no     # sì = ritmo veloce: l'inquadratura può cambiare a metà frase, sulla parola che nomina la cosa
 Chiusura: no                  # no | il tuo nome Instagram (es. @_black_den): finale scurito con logo e nome
+Firma: no                     # no | il tuo nome Instagram: logo e nome fissi in basso a sinistra per tutto il video
+Transizioni: no               # no | fumo (nuvola che copre il taglio nei cambi di scena scelti dall'AI)
+Inserti: scheda               # scheda (arrotondata, tipo telefono) | tv (televisore anni '70 con barre colorate all'accensione)
+B-roll stock: no              # sì = l'AI può coprire alcune frasi con video di repertorio da Pexels (serve il secret PEXELS_API_KEY)
 
 # --- AUDIO ---
 Effetti sonori: sì            # sì | no
@@ -97,7 +102,8 @@ export const LOOK_FFMPEG = {
 const GRAFICA = ['nome', 'apertura', 'font apertura', 'colore apertura', 'sottotitoli', 'font sottotitoli', 'colore sottotitoli',
   'maiuscolo sottotitoli', 'posizione sottotitoli', 'dimensione sottotitoli', 'titoli', 'font titoli', 'colore titoli',
   'colore accento', 'posizione titoli', 'look', 'bianco e nero', 'vignettatura', 'effetti sonori', 'musica', 'volume musica',
-  'font corsivo', 'scritte dietro di me', 'soggetto in risalto', 'sfondo sfocato', 'inizio', 'chiusura', 'tagli dentro le frasi'];
+  'font corsivo', 'scritte dietro di me', 'soggetto in risalto', 'sfondo sfocato', 'inizio', 'chiusura', 'tagli dentro le frasi',
+  'entrata parole grandi', 'firma', 'transizioni', 'inserti', 'b-roll stock'];
 
 /** stile.txt → { grafica, testoAI, musica, campi } */
 export function leggiStile(testo, nomeCartella) {
@@ -123,7 +129,7 @@ export function leggiStile(testo, nomeCartella) {
   if (campi.apertura) g.apertura = /grand/.test(norm(campi.apertura)) ? 'grande' : 'normale';
   g.fontApertura = font(campi['font apertura'], g.fontApertura);
   g.coloreApertura = colore(campi['colore apertura'], g.coloreApertura);
-  if (campi.sottotitoli) g.sottotitoli = /parol/.test(norm(campi.sottotitoli)) ? 'parola' : /^(no|nessun)/.test(norm(campi.sottotitoli)) ? 'nessuno' : 'frase';
+  if (campi.sottotitoli) g.sottotitoli = /blocc|motion/.test(norm(campi.sottotitoli)) ? 'blocchi' : /parol/.test(norm(campi.sottotitoli)) ? 'parola' : /^(no|nessun)/.test(norm(campi.sottotitoli)) ? 'nessuno' : 'frase';
   g.fontSottotitoli = font(campi['font sottotitoli'], g.fontSottotitoli);
   g.coloreSottotitoli = colore(campi['colore sottotitoli'], g.coloreSottotitoli);
   if (campi['maiuscolo sottotitoli']) {
@@ -134,7 +140,7 @@ export function leggiStile(testo, nomeCartella) {
   g.dimensione = numero(campi['dimensione sottotitoli'], g.dimensione, 30, 120);
   if (campi.titoli) {
     const t = norm(campi.titoli);
-    g.tipoTitoli = /parol/.test(t) ? 'parole' : /fras|scritt/.test(t) ? 'frasi' : 'titoli';
+    g.tipoTitoli = /cartell/.test(t) ? 'cartelli' : /parol/.test(t) ? 'parole' : /fras|scritt/.test(t) ? 'frasi' : 'titoli';
     g.titoli = g.tipoTitoli !== 'titoli' || si(campi.titoli);
   }
   g.fontCorsivo = font(campi['font corsivo'], g.fontCorsivo);
@@ -151,6 +157,12 @@ export function leggiStile(testo, nomeCartella) {
   if (campi['tagli dentro le frasi']) g.stacchi = si(campi['tagli dentro le frasi']);
   const chiusura = (/@[\w.]+/.exec(campi.chiusura || '') || [])[0];
   if (chiusura) g.chiusura = chiusura;
+  const firma = (/@[\w.]+/.exec(campi.firma || '') || [])[0];
+  if (firma) g.firma = firma;
+  if (campi['entrata parole grandi']) g.entrata = /scramb|lettere|decod/.test(norm(campi['entrata parole grandi'])) ? 'scramble' : 'sfocata';
+  if (campi.transizioni) g.fumo = /fum/.test(norm(campi.transizioni));
+  if (campi.inserti) g.cornice = /tv|telev/.test(norm(campi.inserti)) ? 'tv' : 'scheda';
+  if (campi['b-roll stock']) g.stock = si(campi['b-roll stock']);
   const bn = norm(campi['bianco e nero']);
   if (bn) g.biancoNero = /sempre|tutto/.test(bn) ? 'sempre' : /^no/.test(bn) ? 'no' : 'momenti';
   if (g.biancoNero === 'sempre') g.look = 'bianco e nero';
@@ -163,12 +175,17 @@ export function leggiStile(testo, nomeCartella) {
 }
 
 // istruzioni di grafica per l'AI (sezione {{GRAFICA}} del prompt) per uno stile su misura
-export function promptSuMisura(g, testoAI) {
+// `disponibili.stock`: c'è la chiave di Pexels (senza, l'AI non chiede B-roll di repertorio)
+export function promptSuMisura(g, testoAI, disponibili = {}) {
   const righe = [`## Grafica: stile «${g.nome}» (su misura)`];
   righe.push(`- Le scritte delle parole dette (${g.apertura === 'grande' ? 'scritta d\'apertura e ' : ''}sottotitoli) le mette lo script da solo: non scriverle.`);
   if (g.apertura === 'grande') {
     righe.push('- **Apertura a lettere enormi**: la prima frase del montaggio (le prime 1–2 frasi, al massimo ~5 s) diventa una scritta a due livelli, parola per parola: le parole chiave enormi, le altre piccole in corsivo. Scegli come apertura un aggancio forte e breve, che si capisce da solo, con Denis in camera.',
       '- `enfasi` (campo in cima alla regia, accanto a `titolo`): 2–4 parole dell\'apertura da fare enormi, esattamente come le dice (es. `["STANCO", "MEZZ\'ORA"]`): i concetti, non articoli o verbi di servizio.');
+  }
+  if (g.sottotitoli === 'blocchi') {
+    righe.push('- **Tutto il parlato a blocchi**: lo script mostra ogni parola detta, in piccolo corsivo, e fa ENORMI (colorate, con le lettere che si compongono) le parole chiave che scegli tu.',
+      '- `enfasi` (campo in cima alla regia, accanto a `titolo`): le parole chiave di TUTTO il video, nell\'ordine in cui le dice: una ogni ~2–3 s di parlato (circa 20–25 al minuto). Ognuna 1–3 parole dette di fila (al massimo ~13 caratteri), copiate esattamente come le dice (es. `["DIMESSO", "I SUOI RUOLI", "CENSURATO", "45 EURO"]`): i concetti che pesano (nomi, numeri, verbi e aggettivi forti), mai articoli, preposizioni o verbi di servizio. Una parola ripetuta più volte va scritta tante volte quante deve uscire grande.');
   }
   if (g.dietro) righe.push('- Le scritte grandi passano dietro a Denis (ritaglio automatico): mettile su inquadrature dove lui è in campo, a figura intera o mezzo busto.');
   if (g.titoli && g.tipoTitoli === 'frasi') {
@@ -181,6 +198,9 @@ export function promptSuMisura(g, testoAI) {
       '  - 5–10 in tutto, una ogni 4–8 s; ognuna 2–8 parole dette di fila (al massimo ~4 s di parlato); mai due attaccate: in mezzo almeno qualche parola in piccolo.',
       '  - Ognuna: `frase` (dove la dice) e `dette` = le parole ESATTE come le dice, copiate dalla trascrizione, di seguito e nello stesso ordine (es. `"dette": "una tastiera 100%"`); `word` = le stesse parole. Lo script le aggancia da solo all\'istante in cui le dice: niente `ritardo` né `dur`.',
       '  - Sui B-roll SENZA parlato puoi mettere un\'etichetta: `elemento` (numero da 1 dell\'elemento della sequenza), `word` = 1–3 parole su cosa si vede (es. "knob del volume"), `dur` 1,5–2,5 s; al massimo una per B-roll.');
+  } else if (g.titoli && g.tipoTitoli === 'cartelli') {
+    righe.push('- `keywords` = 1–3 CARTELLI: scritte a tutto schermo su fondo scurito, battute a macchina, che riassumono un passaggio forte del racconto (es. "IL POLITICO PIÙ POTENTE"). Ognuno ancorato alla frase (`frase`, `ritardo` 0–1 s), `dur` 1,8–3 s, a distanza di almeno 15 s.',
+      '  - `word`: 2–5 parole (max ~24 caratteri), prese da quello che dice o un riassunto fedele; `note`: seconda riga facoltativa, 1–2 parole (es. "DOPO…"). Niente `tag`, niente esito. Meglio su un B-roll (o repertorio) che sul volto.');
   } else if (g.titoli) {
     righe.push('- `keywords` = i TITOLI: 3–5 in tutto, mai la trascrizione. Ognuno ancorato a una frase usata (`frase`, `ritardo` 0–1 s; senza parlato `elemento`), `dur` 2–3,5 s.',
       '  - `word`: nome del prodotto o un dato brevissimo (max ~16 caratteri); `tag`: etichetta piccola sopra (marca o categoria, facoltativa); `note`: sottotitolo sotto, 1–4 parole (senza "// ").',
@@ -191,6 +211,12 @@ export function promptSuMisura(g, testoAI) {
       '  - Stacca sulla parola che nomina la cosa, per mostrarla in quell\'istante (es. frase sul volto "…e poi c\'è lo schermettino" → `"stacco": {"dopo": "schermettino", "broll": "<dettaglio dello schermo>", "da": 12.0}`). Il ritmo (quanto durano le inquadrature) lo dicono le indicazioni di Denis per questo stile qui sotto.',
       '  - **Raffica di dettagli**: `stacco` può essere una lista (fino a 6), in ordine di parola: quando Denis elenca cose che si vedono ("ha il display, il knob, le luci"), un dettaglio per ognuna, 0,5–1 s l\'uno (es. `"stacco": [{"dopo": "display", "broll": "C0928", "da": 3.0}, {"dopo": "knob", "broll": "C0930", "da": 8.5}]`). Ogni pezzo almeno ~0,5 s; nei B-roll a 50/60 fps puoi aggiungere `"lento": true` al singolo stacco.');
   }
+  if (g.fumo) righe.push('- **Transizioni a fumo**: `"fumo": true` sull\'elemento della sequenza dove la scena cambia davvero (dal volto a un B-roll o al repertorio e ritorno, o quando cambia argomento): una nuvola copre il taglio. 2–5 in un video di un minuto, almeno 8 s una dall\'altra, mai sul primo elemento.');
+  if (g.stock && disponibili.stock) {
+    righe.push('- **B-roll di repertorio (Pexels)**: su un elemento con `frase` puoi mettere `"stock": "<ricerca in inglese, 2–4 parole>"` al posto di `camera`/`broll`: lo script cerca un video verticale e lo mostra a tutto schermo mentre Denis parla. La ricerca descrive una cosa concreta che si vede e illustra quello che dice in quel momento (es. "server room lights", "crowd protest street", "old tv static", "money counting hands"), niente nomi di persone o marchi.',
+      '  - Circa uno ogni 10–15 s, su frasi da 1,5 a 6 s; mai l\'aggancio né la chiusura (lì il volto), mai due di fila; stessa ricerca su due frasi = stesso video, pezzi diversi. Se non trova niente resta l\'inquadratura normale.');
+  }
+  if (g.cornice === 'tv') righe.push('- Gli inserti compaiono dentro un televisore anni \'70 (barre colorate all\'accensione): perfetti per filmati, schermate e foto di cui Denis parla.');
   if (g.biancoNero === 'momenti') righe.push('- **Bianco e nero**: metti `"bn": true` sugli elementi della sequenza che raccontano (ricordi, riflessioni, B-roll d\'atmosfera), circa un terzo; il volto che parla al presente e il prodotto restano a colori.');
   righe.push('- `flickers`: []. `tavola`: "". `soggetto`: nome breve del prodotto o del tema. `sponsor`: null (se il brief cita uno sponsor, mettilo come titolo, se lo stile ha i titoli).');
   if (testoAI.trim()) righe.push('', `### Indicazioni di Denis per questo stile (stile.txt)`, ...testoAI.trim().split('\n').map((r) => `- ${r}`),

@@ -3,6 +3,8 @@ import { AbsoluteFill, Audio, continueRender, delayRender, Easing, interpolate, 
 import { Clips, f, Inserti, Ritagli, Sfx, usaFps, volumeSfx } from './comune';
 import { gruppiParole } from './Cinematico';
 import { durataTotale, FontStile, GraficaStile, Keyword, Piano, Posizione, W } from './piano';
+import { clamp, norm, OMBRA, pulisci, RACCORDO, stileFont } from './testo';
+import { BlocchiMotion, blocchiParlato, Cartello, Firma, Fumi, tagliFumo } from './Motion';
 
 // Stile "su misura": tutta la grafica arriva da Drive (Stili/<nome>/stile.txt, letto da
 // scripts/stile-su-misura.mjs) dentro piano.grafica. Nessun codice per uno stile nuovo.
@@ -25,12 +27,8 @@ const LOOK: Record<GraficaStile['look'], string | undefined> = {
   'chiaro caldo': undefined, // in ffmpeg: volto ben esposto e luce calda (regista.mjs)
 };
 const Y: Record<Posizione, number> = { alto: 420, centro: 1060, basso: 1440 };
-const OMBRA = '0 3px 14px rgba(0,0,0,0.55), 0 1px 3px rgba(0,0,0,0.7)';
 // sottotitoli: contorno scuro stretto in più, leggibili anche sui B-roll chiari (tasti lilla, cielo)
 const OMBRA_SOTTO = '0 0 2px rgba(0,0,0,0.75), 0 2px 8px rgba(0,0,0,0.55), 0 3px 16px rgba(0,0,0,0.45)';
-const clamp = { extrapolateLeft: 'clamp', extrapolateRight: 'clamp' } as const;
-const famiglia = (ft: FontStile) => `"${ft.famiglia}", "Montserrat", sans-serif`;
-const stileFont = (ft: FontStile) => ({ fontFamily: famiglia(ft), fontWeight: ft.peso, fontStyle: ft.corsivo ? 'italic' : 'normal' });
 
 // carica i font dello stile prima del primo fotogramma: file messi in asset/ (copiati in
 // public/stili/…) oppure Google Fonts per nome. Se un font non arriva si va avanti col ripiego.
@@ -64,8 +62,6 @@ function useFont(fonts: FontStile[]) {
 }
 
 type Pezzo = { at: number; fine: number; testo: string };
-const pulisci = (w: string) => w.replace(/^[«"“(]+|[»"”).,;:…]+$/g, '');
-const norm = (w: string) => pulisci(w).toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
 
 // sottotitoli a frasi brevi: 2–5 parole, si va a capo su pause e punteggiatura. Quando si va a
 // capo solo per lunghezza, una parola "debole" in fondo (articolo, preposizione, congiunzione) passa
@@ -120,14 +116,6 @@ const Sottotitolo: React.FC<{ testo: string; len: number; g: GraficaStile }> = (
 // entrano parola per parola con una sfocatura che si scioglie ed escono sfocandosi
 type Riga = { tipo: 'piccolo' | 'grande'; parole: { w: string; da: number }[] };
 type Blocco = { at: number; fine: number; righe: Riga[] };
-
-// parole di raccordo italiane: restano piccole se l'AI non ha indicato le parole da ingrandire
-const RACCORDO = new Set(('il lo la i gli le l un uno una un\' di a da in con su per tra fra e ed o ma che chi cui non mi ti si ci vi ne ' +
-  'del dello della dei degli delle al allo alla ai agli alle dal dallo dalla dai dagli dalle nel nello nella nei negli nelle sul sullo ' +
-  'sulla sui sugli sulle col coi come quando se perche anche gia piu molto tanto poi cosi io tu lui lei noi voi loro me te sé mio mia ' +
-  'tuo tua suo sua nostro vostro questo questa questi queste quello quella quelli quelle ho hai ha abbiamo avete hanno sono sei e ' +
-  'siamo siete era ero erano essere avere fare fatto sto stai sta stiamo state stanno ce c sempre ancora proprio solo tutto tutti ' +
-  'tutte qui qua li la cosa cose dire detto parla parlare vado va andare oggi adesso ora allora quindi pero dove').split(/\s+/));
 
 function righeDi(parole: { w: string; at: number }[], enfasi: Set<string>, inizio: number): Riga[] {
   const righe: Riga[] = [];
@@ -349,12 +337,15 @@ export const SuMisura: React.FC<Piano> = (piano) => {
   const frasi = g.titoli && g.tipoTitoli === 'frasi' ? piano.keywords : [];
   const titoli = g.titoli && g.tipoTitoli === 'titoli' ? piano.keywords : [];
   const forti = g.titoli && g.tipoTitoli === 'parole' ? piano.keywords : [];
+  const cartelli = g.titoli && g.tipoTitoli === 'cartelli' ? piano.keywords : [];
+  // Motion: tutto il parlato a blocchi (le parole chiave dell'AI enormi), tranne dove c'è un cartello
+  const blocchi = g.sottotitoli === 'blocchi' ? blocchiParlato(piano.parole, piano.enfasi, cartelli) : [];
   const grandi = paroleGrandi(piano.parole, forti);
   const aperture = g.apertura === 'grande' ? blocchiApertura(piano.parole, piano.enfasi) : [];
   const fineApertura = aperture.length ? aperture[aperture.length - 1].fine : 0;
   const dopoApertura = (piano.parole || []).filter((p) => p.at >= fineApertura - 0.01);
   const occupato = [...titoli, ...frasi, ...forti];
-  const pezzi = g.sottotitoli === 'nessuno' ? []
+  const pezzi = g.sottotitoli === 'nessuno' || g.sottotitoli === 'blocchi' ? []
     : g.sottotitoli === 'parola' ? gruppiParole(dopoApertura, occupato, Boolean(g.minuscolo))
     : frasiBrevi(dopoApertura).filter((p) => !occupato.some((t) => p.at >= t.at - 0.05 && p.at < t.at + t.dur));
   const m = g.musica;
@@ -377,7 +368,15 @@ export const SuMisura: React.FC<Piano> = (piano) => {
         </Sequence>
       ))}
       {g.dietro ? <Ritagli piano={piano} filtro={LOOK[g.look]} /> : null}
-      <Inserti piano={piano} sfx={sfx} />
+      <Inserti piano={piano} sfx={sfx} cornice={g.cornice} />
+      {g.fumo ? <Fumi piano={piano} /> : null}
+      <BlocchiMotion blocchi={blocchi} g={g} />
+      {cartelli.map((k, i) => (
+        <Sequence key={`ca${i}`} from={f(k.at)} durationInFrames={Math.max(8, f(k.dur))}>
+          <Cartello k={k} len={Math.max(8, f(k.dur))} g={g} />
+        </Sequence>
+      ))}
+      {g.firma ? <Firma nome={g.firma} g={g} /> : null}
 
       {pezzi.map((p, i) => (
         <Sequence key={`s${i}`} from={f(p.at)} durationInFrames={len(p.at, p.fine)}>
@@ -408,6 +407,9 @@ export const SuMisura: React.FC<Piano> = (piano) => {
           {frasi.map((k, i) => <Sfx key={`pf${i}`} nome="colpo" da={f(k.at + 0.15)} volume={0.5 * sfx} />)}
           {titoli.map((k, i) => <Sfx key={`st${i}`} nome="whoosh" da={f(k.at) - 6} volume={0.55 * sfx} />)}
           {forti.map((k, i) => <Sfx key={`sg${i}`} nome="whoosh" da={f(k.at) - 5} volume={0.3 * sfx} />)}
+          {blocchi.flatMap((b, i) => b.colpo.map((da, j) => <Sfx key={`mb${i}-${j}`} nome="glitch" da={f(b.at + da)} volume={0.22 * sfx} />))}
+          {g.fumo ? tagliFumo(piano).map((at, i) => <Sfx key={`fu${i}`} nome="whoosh" da={at - 10} volume={0.5 * sfx} />) : null}
+          {cartelli.map((k, i) => <Sfx key={`sc${i}`} nome="whoosh" da={f(k.at) - 4} volume={0.35 * sfx} />)}
           {g.rivela ? <Sfx nome="whoosh" da={RIVELA.inizio - 4} volume={0.4 * sfx} /> : null}
           {g.chiusura && totale > CHIUSURA * 2 ? <Sfx nome="whoosh" da={totale - CHIUSURA - 4} volume={0.35 * sfx} /> : null}
         </>

@@ -231,6 +231,13 @@ C. **Groq**: apri `C:\Users\Utente\.config\watch\.env`, copia il valore di GROQ_
 D. **Drive (rclone)**: `winget install Rclone.Rclone` → riapri PowerShell → `rclone config` → n (new) → nome `gdrive` → storage `drive` → client id/secret vuoti → scope `1` (full) → root folder vuoto → service account vuoto → advanced `n` → auto config `y` (login nel browser con **denisnusinovic**) → shared drive `n` → `y` → `q`. Poi: `Get-Content -Raw "$env:APPDATA\rclone\rclone.conf" | gh secret set RCLONE_CONF -R DenLeone/video-regista`
 Poi Claude riattiva il workflow e lancia il primo giro.
 
+## 20/10 sera — stile Motion
+- Studio fotogramma per fotogramma degli esempi in Stili/Motion (lab/motion-tratti.json), rifatto in verticale 9:16.
+- `Sottotitoli: blocchi`: tutto il parlato a blocchi davanti al petto, corsivo piccolo parola per parola (fermo) e parole chiave enormi scelte dall'AI (`enfasi`, una ogni 2–3 s) che entrano a scramble (`Entrata parole grandi: scramble`), src/Motion.tsx.
+- `Titoli: cartelli` (scritte a tutto schermo battute a macchina), `Transizioni: fumo` (`"fumo": true` sugli elementi), `Inserti: tv` (televisore anni '70 con barre colorate), `Firma` (logo IG fisso, spento nel Motion: Denis non vuole il suo tag).
+- `B-roll stock: sì`: l'AI scrive `"stock": "<ricerca in inglese>"`, regista.mjs scaricaStock prende un video verticale da Pexels (secret PEXELS_API_KEY, lo mette Denis) e rifà il piano; senza chiave resta l'inquadratura. Nel discorso la sequenza tiene anche fumo/stock/inserto dell'AI.
+- Colori scelti da Denis: parole grandi azzurre #4FC3F7, testo piccolo e cartelli grigio chiarissimo #EDEDED. stile.txt su Drive in "12 · Risorse/Stili/Motion ".
+
 ## Decisioni prese
 - Opzione A (Remotion + GitHub Actions) invece di mini PC: gratis, nessun browser da tenere sveglio.
 - Blueprint resta la firma; i contenitori serviranno solo per inserti/foto prodotto (16/10).

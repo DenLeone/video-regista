@@ -21,6 +21,8 @@ export type Clip = {
   // rallentatore (B-roll a 50/60 fps): prima del taglio start = inizio nella sorgente e end - start =
   // durata sul video; la sorgente usata è (end - start) / lento secondi. Dopo il taglio il pezzo è già lento
   lento?: number;
+  fumo?: boolean;   // transizione a nuvola di fumo all'inizio di questa clip (stile Motion)
+  stock?: string;   // B-roll di repertorio (Pexels): la ricerca che l'ha trovato, per NOTE.txt
 };
 
 export type Keyword = {
@@ -69,14 +71,22 @@ export type GraficaStile = {
   nome: string;
   apertura: 'normale' | 'grande';           // grande = prima frase a lettere enormi, parola per parola
   fontApertura: FontStile; coloreApertura: string;
-  sottotitoli: 'parola' | 'frase' | 'nessuno';
+  // blocchi = tutto il parlato a blocchi: righe piccole in corsivo parola per parola e le parole
+  // chiave enormi davanti al petto (stile Motion)
+  sottotitoli: 'parola' | 'frase' | 'blocchi' | 'nessuno';
   // minuscolo: tutto in minuscolo, punteggiatura compresa (reel tech americani, stile Esplicativo)
   fontSottotitoli: FontStile; coloreSottotitoli: string; maiuscolo: boolean; minuscolo?: boolean; posizione: Posizione; dimensione: number;
   titoli: boolean; fontTitoli: FontStile; coloreTitoli: string; accento: string; posTitoli: Posizione;
   // titoli = nome prodotto e dati (come il Cinematico); frasi = scritte forti a due livelli,
   // frase piccola in corsivo + parole chiave enormi (come l'apertura); parole = le frasi forti
   // dette, una parola alla volta enormi al centro, mentre il resto va piccolo in basso (Esplicativo)
-  tipoTitoli: 'titoli' | 'frasi' | 'parole';
+  // cartelli = 1–3 scritte a tutto schermo su fondo scurito, lettere battute a macchina (Motion)
+  tipoTitoli: 'titoli' | 'frasi' | 'parole' | 'cartelli';
+  entrata?: 'sfocata' | 'scramble';          // come entrano le parole grandi: scramble = lettere a caso che si fissano
+  fumo?: boolean;                            // transizioni a nuvola di fumo sui cambi di scena scelti dall'AI
+  firma?: string;                            // logo Instagram e nome (es. @_black_den) fissi in basso a sinistra
+  cornice?: 'scheda' | 'tv';                 // inserti: scheda arrotondata o televisore anni '70
+  stock?: boolean;                           // l'AI può chiedere B-roll di repertorio (Pexels, se c'è la chiave)
   fontCorsivo: FontStile;                    // la frase piccola delle scritte a due livelli
   dietro: boolean;                           // le scritte grandi passano dietro alla persona
   look: 'naturale' | 'caldo' | 'freddo' | 'bianco e nero' | 'teal' | 'chiaro caldo';  // teal e chiaro caldo: in ffmpeg, non CSS

@@ -26,6 +26,9 @@ export function offsetCamera(c, f) {
 // fluido senza fotogrammi inventati. Restituisce il fattore (1 = velocità normale).
 export const fattoreLento = (b, fps = fpsRegia) => (b?.fps >= 48 ? +(b.fps / fps).toFixed(5) : 1);
 
+// la ricerca di un B-roll di repertorio come chiave (stessa ricerca = stesso video)
+export const chiaveStock = (q) => String(q || '').toLowerCase().replace(/[^a-z0-9 ]+/g, ' ').replace(/\s+/g, ' ').trim();
+
 export function risolviRegia(regia, analisi) {
   fpsRegia = analisi.fps || 30;
   const avvisi = [];
@@ -154,6 +157,18 @@ export function risolviRegia(regia, analisi) {
       paroleF = paroleFrase(voce, f, taglio);
       paroleF.forEach((w) => parole.push({ at: q(t + Math.max(0, w.s - f.inizio)), dur: +Math.max(0.05, w.e - w.s).toFixed(3), w: w.w }));
       const audio = { file: voce.voce, start: +f.inizio.toFixed(3) };
+      // B-roll di repertorio (Pexels) chiesto dall'AI con una ricerca: scaricato prima (regista.mjs
+      // scaricaStock) e aggiunto alle sorgenti; se non c'è resta l'inquadratura della voce
+      if (it.stock && !it.broll) {
+        const id = (analisi.stock || {})[chiaveStock(it.stock)];
+        const b = id ? trovaSorgente(id) : null;
+        if (b && b.durata >= dur) {
+          // un pezzo diverso per ogni frase sullo stesso video
+          const usato = clips.filter((c) => c.file === b.file).reduce((m, c) => Math.max(m, c.end), 0);
+          const da = usato + dur <= b.durata ? usato : Math.max(0, (b.durata - dur) / 2);
+          clip = { file: b.file, start: +da.toFixed(3), end: +(da + dur).toFixed(3), orient: b.orient, audio, stock: String(it.stock) };
+        } else if (analisi.stock) avvisi.push(`stock "${it.stock}" ${b ? 'troppo corto' : 'non trovato'} per ${f.id}: resta l'inquadratura`);
+      }
       if (it.broll) {
         const b = trovaSorgente(it.broll);
         const lento = it.lento ? fattoreLento(b) : 1;
@@ -174,7 +189,7 @@ export function risolviRegia(regia, analisi) {
           clip = { file: cam.file, start: +(f.inizio + off).toFixed(3), end: +(f.inizio + off + dur).toFixed(3), orient: cam.orient, audio };
         } else {
           // solo audio (mic esterno) e nessuna camera sincronizzata: copro con un B-roll
-          const b = broll.filter((s) => s.durata >= dur)[girandolaBroll++ % Math.max(1, broll.length)];
+          const b = broll.filter((s) => s.durata >= dur && !s.stock)[girandolaBroll++ % Math.max(1, broll.length)];
           if (!b) { avvisi.push(`${f.id}: nessuna immagine disponibile, saltata`); return; }
           clip = { file: b.file, start: 0, end: dur, orient: b.orient, audio };
         }
@@ -204,6 +219,7 @@ export function risolviRegia(regia, analisi) {
     const attaccata = regia.discorso === true && prev && prev.file === clip.file && Math.abs(clip.start - prev.end) <= 0.12;
     clip.punch = typeof it.punch === 'boolean' ? it.punch : attaccata ? Boolean(prev.punch) : Boolean(prev && prev.file === clip.file && !prev.punch);
     if (it.bn === true) clip.bn = true; // stili su misura con il bianco e nero nei momenti di racconto
+    if (it.fumo === true && clips.length) clip.fumo = true; // transizione a fumo all'inizio (Motion)
     // inserto: scheda arrotondata sopra l'inquadratura mentre Denis parla di quello che mostra
     if (it.inserto) {
       const nomeIns = String(it.inserto);
@@ -325,7 +341,8 @@ export function risolviRegia(regia, analisi) {
       note: [regia.note, ...avvisi.map((a) => `⚠️ ${a}`)].filter(Boolean).join(' · '),
       testo: testo.join(' '),
       parole: parole.filter((w) => w.at < totale - 0.05),
-      ...(Array.isArray(regia.enfasi) && regia.enfasi.length ? { enfasi: regia.enfasi.map(String).slice(0, 8) } : {}),
+      // Motion: le parole chiave di tutto il video (una ogni 2–3 s), non solo dell'apertura
+      ...(Array.isArray(regia.enfasi) && regia.enfasi.length ? { enfasi: regia.enfasi.map(String).slice(0, 80) } : {}),
     },
     avvisi,
     durata: totale,

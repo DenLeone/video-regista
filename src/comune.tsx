@@ -115,7 +115,42 @@ function schedeInserti(piano: Piano): Scheda[] {
   return schede;
 }
 
-const SchedaView: React.FC<{ s: Scheda }> = ({ s }) => {
+// cornice "tv" (stile Motion): televisore anni '70 giallo, schermo bombato con righe di scansione;
+// all'accensione 4 fotogrammi di barre colorate, poi il contenuto
+const BARRE = ['#C0C0C0', '#C0C000', '#00C0C0', '#00C000', '#C000C0', '#C00000', '#0000C0'];
+const TvView: React.FC<{ s: Scheda; contenuto: React.ReactNode }> = ({ s, contenuto }) => {
+  const fr = useCurrentFrame();
+  const entra = interpolate(fr, [0, 12], [0, 1], { extrapolateLeft: 'clamp', extrapolateRight: 'clamp', easing: Easing.out(Easing.back(1.3)) });
+  const esce = interpolate(fr, [s.len - 9, s.len], [0, 1], { extrapolateLeft: 'clamp', extrapolateRight: 'clamp', easing: Easing.in(Easing.cubic) });
+  const vis = Math.min(1, fr / 5) * (1 - esce);
+  const barre = fr < 10 && fr >= 4;
+  return (
+    <AbsoluteFill>
+      <AbsoluteFill style={{ backgroundColor: `rgba(0,0,0,${0.45 * vis})` }} />
+      <div style={{
+        position: 'absolute', left: 90, top: 380, width: 900, height: 780, borderRadius: 70, backgroundColor: '#E8B22E',
+        background: 'linear-gradient(180deg, #F2C443 0%, #E3A925 60%, #C98E17 100%)',
+        boxShadow: '0 50px 110px rgba(0,0,0,0.6), inset 0 -10px 0 rgba(0,0,0,0.12), inset 0 6px 0 rgba(255,255,255,0.25)',
+        opacity: vis, transform: `translateY(${(1 - entra) * 220 - esce * 80}px) scale(${0.8 + 0.2 * entra - 0.06 * esce})`,
+      }}>
+        <div style={{ position: 'absolute', left: 50, top: 50, width: 800, height: 560, borderRadius: 64, overflow: 'hidden', backgroundColor: '#0A0A0A',
+          boxShadow: 'inset 0 0 0 10px #2A2112, 0 0 0 4px rgba(0,0,0,0.25)' }}>
+          {fr < 4 ? null : barre
+            ? <div style={{ display: 'flex', width: '100%', height: '100%' }}>{BARRE.map((c) => <div key={c} style={{ flex: 1, backgroundColor: c }} />)}</div>
+            : contenuto}
+          <AbsoluteFill style={{ background: 'repeating-linear-gradient(0deg, rgba(0,0,0,0.16) 0px, rgba(0,0,0,0.16) 2px, rgba(0,0,0,0) 2px, rgba(0,0,0,0) 5px)' }} />
+          <AbsoluteFill style={{ background: 'radial-gradient(ellipse 75% 70% at 50% 45%, rgba(255,255,255,0.08) 0%, rgba(0,0,0,0) 55%, rgba(0,0,0,0.55) 100%)', borderRadius: 64 }} />
+        </div>
+        {/* manopole e griglia dell'altoparlante */}
+        {[0, 1].map((k) => <div key={k} style={{ position: 'absolute', right: 70 + k * 92, bottom: 48, width: 66, height: 66, borderRadius: 33,
+          background: 'radial-gradient(circle at 35% 30%, #6B5A3A, #2A2112)', boxShadow: '0 4px 8px rgba(0,0,0,0.4)' }} />)}
+        {[0, 1, 2, 3, 4, 5].map((k) => <div key={`g${k}`} style={{ position: 'absolute', left: 70, bottom: 54 + k * 12, width: 420, height: 5, borderRadius: 3, backgroundColor: 'rgba(60,40,10,0.45)' }} />)}
+      </div>
+    </AbsoluteFill>
+  );
+};
+
+const SchedaView: React.FC<{ s: Scheda; cornice?: 'scheda' | 'tv' }> = ({ s, cornice }) => {
   const fr = useCurrentFrame();
   const entra = interpolate(fr, [0, 12], [0, 1], { extrapolateLeft: 'clamp', extrapolateRight: 'clamp', easing: Easing.out(Easing.back(1.4)) });
   const esce = interpolate(fr, [s.len - 9, s.len], [0, 1], { extrapolateLeft: 'clamp', extrapolateRight: 'clamp', easing: Easing.in(Easing.cubic) });
@@ -124,6 +159,15 @@ const SchedaView: React.FC<{ s: Scheda }> = ({ s }) => {
   const orizz = primo.orient === 'h';
   const w = orizz ? 960 : 640, h = orizz ? 540 : 1138;
   const zoom = 1 + 0.05 * (fr / Math.max(1, s.len)); // le immagini si muovono piano
+  const contenuto = s.pezzi.map((p, i) => (
+    <Sequence key={i} from={p.from - s.from} durationInFrames={p.len} layout="none">
+      {p.ins.tipo === 'immagine'
+        ? <Img src={staticFile(`media/${p.ins.file}`)} style={{ width: '100%', height: '100%', objectFit: 'cover', transform: `scale(${zoom})` }} />
+        : <OffthreadVideo src={staticFile(`media/${p.ins.file}`)} startFrom={f(p.ins.start || 0)} endAt={f(p.ins.start || 0) + p.len} muted
+          style={{ width: '100%', height: '100%', objectFit: 'cover' }} />}
+    </Sequence>
+  ));
+  if (cornice === 'tv') return <TvView s={s} contenuto={contenuto} />;
   return (
     <AbsoluteFill>
       <AbsoluteFill style={{ backgroundColor: `rgba(0,0,0,${0.3 * vis})` }} />
@@ -132,24 +176,17 @@ const SchedaView: React.FC<{ s: Scheda }> = ({ s }) => {
         border: '3px solid rgba(255,255,255,0.18)', boxShadow: '0 40px 90px rgba(0,0,0,0.55), 0 8px 24px rgba(0,0,0,0.35)', backgroundColor: '#111',
         opacity: vis, transform: `translateY(${(1 - entra) * 160 - esce * 90}px) scale(${0.86 + 0.14 * entra - 0.08 * esce}) rotate(${(1 - entra) * -3}deg)`,
       }}>
-        {s.pezzi.map((p, i) => (
-          <Sequence key={i} from={p.from - s.from} durationInFrames={p.len} layout="none">
-            {p.ins.tipo === 'immagine'
-              ? <Img src={staticFile(`media/${p.ins.file}`)} style={{ width: '100%', height: '100%', objectFit: 'cover', transform: `scale(${zoom})` }} />
-              : <OffthreadVideo src={staticFile(`media/${p.ins.file}`)} startFrom={f(p.ins.start || 0)} endAt={f(p.ins.start || 0) + p.len} muted
-                style={{ width: '100%', height: '100%', objectFit: 'cover' }} />}
-          </Sequence>
-        ))}
+        {contenuto}
       </div>
     </AbsoluteFill>
   );
 };
 
-export const Inserti: React.FC<{ piano: Piano; sfx?: number }> = ({ piano, sfx = 0 }) => (
+export const Inserti: React.FC<{ piano: Piano; sfx?: number; cornice?: 'scheda' | 'tv' }> = ({ piano, sfx = 0, cornice }) => (
   <>
     {schedeInserti(piano).map((s, i) => (
       <Sequence key={`in${i}`} from={s.from} durationInFrames={Math.max(2, s.len)}>
-        <SchedaView s={s} />
+        <SchedaView s={s} cornice={cornice} />
       </Sequence>
     ))}
     {sfx > 0 ? schedeInserti(piano).flatMap((s, i) => [
