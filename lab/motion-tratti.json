@@ -1,0 +1,21 @@
+{
+  "uscita": "12 · Risorse/Stili/Motion /_analisi/tratti",
+  "sequenze": [
+    { "file": "12 · Risorse/Stili/Motion /cec68920f4aa4757a375a3c97600f94f.mp4", "quanti": 6, "tratti": [
+      { "da": 0, "a": 3, "fps": 12.5, "ritaglio": "620:350:50:515" },
+      { "da": 7.5, "a": 11, "fps": 12.5, "ritaglio": "620:350:50:515" },
+      { "da": 1.8, "a": 6, "fps": 12.5, "ritaglio": "620:350:50:515" },
+      { "da": 31.5, "a": 34.5, "fps": 12.5, "ritaglio": "620:350:50:515" },
+      { "da": 53.5, "a": 56.5, "fps": 12.5, "ritaglio": "620:350:50:515" },
+      { "da": 24, "a": 27, "fps": 12.5, "ritaglio": "620:350:50:515" }
+    ] },
+    { "file": "12 · Risorse/Stili/Motion /6500a67ec4ef468fbc77568407812c0d.mp4", "quanti": 6, "tratti": [
+      { "da": 21.5, "a": 26, "fps": 12.5, "ritaglio": "620:350:50:515" },
+      { "da": 12.5, "a": 16, "fps": 12.5, "ritaglio": "620:350:50:515" },
+      { "da": 46, "a": 50, "fps": 12.5, "ritaglio": "620:350:50:515" },
+      { "da": 63.5, "a": 67, "fps": 12.5, "ritaglio": "620:350:50:515" },
+      { "da": 7, "a": 10, "fps": 12.5, "ritaglio": "620:350:50:515" },
+      { "da": 0, "a": 1.5, "fps": 12.5 }
+    ] }
+  ]
+}

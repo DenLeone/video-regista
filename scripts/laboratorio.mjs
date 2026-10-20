@@ -205,6 +205,17 @@ function sequenze(ric) {
       run('ffmpeg', ['-y', '-v', 'error', '-i', s.u, '-vf', `scale=320:-2,select='gt(scene,0.3)',metadata=print:file='${tmp}'`, '-an', '-f', 'null', '-']);
       tagli = [...fs.readFileSync(tmp, 'utf8').matchAll(/pts_time:([\d.]+)/g)].map((m) => Number(m[1]).toFixed(2));
     } catch (e) { log('tagli non rilevati', e.message.split('\n')[0]); }
+    // tratti fotogramma per fotogramma (entrate delle scritte, transizioni): { da, a, fps, ritaglio }
+    for (const [k, tr] of (voce.tratti || []).entries()) {
+      const o = path.join(OUT, `seq-${nome}-tratto${k + 1}-${tr.da}s.jpg`);
+      const quanti = Math.ceil((tr.a - tr.da) * (tr.fps || 10));
+      const col = tr.colonne || 6;
+      run('ffmpeg', ['-y', '-v', 'error', '-ss', String(tr.da), '-t', String(tr.a - tr.da), '-i', s.u, '-vf',
+        `fps=${tr.fps || 10},${tr.ritaglio ? `crop=${tr.ritaglio},` : ''}scale=${tr.larghezza || 300}:-2,drawtext=fontfile=${FONT}:text='%{pts\\:hms}':x=4:y=4:fontsize=14:fontcolor=white:box=1:boxcolor=black@0.6,tile=${col}x${Math.ceil(quanti / col)}`,
+        '-frames:v', '1', '-q:v', '3', o]);
+      fs.mkdirSync(GIT, { recursive: true });
+      fs.copyFileSync(o, path.join(GIT, path.basename(o)));
+    }
     fs.appendFileSync(path.join(OUT, 'sequenze.txt'), `${s.riga} · audio ${s.info.audio ? 'sì' : 'no'} · ${tagli.length} tagli: ${tagli.join(' ')}\n`);
     fs.mkdirSync(GIT, { recursive: true });
     for (const f of [tutto, inizio, path.join(OUT, 'sequenze.txt')]) fs.copyFileSync(f, path.join(GIT, path.basename(f)));
