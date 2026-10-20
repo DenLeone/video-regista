@@ -168,13 +168,29 @@ function cartellaNonTrovata(nome, errore) {
   return new Error(`non trovo la cartella "${nome}" in ${SRC_DIR}${simili.length ? `. Forse intendevi: ${simili.map((x) => `"${x}"`).join(', ')}` : ` (${String(errore?.message || '').split('\n')[0]})`}`);
 }
 
+// stessa cartella a meno di spazi e maiuscole: su Drive "Manifestazioni " (spazio in fondo), dal bot
+// "Manifestazioni" (20/10: due montaggi falliti con "non trovo la cartella"). Il nome vero o null
+function cartellaUguale(nome) {
+  const norm = (t) => String(t).toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/\s+/g, ' ').trim();
+  try {
+    const uguali = JSON.parse(rclone('lsjson', remote(SRC_DIR), '--dirs-only')).map((x) => x.Name).filter((x) => norm(x) === norm(nome));
+    return uguali.length === 1 ? uguali[0] : null;
+  } catch { return null; }
+}
+
 function trovaCartella() {
   if (DA_TELEGRAM) return { nome: nomeLibero(process.env.CARTELLA), files: [], vai: null };
   // avvio da Telegram/manuale con cartella esplicita: VAI non obbligatorio
   if (process.env.CARTELLA) {
-    const nome = process.env.CARTELLA;
+    let nome = process.env.CARTELLA;
     let files;
-    try { files = JSON.parse(rclone('lsjson', remote(SRC_DIR, nome), '--files-only')); } catch (e) { throw cartellaNonTrovata(nome, e); }
+    try { files = JSON.parse(rclone('lsjson', remote(SRC_DIR, nome), '--files-only')); } catch (e) {
+      const vero = cartellaUguale(nome);
+      if (!vero || vero === nome) throw cartellaNonTrovata(nome, e);
+      log(`cartella "${nome}" trovata come "${vero}"`);
+      nome = vero;
+      files = JSON.parse(rclone('lsjson', remote(SRC_DIR, nome), '--files-only'));
+    }
     const vai = files.find((f) => isVai(f.Name) || isInCorso(f.Name));
     return { nome, files, vai: vai ? vai.Name : null };
   }
