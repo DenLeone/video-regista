@@ -187,6 +187,30 @@ function fotogrammiEVarianti(ric) {
   }
 }
 
+// sequenze: per ogni file un foglio con N fotogrammi su tutta la durata, uno con i primi secondi
+// fitti (2 al secondo) e l'elenco dei tagli (cambi di scena), per studiare movimento e ritmo
+function sequenze(ric) {
+  for (const voce of ric.sequenze || []) {
+    const s = sorgente(voce.file);
+    log(s.riga);
+    const nome = pulito(path.parse(voce.file).name);
+    const n = voce.quanti || 24, d = s.info.durata;
+    const filtroBase = s.tecnico.replace(/,?format=yuv420p$/, '') || 'null';
+    const tutto = path.join(OUT, `seq-${nome}-tutto.jpg`), inizio = path.join(OUT, `seq-${nome}-inizio.jpg`);
+    run('ffmpeg', ['-y', '-v', 'error', '-i', s.u, '-vf', `fps=${(n / Math.max(1, d)).toFixed(4)},scale=240:-2,${filtroBase},drawtext=fontfile=${FONT}:text='%{pts\\:hms}':x=4:y=4:fontsize=16:fontcolor=white:box=1:boxcolor=black@0.6,tile=6x${Math.ceil(n / 6)}`, '-frames:v', '1', '-q:v', '3', tutto]);
+    run('ffmpeg', ['-y', '-v', 'error', '-t', String(voce.inizio || 6), '-i', s.u, '-vf', `fps=2,scale=240:-2,${filtroBase},drawtext=fontfile=${FONT}:text='%{pts\\:hms}':x=4:y=4:fontsize=16:fontcolor=white:box=1:boxcolor=black@0.6,tile=6x2`, '-frames:v', '1', '-q:v', '3', inizio]);
+    let tagli = [];
+    try {
+      const tmp = path.join(OUT, 'tmp', `tagli-${nome}.txt`);
+      run('ffmpeg', ['-y', '-v', 'error', '-i', s.u, '-vf', `scale=320:-2,select='gt(scene,0.3)',metadata=print:file='${tmp}'`, '-an', '-f', 'null', '-']);
+      tagli = [...fs.readFileSync(tmp, 'utf8').matchAll(/pts_time:([\d.]+)/g)].map((m) => Number(m[1]).toFixed(2));
+    } catch (e) { log('tagli non rilevati', e.message.split('\n')[0]); }
+    fs.appendFileSync(path.join(OUT, 'sequenze.txt'), `${s.riga} · audio ${s.info.audio ? 'sì' : 'no'} · ${tagli.length} tagli: ${tagli.join(' ')}\n`);
+    fs.mkdirSync(GIT, { recursive: true });
+    for (const f of [tutto, inizio, path.join(OUT, 'sequenze.txt')]) fs.copyFileSync(f, path.join(GIT, path.basename(f)));
+  }
+}
+
 function clip(ric) {
   const varianti = Object.fromEntries((ric.varianti || []).map((v) => [v.id, v]));
   for (const c of ric.clip || []) {
@@ -209,6 +233,7 @@ async function main() {
   fs.mkdirSync(path.join(OUT, 'tmp'), { recursive: true });
   uscitaDrive = ric.uscita;
   fs.mkdirSync(SCARICO, { recursive: true });
+  if (ric.sequenze) { sequenze(ric); carica(); }
   if (ric.fotogrammi) { fotogrammiEVarianti(ric); carica(); }
   if (ric.clip) { clip(ric); carica(); }
   if (ric.catalogo) await catalogo(ric);

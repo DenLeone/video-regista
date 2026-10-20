@@ -1,0 +1,13 @@
+{
+  "uscita": "12 · Risorse/Stili/Motion /_analisi",
+  "sequenze": [
+    { "file": "12 · Risorse/Stili/Motion /6500a67ec4ef468fbc77568407812c0d.mp4", "quanti": 36, "inizio": 6 },
+    { "file": "12 · Risorse/Stili/Motion /cec68920f4aa4757a375a3c97600f94f.mp4", "quanti": 36, "inizio": 6 }
+  ],
+  "fotogrammi": [
+    { "file": "12 · Risorse/Stili/Motion /6500a67ec4ef468fbc77568407812c0d.mp4", "punti": [0.1, 0.3, 0.5, 0.7, 0.9] },
+    { "file": "12 · Risorse/Stili/Motion /cec68920f4aa4757a375a3c97600f94f.mp4", "punti": [0.1, 0.3, 0.5, 0.7, 0.9] }
+  ],
+  "griglia": 2,
+  "varianti": [{ "id": "dettaglio", "filtro": "crop=iw/2:ih/2" }]
+}
