@@ -553,6 +553,7 @@ const GUIDA: Schermo = {
     '🆕 <b>Nuovo montaggio</b>: cartella → stile → 🚀 Avvia. Sponsor, durata, tono, giudizio e note sono facoltativi, dal riepilogo.',
     '✍️ Più veloce: scrivimi il nome della cartella e ti propongo di montarla.',
     '📦 <b>Più video</b>: spunti tante cartelle, scegli lo stile, partono tutte insieme.',
+    '🎙️ <b>Un solo video nella cartella = discorso</b>: niente regia. Tengo tutto il parlato in ordine e alla durata vera (anche 4–5 min), tolgo solo pause, false partenze e ripetizioni, poi colore e scritte dello stile. Per la regia normale scrivi <i>regia completa</i> nelle indicazioni.',
     'La scheda di avanzamento si aggiorna da sola (10–30 min).',
     '',
     '<b>3. Il video finito</b>',

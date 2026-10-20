@@ -433,6 +433,44 @@ export function segniFrasi(frasi) {
   return out;
 }
 
+// Modalità discorso (regola di Denis del 20/10): nella cartella c'è un solo video parlato, un suo
+// discorso. Niente regia: tutte le frasi nell'ordine in cui le dice, senza accorciare né riordinare;
+// escono solo le pause (le frasi le tagliano già), le false partenze e le ripetizioni (una frase
+// ripresa poco dopo meglio: resta la ripresa) e le frasi fatte solo di riempitivi ("ehm").
+// Restituisce { sequenza: [{ frase }], tolte: [{ id, motivo }] }.
+const RIEMPITIVI = new Set(['ehm', 'eh', 'ehh', 'ehmm', 'uhm', 'um', 'mm', 'mmm', 'mh', 'ah', 'boh', 'beh']);
+export function sequenzaDiscorso(analisi) {
+  const frasi = analisi.frasi;
+  const segni = segniFrasi(frasi);
+  const indice = new Map(frasi.map((f, i) => [f.id, i]));
+  const tolte = new Map();
+  frasi.forEach((f, i) => {
+    const parole = paroleDi(f.testo);
+    if (parole.length && parole.every((w) => RIEMPITIVI.has(w))) { tolte.set(f.id, 'riempitivo'); return; }
+    const ripresa = (segni.get(f.id) || []).find((x) => x.startsWith('ripresa meglio in '));
+    if (!ripresa) return;
+    const h = indice.get(ripresa.slice('ripresa meglio in '.length));
+    tolte.set(f.id, `ripetuta meglio in ${frasi[h].id}`);
+    // la falsa partenza continua nelle frasi dopo (stessa voce, senza punto) fino alla ripresa:
+    // anche quei pezzi fanno parte del tentativo lasciato a metà
+    for (let k = i + 1; k < h; k++) {
+      const prec = frasi[k - 1];
+      if (successiva(frasi, prec) !== frasi[k]) break;
+      tolte.set(frasi[k].id, `parte della frase ripetuta in ${frasi[h].id}`);
+    }
+  });
+  // una frase tenuta che continua nella successiva (→): la successiva resta anche se era segnata,
+  // altrimenti la frase resterebbe a metà ("per 45 più | coupon…")
+  for (let i = 0; i < frasi.length - 1; i++) {
+    const f = frasi[i];
+    if (!tolte.has(f.id) && successiva(frasi, f) === frasi[i + 1] && tolte.get(frasi[i + 1].id)?.startsWith('parte della')) tolte.delete(frasi[i + 1].id);
+  }
+  return {
+    sequenza: frasi.filter((f) => !tolte.has(f.id)).map((f) => ({ frase: f.id })),
+    tolte: [...tolte.entries()].map(([id, motivo]) => ({ id, motivo })),
+  };
+}
+
 // Il materiale in forma compatta per l'AI: sorgenti, fogli provino, frasi.
 export function materialePerAI(analisi) {
   const r = [];

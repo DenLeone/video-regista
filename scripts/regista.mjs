@@ -22,7 +22,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { audioMuto, frasi, inviluppo, sincronizza, sogliaVoce } from './audio.mjs';
 import { HDR, curvaEsposizione, filtroTecnico, misuraPezzo, perFiltro, probe, riconosciLog } from './colore.mjs';
-import { materialePerAI, risolviRegia } from './regia.mjs';
+import { materialePerAI, normFrase, risolviRegia, sequenzaDiscorso } from './regia.mjs';
 import { movimento, syncMovimento } from './sync-visivo.mjs';
 import { leggiStile, promptSuMisura } from './stile-su-misura.mjs';
 import { AUDIO_EXT, IMAGE_EXT, NOMI_DISPOSITIVO, VIDEO_EXT, dispositivo, prioritaAudio, tagsPiatti } from './sorgenti.mjs';
@@ -107,6 +107,18 @@ export function unisciBrief(briefFile = '', extra = '', briefPrima = '') {
   if (telegram) aggiungi(telegram);
   return righe.join('\n');
 }
+
+// Regola di Denis (20/10): una cartella con un solo video è un suo discorso (es. "Sommossa", 4 min e
+// mezzo). Niente regia: nessun accorciamento né riordino, solo pause, false partenze e ripetizioni
+// tolte (regia.mjs sequenzaDiscorso), il look e le scritte dello stile. "regia completa" nel brief
+// la toglie; "modalità discorso" / "solo pulizia" / "niente regia" la forzano anche con più video.
+export function modoDiscorso(nVideo, brief = '') {
+  if (/\bregia\s+(completa|normale)\b|\bmontaggio\s+completo\b/i.test(brief)) return false;
+  if (/\bmodalit[àa]\s+discorso\b|\bsolo\s+pulizia\b|\bniente\s+regia\b/i.test(brief)) return true;
+  return nVideo === 1;
+}
+let DISCORSO = false;     // modalità discorso del giro in corso
+let discorso = null;      // { sequenza, tolte } della modalità discorso (per il prompt)
 
 // ---------- 1. trova la cartella da fare ----------
 // video da Telegram: la cartella non esiste ancora, scelgo un nome libero in 97 e 98
@@ -468,9 +480,15 @@ function promptRegia({ modo, testoMateriale, regiaPrecedente }) {
   if (regiaPrecedente) {
     p += `\n\n## MODALITÀ CORREZIONE\nEsiste già un montaggio, questa è la sua regia:\n\`\`\`json\n${JSON.stringify(regiaPrecedente, null, 1)}\n\`\`\`\nDenis l'ha guardato e chiede queste modifiche:\n\n> ${CORREZIONE.replace(/\n/g, '\n> ')}\n\nParti da questa regia e applica SOLO quello che chiede, lasciando invariato il resto. I tempi li ricalcola lo script. Nella \`note\` elenca in breve cosa hai cambiato.`;
   }
+  if (discorso && !regiaPrecedente) {
+    const durata = discorso.durata;
+    const quante = Math.max(3, Math.min(20, Math.round(durata / 20)));
+    p += `\n\n## MODALITÀ DISCORSO (regola di Denis: nella cartella c'è un solo video)\nÈ un discorso di Denis da montare così com'è: NIENTE regia. Non togliere frasi per accorciare, non riordinare, non scegliere cosa tenere: la sequenza l'ha già decisa lo script (tutte le frasi in ordine, tolte solo pause, false partenze e ripetizioni) e nella regia va copiata identica:\n\`\`\`json\n"sequenza": ${JSON.stringify(discorso.sequenza)}\n\`\`\`\nIl tuo lavoro è SOLO la grafica dello stile (sezione Grafica): \`titolo\`, \`soggetto\`, \`enfasi\` se lo stile ha l'apertura a lettere enormi (sulle prime parole del discorso), le \`keywords\` con le regole dello stile e, se lo stile ha il bianco e nero nei momenti, \`"bn": true\` su qualche elemento della sequenza. Il video dura circa ${Math.round(durata)} s: distribuisci circa ${quante} scritte grandi su tutta la durata (una ogni ~20 s), sulle frasi più forti; questo vale più del numero indicato nella sezione Grafica. Ignora le regole su durata, scaletta, inquadrature e B-roll. \`scaletta\` = i 3–6 temi del discorso, \`testo_montato\` vuoto.`;
+  }
+  // discorso: niente fogli provino (le inquadrature non si scelgono)
   p += modo === 'claude'
-    ? '\n\n## Come consegnare\nLeggi i fogli provino con lo strumento Read, tutti nello stesso turno (letture in parallelo), poi scrivi la regia con lo strumento Write in `work/regia.json` e rispondi con 3 righe di riepilogo.'
-    : '\n\n## Come consegnare\nI fogli provino sono allegati in ordine, ognuno preceduto dal suo nome. Rispondi SOLO con il JSON della regia.';
+    ? `\n\n## Come consegnare\n${discorso ? 'Scrivi' : 'Leggi i fogli provino con lo strumento Read, tutti nello stesso turno (letture in parallelo), poi scrivi'} la regia con lo strumento Write in \`work/regia.json\` e rispondi con 3 righe di riepilogo.`
+    : `\n\n## Come consegnare\n${discorso ? '' : 'I fogli provino sono allegati in ordine, ognuno preceduto dal suo nome. '}Rispondi SOLO con il JSON della regia.`;
   return `${p}\n\n---\n\n${testoMateriale}\n`;
 }
 
@@ -1103,7 +1121,7 @@ export async function analizza(nome, brief, cache) {
       }
       continue;
     }
-    for (const f of frasi(p.parole, db.get(p.id), p.durata)) tutteFrasi.push({ ...f, principale: p.id });
+    for (const f of frasi(p.parole, db.get(p.id), p.durata, DISCORSO ? { pausaMax: 0.5 } : {})) tutteFrasi.push({ ...f, principale: p.id });
   }
   tutteFrasi.forEach((f, i) => { f.id = `F${String(i + 1).padStart(3, '0')}`; });
 
@@ -1135,8 +1153,11 @@ export async function analizza(nome, brief, cache) {
   }
   movRif.clear();
 
-  // fogli provino: per le camere sincronizzate i tempi scritti sono quelli della voce
+  // fogli provino: per le camere sincronizzate i tempi scritti sono quelli della voce. Nel discorso
+  // non servono (niente scelte di inquadrature): su 4–5 minuti di girato si risparmia tempo
+  const senzaFogli = DISCORSO && tutteFrasi.length >= 3;
   for (const s of sorgenti.filter((x) => x.tipo === 'video')) {
+    if (senzaFogli) { s.fogli = []; continue; }
     const fp = fogliProvino(s.originale, s.id, s.durata, s.sync ? s.sync.offset : 0, s.colore);
     s.fogli = fp.fogli; s.passoFogli = fp.passo;
   }
@@ -1343,6 +1364,10 @@ async function main() {
 
     const briefFile = fs.existsSync(path.join(SCARICO, 'brief.txt')) ? fs.readFileSync(path.join(SCARICO, 'brief.txt'), 'utf8') : '';
     const brief = unisciBrief(briefFile, process.env.BRIEF_EXTRA, CORREZIONE || RIRENDER ? cache?.brief : '');
+    const videoInCartella = fs.readdirSync(SCARICO).filter((f) => VIDEO_EXT.includes(path.extname(f).toLowerCase()) && !isNostro(f));
+    DISCORSO = modoDiscorso(videoInCartella.length, brief);
+    discorso = null;
+    if (DISCORSO) log(`modalità discorso: ${videoInCartella.length === 1 ? 'un solo video in cartella' : 'chiesta nel brief'} (niente regia, solo pulizia e stile)`);
     const analisi = await analizza(nome, brief, cache);
     const { immagini, foglio: foglioImmagini } = preparaImmagini(analisi.foto || []);
     analisi.immagini = immagini;
@@ -1362,18 +1387,40 @@ async function main() {
     stileCorrente = stile;
     if (stile !== STILI[0]) log(`stile: ${stile}`);
     const pesoAI = ` · materiale ≈ ${kTok(stima.totale)} token`;
+    // modalità discorso: la sequenza la decide lo script (tutte le frasi in ordine, tolte solo false
+    // partenze e ripetizioni); l'AI sceglie solo le scritte dello stile. Se il video non ha parlato
+    // (un solo video di sole riprese) si torna alla regia normale
+    if (DISCORSO && analisi.frasi.length < 3) { DISCORSO = false; log('un solo video ma quasi senza parlato: regia normale'); }
+    if (DISCORSO && !RIRENDER && !CORREZIONE) {
+      const d = sequenzaDiscorso(analisi);
+      const durata = d.sequenza.reduce((t, it) => { const f = analisi.frasi.find((x) => x.id === it.frase); return t + (f ? f.fine - f.inizio : 0); }, 0);
+      discorso = { ...d, durata };
+      log(`discorso: ${d.sequenza.length} frasi su ${analisi.frasi.length} (${durata.toFixed(0)} s)${d.tolte.length ? `, tolte ${d.tolte.map((x) => `${x.id} ${x.motivo}`).join(', ')}` : ''}`);
+      await fase(nome, `🎙️ Discorso: tengo tutto il parlato in ordine (${d.sequenza.length} frasi, ${Math.round(durata)} s), tolgo pause e ripetizioni; l'AI sceglie solo le scritte`, 'regia');
+    }
     if (RIRENDER) await fase(nome, regiaPrecedente ? '🎨 Rifaccio solo il render: stessa regia, colore e grafica aggiornati' : '⚠️ Nessuna regia precedente: la riscrivo', 'regia');
-    else await fase(nome, CORREZIONE ? `🧠 Applico la correzione: “${CORREZIONE.slice(0, 120)}”${pesoAI}`
+    else if (!discorso) await fase(nome, CORREZIONE ? `🧠 Applico la correzione: “${CORREZIONE.slice(0, 120)}”${pesoAI}`
       : `🧠 Scelgo i tagli: ${analisi.sorgenti.length} sorgenti, voce da ${voci || '—'}, ${sinc} camere sincronizzate, ${analisi.frasi.length} frasi${brief ? ', con brief' : ''}${pesoAI}`, 'regia');
+    // la sequenza del discorso vince su quella dell'AI (tiene solo i suoi "bn")
+    const conSequenza = (r) => (discorso ? { ...r, sequenza: discorso.sequenza.map((it) => ({ ...it, ...((r.sequenza || []).some((x) => normFrase(x.frase) === it.frase && x.bn === true) ? { bn: true } : {}) })) } : r);
     // azione "render": stessa regia del giro prima, si rifanno solo colore, tagli e grafica
     const { regia, risultato: { piano, avvisi } } = RIRENDER && regiaPrecedente
       ? (fs.writeFileSync(path.join(WORK, 'regia.json'), JSON.stringify(regiaPrecedente, null, 1)), { regia: regiaPrecedente, risultato: risolviRegia(regiaPrecedente, analisi) })
-      : await chiediRegia(testoMateriale, fogli, CORREZIONE ? regiaPrecedente : null, (r) => risolviRegia(r, analisi));
+      : await chiediRegia(testoMateriale, discorso ? [] : fogli, CORREZIONE ? regiaPrecedente : null, (r) => risolviRegia(conSequenza(r), analisi)).catch((e) => {
+        // discorso: senza AI il video esce lo stesso, con i sottotitoli dello stile ma senza scritte grandi
+        if (!discorso) throw e;
+        log(`regia del discorso senza AI (${e.message.split('\n')[0]}): niente scritte grandi`);
+        const r = { titolo: nome, soggetto: '', sequenza: discorso.sequenza, keywords: [], flickers: [], note: 'scritte grandi non scelte: AI non disponibile' };
+        return { regia: r, risultato: risolviRegia(r, analisi) };
+      });
+    // salvata con la sequenza vera: "Solo render" e "Correggi" ripartono da questa
+    if (discorso) { regia.sequenza = conSequenza(regia).sequenza; fs.writeFileSync(path.join(WORK, 'regia.json'), JSON.stringify(regia, null, 1)); }
     if (avvisi.length) log('avvisi regia:', avvisi.join(' | '));
     if (regia.scaletta) log('scaletta:', [].concat(regia.scaletta).join(' → '));
     log('testo montato:', piano.testo);
     if (avvisoStile) analisi.avvisi = [...(analisi.avvisi || []), avvisoStile];
     if (analisi.avvisi?.length) piano.note = [...analisi.avvisi.map((a) => `⚠️ ${a}`), piano.note].filter(Boolean).join(' · ');
+    if (discorso) piano.note = [`🎙️ Discorso (un solo video): tenute tutte le ${discorso.sequenza.length} frasi in ordine${discorso.tolte.length ? `, tolte ${discorso.tolte.length} tra false partenze e ripetizioni` : ''}`, piano.note].filter(Boolean).join(' · ');
     // effetti sonori sotto la voce: più bassa la voce registrata, più bassi gli effetti (~12–16 dB sotto)
     const livelloVoce = Math.max(-60, ...analisi.sorgenti.filter((s) => s.principale && s.livello != null).map((s) => s.livello));
     piano.sfx = process.env.REGISTA_SFX === '0' ? false
@@ -1480,11 +1527,13 @@ async function inviaVideo(outFile, nome, testo, durata, info) {
   try {
     const anteprimaMp4 = path.join(WORK, 'anteprima.mp4');
     // il bot accetta fino a 50 MB: a piena risoluzione (1080) quando il bitrate lo permette, così in
-    // Telegram si giudica la qualità vera e non un 720p sgranato; sotto i 3,5 Mbps meglio il 720
-    const kbps = Math.max(600, Math.min(8000, Math.floor((45 * 8 * 1000) / Math.max(1, durata)) - 160));
-    run('ffmpeg', ['-y', '-v', 'error', '-i', outFile, '-vf', `scale=${kbps >= 3500 ? 1080 : 720}:-2:flags=lanczos`, '-c:v', 'libx264', '-preset', 'medium',
+    // Telegram si giudica la qualità vera e non un 720p sgranato; sotto i 3,5 Mbps meglio il 720 e
+    // sotto 1 Mbps il 540 (discorsi lunghi, fino a ~15 min: oltre arriva solo il messaggio)
+    const kbpsAudio = durata > 300 ? 96 : 128;
+    const kbps = Math.max(300, Math.min(8000, Math.floor((45 * 8 * 1000) / Math.max(1, durata)) - kbpsAudio - 32));
+    run('ffmpeg', ['-y', '-v', 'error', '-i', outFile, '-vf', `scale=${kbps >= 3500 ? 1080 : kbps >= 1000 ? 720 : 540}:-2:flags=lanczos`, '-c:v', 'libx264', '-preset', 'medium',
       '-b:v', `${kbps}k`, '-maxrate', `${kbps}k`, '-bufsize', `${kbps * 2}k`, '-pix_fmt', 'yuv420p', ...TAG_709,
-      '-c:a', 'aac', '-b:a', '128k', '-movflags', '+faststart', anteprimaMp4]);
+      '-c:a', 'aac', '-b:a', `${kbpsAudio}k`, '-movflags', '+faststart', anteprimaMp4]);
     const size = fs.statSync(anteprimaMp4).size;
     if (size > 49 * 1e6) { log(`anteprima troppo grande (${mb(size)})`); return false; }
     const form = new FormData();
