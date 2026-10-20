@@ -77,36 +77,62 @@ export function risolviRegia(regia, analisi) {
     if (taglio < f.fine - 0.1) { fineTaglio.set(idx, { t: taglio, parole: k }); avvisi.push(`${f.id}: tolto "${pf.slice(-k).join(' ')}" ripetuto all'inizio di ${g.id}`); }
   });
 
-  // stacco: { dopo: "<parola detta>", broll: "<id>", da: <s> } oppure { dopo, camera: "<id>" }.
-  // Il taglio cade a metà tra la fine di quella parola e l'inizio della successiva; ogni pezzo
-  // almeno 0,6 s. Restituisce il punto di taglio nella clip e la seconda clip.
-  function staccoDentro(it, clip, paroleF) {
+  // stacco: { dopo: "<parola detta>", broll: "<id>", da: <s> } oppure { dopo, camera: "<id>" }, o una
+  // lista di stacchi (raffica di dettagli sulla stessa frase, come negli esempi di 12K Quality).
+  // Ogni taglio cade a metà tra la fine di quella parola e l'inizio della successiva; ogni pezzo
+  // almeno 0,45 s. Restituisce i pezzi della frase (il primo è la clip di partenza) o null.
+  function stacchiDentro(it, clip, paroleF) {
     const f = frasi.get(normFrase(it.frase));
-    const st = it.stacco;
-    const cerca = paroleDi(st.dopo).join('');
-    const i = paroleF.findIndex((w) => paroleDi(w.w).join('') === cerca);
-    if (!cerca || i < 0) { avvisi.push(`stacco in ${f.id}: parola "${st.dopo}" non trovata, niente stacco`); return null; }
     const dur = clip.end - clip.start;
-    const dopo = paroleF[i + 1];
-    const tc = q((dopo ? (paroleF[i].e + dopo.s) / 2 : paroleF[i].e) - f.inizio);
-    if (tc < 0.6 || dur - tc < 0.6) { avvisi.push(`stacco in ${f.id} dopo "${st.dopo}": pezzo troppo corto, niente stacco`); return null; }
-    const audio = { file: clip.audio.file, start: +(clip.audio.start + tc).toFixed(3) };
-    let nuova = null;
-    if (st.broll) {
-      const b = trovaSorgente(st.broll);
-      if (b && b.tipo === 'video' && b.durata >= dur - tc) {
-        let da = Math.max(0, Number(st.da) || 0);
-        if (da + dur - tc > b.durata) da = Math.max(0, b.durata - (dur - tc) - 0.05);
-        nuova = { file: b.file, start: +da.toFixed(3), end: +(da + dur - tc).toFixed(3), orient: b.orient, audio };
-      }
-    } else if (st.camera) {
-      const cam = trovaSorgente(st.camera);
-      const off = cam ? offsetCamera(cam, f) : null;
-      if (off != null) nuova = { file: cam.file, start: +(f.inizio + off + tc).toFixed(3), end: +(f.inizio + off + dur).toFixed(3), orient: cam.orient, audio };
+    const lista = [].concat(it.stacco).filter((st) => st && typeof st === 'object').slice(0, 6);
+    const tagli = [];
+    let da = -1; // le parole si cercano dopo il taglio precedente
+    for (const st of lista) {
+      const cerca = paroleDi(st.dopo).join('');
+      const i = paroleF.findIndex((w, k) => k > da && paroleDi(w.w).join('') === cerca);
+      if (!cerca || i < 0) { avvisi.push(`stacco in ${f.id}: parola "${st.dopo}" non trovata${da >= 0 ? ' dopo lo stacco prima' : ''}, saltato`); continue; }
+      const dopo = paroleF[i + 1];
+      const tc = q((dopo ? (paroleF[i].e + dopo.s) / 2 : paroleF[i].e) - f.inizio);
+      const prima = tagli.length ? tagli[tagli.length - 1].tc : 0;
+      if (tc - prima < 0.45 || dur - tc < 0.45) { avvisi.push(`stacco in ${f.id} dopo "${st.dopo}": pezzo troppo corto, saltato`); continue; }
+      tagli.push({ tc, st });
+      da = i;
     }
-    if (!nuova) { avvisi.push(`stacco in ${f.id}: ${st.broll || st.camera || 'inquadratura'} non utilizzabile, niente stacco`); return null; }
-    if (nuova.file === clip.file && Math.abs(nuova.start - (clip.start + tc)) < 0.05) return null; // stessa inquadratura che prosegue
-    return { taglio: +(clip.start + tc).toFixed(3), clip: nuova };
+    if (!tagli.length) return null;
+    // pezzo [a, b] della frase con l'inquadratura dello stacco
+    const pezzo = (st, a, b) => {
+      const audio = { file: clip.audio.file, start: +(clip.audio.start + a).toFixed(3) };
+      if (st.broll) {
+        const s = trovaSorgente(st.broll);
+        const lento = st.lento ? fattoreLento(s) : 1;
+        if (!s || s.tipo !== 'video' || s.durata < (b - a) / lento) return null;
+        let x = Math.max(0, Number(st.da) || 0);
+        if (x + (b - a) / lento > s.durata) x = Math.max(0, s.durata - (b - a) / lento - 0.05);
+        return { file: s.file, start: +x.toFixed(3), end: +(x + b - a).toFixed(3), orient: s.orient, audio, punch: false, ...(lento > 1 ? { lento } : {}) };
+      }
+      if (st.camera) {
+        const cam = trovaSorgente(st.camera);
+        const off = cam ? offsetCamera(cam, f) : null;
+        if (off != null) return { file: cam.file, start: +(f.inizio + off + a).toFixed(3), end: +(f.inizio + off + b).toFixed(3), orient: cam.orient, audio, punch: false };
+      }
+      return null;
+    };
+    const pezzi = [];
+    let corrente = { ...clip, end: +(clip.start + tagli[0].tc).toFixed(3) };
+    tagli.forEach(({ tc, st }, k) => {
+      const fine = k + 1 < tagli.length ? tagli[k + 1].tc : dur;
+      const nuova = pezzo(st, tc, fine);
+      if (!nuova) {
+        // inquadratura non utilizzabile: quella prima continua fino al taglio dopo
+        avvisi.push(`stacco in ${f.id}: ${st.broll || st.camera || 'inquadratura'} non utilizzabile, saltato`);
+        corrente.end = +(corrente.end + (fine - tc)).toFixed(3);
+        return;
+      }
+      pezzi.push(corrente);
+      corrente = nuova;
+    });
+    pezzi.push(corrente);
+    return pezzi.length > 1 ? pezzi : null;
   }
 
   const clips = [];
@@ -194,15 +220,11 @@ export function risolviRegia(regia, analisi) {
       } else avvisi.push(`inserto ${nomeIns} ${b ? 'troppo corto' : 'inesistente'}: tolto`);
     }
     inizioVoce[idx] = t;
-    // stacco dentro la frase (ritmo veloce, stile Esplicativo): dopo la parola indicata si passa a
-    // un'altra inquadratura per il resto della frase, con la voce che continua
-    const secondo = it.stacco && !clip.inserto && it.frase ? staccoDentro(it, clip, paroleF) : null;
-    if (secondo) {
-      clips.push({ ...clip, end: secondo.taglio });
-      t = q(t + (secondo.taglio - clip.start));
-      secondo.clip.punch = false;
-      clips.push(secondo.clip);
-      t = q(t + (secondo.clip.end - secondo.clip.start));
+    // stacchi dentro la frase (ritmo veloce, Esplicativo; raffica di dettagli, 12K): dopo le parole
+    // indicate si passa ad altre inquadrature per il resto della frase, con la voce che continua
+    const pezzi = it.stacco && !clip.inserto && it.frase ? stacchiDentro(it, clip, paroleF) : null;
+    if (pezzi) {
+      for (const c of pezzi) { clips.push(c); t = q(t + (c.end - c.start)); }
       return;
     }
     clips.push(clip);
