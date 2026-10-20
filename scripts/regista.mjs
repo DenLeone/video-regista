@@ -11,7 +11,8 @@
 //   REGISTA_AI              gemini (default) | claude: l'AI principale; l'altra fa da riserva automatica
 //   REGISTA_MODEL           modello Claude (default sonnet) · GEMINI_MODEL flash (default) | pro
 //   GEMINI_MODELLI          (facoltativo) elenco fisso "a,b,c" al posto della rotazione automatica dei Flash
-//   PEXELS_API_KEY          (facoltativo) B-roll di repertorio per gli stili con "B-roll stock: sì" (Motion)
+//   PIXABAY_API_KEY         (facoltativo) B-roll di repertorio per gli stili con "B-roll stock: sì" (Motion);
+//                           PEXELS_API_KEY in alternativa
 //   NOTIFY_URL / NOTIFY_TOKEN (opzionali) bot Telegram: fasi, esito, anteprima video
 //
 // Modalità correzione (dal bottone ✏️ del bot): ORIGINE=98, CARTELLA=<nome>,
@@ -261,7 +262,8 @@ function misuraPerLook(s, start, dur) {
 }
 // `lento` (rallentatore): `dur` secondi di sorgente stirati di quel fattore, a `fps` fotogrammi al secondo
 function taglia(s, start, dur, out, conAudio, senzaLook = false, zoom = 1, lento = 1, fps = 30) {
-  const ritaglio = zoom > 1 ? `crop=trunc(iw/${zoom}/2)*2:trunc(ih/${zoom}/2)*2,` : '';
+  // repertorio orizzontale: ritaglio centrale 9:16, poi lo zoom
+  const ritaglio = (s.ritaglia916 ? 'crop=trunc(ih*9/16/2)*2:ih,' : '') + (zoom > 1 ? `crop=trunc(iw/${zoom}/2)*2:trunc(ih/${zoom}/2)*2,` : '');
   const rallenta = lento > 1 ? `setpts=${lento}*PTS,` : '';
   let curva = null;
   if (!senzaLook) {
@@ -296,50 +298,77 @@ function troncaPiano(piano, secondi) {
 }
 
 // B-roll di repertorio (stili con "B-roll stock: sì", come il Motion): per ogni "stock" della regia
-// (una ricerca in inglese) un video verticale da Pexels, aggiunto alle sorgenti. La chiave è il secret
-// PEXELS_API_KEY, messo da Denis su GitHub: senza, o senza risultati, la frase resta sulla sua
-// inquadratura. Restituisce quanti video ha scaricato
+// (una ricerca in inglese) un video da Pixabay o Pexels, aggiunto alle sorgenti. Le chiavi sono i
+// secret PIXABAY_API_KEY / PEXELS_API_KEY, messi da Denis su GitHub (Pexels non dà più chiavi nuove,
+// 21/10): senza, o senza risultati, la frase resta sulla sua inquadratura. Si preferiscono i video
+// verticali; gli orizzontali si ritagliano al centro in 9:16 (taglia). Restituisce quanti ne ha scaricati
+const PIXABAY = () => process.env.PIXABAY_URL || 'https://pixabay.com';
 const PEXELS = () => process.env.PEXELS_URL || 'https://api.pexels.com';
+const FONTI_STOCK = {
+  // candidati: { id, durata, link, w, h, autore, pagina }
+  Pixabay: async (q) => {
+    const r = await fetchRiprova(`${PIXABAY()}/api/videos/?key=${encodeURIComponent(process.env.PIXABAY_API_KEY)}&q=${encodeURIComponent(q)}&safesearch=true&per_page=20`, {}, 2);
+    if (!r.ok) throw new Error(`HTTP ${r.status}`);
+    const { hits = [] } = await r.json();
+    return hits.map((h) => {
+      // il file più piccolo che basta per 1080×1920 (gli orizzontali vanno ritagliati: serve l'altezza)
+      const files = Object.values(h.videos || {}).filter((x) => x?.url && x.width && x.height);
+      const verticale = files.some((x) => x.height > x.width);
+      const ok = files.filter((x) => (verticale ? x.width >= 720 : x.height >= 1080)).sort((x, y) => x.width * x.height - y.width * y.height)[0]
+        || files.sort((x, y) => y.width * y.height - x.width * x.height)[0];
+      return ok && { id: `pixabay-${h.id}`, durata: h.duration, link: ok.url, w: ok.width, h: ok.height, autore: h.user, pagina: h.pageURL };
+    }).filter(Boolean);
+  },
+  Pexels: async (q) => {
+    const r = await fetchRiprova(`${PEXELS()}/videos/search?query=${encodeURIComponent(q)}&orientation=portrait&size=medium&per_page=10`,
+      { headers: { Authorization: process.env.PEXELS_API_KEY } }, 2);
+    if (!r.ok) throw new Error(`HTTP ${r.status}`);
+    const { videos = [] } = await r.json();
+    return videos.map((v) => {
+      const file = (v.video_files || []).filter((x) => x.height > x.width && x.width >= 720 && /mp4/.test(x.file_type || 'mp4') && x.link)
+        .sort((a, b) => Math.abs(a.width - 1080) - Math.abs(b.width - 1080))[0];
+      return file && { id: `pexels-${v.id}`, durata: v.duration, link: file.link, w: file.width, h: file.height, autore: v.user?.name, pagina: v.url };
+    }).filter(Boolean);
+  },
+};
+export const fontiStock = () => Object.keys(FONTI_STOCK).filter((n) => process.env[`${n.toUpperCase()}_API_KEY`]);
 async function scaricaStock(regia, analisi) {
   const richieste = [...new Set((regia.sequenza || []).map((it) => String(it.stock || '').trim()).filter(Boolean))].slice(0, 12);
   if (!richieste.length) return 0;
-  if (!process.env.PEXELS_API_KEY) { log(`stock: ${richieste.length} B-roll di repertorio chiesti ma manca PEXELS_API_KEY: restano le inquadrature`); return 0; }
+  const fonti = fontiStock();
+  if (!fonti.length) { log(`stock: ${richieste.length} B-roll di repertorio chiesti ma manca PIXABAY_API_KEY: restano le inquadrature`); return 0; }
   analisi.stock = analisi.stock || {};
   const dir = path.join(WORK, 'stock');
   fs.mkdirSync(dir, { recursive: true });
-  const usati = new Set(analisi.sorgenti.filter((s) => s.stock).map((s) => s.pexels));
+  const usati = new Set(analisi.sorgenti.filter((s) => s.stock).map((s) => s.idStock));
   let scaricati = 0;
   for (const q of richieste) {
     const chiave = chiaveStock(q);
     if (!chiave || analisi.stock[chiave]) continue;
     try {
-      const r = await fetchRiprova(`${PEXELS()}/videos/search?query=${encodeURIComponent(q)}&orientation=portrait&size=medium&per_page=10`,
-        { headers: { Authorization: process.env.PEXELS_API_KEY } }, 2);
-      if (!r.ok) throw new Error(`HTTP ${r.status}`);
-      const { videos = [] } = await r.json();
-      // il primo video verticale di almeno 4 s non già usato, nel file più vicino a 1080×1920 (mai sotto 720)
+      // il primo video di almeno 4 s non già usato, prima i verticali, fonte per fonte
       let scelto = null;
-      for (const v of videos) {
-        if (v.duration < 4 || usati.has(v.id)) continue;
-        const file = (v.video_files || []).filter((x) => x.height > x.width && x.width >= 720 && /mp4/.test(x.file_type || 'mp4') && x.link)
-          .sort((a, b) => Math.abs(a.width - 1080) - Math.abs(b.width - 1080))[0];
-        if (file) { scelto = { v, file }; break; }
+      for (const fonte of fonti) {
+        const candidati = (await FONTI_STOCK[fonte](q)).filter((c) => c.durata >= 4 && !usati.has(c.id));
+        const c = candidati.find((x) => x.h > x.w) || candidati[0];
+        if (c) { scelto = { ...c, fonte }; break; }
       }
-      if (!scelto) { log(`stock "${q}": nessun video verticale adatto`); continue; }
+      if (!scelto) { log(`stock "${q}": nessun video adatto`); continue; }
       const id = `stock${analisi.sorgenti.filter((s) => s.stock).length + 1}`;
       const dest = path.join(dir, `${id}.mp4`);
-      const d = await fetchRiprova(scelto.file.link, {}, 3);
+      const d = await fetchRiprova(scelto.link, {}, 3);
       if (!d.ok) throw new Error(`download HTTP ${d.status}`);
       fs.writeFileSync(dest, Buffer.from(await d.arrayBuffer()));
       const info = probe(dest);
       if (!info.durata) throw new Error('file non leggibile');
-      usati.add(scelto.v.id);
-      analisi.sorgenti.push({ id, file: `${id}.mp4`, originale: dest, tipo: 'video', dispositivo: 'stock', nomeDispositivo: 'Pexels',
-        durata: +info.durata.toFixed(2), orient: info.w > info.h ? 'h' : 'v', haAudio: false, colore: info.colore, fps: info.fps,
-        soloImmagini: 'repertorio', stock: true, pexels: scelto.v.id, crediti: `${scelto.v.user?.name || 'Pexels'} (${scelto.v.url || 'pexels.com'})` });
+      usati.add(scelto.id);
+      // orizzontale: ritagliato al centro in 9:16 al taglio, poi è un verticale come gli altri
+      analisi.sorgenti.push({ id, file: `${id}.mp4`, originale: dest, tipo: 'video', dispositivo: 'stock', nomeDispositivo: scelto.fonte,
+        durata: +info.durata.toFixed(2), orient: 'v', ritaglia916: info.w > info.h, haAudio: false, colore: info.colore, fps: info.fps,
+        soloImmagini: 'repertorio', stock: true, idStock: scelto.id, crediti: `${scelto.autore || scelto.fonte} (${scelto.pagina || scelto.fonte})` });
       analisi.stock[chiave] = id;
       scaricati++;
-      log(`stock "${q}": ${id} ${info.w}×${info.h} ${info.durata.toFixed(1)} s di ${scelto.v.user?.name || '—'}`);
+      log(`stock "${q}": ${id} da ${scelto.fonte}, ${info.w}×${info.h} ${info.durata.toFixed(1)} s di ${scelto.autore || '—'}`);
     } catch (e) { log(`stock "${q}" non scaricato: ${e.message}`); }
   }
   return scaricati;
@@ -583,7 +612,7 @@ function fogliProvino(file, id, durata, offset = 0, colore = null) {
 // ---------- 3. l'AI scrive la regia ----------
 function promptRegia({ modo, testoMateriale, regiaPrecedente }) {
   let p = fs.readFileSync(path.join(ROOT, 'scripts', 'prompt-regista.md'), 'utf8')
-    .replace('{{GRAFICA}}', stileSuMisura ? promptSuMisura(stileSuMisura.grafica, stileSuMisura.testoAI, { stock: Boolean(process.env.PEXELS_API_KEY) })
+    .replace('{{GRAFICA}}', stileSuMisura ? promptSuMisura(stileSuMisura.grafica, stileSuMisura.testoAI, { stock: fontiStock().length > 0 })
       : fs.readFileSync(path.join(ROOT, 'scripts', 'stili', `${stileCorrente}.md`), 'utf8').trim());
   if (regiaPrecedente) {
     p += `\n\n## MODALITÀ CORREZIONE\nEsiste già un montaggio, questa è la sua regia:\n\`\`\`json\n${JSON.stringify(regiaPrecedente, null, 1)}\n\`\`\`\nDenis l'ha guardato e chiede queste modifiche:\n\n> ${CORREZIONE.replace(/\n/g, '\n> ')}\n\nParti da questa regia e applica SOLO quello che chiede, lasciando invariato il resto. I tempi li ricalcola lo script. Nella \`note\` elenca in breve cosa hai cambiato.`;
@@ -1586,7 +1615,7 @@ async function main() {
       `Parole chiave: ${piano.keywords.map((k) => `${k.word} @${k.at.toFixed(1)}s`).join(', ') || '—'}`,
       piano.testo ? `Testo: ${piano.testo}` : '',
       piano.note ? `Note: ${piano.note}` : '',
-      analisi.sorgenti.some((s) => s.stock && piano.clips.some((c) => c.sorgente === s.id)) ? `Repertorio Pexels: ${analisi.sorgenti.filter((s) => s.stock && piano.clips.some((c) => c.sorgente === s.id)).map((s) => s.crediti).join(', ')}` : '',
+      analisi.sorgenti.some((s) => s.stock && piano.clips.some((c) => c.sorgente === s.id)) ? `Repertorio: ${analisi.sorgenti.filter((s) => s.stock && piano.clips.some((c) => c.sorgente === s.id)).map((s) => s.crediti).join(', ')}` : '',
       `File: ${OUT_DIR}/${nome}/${finale}`,
       DA_TELEGRAM ? (avvisoOriginali || `Originali: ${IN_DIR}/${nome}`) : '',
       rigaConsumi(),
@@ -1679,4 +1708,4 @@ async function inviaVideo(outFile, nome, testo, durata, info) {
 
 // avviato come script (non importato dai test)
 if (process.argv[1] && path.resolve(process.argv[1]) === path.resolve(ROOT, 'scripts', 'regista.mjs')) main();
-export { fogliProvino, chiediRegia, rigaConsumi, tagliaSegmenti, scriviDidascalie, WORK, MEDIA, SCARICO };
+export { fogliProvino, chiediRegia, rigaConsumi, tagliaSegmenti, scriviDidascalie, scaricaStock, WORK, MEDIA, SCARICO };

@@ -157,7 +157,7 @@ export function risolviRegia(regia, analisi) {
       paroleF = paroleFrase(voce, f, taglio);
       paroleF.forEach((w) => parole.push({ at: q(t + Math.max(0, w.s - f.inizio)), dur: +Math.max(0.05, w.e - w.s).toFixed(3), w: w.w }));
       const audio = { file: voce.voce, start: +f.inizio.toFixed(3) };
-      // B-roll di repertorio (Pexels) chiesto dall'AI con una ricerca: scaricato prima (regista.mjs
+      // B-roll di repertorio (Pixabay/Pexels) chiesto dall'AI con una ricerca: scaricato prima (regista.mjs
       // scaricaStock) e aggiunto alle sorgenti; se non c'è resta l'inquadratura della voce
       if (it.stock && !it.broll) {
         const id = (analisi.stock || {})[chiaveStock(it.stock)];

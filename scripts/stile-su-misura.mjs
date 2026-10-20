@@ -47,7 +47,7 @@ Chiusura: no                  # no | il tuo nome Instagram (es. @_black_den): fi
 Firma: no                     # no | il tuo nome Instagram: logo e nome fissi in basso a sinistra per tutto il video
 Transizioni: no               # no | fumo (nuvola che copre il taglio nei cambi di scena scelti dall'AI)
 Inserti: scheda               # scheda (arrotondata, tipo telefono) | tv (televisore anni '70 con barre colorate all'accensione)
-B-roll stock: no              # sì = l'AI può coprire alcune frasi con video di repertorio da Pexels (serve il secret PEXELS_API_KEY)
+B-roll stock: no              # sì = l'AI può coprire alcune frasi con video di repertorio da Pexels (serve il secret PIXABAY_API_KEY)
 
 # --- AUDIO ---
 Effetti sonori: sì            # sì | no
@@ -175,7 +175,7 @@ export function leggiStile(testo, nomeCartella) {
 }
 
 // istruzioni di grafica per l'AI (sezione {{GRAFICA}} del prompt) per uno stile su misura
-// `disponibili.stock`: c'è la chiave di Pexels (senza, l'AI non chiede B-roll di repertorio)
+// `disponibili.stock`: c'è una chiave di Pixabay o Pexels (senza, l'AI non chiede B-roll di repertorio)
 export function promptSuMisura(g, testoAI, disponibili = {}) {
   const righe = [`## Grafica: stile «${g.nome}» (su misura)`];
   righe.push(`- Le scritte delle parole dette (${g.apertura === 'grande' ? 'scritta d\'apertura e ' : ''}sottotitoli) le mette lo script da solo: non scriverle.`);
@@ -213,7 +213,7 @@ export function promptSuMisura(g, testoAI, disponibili = {}) {
   }
   if (g.fumo) righe.push('- **Transizioni a fumo**: `"fumo": true` sull\'elemento della sequenza dove la scena cambia davvero (dal volto a un B-roll o al repertorio e ritorno, o quando cambia argomento): una nuvola copre il taglio. 2–5 in un video di un minuto, almeno 8 s una dall\'altra, mai sul primo elemento.');
   if (g.stock && disponibili.stock) {
-    righe.push('- **B-roll di repertorio (Pexels)**: su un elemento con `frase` puoi mettere `"stock": "<ricerca in inglese, 2–4 parole>"` al posto di `camera`/`broll`: lo script cerca un video verticale e lo mostra a tutto schermo mentre Denis parla. La ricerca descrive una cosa concreta che si vede e illustra quello che dice in quel momento (es. "server room lights", "crowd protest street", "old tv static", "money counting hands"), niente nomi di persone o marchi.',
+    righe.push('- **B-roll di repertorio**: su un elemento con `frase` puoi mettere `"stock": "<ricerca in inglese, 2–4 parole>"` al posto di `camera`/`broll`: lo script cerca un video di repertorio e lo mostra a tutto schermo mentre Denis parla. La ricerca descrive una cosa concreta che si vede e illustra quello che dice in quel momento (es. "server room lights", "crowd protest street", "old tv static", "money counting hands"), niente nomi di persone o marchi.',
       '  - Circa uno ogni 10–15 s, su frasi da 1,5 a 6 s; mai l\'aggancio né la chiusura (lì il volto), mai due di fila; stessa ricerca su due frasi = stesso video, pezzi diversi. Se non trova niente resta l\'inquadratura normale.');
   }
   if (g.cornice === 'tv') righe.push('- Gli inserti compaiono dentro un televisore anni \'70 (barre colorate all\'accensione): perfetti per filmati, schermate e foto di cui Denis parla.');

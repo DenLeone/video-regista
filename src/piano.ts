@@ -22,7 +22,7 @@ export type Clip = {
   // durata sul video; la sorgente usata è (end - start) / lento secondi. Dopo il taglio il pezzo è già lento
   lento?: number;
   fumo?: boolean;   // transizione a nuvola di fumo all'inizio di questa clip (stile Motion)
-  stock?: string;   // B-roll di repertorio (Pexels): la ricerca che l'ha trovato, per NOTE.txt
+  stock?: string;   // B-roll di repertorio (Pixabay/Pexels): la ricerca che l'ha trovato, per NOTE.txt
 };
 
 export type Keyword = {
@@ -86,7 +86,7 @@ export type GraficaStile = {
   fumo?: boolean;                            // transizioni a nuvola di fumo sui cambi di scena scelti dall'AI
   firma?: string;                            // logo Instagram e nome (es. @_black_den) fissi in basso a sinistra
   cornice?: 'scheda' | 'tv';                 // inserti: scheda arrotondata o televisore anni '70
-  stock?: boolean;                           // l'AI può chiedere B-roll di repertorio (Pexels, se c'è la chiave)
+  stock?: boolean;                           // l'AI può chiedere B-roll di repertorio (Pixabay o Pexels, se c'è la chiave)
   fontCorsivo: FontStile;                    // la frase piccola delle scritte a due livelli
   dietro: boolean;                           // le scritte grandi passano dietro alla persona
   look: 'naturale' | 'caldo' | 'freddo' | 'bianco e nero' | 'teal' | 'chiaro caldo';  // teal e chiaro caldo: in ffmpeg, non CSS

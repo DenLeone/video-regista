@@ -184,7 +184,8 @@ jobs:
           CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
           # AI principale di default; se manca si usa Claude
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
-          # B-roll di repertorio degli stili con "B-roll stock: sì" (facoltativa: pexels.com/api, chiave gratuita)
+          # B-roll di repertorio degli stili con "B-roll stock: sì" (facoltative: pixabay.com/api/docs, chiave gratuita)
+          PIXABAY_API_KEY: ${{ secrets.PIXABAY_API_KEY }}
           PEXELS_API_KEY: ${{ secrets.PEXELS_API_KEY }}
           # scelte dal bot, altrimenti Settings → Secrets and variables → Actions → Variables (facoltative)
           REGISTA_AI: ${{ inputs.ai || vars.REGISTA_AI }}
