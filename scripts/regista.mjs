@@ -1,6 +1,6 @@
-// Regista automatico: prende UNA cartella da "97 - Editare" su Drive che contiene
+// Regista automatico: prende UNA cartella da "01 · Da editare" su Drive che contiene
 // un file VAI, prepara il materiale, fa decidere la regia all'AI,
-// renderizza con Remotion e rimette il risultato su Drive in "98 - Fatti".
+// renderizza con Remotion e rimette il risultato su Drive in "02 · Fatti" (nomi in cartelle.mjs).
 //
 // Requisiti nell'ambiente (GitHub Actions o PC):
 //   rclone configurato con un remote chiamato "gdrive" (account denisnusinovic)
@@ -14,13 +14,14 @@
 //   NOTIFY_URL / NOTIFY_TOKEN (opzionali) bot Telegram: fasi, esito, anteprima video
 //
 // Modalità correzione (dal bottone ✏️ del bot): ORIGINE=98, CARTELLA=<nome>,
-// CORREZIONE=<testo>. Riparte dalla regia salvata in 98 - Fatti/<nome>/_regista/
+// CORREZIONE=<testo>. Riparte dalla regia salvata in 02 · Fatti/<nome>/_regista/
 // e produce "<nome> - FINALE v2.mp4" (v3, ...) nella stessa cartella.
 
 import { execFileSync, spawn, spawnSync } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
 import { audioMuto, frasi, inviluppo, sincronizza, sogliaVoce } from './audio.mjs';
+import { DIR_EDITARE, DIR_FATTI, DIR_STILI } from './cartelle.mjs';
 import { HDR, curvaChiara, curvaEsposizione, filtroTecnico, misuraPezzo, perFiltro, probe, riconosciLog } from './colore.mjs';
 import { materialePerAI, normFrase, risolviRegia, sequenzaDiscorso } from './regia.mjs';
 import { movimento, syncMovimento } from './sync-visivo.mjs';
@@ -28,8 +29,8 @@ import { LOOK_FFMPEG, leggiStile, promptSuMisura } from './stile-su-misura.mjs';
 import { AUDIO_EXT, IMAGE_EXT, NOMI_DISPOSITIVO, VIDEO_EXT, dispositivo, prioritaAudio, tagsPiatti } from './sorgenti.mjs';
 
 const REMOTE = process.env.REGISTA_REMOTE || 'gdrive';
-const IN_DIR = '97 - Editare';
-const OUT_DIR = '98 - Fatti';
+const IN_DIR = DIR_EDITARE;
+const OUT_DIR = DIR_FATTI;
 const CORREZIONE = (process.env.CORREZIONE || '').trim();
 const RIRENDER = process.env.AZIONE === 'render'; // rifà solo il render con la regia salvata (origine 98)
 // render di prova (input "secondi"): solo i primi N secondi del montaggio, per provare look e
@@ -768,13 +769,12 @@ function validaPiano(p) {
 
 // ---------- 4. render ----------
 // Stili pronti = composizioni Remotion registrate in src/Root.tsx. Le schede e gli esempi
-// stanno su Drive in "03 · Social — Risorse/Stili/<nome>/" (stile.txt, esempi/, asset/):
+// stanno su Drive in "12 · Risorse/Stili/<nome>/" (DIR_STILI: stile.txt, esempi/, asset/):
 // uno stile nuovo si costruisce da lì e si aggiunge qui, in Root.tsx e in scripts/stili/<nome>.md
 // (le istruzioni di grafica per l'AI, inserite nel prompt al posto di {{GRAFICA}}).
 // Gli altri stili sono "su misura": una cartella su Drive in DIR_STILI con stile.txt e asset/,
 // renderizzata dalla composizione SuMisura (scripts/stile-su-misura.mjs, src/SuMisura.tsx).
 const STILI = ['Blueprint', 'Cinematico'];
-const DIR_STILI = '03 · Social — Risorse/Stili';
 let stileCorrente = STILI[0];
 let stileSuMisura = null; // { nome, grafica, testoAI, avvisi }
 let LUT_STILE = null;     // LUT creativa dello stile su misura
@@ -1393,7 +1393,7 @@ async function main() {
     if (DA_TELEGRAM) {
       const refs = JSON.parse(TELEGRAM_FILE);
       await fase(nome, `📥 Scarico ${refs.length} file da Telegram`, 'scarico');
-      if (!CHIAVI_TELEGRAM) throw new Error('i video mandati in chat non sono ancora attivi: servono i secret TG_API_ID, TG_API_HASH e TELEGRAM_BOT_TOKEN su GitHub (vedi la Guida del bot). Intanto carica i file su Drive in 97 - Editare.');
+      if (!CHIAVI_TELEGRAM) throw new Error(`i video mandati in chat non sono ancora attivi: servono i secret TG_API_ID, TG_API_HASH e TELEGRAM_BOT_TOKEN su GitHub (vedi la Guida del bot). Intanto carica i file su Drive in ${IN_DIR}.`);
       run(process.env.REGISTA_PYTHON || 'python3', [path.join(ROOT, 'scripts', 'scarica-telegram.py'), SCARICO], { stdio: 'inherit' });
       // gli originali vanno in 97 mentre analisi, AI e render proseguono
       copiaOriginali = inSottofondo('rclone', ['copy', SCARICO, remote(IN_DIR, nome), '--transfers', '8']);

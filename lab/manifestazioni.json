@@ -1,9 +1,9 @@
 {
-  "uscita": "03 · Social — Risorse/Stili/_prove colore/Manifestazioni",
+  "uscita": "12 · Risorse/Stili/_prove colore/Manifestazioni",
   "nomeBase": "1 attuale",
   "griglia": 3,
   "fotogrammi": [
-    { "file": "97 - Editare/Manifestazioni /VID_20261020_131720_044_02_17.mp4", "punti": [0.2, 0.45, 0.7] }
+    { "file": "02 · Fatti/Manifestazioni /VID_20261020_131720_044_02_17.mp4", "punti": [0.2, 0.45, 0.7] }
   ],
   "varianti": [
     { "id": "2 chiaro naturale", "adatta": { "obiettivo": 0.48 }, "filtro": "eq=saturation=1.05" },

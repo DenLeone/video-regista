@@ -1,5 +1,5 @@
 // Stili "su misura": Denis li crea da Drive senza codice. Ogni stile è una cartella in
-// "03 · Social — Risorse/Stili/<Nome>/" con:
+// "12 · Risorse/Stili/<Nome>/" (cartelle.mjs DIR_STILI) con:
 //   stile.txt   righe "Chiave: valore" (vedi MODELLO qui sotto; quello che non è grafica va all'AI)
 //   asset/      font (.ttf .otf .woff .woff2), musica (.mp3 .m4a .wav), LUT creativa (.cube)
 //   esempi/     video di riferimento (non usati dal montaggio)

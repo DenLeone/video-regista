@@ -72,7 +72,7 @@ const ANTEPRIMA_URL = () => (ORIGINE_BOT ? `${ORIGINE_BOT}/stili.jpg?v=1` : unde
 const LINEA = '━━━━━━━━━━━━━━━━━━';
 
 // stili pronti: gli stessi nomi di STILI in scripts/regista.mjs; in più quelli su misura che
-// Denis crea su Drive (cartelle in "03 · Social — Risorse/Stili", elenco mandato dal workflow)
+// Denis crea su Drive (cartelle in "12 · Risorse/Stili", elenco mandato dal workflow)
 type Stile = { nome: string; tasto: string; cosa: string };
 const STILI: Stile[] = [{ nome: 'Blueprint', tasto: '📐 Blueprint', cosa: 'tavola tecnica, parole chiave in box, effetti digitali' },
   { nome: 'Cinematico', tasto: '🎬 Cinematico', cosa: 'spot di prodotto caldo, sottotitoli parola per parola, titoli grandi' }];
@@ -340,13 +340,13 @@ async function pannello(env: Env): Promise<Schermo> {
       `<b>Stile</b>       ${esc(imp.stile)} · <b>AI</b> ${esc(motore(imp))}`,
       ...(tgFile === false ? ['📥 <i>Video mandati in chat: da attivare (vedi ❓ Guida). Intanto usa Drive.</i>'] : []),
       LINEA,
-      `<i>Girato in <code>97 - Editare/NomeVideo</code>${tgFile === false ? '' : ' (o qui come File)'} → 🆕 Nuovo montaggio → il video arriva qui.</i>`,
+      `<i>Girato in <code>01 · Da editare/NomeVideo</code>${tgFile === false ? '' : ' (o qui come File)'} → 🆕 Nuovo montaggio → il video arriva qui.</i>`,
     ].join('\n'),
     tasti: [
       [tasto('🆕 Nuovo montaggio', 'nuovo'), tasto('📦 Più video', 'lotto')],
       [tasto('📼 Ultimi video', 'video'), tasto('🎨 Stili', 'stili')],
       [tasto('📊 Stato', 'stato'), tasto('⚙️ Impostazioni', 'imp')],
-      [link('📂 97 · Da montare', URL_97), link('✅ 98 · Fatti', URL_98)],
+      [link('📂 01 · Da editare', URL_97), link('✅ 02 · Fatti', URL_98)],
       [tasto('❓ Guida', 'guida')],
     ],
   };
@@ -497,8 +497,8 @@ async function schermoVideo(env: Env): Promise<Schermo> {
   const elenco = (await leggi<VideoFatto[]>(env, 'video')) || [];
   if (!elenco.length) {
     return {
-      testo: ['📼 <b>Ultimi video</b>', LINEA, 'Ancora nessuno: i video finiti compaiono qui da adesso in poi.', '<i>Quelli di prima sono su Drive in 98 - Fatti.</i>'].join('\n'),
-      tasti: [[link('✅ 98 · Fatti', URL_98), MENU_TASTO]],
+      testo: ['📼 <b>Ultimi video</b>', LINEA, 'Ancora nessuno: i video finiti compaiono qui da adesso in poi.', '<i>Quelli di prima sono su Drive in 02 · Fatti.</i>'].join('\n'),
+      tasti: [[link('✅ 02 · Fatti', URL_98), MENU_TASTO]],
     };
   }
   const righe: string[] = [];
@@ -513,7 +513,7 @@ async function schermoVideo(env: Env): Promise<Schermo> {
   }
   return {
     testo: ['📼 <b>Ultimi video</b>', LINEA, ...righe, '', '<i>Tocca un video: te lo rimando qui sotto con i suoi tasti (📤 Pubblica, 🎨 Cambia stile, ✏️ Correggi…). 🧪 = prova, 📤 = pubblicato.</i>'].join('\n'),
-    tasti: [...tasti, [link('✅ 98 · Fatti', URL_98), MENU_TASTO]],
+    tasti: [...tasti, [link('✅ 02 · Fatti', URL_98), MENU_TASTO]],
   };
 }
 
@@ -548,7 +548,7 @@ const GUIDA: Schermo = {
   testo: [
     '❓ <b>Come funziona</b>', LINEA,
     '<b>1. Il girato</b>',
-    '📂 Su Drive: <code>97 - Editare/NomeVideo/</code> con tutte le clip (iPhone, Sony, Insta360, B-roll, audio del microfono).',
+    '📂 Su Drive: <code>01 · Da editare/NomeVideo/</code> con tutte le clip (iPhone, Sony, Insta360, B-roll, audio del microfono).',
     '📥 In chat: mandami i file come <b>File</b> (📎 → File, così non vengono compressi), il nome del video come didascalia.',
     '',
     '<b>2. Il montaggio</b>',
@@ -561,7 +561,7 @@ const GUIDA: Schermo = {
     '<b>3. Il video finito</b>',
     '👍 Approva · 📤 Pubblica · ✏️ Correggi (scrivi cosa cambiare) · 🔄 Solo render (stessa regia, grafica e colori aggiornati, pochi minuti) · 🔁 Rifai da zero.',
     `🎨 <b>Cambia stile</b>: stessa regia con un altro stile. Prima 🧪 una prova dei primi ${PROVA_S} s (arriva prima), poi 🎬 il video intero se ti piace.`,
-    '📤 <b>Pubblica</b>: Instagram (reel di prova, da ⚙️ Impostazioni) e YouTube Shorts. Ti mostro didascalia e titolo scritti dall\'AI (li puoi cambiare, link compresi), poi ti mando i link. Il video passa in 99 - Pubblicare. Da collegare una volta: ⚙️ Impostazioni → 🔗 Instagram e YouTube.',
+    '📤 <b>Pubblica</b>: Instagram (reel di prova, da ⚙️ Impostazioni) e YouTube Shorts. Ti mostro didascalia e titolo scritti dall\'AI (li puoi cambiare, link compresi), poi ti mando i link. Il video passa in 03 · Da pubblicare. Da collegare una volta: ⚙️ Impostazioni → 🔗 Instagram e YouTube.',
     '📼 <b>Ultimi video</b>: tutti i video finiti (anche le prove); toccane uno e te lo rimando giù con i suoi tasti.',
     '',
     '<b>Da sapere</b>',
@@ -571,7 +571,7 @@ const GUIDA: Schermo = {
     '⚡ Un file <code>VAI</code> nella cartella la fa montare da sola (controllo 7–23).',
     '',
     '<b>Stili nuovi, senza codice</b>',
-    'Su Drive in <code>03 · Social — Risorse/Stili</code> copia la cartella <i>_Modello nuovo stile</i> e rinominala (es. <i>Narrativo</i>). Dentro: <code>stile.txt</code> (font, colori, sottotitoli, look, musica, indicazioni per la regia), <code>asset/</code> (tuoi font .ttf/.otf, musiche .mp3, LUT .cube), <code>esempi/</code> (video di riferimento). Compare in 🎨 Stili come ✨ stile (🔄 Aggiorna per non aspettare); per cambiarlo modifichi <code>stile.txt</code>.',
+    'Su Drive in <code>12 · Risorse/Stili</code> copia la cartella <i>_Modello nuovo stile</i> e rinominala (es. <i>Narrativo</i>). Dentro: <code>stile.txt</code> (font, colori, sottotitoli, look, musica, indicazioni per la regia), <code>asset/</code> (tuoi font .ttf/.otf, musiche .mp3, LUT .cube), <code>esempi/</code> (video di riferimento). Compare in 🎨 Stili come ✨ stile (🔄 Aggiorna per non aspettare); per cambiarlo modifichi <code>stile.txt</code>.',
     '',
     '<b>Video in chat: attivazione (una volta)</b>',
     'Su my.telegram.org → API development tools crea un\'app e copia <i>api_id</i> e <i>api_hash</i>. Poi su GitHub (DenLeone/video-regista → Settings → Secrets and variables → Actions) aggiungi <code>TG_API_ID</code>, <code>TG_API_HASH</code> e <code>TELEGRAM_BOT_TOKEN</code> (il token del bot da @BotFather).',
@@ -630,7 +630,7 @@ function simili(nome: string, elenco: string[]): string[] {
     .filter((c) => c.d <= Math.max(3, n.length / 3)).sort((p, q) => p.d - q.d).slice(0, 3).map((c) => c.x);
 }
 
-// L'elenco di 97 - Editare arriva dal workflow. Se è vecchio lo chiedo da solo (giro "elenco" ≈1 min)
+// L'elenco di 01 · Da editare arriva dal workflow. Se è vecchio lo chiedo da solo (giro "elenco" ≈1 min)
 // e, quando arriva, aggiorno le schermate aperte che lo mostrano.
 async function richiediElenco(env: Env, chat: string, forza = false): Promise<boolean> {
   const c = await leggi<Cartelle>(env, 'cartelle');
@@ -650,7 +650,7 @@ async function infoElenco(env: Env): Promise<string> {
   const c = await leggi<Cartelle>(env, 'cartelle');
   const richiesto = (await leggi<number>(env, 'elenco_richiesto')) || 0;
   const aggiorna = Date.now() - richiesto < 3 * 60000 && (!c || c.aggiornato < richiesto) ? ' · ⏳ aggiorno l\'elenco…' : '';
-  return c ? `<i>97 - Editare alle ${ora(c.aggiornato).split(', ')[1]} · ⚡ = ha il file VAI${aggiorna}</i>`
+  return c ? `<i>01 · Da editare alle ${ora(c.aggiornato).split(', ')[1]} · ⚡ = ha il file VAI${aggiorna}</i>`
     : `<i>${aggiorna ? '⏳ Recupero l\'elenco delle cartelle (≈1 min)…' : 'Elenco non disponibile: premi Aggiorna o scrivi il nome.'}</i>`;
 }
 
@@ -723,7 +723,7 @@ async function schermoPasso(env: Env, a: Attesa & { tipo: 'nuovo' }): Promise<Sc
       let avviso = '';
       if (d.scritta) {
         const sim = simili(d.scritta, c?.elenco || []);
-        avviso = `⚠️ <b>Non trovo «${esc(d.scritta)}»</b> in 97 - Editare.${sim.length ? ' Intendevi:' : ''}\n`;
+        avviso = `⚠️ <b>Non trovo «${esc(d.scritta)}»</b> in 01 · Da editare.${sim.length ? ' Intendevi:' : ''}\n`;
         for (const x of sim) righe.push([tasto(`👉 ${tronca(x, 40)}`, `w:c:${(c?.elenco || []).indexOf(x)}`)]);
         righe.push([tasto(`Usa comunque «${tronca(d.scritta, 30)}»`, 'w:usa')]);
       }
@@ -736,7 +736,7 @@ async function schermoPasso(env: Env, a: Attesa & { tipo: 'nuovo' }): Promise<Sc
     }
     case 'stile':
       return {
-        testo: `${testata(a)}\n🎨 <b>Che stile?</b>\n${tuttiStili().map((x) => `${x.tasto}: <i>${x.cosa}</i>`).join('\n')}\n<i>Stili nuovi: una cartella in Drive → 03 · Social — Risorse/Stili (vedi ❓ Guida).</i>`,
+        testo: `${testata(a)}\n🎨 <b>Che stile?</b>\n${tuttiStili().map((x) => `${x.tasto}: <i>${x.cosa}</i>`).join('\n')}\n<i>Stili nuovi: una cartella in Drive → 12 · Risorse/Stili (vedi ❓ Guida).</i>`,
         tasti: [...righeStili((x) => tasto(`${x.tasto}${x.nome === (d.stile || imp.stile) ? ' ✓' : ''}`, `w:v:stile:${x.nome}`)), nav(a)],
         anteprima: ANTEPRIMA_URL(),
       };
@@ -849,7 +849,7 @@ async function proponiCartella(env: Env, chat: string, testo: string): Promise<b
   const sim = simili(testo, elenco);
   if (!sim.length) return false;
   await invia(env, chat, {
-    testo: `📁 <b>Non trovo «${esc(testo)}»</b> in 97 - Editare. Intendevi:`,
+    testo: `📁 <b>Non trovo «${esc(testo)}»</b> in 01 · Da editare. Intendevi:`,
     tasti: [...sim.map((x) => [tasto(`👉 ${tronca(x, 40)}`, `q:c:${elenco.indexOf(x)}`)]), [MENU_TASTO]],
   });
   return true;
@@ -858,7 +858,7 @@ async function mostraRapido(env: Env, chat: string, cartella: string, msgId?: nu
   const imp = await impostazioni(env);
   const c = await leggi<Cartelle>(env, 'cartelle');
   const id = await mostra(env, chat, {
-    testo: `📁 <b>${esc(cartella)}</b> · in 97 - Editare${c?.vai.includes(cartella) ? ' · ⚡ ha il VAI' : ''}\nLa monto adesso?\n\n${riassunto({ cartella }, imp)}`,
+    testo: `📁 <b>${esc(cartella)}</b> · in 01 · Da editare${c?.vai.includes(cartella) ? ' · ⚡ ha il VAI' : ''}\nLa monto adesso?\n\n${riassunto({ cartella }, imp)}`,
     tasti: [[tasto(`🚀 Monta · ${imp.stile}`, 'q:m')], [tasto('⚙️ Stile e opzioni', 'q:o'), tasto('✖️ No', 'annulla')]],
   }, msgId);
   await mem(env).scrivi(kAttesa(chat), { tipo: 'rapido', cartella, msg: id } satisfies Attesa);
@@ -1355,7 +1355,7 @@ async function onPubblicato(env: Env, n: { nonce?: string; nome?: string; instag
     riga('📸', 'Instagram', n.instagram, n.instagram?.prova ? ' come reel di prova (lo vedono prima i non follower)' : ''),
     riga('▶️', 'YouTube', n.youtube, n.youtube?.privato ? '\n<i>⚠️ YouTube lo tiene privato finché il collegamento non è verificato: rendilo pubblico da YouTube Studio.</i>' : ''),
     n.errore ? `⚠️ ${esc(tronca(n.errore, 300))}` : '',
-    n.spostato ? '<i>Il video è in 99 - Pubblicare.</i>' : '',
+    n.spostato ? '<i>Il video è in 03 · Da pubblicare.</i>' : '',
   ].filter(Boolean);
   const riuscito = Boolean(n.instagram?.ok || n.youtube?.ok);
   const links = [
@@ -1483,7 +1483,7 @@ async function onNotify(env: Env, n: Notify) {
   if (n.tipo === 'vuoto') {
     const pendenti = (await leggi<Pendente[]>(env, 'pendenti')) || [];
     const i = pendenti.findIndex((p) => p.nome === '');
-    const s: Schermo = { testo: '🤷 <b>Nessuna cartella con VAI</b> in 97 - Editare: non ho montato niente.\nScegli la cartella da <b>Nuovo montaggio</b>.', tasti: [[tasto('🆕 Nuovo montaggio', 'nuovo'), link('📂 97', URL_97)]] };
+    const s: Schermo = { testo: '🤷 <b>Nessuna cartella con VAI</b> in 01 · Da editare: non ho montato niente.\nScegli la cartella da <b>Nuovo montaggio</b>.', tasti: [[tasto('🆕 Nuovo montaggio', 'nuovo'), link('📂 01 · Da editare', URL_97)]] };
     if (i >= 0) { const p = pendenti.splice(i, 1)[0]; await mem(env).scrivi('pendenti', pendenti); await mostra(env, p.chat, s, p.msg); }
     else for (const chat of chats) await invia(env, chat, s, true);
     return;

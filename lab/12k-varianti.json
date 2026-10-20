@@ -1,11 +1,11 @@
 {
-  "uscita": "03 · Social — Risorse/Stili/12K Quality/_laboratorio/2-varianti",
+  "uscita": "12 · Risorse/Stili/12K Quality/_laboratorio/2-varianti",
   "fotogrammi": [
-    { "file": "98 - Fatti/980/Ak980.MP4", "tempi": [6, 24] },
-    { "file": "98 - Fatti/980/980 10.MP4", "tempi": [38] },
-    { "file": "98 - Fatti/980/980 6.MP4", "tempi": [24] },
-    { "file": "98 - Fatti/Giacca autunnale/VID_20261018_153423_057.mp4", "tempi": [10, 38] },
-    { "file": "98 - Fatti/Giacca autunnale/VID_20261018_153332_055.mp4", "tempi": [2] }
+    { "file": "02 · Fatti/980/Ak980.MP4", "tempi": [6, 24] },
+    { "file": "02 · Fatti/980/980 10.MP4", "tempi": [38] },
+    { "file": "02 · Fatti/980/980 6.MP4", "tempi": [24] },
+    { "file": "02 · Fatti/Giacca autunnale/VID_20261018_153423_057.mp4", "tempi": [10, 38] },
+    { "file": "02 · Fatti/Giacca autunnale/VID_20261018_153332_055.mp4", "tempi": [2] }
   ],
   "varianti": [
     { "id": "v1 (vecchio)", "filtro": "lut3d=file=lut/teal-arancio.cube:interp=tetrahedral" },

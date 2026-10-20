@@ -1,11 +1,11 @@
 {
-  "uscita": "03 · Social — Risorse/Stili/_prove colore/Chiaro caldo",
+  "uscita": "12 · Risorse/Stili/_prove colore/Chiaro caldo",
   "nomeBase": "prima",
   "griglia": 2,
   "fotogrammi": [
-    { "file": "98 - Fatti/Moero air/VID_20261020_130143_074_02_17.mp4", "punti": [0.3, 0.5, 0.8] },
-    { "file": "98 - Fatti/Moero air/VID_20261020_125903_071_02_17.mp4", "punti": [0.5] },
-    { "file": "97 - Editare/Manifestazioni /VID_20261020_131720_044_02_17.mp4", "punti": [0.45] }
+    { "file": "02 · Fatti/Moero air/VID_20261020_130143_074_02_17.mp4", "punti": [0.3, 0.5, 0.8] },
+    { "file": "02 · Fatti/Moero air/VID_20261020_125903_071_02_17.mp4", "punti": [0.5] },
+    { "file": "02 · Fatti/Manifestazioni /VID_20261020_131720_044_02_17.mp4", "punti": [0.45] }
   ],
   "varianti": [
     { "id": "chiaro caldo", "adatta": { "obiettivo": 0.5, "obiettivoPelle": 0.33 }, "filtro": "colortemperature=temperature=5600,eq=saturation=1.08" }

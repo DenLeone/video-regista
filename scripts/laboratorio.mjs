@@ -6,9 +6,9 @@
 //
 // Ricetta:
 // {
-//   "uscita": "03 · Social — Risorse/Stili/12K Quality/_laboratorio/catalogo",
-//   "catalogo": { "cartelle": ["98 - Fatti/980"], "max": 8 },      // fogli con tutti i video
-//   "fotogrammi": [{ "file": "98 - Fatti/980/IMG_1.MOV", "tempi": [2.5, 7] }],   // o "punti": [0.3, 0.6] (frazioni della durata)
+//   "uscita": "12 · Risorse/Stili/12K Quality/_laboratorio/catalogo",
+//   "catalogo": { "cartelle": ["02 · Fatti/980"], "max": 8 },      // fogli con tutti i video
+//   "fotogrammi": [{ "file": "02 · Fatti/980/IMG_1.MOV", "tempi": [2.5, 7] }],   // o "punti": [0.3, 0.6] (frazioni della durata)
 //   "varianti": [{ "id": "A", "filtro": "lut3d=file=lut/12k.cube", "adatta": true }], // su ogni fotogramma;
 //                 adatta = prima la curva di esposizione del pezzo: true come il look 12K,
 //                 "chiaro" o { "obiettivo": 0.5, "guadagno": 2.2 } per i look chiari (curvaChiara)

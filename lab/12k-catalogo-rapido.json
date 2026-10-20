@@ -1,13 +1,13 @@
 {
-  "uscita": "03 · Social — Risorse/Stili/12K Quality/_laboratorio/1-catalogo-rapido",
+  "uscita": "12 · Risorse/Stili/12K Quality/_laboratorio/1-catalogo-rapido",
   "fotogrammi": [
-    { "file": "03 · Social — Risorse/Stili/12K Quality/4316a9e54c3942218b5b23fdc503ac8a.mp4", "tempi": [1.5, 4.8, 8.2, 11.7] },
-    { "file": "03 · Social — Risorse/Stili/12K Quality/d6a5a02a45a845a88d8e6c051abe871f.mp4", "tempi": [1.0, 7.0] },
-    { "file": "03 · Social — Risorse/Stili/12K Quality/dd810e3d67a047e190c9b3c420a78011.mp4", "tempi": [3.0, 10.0] }
+    { "file": "12 · Risorse/Stili/12K Quality/4316a9e54c3942218b5b23fdc503ac8a.mp4", "tempi": [1.5, 4.8, 8.2, 11.7] },
+    { "file": "12 · Risorse/Stili/12K Quality/d6a5a02a45a845a88d8e6c051abe871f.mp4", "tempi": [1.0, 7.0] },
+    { "file": "12 · Risorse/Stili/12K Quality/dd810e3d67a047e190c9b3c420a78011.mp4", "tempi": [3.0, 10.0] }
   ],
   "catalogo": {
     "max": 3,
-    "cartelle": ["98 - Fatti/980", "98 - Fatti/Giacca autunnale", "98 - Fatti/PLA CF", "98 - Fatti/Key air",
+    "cartelle": ["02 · Fatti/980", "02 · Fatti/Giacca autunnale", "02 · Fatti/PLA CF", "02 · Fatti/Key air",
       "02 · Social — Grezzi/Clip e sorgenti video", "02 · Social — Grezzi/Insta360"]
   }
 }

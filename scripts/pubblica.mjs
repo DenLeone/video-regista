@@ -1,5 +1,5 @@
 // Pubblicazione dal bot Telegram (tasto 📤 Pubblica → workflow "pubblica"): Instagram come
-// reel di prova e YouTube Shorts, poi il video passa in 99 - Pubblicare e il bot riceve i link.
+// reel di prova e YouTube Shorts, poi il video passa in 03 · Da pubblicare e il bot riceve i link.
 //
 // DATI (JSON dal bot): { nonce, nome, file, fileId, didascalia, titolo, copertina, ig, yt, prova }
 //   prova: 'MANUAL' (passa ai follower quando lo decide Denis dall'app) | 'SS_PERFORMANCE'
@@ -12,12 +12,13 @@
 import fs from 'fs';
 import path from 'path';
 import { execFileSync } from 'child_process';
+import { DIR_FATTI, DIR_PUBBLICARE } from './cartelle.mjs';
 
 const ROOT = path.resolve(path.dirname(new URL(import.meta.url).pathname.replace(/^\/([A-Za-z]:)/, '$1')), '..');
 const WORK = path.join(ROOT, 'work');
 const REMOTE = process.env.RCLONE_REMOTE || 'gdrive';
-const OUT_DIR = '98 - Fatti';
-const PUB_DIR = '99 - Pubblicare';
+const OUT_DIR = DIR_FATTI;
+const PUB_DIR = DIR_PUBBLICARE;
 const IG = () => `${process.env.IG_BASE || 'https://graph.instagram.com'}/${process.env.IG_API_VERSION || 'v24.0'}`;
 const DRIVE = () => process.env.DRIVE_BASE || 'https://www.googleapis.com';
 const YT_UPLOAD = () => process.env.YT_UPLOAD_BASE || 'https://www.googleapis.com';
@@ -172,7 +173,7 @@ async function main() {
         esito.youtube = await youtube(d, video);
       } catch (e) { log('YouTube:', e.message); esito.youtube = errore(e); }
     }
-    // pubblicato almeno da una parte: il video passa in 99 - Pubblicare
+    // pubblicato almeno da una parte: il video passa in 03 · Da pubblicare
     if (esito.instagram?.ok || esito.youtube?.ok) {
       try { rclone('moveto', sorgente, remote(PUB_DIR, d.file)); esito.spostato = true; } catch (e) { log('video non spostato in 99', e.message); }
     }

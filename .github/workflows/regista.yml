@@ -8,7 +8,7 @@ on:
   workflow_dispatch:          # avvio manuale dal tab Actions o dal bot Telegram
     inputs:
       cartella:
-        description: 'Cartella in 97 - Editare (vuoto = la prima con VAI)'
+        description: 'Cartella in 01 · Da editare (vuoto = la prima con VAI)'
         required: false
         default: ''
       brief:
@@ -16,7 +16,7 @@ on:
         required: false
         default: ''
       origine:
-        description: '97 = nuovo montaggio da 97 - Editare, 98 = rifai/correggi un video in 98 - Fatti'
+        description: '97 = nuovo montaggio da 01 · Da editare, 98 = rifai/correggi un video in 02 · Fatti'
         required: false
         default: '97'
       correzione:
@@ -36,7 +36,7 @@ on:
         required: false
         default: ''
       azione:
-        description: 'monta (default) | elenco = manda solo al bot le cartelle di 97 - Editare | regia = prova veloce della sola regia (testo, niente render) su una cartella già montata | render = rifà solo il render con la regia salvata (origine 98) | esempi = fogli di fotogrammi degli esempi di uno stile (cartella = nome dello stile)'
+        description: 'monta (default) | elenco = manda solo al bot le cartelle di 01 · Da editare | regia = prova veloce della sola regia (testo, niente render) su una cartella già montata | render = rifà solo il render con la regia salvata (origine 98) | esempi = fogli di fotogrammi degli esempi di uno stile (cartella = nome dello stile)'
         required: false
         default: 'monta'
       telegram:
@@ -47,6 +47,13 @@ on:
         description: 'Render di prova: solo i primi N secondi del montaggio (vuoto = tutto)'
         required: false
         default: ''
+
+# cartelle di Drive (rinominate da Denis il 20/10): le legge anche scripts/cartelle.mjs
+env:
+  DIR_EDITARE: '01 · Da editare'
+  DIR_FATTI: '02 · Fatti'
+  DIR_PUBBLICARE: '03 · Da pubblicare'
+  DIR_STILI: '12 · Risorse/Stili'
 
 # Una coda PER CARTELLA: GitHub tiene un solo giro "in attesa" per gruppo e scarta
 # quelli in attesa più vecchi. Con un gruppo unico, tre avvii di fila ne perdevano uno.
@@ -76,7 +83,7 @@ jobs:
           mkdir -p ~/.config/rclone
           # via env + printf: il token è JSON con virgolette, echo "..." le rovinerebbe
           printf '%s\n' "$RCLONE_CONF" > ~/.config/rclone/rclone.conf
-          rclone lsf "gdrive:97 - Editare" --dirs-only > /dev/null && echo "Drive OK"
+          rclone lsf "gdrive:$DIR_EDITARE" --dirs-only > /dev/null && echo "Drive OK"
 
       - name: C'è qualcosa da fare?
         id: check
@@ -91,15 +98,15 @@ jobs:
           # solo vero/falso (il valore resta segreto): il bot mostra se YouTube è collegato
           YT_PRONTO: ${{ secrets.YT_CLIENT_ID != '' && secrets.YT_CLIENT_SECRET != '' && secrets.YT_REFRESH_TOKEN != '' }}
         run: |
-          mapfile -t cartelle < <(rclone lsf "gdrive:97 - Editare" --dirs-only | sed 's:/$::')
+          mapfile -t cartelle < <(rclone lsf "gdrive:$DIR_EDITARE" --dirs-only | sed 's:/$::')
           declare -A vai_di=()
           con_vai=()
           for d in "${cartelle[@]}"; do
-            f=$(rclone lsf "gdrive:97 - Editare/$d" --files-only | grep -iE '^vai(\.[^.]+)?$' | head -n1 || true)
+            f=$(rclone lsf "gdrive:$DIR_EDITARE/$d" --files-only | grep -iE '^vai(\.[^.]+)?$' | head -n1 || true)
             if [ -n "$f" ]; then con_vai+=("$d"); vai_di["$d"]="$f"; fi
           done
           # prenoto il VAI subito: un giro successivo non riprende la stessa cartella
-          prenota() { rclone moveto "gdrive:97 - Editare/$1/${vai_di[$1]}" "gdrive:97 - Editare/$1/_VAI_in_corso_${vai_di[$1]}" && echo "Prenotata: $1"; }
+          prenota() { rclone moveto "gdrive:$DIR_EDITARE/$1/${vai_di[$1]}" "gdrive:$DIR_EDITARE/$1/_VAI_in_corso_${vai_di[$1]}" && echo "Prenotata: $1"; }
           trovato="$CARTELLA"
           # file da Telegram: la cartella la crea lo script (nome libero in 97 e 98)
           [ -n "$TELEGRAM" ] && [ "$TELEGRAM" != "[]" ] && trovato="${CARTELLA:-Video da Telegram}"
@@ -118,7 +125,7 @@ jobs:
           # il bot tiene l'elenco delle cartelle per i tasti di "Nuovo montaggio" e degli stili su Drive
           # (cartelle in Stili, tranne quelle che iniziano con "_" come il modello): nome, cartella e
           # la riga "Quando usarlo" di stile.txt, che il bot mostra come descrizione
-          STILI_DIR="gdrive:03 · Social — Risorse/Stili"
+          STILI_DIR="gdrive:$DIR_STILI"
           stili_info=$(rclone lsjson "$STILI_DIR" --dirs-only 2>/dev/null | jq -c '[.[] | select(.Name | startswith("_") | not) | {nome: .Name, id: .ID}]') || stili_info='[]'
           [ -n "$stili_info" ] || stili_info='[]'
           rclone copy "$STILI_DIR" "$RUNNER_TEMP/stili" --include '/*/stile.txt' 2>/dev/null || true
@@ -138,8 +145,8 @@ jobs:
           fi
           # avvio manuale/dal bot senza niente da montare: avvisa, così non sembra un video fatto
           if [ -z "$trovato" ] && [ "$AZIONE" != "elenco" ] && [ "$EVENTO" = "workflow_dispatch" ] && [ -n "$NOTIFY_URL" ]; then
-            curl -s -X POST "$NOTIFY_URL" -H 'content-type: application/json' -H "x-regista-token: $NOTIFY_TOKEN" \
-              -d '{"tipo":"vuoto","nome":"—","testo":"Nessuna cartella con VAI in 97 - Editare: non ho montato niente."}' > /dev/null
+            jq -n --arg t "Nessuna cartella con VAI in $DIR_EDITARE: non ho montato niente." '{tipo: "vuoto", nome: "—", testo: $t}' \
+              | curl -s -X POST "$NOTIFY_URL" -H 'content-type: application/json' -H "x-regista-token: $NOTIFY_TOKEN" -d @- > /dev/null
           fi
 
       - uses: actions/setup-node@v5

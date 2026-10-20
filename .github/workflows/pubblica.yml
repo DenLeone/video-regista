@@ -1,7 +1,7 @@
 name: pubblica
 
 # Avviato dal bot Telegram (📤 Pubblica): Instagram come reel di prova e YouTube Shorts,
-# poi il video passa in 99 - Pubblicare e il bot riceve i link. Niente render: 2–3 minuti.
+# poi il video passa in 03 · Da pubblicare e il bot riceve i link. Niente render: 2–3 minuti.
 # Secret: RCLONE_CONF, NOTIFY_URL, NOTIFY_TOKEN (già presenti); YT_CLIENT_ID, YT_CLIENT_SECRET,
 # YT_REFRESH_TOKEN per YouTube. La chiave di Instagram la custodisce il bot (IG_TOKEN su Cloudflare).
 on:
@@ -10,6 +10,13 @@ on:
       dati:
         description: 'JSON dal bot: nonce, nome, file, fileId, didascalia, titolo, copertina, ig, yt, prova'
         required: true
+
+# cartelle di Drive (rinominate da Denis il 20/10): le legge anche scripts/cartelle.mjs
+env:
+  DIR_EDITARE: '01 · Da editare'
+  DIR_FATTI: '02 · Fatti'
+  DIR_PUBBLICARE: '03 · Da pubblicare'
+  DIR_STILI: '12 · Risorse/Stili'
 
 concurrency:
   group: pubblica
