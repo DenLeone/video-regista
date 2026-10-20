@@ -46,15 +46,17 @@ def from_oklab_lin(lab):
 P = dict(
     # curva di L (OKLab): punti (ingresso, uscita); nero un po' schiacciato, medi con più contrasto,
     # luci che arrotondano invece di bruciare
-    curva=[(0.0, 0.0), (0.10, 0.03), (0.25, 0.165), (0.45, 0.40), (0.65, 0.63), (0.82, 0.795), (0.95, 0.89), (1.0, 0.925)],
+    curva=[(0.0, 0.0), (0.10, 0.032), (0.25, 0.18), (0.45, 0.415), (0.65, 0.635), (0.82, 0.795), (0.95, 0.89), (1.0, 0.925)],
     # croma: quanto segue la luce (le ombre schiacciate perdono colore come in pellicola)
     croma_luce=0.6,
     sat=1.08,
     # (centro tonalità °, ampiezza °, sposta verso °, quanto 0–1, croma ×, luce ×)
     tonalita=[
-        (140, 60, 200, 0.95, 0.42, 0.86),   # verdi e foglie → petrolio spento e più scuro
+        (140, 60, 200, 0.95, 0.36, 0.84),   # verdi e foglie → petrolio spento e più scuro
         (100, 18, 75, 0.45, 0.80, 1.00),    # gialli → arancio
-        (60, 25, 58, 0.30, 1.14, 1.00),     # pelle e arancio → pieni
+        # pelle e arancio: pieni e più luminosi (come un colorist che isola la pelle e la alza): il
+        # volto resta acceso anche quando la curva scurisce il resto (Ak980, 20/10: volto nel buio)
+        (60, 25, 58, 0.30, 1.14, 1.13),
         (25, 22, 30, 0.20, 1.12, 1.00),     # rossi → rame
         (225, 40, 228, 0.30, 1.06, 1.00),   # azzurri/ciano → acciaio
         (315, 40, 285, 0.40, 0.70, 1.00),   # viola/magenta → spenti verso il blu
