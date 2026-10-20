@@ -22,6 +22,7 @@ const LOOK: Record<GraficaStile['look'], string | undefined> = {
   freddo: 'contrast(1.04) saturate(0.95) hue-rotate(-6deg)',
   'bianco e nero': 'grayscale(1) contrast(1.08)',
   teal: undefined, // LUT teal e arancio già applicata in ffmpeg
+  'chiaro caldo': undefined, // in ffmpeg: volto ben esposto e luce calda (regista.mjs)
 };
 const Y: Record<Posizione, number> = { alto: 420, centro: 1060, basso: 1440 };
 const OMBRA = '0 3px 14px rgba(0,0,0,0.55), 0 1px 3px rgba(0,0,0,0.7)';

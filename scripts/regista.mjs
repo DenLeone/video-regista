@@ -21,10 +21,10 @@ import { execFileSync, spawn, spawnSync } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
 import { audioMuto, frasi, inviluppo, sincronizza, sogliaVoce } from './audio.mjs';
-import { HDR, curvaEsposizione, filtroTecnico, misuraPezzo, perFiltro, probe, riconosciLog } from './colore.mjs';
+import { HDR, curvaChiara, curvaEsposizione, filtroTecnico, misuraPezzo, perFiltro, probe, riconosciLog } from './colore.mjs';
 import { materialePerAI, normFrase, risolviRegia, sequenzaDiscorso } from './regia.mjs';
 import { movimento, syncMovimento } from './sync-visivo.mjs';
-import { leggiStile, promptSuMisura } from './stile-su-misura.mjs';
+import { LOOK_FFMPEG, leggiStile, promptSuMisura } from './stile-su-misura.mjs';
 import { AUDIO_EXT, IMAGE_EXT, NOMI_DISPOSITIVO, VIDEO_EXT, dispositivo, prioritaAudio, tagsPiatti } from './sorgenti.mjs';
 
 const REMOTE = process.env.REGISTA_REMOTE || 'gdrive';
@@ -206,16 +206,20 @@ function trovaCartella() {
 }
 
 // ---------- 2. prepara il materiale ----------
-// conversione tecnica (scripts/colore.mjs) + LUT creativa dello stile, se c'è
-// `curva`: correzione dell'esposizione del singolo pezzo (look 12K, colore.mjs curvaEsposizione)
+// conversione tecnica (scripts/colore.mjs), poi `curva` (esposizione del singolo pezzo), la LUT
+// creativa dello stile se c'è (asset/*.cube o il look 12K) e il colore dei look in ffmpeg.
+// Look 12K: dopo la LUT la nitidezza (CAS: incide i dettagli del soggetto senza aloni né rumore
+// sulle zone lisce, come negli esempi)
 function filtroColore(c, curva = null) {
   const base = filtroTecnico(c);
-  if (!LUT_STILE) return base;
-  // LUT creativa di uno stile su misura (asset/*.cube): dopo la conversione tecnica.
-  // Look 12K: prima l'esposizione del pezzo, dopo la LUT la nitidezza (CAS: incide i dettagli
-  // del soggetto senza aloni né rumore sulle zone lisce, come negli esempi)
-  return `${base.replace(/,?format=yuv420p$/, '').replace(/^$/, 'null')}${curva ? `,curves=master='${curva}'` : ''}`
-    + `,lut3d=file='${perFiltro(LUT_STILE)}':interp=tetrahedral${LOOK_12K ? `,cas=strength=${NITIDEZZA_12K}` : ''},format=yuv420p`;
+  const dopo = [
+    curva ? `curves=master='${curva}'` : '',
+    LUT_STILE ? `lut3d=file='${perFiltro(LUT_STILE)}':interp=tetrahedral` : '',
+    LOOK_12K ? `cas=strength=${NITIDEZZA_12K}` : '',
+    LOOK_STILE?.filtro || '',
+  ].filter(Boolean);
+  if (!dopo.length) return base;
+  return `${base.replace(/,?format=yuv420p$/, '').replace(/^$/, 'null')},${dopo.join(',')},format=yuv420p`;
 }
 // prima/dopo la conversione colore su un fotogramma (a metà clip): va in _regista per
 // controllare la resa della LUT I-Log senza scaricare il girato
@@ -245,17 +249,21 @@ function misuraPerLook(s, start, dur) {
   if (!m || !(s.principale || s.sync)) return m;
   if (!misureRiprese.has(s.id)) misureRiprese.set(s.id, misuraPezzo(s.originale, 0, s.durata, tec, [0.1, 0.25, 0.4, 0.55, 0.7, 0.85]));
   const r = misureRiprese.get(s.id);
-  return r && Math.abs(m.medio - r.medio) < 0.05 && Math.abs(m.nero - r.nero) < 0.03 && Math.abs(m.bianco - r.bianco) < 0.08 ? r : m;
+  const pelleSimile = (m.pelle == null) === (r?.pelle == null) && (m.pelle == null || Math.abs(m.pelle - r.pelle) < 0.05);
+  return r && pelleSimile && Math.abs(m.medio - r.medio) < 0.05 && Math.abs(m.nero - r.nero) < 0.03 && Math.abs(m.bianco - r.bianco) < 0.08 ? r : m;
 }
 // `lento` (rallentatore): `dur` secondi di sorgente stirati di quel fattore, a `fps` fotogrammi al secondo
 function taglia(s, start, dur, out, conAudio, senzaLook = false, zoom = 1, lento = 1, fps = 30) {
   const ritaglio = zoom > 1 ? `crop=trunc(iw/${zoom}/2)*2:trunc(ih/${zoom}/2)*2,` : '';
   const rallenta = lento > 1 ? `setpts=${lento}*PTS,` : '';
   let curva = null;
-  if (LOOK_12K && !senzaLook) {
+  if (!senzaLook) {
+    // look 12K: la sua curva; look chiari ("chiaro caldo" del Narrativo): centro e volto ben esposti;
+    // gli altri stili: solo se il soggetto è proprio al buio (Moero air, 20/10: volto a 0,14 in controluce)
     const m = misuraPerLook(s, start, dur);
-    curva = curvaEsposizione(m);
-    if (m) log(`  ${path.basename(out)}: soggetto ${m.medio.toFixed(2)}, neri ${m.nero.toFixed(2)}, bianchi ${m.bianco.toFixed(2)}${curva ? ` → curva ${curva}` : ''}`);
+    curva = !m ? null : LOOK_12K ? curvaEsposizione(m) : LOOK_STILE?.esposizione ? curvaChiara(m, LOOK_STILE.esposizione)
+      : (m.pelle != null && m.pelle < 0.2) || m.medio < 0.25 ? curvaChiara(m, { obiettivo: 0.45, obiettivoPelle: 0.3 }) : null;
+    if (m) log(`  ${path.basename(out)}: soggetto ${m.medio.toFixed(2)}${m.pelle != null ? `, volto ${m.pelle.toFixed(2)}` : ''}, neri ${m.nero.toFixed(2)}, bianchi ${m.bianco.toFixed(2)}${curva ? ` → curva ${curva}` : ''}`);
   }
   run('ffmpeg', ['-y', '-v', 'error', '-ss', start.toFixed(3), '-i', s.originale, '-t', (dur * lento + 0.1).toFixed(3),
     '-vf', `${rallenta}${ritaglio}scale='if(gt(iw,ih),1920,1080)':-2:flags=lanczos,${senzaLook ? filtroTecnico(s.colore) : filtroColore(s.colore, curva)}`,
@@ -772,6 +780,8 @@ let stileSuMisura = null; // { nome, grafica, testoAI, avvisi }
 let LUT_STILE = null;     // LUT creativa dello stile su misura
 // look 12K (Look: teal e arancio): esposizione misurata pezzo per pezzo + lut/12k.cube + nitidezza
 let LOOK_12K = false;
+// look fatto in ffmpeg al taglio dei pezzi ("Look: chiaro caldo"): { esposizione, filtro }
+let LOOK_STILE = null;
 const NITIDEZZA_12K = 0.5;
 const normNome = (t) => String(t || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/\s+/g, ' ').trim();
 function scegliStile(brief) {
@@ -779,6 +789,7 @@ function scegliStile(brief) {
   stileSuMisura = null;
   LUT_STILE = null;
   LOOK_12K = false;
+  LOOK_STILE = null;
   if (!richiesto) return { stile: STILI[0] };
   const trovato = STILI.find((x) => x.toLowerCase() === richiesto.toLowerCase());
   if (trovato) return { stile: trovato };
@@ -838,6 +849,8 @@ function caricaStile(nome) {
   LOOK_12K = !lutAsset && grafica.look === 'teal';
   const lut = lutAsset || (LOOK_12K ? path.join(ROOT, 'lut', '12k.cube') : null);
   if (lut) { LUT_STILE = lut; log(`stile ${nome}: LUT ${path.basename(lut)}${LOOK_12K ? ' (look 12K: esposizione per pezzo e nitidezza)' : ''}`); }
+  LOOK_STILE = LOOK_FFMPEG[grafica.look] || null;
+  if (LOOK_STILE) log(`stile ${nome}: look ${grafica.look} (volto ben esposto pezzo per pezzo, ${LOOK_STILE.filtro})`);
   stileSuMisura = { nome: grafica.nome || nome, grafica, testoAI, avvisi };
   log(`stile su misura ${nome}: ${JSON.stringify(grafica)}`);
 }

@@ -93,22 +93,29 @@ export function riconosciLog(src, info, disp, brief = '', tmpDir) {
 
 // ---------- look chiari: esposizione del soggetto portata a "ben esposto" ----------
 // Moero air (Narrativo, 20/10): girato I-Log al chiuso, dopo la LUT tecnica il volto restava al
-// buio ("sono stra scuro, così non è pubblicabile"). La schiarita I-Log guarda la media di tutta
-// l'immagine (una finestra o un muro chiaro la alzano e il volto resta scuro); qui conta il centro,
-// dove sta il soggetto. Soggetto verso `obiettivo` (volto ben esposto ~0,48), al massimo ×`guadagno`
-// (oltre si vede il rumore), ombre alzate meno del soggetto (radice del guadagno: niente grigio
-// slavato), neri a terra, bianchi spenti su. Se il pezzo va già bene: null.
-export function curvaChiara(m, { obiettivo = 0.48, guadagno = 2.2 } = {}) {
+// buio ("sono stra scuro, così non è pubblicabile"): in controluce col cielo chiaro, pelle a 0,14.
+// La schiarita I-Log guarda la media di tutta l'immagine; qui contano il centro, dove sta il
+// soggetto, verso `obiettivo`, e il volto (la pelle nella parte alta) verso `obiettivoPelle`: in
+// controluce il volto è molto più scuro del centro (giacca bianca, cielo) e sale per conto suo.
+// Al massimo ×`guadagno` (oltre si vede il rumore), ombre alzate meno (radice del guadagno: niente
+// grigio slavato), neri a terra, bianchi spenti su. Se il pezzo va già bene: null.
+// Tarata sulle prove di Manifestazioni (20/10, scelto da Denis il "chiaro caldo": centro 0,5)
+export function curvaChiara(m, { obiettivo = 0.48, obiettivoPelle = 0.33, guadagno = 2.2 } = {}) {
   if (!m) return null;
   const punti = [[0, 0]];
   if (m.nero > 0.02) punti.push([m.nero, m.nero * (1 - 0.6 * rampa(m.nero, 0.02, 0.06))]);
   let medio = m.medio;
   if (m.medio < obiettivo) medio = Math.min(m.medio * guadagno, m.medio + (obiettivo - m.medio) * rampa(obiettivo - m.medio, 0, 0.04));
   else medio = m.medio + 0.6 * (0.58 - m.medio) * rampa(m.medio, 0.62, 0.7);
-  if (Math.abs(medio - m.medio) > 0.008 && m.medio > 0.03) {
-    const g = medio / m.medio, ombra = m.medio * 0.4;
-    if (ombra > punti[punti.length - 1][0] + 0.03) punti.push([ombra, ombra * Math.sqrt(g)]);
-    punti.push([m.medio, medio]);
+  const pelle = m.pelle != null && m.pelle < obiettivoPelle && m.pelle < m.medio - 0.04
+    ? [m.pelle, Math.min(m.pelle * guadagno, obiettivoPelle)] : null;
+  const cambiaMedio = Math.abs(medio - m.medio) > 0.008 && m.medio > 0.03;
+  if (cambiaMedio || pelle) {
+    const [x, y] = pelle || [m.medio, medio];
+    const ombra = x * 0.4;
+    if (ombra > punti[punti.length - 1][0] + 0.03) punti.push([ombra, ombra * Math.sqrt(y / x)]);
+    if (pelle) punti.push(pelle);
+    if (cambiaMedio) punti.push([m.medio, Math.max(medio, pelle ? pelle[1] + 0.03 : 0)]);
   }
   const suBianchi = rampa(m.bianco, 0.88, 0.75) * rampa(m.bianco - m.medio, 0.06, 0.12);
   if (suBianchi > 0) punti.push([m.bianco, m.bianco + suBianchi * 0.6 * (0.93 - m.bianco)]);
@@ -130,41 +137,50 @@ export function curvaChiara(m, { obiettivo = 0.48, guadagno = 2.2 } = {}) {
 // finivano nel buio. Qui si misura ogni pezzo (già convertito) e si corregge con una curva solo
 // dove serve (curvaEsposizione): neri sollevati giù, soggetto al buio su, bianchi spenti su.
 
-// luma 0–1 di un fotogramma rimpicciolito: { tutto: [...], centro: [...] } ordinati
+// luma 0–1 di un fotogramma rimpicciolito: { tutto, centro, pelle }. `pelle`: i punti color pelle
+// (Cb/Cr a gamma limitata) nella parte alta e centrale, dove nei verticali sta il volto
 function lumaFotogramma(file, t, filtro) {
-  const w = 96, h = 170;
+  const w = 96, h = 170, n = w * h;
   const buf = execFileSync('ffmpeg', ['-v', 'error', '-ss', Math.max(0, t).toFixed(3), '-i', file, '-frames:v', '1',
-    '-vf', `scale=${w}:${h}:flags=area,${filtro || 'null'},format=gray`, '-f', 'rawvideo', '-'], { maxBuffer: 1 << 24, stdio: ['ignore', 'pipe', 'ignore'] });
-  if (buf.length < w * h) return null;
-  const tutto = [], centro = [];
+    '-vf', `scale=${w}:${h}:flags=area,${filtro || 'null'},format=yuv444p`, '-f', 'rawvideo', '-'], { maxBuffer: 1 << 24, stdio: ['ignore', 'pipe', 'ignore'] });
+  if (buf.length < 3 * n) return null;
+  const tutto = [], centro = [], pelle = [];
   for (let y = 0; y < h; y++) {
     for (let x = 0; x < w; x++) {
+      const i = y * w + x;
       // il segnale è a gamma limitata (16–235)
-      const v = Math.min(1, Math.max(0, (buf[y * w + x] - 16) / 219));
+      const v = Math.min(1, Math.max(0, (buf[i] - 16) / 219));
       tutto.push(v);
       // ellisse centrale un po' alta: dove stanno volto e prodotto nei verticali
       const dx = (x - w / 2) / (w * 0.32), dy = (y - h * 0.45) / (h * 0.3);
       if (dx * dx + dy * dy <= 1) centro.push(v);
+      const cb = buf[n + i], cr = buf[2 * n + i];
+      if (Math.abs(x - w / 2) < w * 0.3 && y > h * 0.05 && y < h * 0.6 && cb >= 83 && cb <= 127 && cr >= 132 && cr <= 168 && v > 0.03 && v < 0.95) pelle.push(v);
     }
   }
-  return { tutto, centro };
+  return { tutto, centro, pelle, n };
 }
 
 const percentile = (ordinati, p) => ordinati[Math.min(ordinati.length - 1, Math.max(0, Math.round(p * (ordinati.length - 1))))];
 
 // misura di un pezzo [start, start+dur] dopo la conversione tecnica, sui fotogrammi ai punti `dove`
+// `pelle`: luma mediana del volto (null se la pelle è meno dello 0,6% dell'immagine: niente persona)
 export function misuraPezzo(file, start, dur, filtroTec, dove = [0.2, 0.5, 0.8]) {
-  const tutto = [], centro = [];
+  const tutto = [], centro = [], pelle = [];
+  let punti = 0;
   for (const q of dove) {
     try {
       const m = lumaFotogramma(file, start + dur * q, filtroTec.replace(/,?format=yuv420p$/, ''));
-      if (m) { tutto.push(...m.tutto); centro.push(...m.centro); }
+      if (m) { tutto.push(...m.tutto); centro.push(...m.centro); pelle.push(...m.pelle); punti += m.n; }
     } catch { /* fotogramma illeggibile: si usa il resto */ }
   }
   if (tutto.length < 100) return null;
   tutto.sort((a, b) => a - b);
   centro.sort((a, b) => a - b);
-  return { nero: percentile(tutto, 0.02), bianco: percentile(tutto, 0.985), medio: percentile(centro, 0.5), medioTutto: percentile(tutto, 0.5) };
+  pelle.sort((a, b) => a - b);
+  const conPelle = pelle.length >= punti * 0.006;
+  return { nero: percentile(tutto, 0.02), bianco: percentile(tutto, 0.985), medio: percentile(centro, 0.5), medioTutto: percentile(tutto, 0.5),
+    pelle: conPelle ? percentile(pelle, 0.5) : null, quotaPelle: +(pelle.length / Math.max(1, punti)).toFixed(4) };
 }
 
 // curva di correzione (punti per il filtro curves di ffmpeg) o null se il pezzo va già bene.

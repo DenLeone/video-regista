@@ -79,7 +79,7 @@ export type GraficaStile = {
   tipoTitoli: 'titoli' | 'frasi' | 'parole';
   fontCorsivo: FontStile;                    // la frase piccola delle scritte a due livelli
   dietro: boolean;                           // le scritte grandi passano dietro alla persona
-  look: 'naturale' | 'caldo' | 'freddo' | 'bianco e nero' | 'teal';  // teal = LUT teal e arancio (in ffmpeg, non CSS)
+  look: 'naturale' | 'caldo' | 'freddo' | 'bianco e nero' | 'teal' | 'chiaro caldo';  // teal e chiaro caldo: in ffmpeg, non CSS
   risalto?: boolean;                         // soggetto in risalto: tu luminoso, sfondo buio e petrolio (scripts/look/risalto.py)
   sfoca?: boolean;                           // con il risalto, anche lo sfondo sfocato
   rivela?: boolean;                          // inizio "prima e dopo": l'immagine piatta che si colora
