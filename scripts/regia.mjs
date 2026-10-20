@@ -21,6 +21,11 @@ export function offsetCamera(c, f) {
   return f.inizio + off >= 0 && f.fine + off <= c.durata - 0.05 ? off : null;
 }
 
+// rallentatore: B-roll girato a 48 fps o più ("lento": true nella regia). Ogni fotogramma della
+// sorgente diventa un fotogramma del video: 60p in un video a 30 = ×2 più lento, a 24 = ×2,5,
+// fluido senza fotogrammi inventati. Restituisce il fattore (1 = velocità normale).
+export const fattoreLento = (b, fps = fpsRegia) => (b?.fps >= 48 ? +(b.fps / fps).toFixed(5) : 1);
+
 export function risolviRegia(regia, analisi) {
   fpsRegia = analisi.fps || 30;
   const avvisi = [];
@@ -125,10 +130,13 @@ export function risolviRegia(regia, analisi) {
       const audio = { file: voce.voce, start: +f.inizio.toFixed(3) };
       if (it.broll) {
         const b = trovaSorgente(it.broll);
-        if (b && b.tipo === 'video' && b.durata >= dur) {
+        const lento = it.lento ? fattoreLento(b) : 1;
+        if (it.lento && lento === 1 && b) avvisi.push(`${b.id}: niente rallentatore (non è girata a 50/60 fps)`);
+        // col rallentatore serve meno sorgente: dur / lento secondi
+        if (b && b.tipo === 'video' && b.durata >= dur / lento) {
           let da = Math.max(0, Number(it.da) || 0);
-          if (da + dur > b.durata) da = Math.max(0, b.durata - dur - 0.05);
-          clip = { file: b.file, start: +da.toFixed(3), end: +(da + dur).toFixed(3), orient: b.orient, audio };
+          if (da + dur / lento > b.durata) da = Math.max(0, b.durata - dur / lento - 0.05);
+          clip = { file: b.file, start: +da.toFixed(3), end: +(da + dur).toFixed(3), orient: b.orient, audio, ...(lento > 1 ? { lento } : {}) };
         } else avvisi.push(`B-roll ${it.broll} ${b ? 'troppo corto' : 'inesistente'} per ${f.id}: uso un'inquadratura della voce`);
       }
       if (!clip) {
@@ -149,11 +157,15 @@ export function risolviRegia(regia, analisi) {
       const b = trovaSorgente(it.broll);
       if (!b || b.tipo !== 'video') { avvisi.push(`B-roll ${it.broll} inesistente: saltato`); return; }
       const dur = q(Math.min(6, Math.max(0.4, Number(it.dur) || 1.5)));
+      const lento = it.lento ? fattoreLento(b) : 1;
+      if (it.lento && lento === 1) avvisi.push(`${b.id}: niente rallentatore (non è girata a 50/60 fps)`);
       let da = Math.max(0, Number(it.da) || 0);
-      if (da + dur > b.durata) da = Math.max(0, b.durata - dur - 0.05);
-      clip = { file: b.file, start: +da.toFixed(3), end: +(da + dur).toFixed(3), orient: b.orient };
-      // la Sony registra audio solo dal microfono interno: lo uso come ambiente, ma piano
-      if (it.audio === 'muto' || b.soloImmagini || (senzaVoce && it.audio !== 'ambiente')) clip.muto = true;
+      if (da + dur / lento > b.durata) da = Math.max(0, b.durata - dur / lento - 0.05);
+      // start/end: inizio nella sorgente e durata sul video (col rallentatore la sorgente usata è dur / lento)
+      clip = { file: b.file, start: +da.toFixed(3), end: +(da + dur).toFixed(3), orient: b.orient, ...(lento > 1 ? { lento } : {}) };
+      // la Sony registra audio solo dal microfono interno: lo uso come ambiente, ma piano.
+      // Al rallentatore l'audio della clip non si usa (verrebbe stirato)
+      if (it.audio === 'muto' || b.soloImmagini || lento > 1 || (senzaVoce && it.audio !== 'ambiente')) clip.muto = true;
       else if (b.dispositivo === 'sony') clip.volume = 0.35;
     } else {
       avvisi.push(`elemento ${idx + 1} senza frase né broll: saltato`);
@@ -424,6 +436,7 @@ export function materialePerAI(analisi) {
     else if (s.tipo === 'video') parti.push(s.parlato ? 'ha parlato non sincronizzabile: usala solo come B-roll'
       : s.audioMuto ? 'audio muto, NON sincronizzata: solo B-roll, e mai nei momenti in cui si vede qualcuno parlare (il labiale non tornerebbe)'
         : 'B-roll (non sincronizzata): mettila sopra la voce con "broll" + "da"');
+    if (s.tipo === 'video' && !s.principale && !s.sync && fattoreLento(s, analisi.fps || 30) > 1) parti.push(`girata a ${Math.round(s.fps)} fps: puoi usarla al RALLENTATORE con "lento": true (×${fattoreLento(s, analisi.fps || 30).toFixed(1)} più lenta)`);
     if (s.fogli?.length) parti.push(`fogli: ${s.fogli.join(', ')} (un riquadro ogni ${s.passoFogli} s; tempi ${s.sync || s.principale ? 'nel tempo della voce' : 'della clip, da usare in "da"'})`);
     r.push(parti.join(' · '));
   }

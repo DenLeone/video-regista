@@ -31,6 +31,7 @@ Prima delle inquadrature costruisci il TESTO. Chi guarda deve capire di cosa par
 - Mai come B-roll sopra la voce un momento in cui si vede qualcuno parlare in camera (bocca che si muove): il labiale non tornerebbe con l'audio. Il volto che parla va solo come `camera`, e solo dove il materiale dice che è sincronizzato; altrimenti scegli momenti in cui la bocca è ferma o non si vede.
 - Inizia con l'inquadratura più forte (volto in camera o prodotto ben visibile) e chiudi sull'inquadratura più "eroica" del prodotto.
 - `punch` (zoom 1,18x) puoi ometterlo: sui jump cut della stessa camera lo script lo alterna da solo.
+- **Rallentatore**: le sorgenti segnate "girata a 50/60 fps" si possono usare al rallentatore con `"lento": true` sull'elemento B-roll (con o senza frase): movimenti lenti e fluidi, l'effetto più "da spot" che c'è. Usalo sui dettagli del prodotto in movimento (mani che lo girano, liquidi, luci, tasti premuti, panoramiche lente), non su chi parla. Col rallentatore la sorgente avanza più piano: un elemento di 2 s usa ~1 s di girato a partire da `da`.
 
 ## Inserti (schede sopra l'inquadratura)
 - Quando Denis parla di qualcosa che si vede in un file a parte (registrazione dello schermo, screenshot, foto del prodotto, B-roll di un dettaglio), mostralo come **inserto**: una scheda arrotondata, tipo schermo di telefono, che entra sopra l'inquadratura della frase ed esce quando la frase finisce. Sotto resta l'inquadratura della frase (`camera` o `broll`), che si intravede intorno alla scheda.

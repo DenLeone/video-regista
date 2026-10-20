@@ -193,18 +193,21 @@ function confrontoColore(file, id, durata, colore) {
 // cut): si ritaglia dall'originale prima di ridurre, invece di ingrandire nel browser il pezzo già a
 // 1080 (dal 4K il dettaglio c'è ancora). Colori dichiarati BT.709: senza, il render li indovina.
 const TAG_709 = ['-colorspace', 'bt709', '-color_primaries', 'bt709', '-color_trc', 'bt709', '-color_range', 'tv'];
-function taglia(s, start, dur, out, conAudio, senzaLook = false, zoom = 1) {
+// `lento` (rallentatore): `dur` secondi di sorgente stirati di quel fattore, a `fps` fotogrammi al secondo
+function taglia(s, start, dur, out, conAudio, senzaLook = false, zoom = 1, lento = 1, fps = 30) {
   const ritaglio = zoom > 1 ? `crop=trunc(iw/${zoom}/2)*2:trunc(ih/${zoom}/2)*2,` : '';
+  const rallenta = lento > 1 ? `setpts=${lento}*PTS,` : '';
   let curva = null;
   if (LOOK_12K && !senzaLook) {
     const m = misuraPezzo(s.originale, start, dur, filtroTecnico(s.colore));
     curva = curvaEsposizione(m);
     if (m) log(`  ${path.basename(out)}: soggetto ${m.medio.toFixed(2)}, neri ${m.nero.toFixed(2)}, bianchi ${m.bianco.toFixed(2)}${curva ? ` → curva ${curva}` : ''}`);
   }
-  run('ffmpeg', ['-y', '-v', 'error', '-ss', start.toFixed(3), '-i', s.originale, '-t', (dur + 0.1).toFixed(3),
-    '-vf', `${ritaglio}scale='if(gt(iw,ih),1920,1080)':-2:flags=lanczos,${senzaLook ? filtroTecnico(s.colore) : filtroColore(s.colore, curva)}`,
+  run('ffmpeg', ['-y', '-v', 'error', '-ss', start.toFixed(3), '-i', s.originale, '-t', (dur * lento + 0.1).toFixed(3),
+    '-vf', `${rallenta}${ritaglio}scale='if(gt(iw,ih),1920,1080)':-2:flags=lanczos,${senzaLook ? filtroTecnico(s.colore) : filtroColore(s.colore, curva)}`,
+    ...(lento > 1 ? ['-r', String(fps)] : []),
     '-c:v', 'libx264', '-preset', 'veryfast', '-crf', '16', '-pix_fmt', 'yuv420p', ...TAG_709,
-    ...(conAudio ? ['-c:a', 'aac', '-b:a', '160k'] : ['-an']), '-movflags', '+faststart', out]);
+    ...(conAudio && lento === 1 ? ['-c:a', 'aac', '-b:a', '160k'] : ['-an']), '-movflags', '+faststart', out]);
 }
 
 function troncaPiano(piano, secondi) {
@@ -232,9 +235,12 @@ function tagliaSegmenti(piano, analisi) {
     const seg = `seg_${String(i).padStart(3, '0')}.mp4`;
     // punch-in delle clip verticali fatto qui (le orizzontali stanno "contenute": resta a Remotion)
     const zoom = c.punch && s.orient !== 'h' ? ZOOM_PUNCH : 1;
-    taglia(s, c.start, dur, path.join(MEDIA, seg), !c.audio && !c.muto && s.haAudio, false, zoom);
+    // rallentatore: dur è la durata sul video, della sorgente ne serve dur / lento
+    const lento = c.lento > 1 ? c.lento : 1;
+    taglia(s, c.start, dur / lento, path.join(MEDIA, seg), !c.audio && !c.muto && s.haAudio, false, zoom, lento, piano.fps || 30);
     Object.assign(c, { file: seg, start: 0, end: +dur.toFixed(3), sorgente: s.id, daSorgente: c.start });
     if (zoom > 1) c.punch = false;
+    delete c.lento; // il pezzo è già al rallentatore
     // inserto video: il suo pezzo, muto e senza look creativo (le schermate restano fedeli)
     if (c.inserto?.tipo === 'video') {
       const si = perFile.get(c.inserto.file);

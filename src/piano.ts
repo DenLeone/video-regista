@@ -18,6 +18,9 @@ export type Clip = {
   // la persona ritagliata (video con trasparenza) per far passare le scritte grandi dietro di lei;
   // da = secondi dall'inizio della clip
   ritaglio?: { file: string; da: number; dur: number };
+  // rallentatore (B-roll a 50/60 fps): prima del taglio start = inizio nella sorgente e end - start =
+  // durata sul video; la sorgente usata è (end - start) / lento secondi. Dopo il taglio il pezzo è già lento
+  lento?: number;
 };
 
 export type Keyword = {
