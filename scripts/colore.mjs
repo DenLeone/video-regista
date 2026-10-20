@@ -95,8 +95,8 @@ export function riconosciLog(src, info, disp, brief = '', tmpDir) {
 // La LUT del look (lut/12k.cube) si aspetta un'immagine "normale": soggetto a metà luce, neri
 // veri, bianchi pieni. Il girato di Denis va dal controluce nuvoloso (Giacca autunnale, I-Log
 // scuro) alla scrivania con le luci RGB (980): la v1 scuriva tutto allo stesso modo e i volti
-// finivano nel buio. Qui si misura ogni pezzo (già convertito) e si corregge con una curva:
-// centro dell'inquadratura (dove sta il soggetto) verso 0,45, neri sollevati giù, bianchi spenti su.
+// finivano nel buio. Qui si misura ogni pezzo (già convertito) e si corregge con una curva solo
+// dove serve (curvaEsposizione): neri sollevati giù, soggetto al buio su, bianchi spenti su.
 
 // luma 0–1 di un fotogramma rimpicciolito: { tutto: [...], centro: [...] } ordinati
 function lumaFotogramma(file, t, filtro) {
@@ -120,10 +120,10 @@ function lumaFotogramma(file, t, filtro) {
 
 const percentile = (ordinati, p) => ordinati[Math.min(ordinati.length - 1, Math.max(0, Math.round(p * (ordinati.length - 1))))];
 
-// misura di un pezzo [start, start+dur] dopo la conversione tecnica
-export function misuraPezzo(file, start, dur, filtroTec) {
+// misura di un pezzo [start, start+dur] dopo la conversione tecnica, sui fotogrammi ai punti `dove`
+export function misuraPezzo(file, start, dur, filtroTec, dove = [0.2, 0.5, 0.8]) {
   const tutto = [], centro = [];
-  for (const q of [0.2, 0.5, 0.8]) {
+  for (const q of dove) {
     try {
       const m = lumaFotogramma(file, start + dur * q, filtroTec.replace(/,?format=yuv420p$/, ''));
       if (m) { tutto.push(...m.tutto); centro.push(...m.centro); }
@@ -138,25 +138,28 @@ export function misuraPezzo(file, start, dur, filtroTec) {
 // curva di correzione (punti per il filtro curves di ffmpeg) o null se il pezzo va già bene.
 // Il look 12K è scuro di suo (negli esempi metà dell'immagine sta sotto 0,15): la correzione non
 // porta tutto a "esposizione normale" (prima prova: immagini slavate), sistema solo i difetti:
-// neri sollevati (girato piatto, foschia), soggetto davvero sottoesposto, bianchi spenti
+// neri sollevati (girato piatto, foschia), soggetto davvero sottoesposto, bianchi spenti.
+// Ogni correzione entra in rampa, senza scalini: con le soglie secche due pezzi dello stesso volto
+// misurati 0,19 e 0,21 uscivano uno schiarito (0,27) e uno no, e la luce saltava al taglio
+const rampa = (x, da, a) => Math.min(1, Math.max(0, (x - da) / (a - da))); // 0 in `da`, 1 in `a`
 export function curvaEsposizione(m, obiettivo = 0.32) {
   if (!m) return null;
   const punti = [[0, 0]];
-  // neri sollevati: giù, quasi a zero
-  if (m.nero > 0.03) punti.push([m.nero, m.nero * 0.3]);
-  // soggetto: solo se sotto 0,2 (al buio) o sopra 0,62 (bruciato), e al 60% della distanza
-  let medio = m.medio;
-  if (m.medio < 0.2) medio = m.medio + 0.6 * (obiettivo - m.medio);
-  else if (m.medio > 0.62) medio = m.medio + 0.6 * (0.5 - m.medio);
+  // neri sollevati: giù, quasi a zero (pieno da 0,05)
+  if (m.nero > 0.03) punti.push([m.nero, m.nero * (1 - 0.7 * rampa(m.nero, 0.03, 0.05))]);
+  // soggetto al buio (pieno sotto 0,2, niente da 0,26) su verso l'obiettivo, bruciato (da 0,62,
+  // pieno da 0,68) giù verso 0,5: al 60% della distanza
+  let medio = m.medio + 0.6 * (obiettivo - m.medio) * rampa(m.medio, 0.26, 0.2) + 0.6 * (0.5 - m.medio) * rampa(m.medio, 0.62, 0.68);
   medio = Math.min(m.medio * 1.8, Math.max(m.medio * 0.8, medio));
-  if (Math.abs(medio - m.medio) > 0.015 && m.medio > 0.03) {
+  if (Math.abs(medio - m.medio) > 0.008 && m.medio > 0.03) {
     // le ombre restano ferme sotto metà del soggetto: si schiarisce il soggetto, non il buio
     if (medio > m.medio && m.medio * 0.45 > punti[punti.length - 1][0] + 0.03) punti.push([m.medio * 0.45, m.medio * 0.45]);
     punti.push([m.medio, medio]);
   }
   // bianchi molto spenti (I-Log al buio, controluce sbagliato): un po' su. Non di più: negli esempi
   // le luci restano sotto 0,9 e alzarle in una scena scura la rende slavata (prova 980, 20/10)
-  if (m.bianco < 0.5 && m.bianco > m.medio + 0.1) punti.push([m.bianco, Math.min(0.75, m.bianco + 0.4 * (0.75 - m.bianco))]);
+  const suBianchi = rampa(m.bianco, 0.56, 0.5) * rampa(m.bianco - m.medio, 0.06, 0.1);
+  if (suBianchi > 0) punti.push([m.bianco, m.bianco + suBianchi * (Math.min(0.75, m.bianco + 0.4 * (0.75 - m.bianco)) - m.bianco)]);
   punti.push([1, 1]);
   // monotona e con punti distanti: altrimenti la spline di ffmpeg rimbalza
   const buoni = [punti[0]];

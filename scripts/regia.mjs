@@ -197,9 +197,12 @@ export function risolviRegia(regia, analisi) {
       avvisi.push(`elemento ${idx + 1} senza frase né broll: saltato`);
       return;
     }
-    // jump cut sulla stessa inquadratura: alterno lo zoom se l'AI non l'ha deciso
+    // jump cut sulla stessa inquadratura: alterno lo zoom se l'AI non l'ha deciso. Nel discorso
+    // (regia.discorso) solo dove manca davvero un pezzo: tra due frasi attaccate nel girato il taglio
+    // non si vede, e uno zoom ogni 3 s per 4 minuti stancherebbe
     const prev = clips[clips.length - 1];
-    clip.punch = typeof it.punch === 'boolean' ? it.punch : Boolean(prev && prev.file === clip.file && !prev.punch);
+    const attaccata = regia.discorso === true && prev && prev.file === clip.file && Math.abs(clip.start - prev.end) <= 0.12;
+    clip.punch = typeof it.punch === 'boolean' ? it.punch : attaccata ? Boolean(prev.punch) : Boolean(prev && prev.file === clip.file && !prev.punch);
     if (it.bn === true) clip.bn = true; // stili su misura con il bianco e nero nei momenti di racconto
     // inserto: scheda arrotondata sopra l'inquadratura mentre Denis parla di quello che mostra
     if (it.inserto) {
@@ -435,36 +438,57 @@ export function segniFrasi(frasi) {
 
 // Modalità discorso (regola di Denis del 20/10): nella cartella c'è un solo video parlato, un suo
 // discorso. Niente regia: tutte le frasi nell'ordine in cui le dice, senza accorciare né riordinare;
-// escono solo le pause (le frasi le tagliano già), le false partenze e le ripetizioni (una frase
-// ripresa poco dopo meglio: resta la ripresa) e le frasi fatte solo di riempitivi ("ehm").
+// escono solo le pause (le frasi le tagliano già), le false partenze ridette subito dopo (resta la
+// ripresa), le esitazioni tra le due ("no aspetta") e le frasi fatte solo di riempitivi ("ehm").
 // Restituisce { sequenza: [{ frase }], tolte: [{ id, motivo }] }.
 const RIEMPITIVI = new Set(['ehm', 'eh', 'ehh', 'ehmm', 'uhm', 'um', 'mm', 'mmm', 'mh', 'ah', 'boh', 'beh']);
+// parole d'attacco che non contano per riconoscere una ripresa ("Allora quando ho…" → "Quando ho…")
+const ATTACCHI = new Set(['allora', 'e', 'ed', 'quindi', 'ma', 'cioe', 'dunque', 'poi', 'no', 'ok', 'okay', 'eh', 'ehm', 'beh', 'vabbe']);
+const ESITAZIONI = new Set([...RIEMPITIVI, 'no', 'scusa', 'scusate', 'aspetta', 'aspettate', 'rifaccio', 'rifacciamo', 'riprendo', 'ricomincio',
+  'allora', 'cioe', 'ok', 'okay', 'vabbe', 'dai', 'niente', 'un', 'attimo', 'momento']);
+const senzaAttacco = (ws) => { let k = 0; while (k < ws.length - 1 && ATTACCHI.has(ws[k])) k++; return ws.slice(k); };
+const esitazione = (f) => { const ws = paroleDi(f.testo); return ws.length > 0 && ws.every((w) => ESITAZIONI.has(w)); };
+
+// La frase i è un tentativo ridetto subito dopo? Più prudente dei segni per l'AI (qui nessuno
+// ricontrolla): la ripresa arriva entro 3 frasi e 8 s, con in mezzo solo il seguito del tentativo
+// o esitazioni; comincia con le stesse parole (tolti "allora", "e", "quindi"…), ne contiene quasi
+// tutte e non è più corta. Una frase già chiusa col punto esce solo se ridetta quasi uguale e lunga
+// uguale ("Ho fatto una scelta. Ho fatto una scelta difficile…" è un crescendo voluto e resta).
+// Un tema ripreso più avanti, o una frase ripetuta apposta dopo altro discorso, resta.
+// Restituisce l'indice della ripresa o null.
+function ripresaNelDiscorso(frasi, i) {
+  const f = frasi[i];
+  const a = senzaAttacco(paroleDi(f.testo));
+  if (a.length < 2) return null;
+  const chiusa = finita(f.testo) && !/(\.\.\.|…)$/.test(f.testo.trim());
+  const soglia = chiusa ? 0.85 : 0.6;
+  for (let k = i + 1; k < Math.min(frasi.length, i + 4); k++) {
+    const h = frasi[k];
+    if (h.principale !== f.principale || h.inizio - f.fine > 8) return null;
+    const b = senzaAttacco(paroleDi(h.testo));
+    const n = Math.min(3, a.length);
+    if (b.length >= Math.max(n, a.length * 0.8) && (!chiusa || b.length <= a.length * 1.3) && a.slice(0, n).join(' ') === b.slice(0, n).join(' ')) {
+      const inH = new Set(b);
+      if (a.filter((w) => inH.has(w)).length / a.length >= soglia) return k;
+    }
+    if (successiva(frasi, frasi[k - 1]) !== h && !esitazione(h)) return null;
+  }
+  return null;
+}
+
 export function sequenzaDiscorso(analisi) {
   const frasi = analisi.frasi;
-  const segni = segniFrasi(frasi);
-  const indice = new Map(frasi.map((f, i) => [f.id, i]));
   const tolte = new Map();
   frasi.forEach((f, i) => {
+    if (tolte.has(f.id)) return;
     const parole = paroleDi(f.testo);
     if (parole.length && parole.every((w) => RIEMPITIVI.has(w))) { tolte.set(f.id, 'riempitivo'); return; }
-    const ripresa = (segni.get(f.id) || []).find((x) => x.startsWith('ripresa meglio in '));
-    if (!ripresa) return;
-    const h = indice.get(ripresa.slice('ripresa meglio in '.length));
+    const h = ripresaNelDiscorso(frasi, i);
+    if (h == null) return;
     tolte.set(f.id, `ripetuta meglio in ${frasi[h].id}`);
-    // la falsa partenza continua nelle frasi dopo (stessa voce, senza punto) fino alla ripresa:
-    // anche quei pezzi fanno parte del tentativo lasciato a metà
-    for (let k = i + 1; k < h; k++) {
-      const prec = frasi[k - 1];
-      if (successiva(frasi, prec) !== frasi[k]) break;
-      tolte.set(frasi[k].id, `parte della frase ripetuta in ${frasi[h].id}`);
-    }
+    // in mezzo: il seguito del tentativo (stessa voce, senza punto) e le esitazioni escono con lui
+    for (let k = i + 1; k < h; k++) tolte.set(frasi[k].id, esitazione(frasi[k]) ? 'esitazione' : `parte della frase ripetuta in ${frasi[h].id}`);
   });
-  // una frase tenuta che continua nella successiva (→): la successiva resta anche se era segnata,
-  // altrimenti la frase resterebbe a metà ("per 45 più | coupon…")
-  for (let i = 0; i < frasi.length - 1; i++) {
-    const f = frasi[i];
-    if (!tolte.has(f.id) && successiva(frasi, f) === frasi[i + 1] && tolte.get(frasi[i + 1].id)?.startsWith('parte della')) tolte.delete(frasi[i + 1].id);
-  }
   return {
     sequenza: frasi.filter((f) => !tolte.has(f.id)).map((f) => ({ frase: f.id })),
     tolte: [...tolte.entries()].map(([id, motivo]) => ({ id, motivo })),

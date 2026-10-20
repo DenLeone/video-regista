@@ -93,12 +93,39 @@ async function instagram(d) {
 // YouTube non accetta < e > nel titolo e nella descrizione
 const pulisciYt = (t, max) => String(t || '').replace(/[<>]/g, '').trim().slice(0, max);
 
+// durata dell'mp4 dall'atomo mvhd (sul runner non c'è ffprobe): oltre 3 minuti (un discorso) YouTube
+// non ne fa uno Short, quindi niente #shorts e link al video normale
+export function durataMp4(b) {
+  const cerca = (da, a, tipo) => {
+    for (let i = da; i + 8 <= a;) {
+      let dim = b.readUInt32BE(i), testa = 8;
+      if (dim === 1) { dim = Number(b.readBigUInt64BE(i + 8)); testa = 16; } else if (dim === 0) dim = a - i;
+      if (dim < testa) return null;
+      if (b.toString('latin1', i + 4, i + 8) === tipo) return { da: i + testa, a: Math.min(a, i + dim) };
+      i += dim;
+    }
+    return null;
+  };
+  try {
+    const moov = cerca(0, b.length, 'moov');
+    const mvhd = moov && cerca(moov.da, moov.a, 'mvhd');
+    if (!mvhd) return 0;
+    const v1 = b[mvhd.da] === 1;
+    const scala = b.readUInt32BE(mvhd.da + (v1 ? 20 : 12));
+    const durata = v1 ? Number(b.readBigUInt64BE(mvhd.da + 24)) : b.readUInt32BE(mvhd.da + 16);
+    return scala ? durata / scala : 0;
+  } catch { return 0; }
+}
+
 async function youtube(d, video) {
   const { YT_CLIENT_ID: id, YT_CLIENT_SECRET: segreto, YT_REFRESH_TOKEN: rinnovo } = process.env;
   if (!id || !segreto || !rinnovo) return { ok: false, saltato: true, errore: 'YouTube non ancora collegato' };
   const t = await json(await fetch(OAUTH(), { method: 'POST', body: new URLSearchParams({ client_id: id, client_secret: segreto, refresh_token: rinnovo, grant_type: 'refresh_token' }) }), 'accesso YouTube');
-  const descrizione = /#shorts/i.test(d.didascalia || '') ? d.didascalia : `${d.didascalia || ''}\n\n#shorts`;
   const dati = fs.readFileSync(video);
+  const durata = durataMp4(dati);
+  const short = !durata || durata <= 180;
+  if (!short) log(`YouTube: ${Math.round(durata)} s, oltre i 3 minuti degli Shorts: video normale`);
+  const descrizione = !short || /#shorts/i.test(d.didascalia || '') ? d.didascalia || '' : `${d.didascalia || ''}\n\n#shorts`;
   const avvio = await fetch(`${YT_UPLOAD()}/upload/youtube/v3/videos?uploadType=resumable&part=snippet,status`, {
     method: 'POST',
     headers: { authorization: `Bearer ${t.access_token}`, 'content-type': 'application/json; charset=UTF-8', 'x-upload-content-length': String(dati.length), 'x-upload-content-type': 'video/mp4' },
@@ -112,7 +139,7 @@ async function youtube(d, video) {
   if (!dove) throw new Error('YouTube non ha dato l\'indirizzo di caricamento');
   const v = await json(await fetch(dove, { method: 'PUT', headers: { 'content-type': 'video/mp4' }, body: dati }), 'caricamento YouTube');
   log(`YouTube: caricato ${v.id} (${v.status?.privacyStatus})`);
-  return { ok: true, link: `https://youtube.com/shorts/${v.id}`, privato: v.status?.privacyStatus !== 'public' };
+  return { ok: true, link: short ? `https://youtube.com/shorts/${v.id}` : `https://youtu.be/${v.id}`, privato: v.status?.privacyStatus !== 'public' };
 }
 
 async function avvisaBot(esito) {
