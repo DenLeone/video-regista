@@ -18,6 +18,9 @@ export type Clip = {
   // la persona ritagliata (video con trasparenza) per far passare le scritte grandi dietro di lei;
   // da = secondi dall'inizio della clip
   ritaglio?: { file: string; da: number; dur: number };
+  // rallentatore (B-roll a 50/60 fps): prima del taglio start = inizio nella sorgente e end - start =
+  // durata sul video; la sorgente usata è (end - start) / lento secondi. Dopo il taglio il pezzo è già lento
+  lento?: number;
 };
 
 export type Keyword = {
@@ -54,6 +57,9 @@ export type Piano = {
   // stile su misura: la grafica letta da Drive (Stili/<nome>/stile.txt, vedi scripts/stile-su-misura.mjs)
   grafica?: GraficaStile;
   enfasi?: string[];        // parole dell'apertura da fare enormi (scelte dall'AI negli stili su misura)
+  // fotogrammi al secondo del video: quelli della camera principale (24 con la Sony a 23,98, 30
+  // con l'iPhone). Senza, 30. A 30 fps il girato a 24p ripeteva un fotogramma ogni quattro (scatti)
+  fps?: number;
 };
 
 // font di uno stile su misura: file in public/stili/<stile>/ oppure Google Fonts per nome
@@ -85,7 +91,8 @@ export type GraficaStile = {
   musica?: { file: string; volume: number } | null;
 };
 
-export const FPS = 30;
+export const FPS = 30; // predefinito: il video vero usa piano.fps (vedi fpsDi)
+export const fpsDi = (p: Pick<Piano, 'fps'>) => (p.fps && p.fps >= 10 && p.fps <= 60 ? p.fps : FPS);
 export const W = 1080;
 export const H = 1920;
 

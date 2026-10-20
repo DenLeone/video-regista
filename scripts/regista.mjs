@@ -21,7 +21,8 @@ import { execFileSync, spawn, spawnSync } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
 import { audioMuto, frasi, inviluppo, sincronizza, sogliaVoce } from './audio.mjs';
-import { materialePerAI, risolviRegia } from './regia.mjs';
+import { HDR, curvaEsposizione, filtroTecnico, misuraPezzo, perFiltro, probe, riconosciLog } from './colore.mjs';
+import { materialePerAI, normFrase, risolviRegia, sequenzaDiscorso } from './regia.mjs';
 import { movimento, syncMovimento } from './sync-visivo.mjs';
 import { leggiStile, promptSuMisura } from './stile-su-misura.mjs';
 import { AUDIO_EXT, IMAGE_EXT, NOMI_DISPOSITIVO, VIDEO_EXT, dispositivo, prioritaAudio, tagsPiatti } from './sorgenti.mjs';
@@ -86,6 +87,51 @@ function dataRipresa(tags, nome) {
   return m ? Date.UTC(+m[1], +m[2] - 1, +m[3]) : null;
 }
 
+// brief del giro: brief.txt + quello dal bot + (correzione / solo render) quello del giro prima.
+// Senza doppioni e con una sola riga "Dal telegram": prima ogni rifacimento riaccodava il brief
+// vecchio al nuovo (30 righe "Stile: …" ripetute dopo una decina di prove). Quella del bot è sempre
+// la più recente; senza, vale l'ultima del giro prima (la prima riga "Dal telegram" salvata).
+export function unisciBrief(briefFile = '', extra = '', briefPrima = '') {
+  const righe = [];
+  const visti = new Set();
+  const aggiungi = (r) => {
+    const t = String(r).trim();
+    const k = t.toLowerCase().replace(/\s+/g, ' ');
+    if (t && !visti.has(k)) { visti.add(k); righe.push(t); }
+  };
+  String(briefFile || '').split('\n').forEach(aggiungi);
+  let telegram = String(extra || '').trim() ? `Dal telegram: ${String(extra).trim()}` : null;
+  for (const r of String(briefPrima || '').split('\n')) {
+    if (/^dal telegram:/i.test(r.trim())) { if (!telegram) telegram = r.trim(); } else aggiungi(r);
+  }
+  if (telegram) aggiungi(telegram);
+  return righe.join('\n');
+}
+
+// Regola di Denis (20/10): una cartella con un solo video è un suo discorso (es. "Sommossa", 4 min e
+// mezzo). Niente regia: nessun accorciamento né riordino, solo pause, false partenze e ripetizioni
+// tolte (regia.mjs sequenzaDiscorso), il look e le scritte dello stile. "regia completa" nel brief
+// la toglie, come una durata scelta dal bot ("Durata: 60 s": va accorciato, quindi serve la regia);
+// "modalità discorso" / "solo pulizia" / "niente regia" la forzano anche con più video.
+export function modoDiscorso(nVideo, brief = '') {
+  if (/\bregia\s+(completa|normale)\b|\bmontaggio\s+completo\b|\bdurata\s*:\s*\d/i.test(brief)) return false;
+  if (/\bmodalit[àa]\s+discorso\b|\bsolo\s+pulizia\b|\bniente\s+regia\b/i.test(brief)) return true;
+  return nVideo === 1;
+}
+let DISCORSO = false;     // modalità discorso del giro in corso
+let discorso = null;      // { sequenza, tolte, durata } della modalità discorso (per il prompt)
+function preparaDiscorso(analisi) {
+  const d = sequenzaDiscorso(analisi);
+  const durata = d.sequenza.reduce((t, it) => { const f = analisi.frasi.find((x) => x.id === it.frase); return t + (f ? f.fine - f.inizio : 0); }, 0);
+  discorso = { ...d, durata };
+  return discorso;
+}
+// la sequenza del discorso vince su quella dell'AI (tiene solo i suoi "bn"); `discorso: true` dice a
+// risolviRegia di alternare lo zoom solo dove c'è un salto. Anche per correzioni e "Solo render"
+// di un discorso (DISCORSO senza la sequenza nuova)
+const conSequenza = (r) => (discorso ? { ...r, sequenza: discorso.sequenza.map((it) => ({ ...it, ...((r.sequenza || []).some((x) => normFrase(x.frase) === it.frase && x.bn === true) ? { bn: true } : {}) })) } : r);
+const perRegia = (r) => (DISCORSO ? { ...conSequenza(r), discorso: true } : r);
+
 // ---------- 1. trova la cartella da fare ----------
 // video da Telegram: la cartella non esiste ancora, scelgo un nome libero in 97 e 98
 function nomeLibero(richiesto) {
@@ -144,40 +190,17 @@ function trovaCartella() {
 }
 
 // ---------- 2. prepara il materiale ----------
-function probe(file) {
-  const j = JSON.parse(run('ffprobe', ['-v', 'error', '-print_format', 'json', '-show_streams', '-show_format', file]));
-  const v = j.streams.find((s) => s.codec_type === 'video');
-  const a = j.streams.find((s) => s.codec_type === 'audio');
-  let w = v?.width ?? 0, h = v?.height ?? 0;
-  const rot = Math.abs(Number(v?.tags?.rotate ?? v?.side_data_list?.find((s) => s.rotation !== undefined)?.rotation ?? 0));
-  if (rot === 90 || rot === 270) [w, h] = [h, w];
-  const colore = v ? { trc: v.color_transfer, primaries: v.color_primaries, matrix: v.color_space, pix: v.pix_fmt } : null;
-  return { durata: Number(j.format.duration), w, h, audio: Boolean(a), video: Boolean(v), tags: tagsPiatti(j), colore };
-}
-
-// HDR (iPhone in HLG/Dolby Vision, clip PQ) → Rec.709: senza conversione i colori escono slavati
-const HDR = ['arib-std-b67', 'smpte2084'];
-// I-Log (Insta360): girato piatto, si riporta a colori normali con la LUT tecnica ufficiale
-// Insta360 (I-Log → Rec709 BT1886). Il "look" (caldo, contrasto) lo aggiunge poi lo stile.
-const LUT_ILOG = path.join(ROOT, 'lut', 'Luna_I-Log_to_Rec709_BT1886_s33_v2.cube');
-const perFiltro = (p) => p.replace(/\\/g, '/').replace(/:/g, '\\:');
-// I-Log con esposizione automatica: la Insta protegge il cielo e dopo la LUT i medi restano bassi
-// (Giacca autunnale, 18/10: luminosità media 0,22–0,30). `alza` = curva che porta la media
-// misurata della clip (da) verso ESPOSIZIONE_LOG (a), lasciando fermi nero e bianco
-const ESPOSIZIONE_LOG = 0.4;
-function filtroColore(c) {
+// conversione tecnica (scripts/colore.mjs) + LUT creativa dello stile, se c'è
+// `curva`: correzione dell'esposizione del singolo pezzo (look 12K, colore.mjs curvaEsposizione)
+function filtroColore(c, curva = null) {
   const base = filtroTecnico(c);
   if (!LUT_STILE) return base;
-  // LUT creativa di uno stile su misura (asset/*.cube): dopo la conversione tecnica
-  return `${base.replace(/,?format=yuv420p$/, '').replace(/^$/, 'null')},lut3d=file='${perFiltro(LUT_STILE)}':interp=tetrahedral,format=yuv420p`;
+  // LUT creativa di uno stile su misura (asset/*.cube): dopo la conversione tecnica.
+  // Look 12K: prima l'esposizione del pezzo, dopo la LUT la nitidezza (CAS: incide i dettagli
+  // del soggetto senza aloni né rumore sulle zone lisce, come negli esempi)
+  return `${base.replace(/,?format=yuv420p$/, '').replace(/^$/, 'null')}${curva ? `,curves=master='${curva}'` : ''}`
+    + `,lut3d=file='${perFiltro(LUT_STILE)}':interp=tetrahedral${LOOK_12K ? `,cas=strength=${NITIDEZZA_12K}` : ''},format=yuv420p`;
 }
-function filtroTecnico(c) {
-  if (c?.log) return `lut3d=file='${perFiltro(LUT_ILOG)}':interp=tetrahedral${c.alza ? `,curves=master='0/0 ${c.alza.da}/${c.alza.a} 1/1'` : ''},format=yuv420p`;
-  if (!c || !HDR.includes(c.trc)) return 'format=yuv420p';
-  return `zscale=tin=${c.trc}:pin=${c.primaries || 'bt2020'}:min=${c.matrix || 'bt2020nc'}:t=linear:npl=100,format=gbrpf32le,`
-    + 'zscale=p=bt709,tonemap=tonemap=hable:desat=0,zscale=t=bt709:m=bt709:r=tv,format=yuv420p';
-}
-
 // prima/dopo la conversione colore su un fotogramma (a metà clip): va in _regista per
 // controllare la resa della LUT I-Log senza scaricare il girato
 function confrontoColore(file, id, durata, colore) {
@@ -188,31 +211,41 @@ function confrontoColore(file, id, durata, colore) {
   } catch (e) { log(`confronto colore di ${id} non riuscito`, e.message); }
 }
 
-// luminosità e saturazione medie (scala 8 bit) di alcuni fotogrammi, dopo il filtro `filtro`.
-// Tarate sul test I-Log del 18/10: I-Log originale saturazione ~3 (girato normale 13–19);
-// convertito con la LUT ma esposto poco, luminosità ~37 (un prodotto in luce scura ~60)
-function statisticheColore(file, durata, filtro = 'null') {
-  const tmp = path.join(WORK, 'statistiche.txt');
-  const v = [0.25, 0.5, 0.75].map((q) => {
-    try {
-      fs.rmSync(tmp, { force: true });
-      run('ffmpeg', ['-y', '-v', 'error', '-ss', (durata * q).toFixed(2), '-i', file, '-frames:v', '1', '-vf',
-        `scale=270:-2,${filtro},format=yuv420p,signalstats,metadata=print:file='${perFiltro(tmp)}'`, '-f', 'null', '-']);
-      const t = fs.readFileSync(tmp, 'utf8');
-      return { y: Number(/YAVG=([\d.]+)/.exec(t)?.[1]), sat: Number(/SATAVG=([\d.]+)/.exec(t)?.[1]) };
-    } catch { return null; }
-  }).filter((x) => x && Number.isFinite(x.y) && Number.isFinite(x.sat));
-  if (!v.length) return null;
-  return { y: v.reduce((a, x) => a + x.y, 0) / v.length, sat: v.reduce((a, x) => a + x.sat, 0) / v.length };
-}
-
 // Si ricodificano solo i pezzi usati dal montaggio (1080p, colori SDR). Prima si convertiva
 // tutto il girato 4K: 40 dei 58 minuti del primo giro reale.
-function taglia(s, start, dur, out, conAudio, senzaLook = false) {
-  run('ffmpeg', ['-y', '-v', 'error', '-ss', start.toFixed(3), '-i', s.originale, '-t', (dur + 0.1).toFixed(3),
-    '-vf', `scale='if(gt(iw,ih),1920,1080)':-2,${senzaLook ? filtroTecnico(s.colore) : filtroColore(s.colore)}`,
-    '-c:v', 'libx264', '-preset', 'veryfast', '-crf', '16', '-pix_fmt', 'yuv420p',
-    ...(conAudio ? ['-c:a', 'aac', '-b:a', '160k'] : ['-an']), '-movflags', '+faststart', out]);
+// lanczos: dal 4K al 1080 resta più dettaglio del bicubico di default. `zoom` (punch-in del jump
+// cut): si ritaglia dall'originale prima di ridurre, invece di ingrandire nel browser il pezzo già a
+// 1080 (dal 4K il dettaglio c'è ancora). Colori dichiarati BT.709: senza, il render li indovina.
+const TAG_709 = ['-colorspace', 'bt709', '-color_primaries', 'bt709', '-color_trc', 'bt709', '-color_range', 'tv'];
+// Look 12K, voce e camere sincronizzate: se il pezzo ha la luce della ripresa intera si usa la misura
+// di tutta la ripresa, così i pezzi dello stesso volto escono con la stessa curva (misurati uno per
+// uno, il soggetto che si muove spostava la misura e la luce saltava da un taglio all'altro: nel
+// discorso sono decine di tagli sulla stessa inquadratura). Se la luce cambia (si cammina, si esce)
+// vale quella del pezzo; i B-roll sempre pezzo per pezzo.
+const misureRiprese = new Map();
+function misuraPerLook(s, start, dur) {
+  const tec = filtroTecnico(s.colore);
+  const m = misuraPezzo(s.originale, start, dur, tec);
+  if (!m || !(s.principale || s.sync)) return m;
+  if (!misureRiprese.has(s.id)) misureRiprese.set(s.id, misuraPezzo(s.originale, 0, s.durata, tec, [0.1, 0.25, 0.4, 0.55, 0.7, 0.85]));
+  const r = misureRiprese.get(s.id);
+  return r && Math.abs(m.medio - r.medio) < 0.05 && Math.abs(m.nero - r.nero) < 0.03 && Math.abs(m.bianco - r.bianco) < 0.08 ? r : m;
+}
+// `lento` (rallentatore): `dur` secondi di sorgente stirati di quel fattore, a `fps` fotogrammi al secondo
+function taglia(s, start, dur, out, conAudio, senzaLook = false, zoom = 1, lento = 1, fps = 30) {
+  const ritaglio = zoom > 1 ? `crop=trunc(iw/${zoom}/2)*2:trunc(ih/${zoom}/2)*2,` : '';
+  const rallenta = lento > 1 ? `setpts=${lento}*PTS,` : '';
+  let curva = null;
+  if (LOOK_12K && !senzaLook) {
+    const m = misuraPerLook(s, start, dur);
+    curva = curvaEsposizione(m);
+    if (m) log(`  ${path.basename(out)}: soggetto ${m.medio.toFixed(2)}, neri ${m.nero.toFixed(2)}, bianchi ${m.bianco.toFixed(2)}${curva ? ` → curva ${curva}` : ''}`);
+  }
+  run('ffmpeg', ['-y', '-v', 'error', '-ss', start.toFixed(3), '-i', s.originale, '-t', (dur * lento + 0.1).toFixed(3),
+    '-vf', `${rallenta}${ritaglio}scale='if(gt(iw,ih),1920,1080)':-2:flags=lanczos,${senzaLook ? filtroTecnico(s.colore) : filtroColore(s.colore, curva)}`,
+    ...(lento > 1 ? ['-r', String(fps)] : []),
+    '-c:v', 'libx264', '-preset', 'veryfast', '-crf', '16', '-pix_fmt', 'yuv420p', ...TAG_709,
+    ...(conAudio && lento === 1 ? ['-c:a', 'aac', '-b:a', '160k'] : ['-an']), '-movflags', '+faststart', out]);
 }
 
 function troncaPiano(piano, secondi) {
@@ -230,6 +263,7 @@ function troncaPiano(piano, secondi) {
   piano.flickers = (piano.flickers || []).filter((f) => f.at < t);
 }
 
+const ZOOM_PUNCH = 1.18; // come in src/comune.tsx
 function tagliaSegmenti(piano, analisi) {
   const perFile = new Map(analisi.sorgenti.filter((s) => s.tipo === 'video').map((s) => [s.file, s]));
   piano.clips.forEach((c, i) => {
@@ -237,8 +271,14 @@ function tagliaSegmenti(piano, analisi) {
     if (!s) throw new Error(`sorgente sconosciuta ${c.file}`);
     const dur = c.end - c.start;
     const seg = `seg_${String(i).padStart(3, '0')}.mp4`;
-    taglia(s, c.start, dur, path.join(MEDIA, seg), !c.audio && !c.muto && s.haAudio);
+    // punch-in delle clip verticali fatto qui (le orizzontali stanno "contenute": resta a Remotion)
+    const zoom = c.punch && s.orient !== 'h' ? ZOOM_PUNCH : 1;
+    // rallentatore: dur è la durata sul video, della sorgente ne serve dur / lento
+    const lento = c.lento > 1 ? c.lento : 1;
+    taglia(s, c.start, dur / lento, path.join(MEDIA, seg), !c.audio && !c.muto && s.haAudio, false, zoom, lento, piano.fps || 30);
     Object.assign(c, { file: seg, start: 0, end: +dur.toFixed(3), sorgente: s.id, daSorgente: c.start });
+    if (zoom > 1) c.punch = false;
+    delete c.lento; // il pezzo è già al rallentatore
     // inserto video: il suo pezzo, muto e senza look creativo (le schermate restano fedeli)
     if (c.inserto?.tipo === 'video') {
       const si = perFile.get(c.inserto.file);
@@ -466,9 +506,19 @@ function promptRegia({ modo, testoMateriale, regiaPrecedente }) {
   if (regiaPrecedente) {
     p += `\n\n## MODALITÀ CORREZIONE\nEsiste già un montaggio, questa è la sua regia:\n\`\`\`json\n${JSON.stringify(regiaPrecedente, null, 1)}\n\`\`\`\nDenis l'ha guardato e chiede queste modifiche:\n\n> ${CORREZIONE.replace(/\n/g, '\n> ')}\n\nParti da questa regia e applica SOLO quello che chiede, lasciando invariato il resto. I tempi li ricalcola lo script. Nella \`note\` elenca in breve cosa hai cambiato.`;
   }
+  if (discorso && !regiaPrecedente) {
+    const durata = discorso.durata;
+    const quante = Math.max(3, Math.min(20, Math.round(durata / 20)));
+    // stili senza scritte grandi (12K Quality): niente keywords da distribuire
+    const scritte = !stileSuMisura || stileSuMisura.grafica.titoli
+      ? `Il video dura circa ${Math.round(durata)} s: distribuisci circa ${quante} scritte grandi su tutta la durata (una ogni ~20 s), sulle frasi più forti; questo vale più del numero indicato nella sezione Grafica.`
+      : 'Questo stile non ha scritte grandi: `keywords` vuoto.';
+    p += `\n\n## MODALITÀ DISCORSO (regola di Denis: nella cartella c'è un solo video)\nÈ un discorso di Denis da montare così com'è: NIENTE regia. Non togliere frasi per accorciare, non riordinare, non scegliere cosa tenere: la sequenza l'ha già decisa lo script (tutte le frasi in ordine, tolte solo pause, false partenze e ripetizioni) e nella regia va copiata identica:\n\`\`\`json\n"sequenza": ${JSON.stringify(discorso.sequenza)}\n\`\`\`\nIl tuo lavoro è SOLO la grafica dello stile (sezione Grafica): \`titolo\`, \`soggetto\`, \`enfasi\` se lo stile ha l'apertura a lettere enormi (sulle prime parole del discorso), le \`keywords\` con le regole dello stile e, se lo stile ha il bianco e nero nei momenti, \`"bn": true\` su qualche elemento della sequenza. ${scritte} Ignora le regole su durata, scaletta, inquadrature e B-roll. \`scaletta\` = i 3–6 temi del discorso, \`testo_montato\` vuoto.`;
+  }
+  // discorso: niente fogli provino (le inquadrature non si scelgono)
   p += modo === 'claude'
-    ? '\n\n## Come consegnare\nLeggi i fogli provino con lo strumento Read, tutti nello stesso turno (letture in parallelo), poi scrivi la regia con lo strumento Write in `work/regia.json` e rispondi con 3 righe di riepilogo.'
-    : '\n\n## Come consegnare\nI fogli provino sono allegati in ordine, ognuno preceduto dal suo nome. Rispondi SOLO con il JSON della regia.';
+    ? `\n\n## Come consegnare\n${discorso ? 'Scrivi' : 'Leggi i fogli provino con lo strumento Read, tutti nello stesso turno (letture in parallelo), poi scrivi'} la regia con lo strumento Write in \`work/regia.json\` e rispondi con 3 righe di riepilogo.`
+    : `\n\n## Come consegnare\n${discorso ? '' : 'I fogli provino sono allegati in ordine, ognuno preceduto dal suo nome. '}Rispondi SOLO con il JSON della regia.`;
   return `${p}\n\n---\n\n${testoMateriale}\n`;
 }
 
@@ -627,7 +677,8 @@ async function regiaConGemini(prompt, fogli, valida) {
       try {
         let { testo, regia } = await leggi(esito.risposta, modello);
         let risultato = valida(regia);
-        const problemi = difetti(risultato);
+        // discorso: la sequenza è fissa (la decide lo script), una rilettura sprecherebbe una richiesta
+        const problemi = discorso ? [] : difetti(risultato);
         if (problemi.length) {
           log(`Gemini: rilettura della regia (${problemi.join(' | ')})`);
           await fase(job.nome, `✍️ Rileggo la regia: ${problemi.length} punt${problemi.length === 1 ? 'o' : 'i'} da sistemare nel racconto`, 'regia');
@@ -703,11 +754,15 @@ const DIR_STILI = '03 · Social — Risorse/Stili';
 let stileCorrente = STILI[0];
 let stileSuMisura = null; // { nome, grafica, testoAI, avvisi }
 let LUT_STILE = null;     // LUT creativa dello stile su misura
+// look 12K (Look: teal e arancio): esposizione misurata pezzo per pezzo + lut/12k.cube + nitidezza
+let LOOK_12K = false;
+const NITIDEZZA_12K = 0.5;
 const normNome = (t) => String(t || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/\s+/g, ' ').trim();
 function scegliStile(brief) {
   const richiesto = (/stile\s*:\s*([^\n.,;]+)/i.exec(brief || '') || [])[1]?.trim();
   stileSuMisura = null;
   LUT_STILE = null;
+  LOOK_12K = false;
   if (!richiesto) return { stile: STILI[0] };
   const trovato = STILI.find((x) => x.toLowerCase() === richiesto.toLowerCase());
   if (trovato) return { stile: trovato };
@@ -761,11 +816,29 @@ function caricaStile(nome) {
       log(`stile ${nome}: musica ${path.basename(scelto)}`);
     } else avvisi.push(`stile ${nome}: musica richiesta ma nessun brano in asset/`);
   }
-  // LUT: quella in asset/ dello stile; con "Look: teal e arancio" quella del repo (lut/teal-arancio.cube)
-  const lut = tutti.find((p) => /\.cube$/i.test(p)) || (grafica.look === 'teal' ? path.join(ROOT, 'lut', 'teal-arancio.cube') : null);
-  if (lut) { LUT_STILE = lut; log(`stile ${nome}: LUT ${path.basename(lut)}`); }
+  // LUT: quella in asset/ dello stile; con "Look: teal e arancio" il look 12K del repo (lut/12k.cube,
+  // scripts/look/lut12k.py) con l'esposizione adattata a ogni pezzo
+  const lutAsset = tutti.find((p) => /\.cube$/i.test(p));
+  LOOK_12K = !lutAsset && grafica.look === 'teal';
+  const lut = lutAsset || (LOOK_12K ? path.join(ROOT, 'lut', '12k.cube') : null);
+  if (lut) { LUT_STILE = lut; log(`stile ${nome}: LUT ${path.basename(lut)}${LOOK_12K ? ' (look 12K: esposizione per pezzo e nitidezza)' : ''}`); }
   stileSuMisura = { nome: grafica.nome || nome, grafica, testoAI, avvisi };
   log(`stile su misura ${nome}: ${JSON.stringify(grafica)}`);
+}
+
+// Remotion scrive la matrice BT.709 ma lascia "sconosciuti" primari e curva: si dichiarano tutti
+// (flusso h264 e atomo colr dell'mp4) senza ricodificare, così Instagram non deve indovinarli
+function dichiaraColori(file) {
+  const tmp = file.replace(/(\.mp4)?$/i, '.colori.mp4');
+  try {
+    run('ffmpeg', ['-y', '-v', 'error', '-i', file, '-map', '0', '-c', 'copy',
+      '-bsf:v', 'h264_metadata=video_full_range_flag=0:colour_primaries=1:transfer_characteristics=1:matrix_coefficients=1',
+      ...TAG_709, '-movflags', '+faststart+write_colr', tmp]);
+    fs.renameSync(tmp, file);
+  } catch (e) {
+    fs.rmSync(tmp, { force: true });
+    log('metadati colore non scritti (il video resta com\'è)', e.message.split('\n')[0]);
+  }
 }
 
 function renderizza(out, stile = STILI[0]) {
@@ -773,12 +846,18 @@ function renderizza(out, stile = STILI[0]) {
   // (visto nel test del 16/10): fino a 3 tentativi.
   for (let tentativo = 1; ; tentativo++) {
     try {
-      // 1080×1920 a ~15 Mbps: il formato che TikTok/Instagram caricano meglio (meglio di un 4K pesante)
+      // 1080×1920 a ~15 Mbps: il formato che TikTok/Instagram caricano meglio (meglio di un 4K pesante).
+      // Fotogrammi PNG (senza perdite: col JPEG 80 di default si perdeva dettaglio nelle ombre) e
+      // colori BT.709 a gamma limitata: prima usciva "yuvj420p" BT.601 a gamma piena, che app e
+      // lettori possono leggere con neri grigi o colori spostati (prova del 20/10: col JPEG 100 +
+      // BT.709 Remotion sbaglia i colori, col PNG sono esatti)
       run('npx', ['remotion', 'render', 'src/index.ts', stile, out, `--props=${path.join(WORK, 'piano.json')}`,
         '--codec=h264', '--video-bitrate=15M', '--max-rate=16M', '--buffer-size=32M', '--audio-bitrate=320k', '--concurrency=100%',
+        '--image-format=png', '--color-space=bt709',
         // browser già installato (es. Chrome sul PC) invece di quello che Remotion scarica
         ...(process.env.REMOTION_BROWSER ? [`--browser-executable=${process.env.REMOTION_BROWSER}`] : [])],
       { cwd: ROOT, stdio: 'inherit', shell: process.platform === 'win32' });
+      dichiaraColori(out);
       return;
     } catch (e) {
       if (tentativo >= 3) throw e;
@@ -838,15 +917,17 @@ async function notifica(esito, nome, testo, { ok = false, foto, info } = {}) {
   await invia({ tipo: 'esito', esito, nome, testo, ok, foto, info, step: ultimaFase, minuti: Math.round((Date.now() - T0) / 60000) });
 }
 
-// 8 fotogrammi del video finito in una griglia 4×2: va in _regista per controllare il risultato
-// (colore, scritte) senza scaricare il video
-// 8 fotogrammi del finale per controllarlo senza scaricarlo: l'apertura, il centro di ogni
-// scritta grande (si vede se passa dietro alla persona) e il resto distribuito sul video
+// 8 fotogrammi del finale in una griglia 4×2, in _regista, per controllarlo senza scaricarlo:
+// l'apertura, il centro delle scritte grandi (si vede se passano dietro alla persona) e il resto
+// distribuito sul video. Con tante scritte (discorso di 4–5 minuti) se ne prendono 7 sparse su
+// tutta la durata, non le prime 7
 function fotogrammiFinale(outFile, durata, piano) {
   const out = path.join(WORK, 'fotogrammi.jpg');
   const dir = path.join(WORK, 'fotogrammi');
   try {
-    const tempi = [Math.min(1.2, durata / 2), ...(piano.keywords || []).map((k) => k.at + Math.min(1, k.dur * 0.6))].filter((t) => t < durata - 0.1);
+    const scritte = (piano.keywords || []).map((k) => k.at + Math.min(1, k.dur * 0.6)).filter((t) => t < durata - 0.1);
+    const sparse = scritte.length > 7 ? Array.from({ length: 7 }, (_, i) => scritte[Math.round((i * (scritte.length - 1)) / 6)]) : scritte;
+    const tempi = [Math.min(1.2, durata / 2), ...sparse];
     for (let i = 0; i < 8 && tempi.length < 8; i++) {
       const t = (durata * (i + 0.5)) / 8;
       if (tempi.every((x) => Math.abs(x - t) > 1.5)) tempi.push(t);
@@ -860,7 +941,6 @@ function fotogrammiFinale(outFile, durata, piano) {
   } catch (e) { log('fotogrammi del finale non riusciti', e.message); return null; }
 }
 
-// anteprima: il fotogramma a metà della prima parola chiave (o a 1/3 del video)
 // il fotogramma di copertina: a metà della prima parola chiave (o a 1/3 del video); serve anche
 // come copertina del Reel quando si pubblica dal bot
 const tempoCopertina = (piano, durata) => {
@@ -925,6 +1005,20 @@ function inSottofondo(cmd, args) {
 const mb = (bytes) => (bytes / 1e6 >= 1000 ? `${(bytes / 1e9).toFixed(1)} GB` : `${Math.round(bytes / 1e6)} MB`);
 
 // ---------- analisi: sorgenti, audio principale, sincronizzazione, frasi ----------
+// fps del video finito: quelli della camera principale (la voce), altrimenti del girato più lungo.
+// 23,98 → 24 (la differenza è un fotogramma ogni 40 s), 50 → 25 e 60 → 30 (uno sì e uno no, fluido).
+// A 30 fps fissi la Sony a 23,98 (980, 20/10) ripeteva un fotogramma ogni quattro: movimenti a scatti
+export function fpsVideo(sorgenti) {
+  const video = sorgenti.filter((s) => s.tipo === 'video' && s.fps > 0);
+  const base = video.some((s) => s.principale) ? video.filter((s) => s.principale) : video;
+  const durata = new Map();
+  for (const s of base) {
+    const n = s.fps < 24.5 ? 24 : s.fps < 26 ? 25 : s.fps < 48 ? 30 : s.fps < 55 ? 25 : 30;
+    durata.set(n, (durata.get(n) || 0) + (s.durata || 1));
+  }
+  return [...durata.entries()].sort((a, b) => b[1] - a[1])[0]?.[0] || 30;
+}
+
 export async function analizza(nome, brief, cache) {
   const parolePrecedenti = (file) => (file ? (cache?.sorgenti || cache?.video || []).find((v) => v.file === file || v.voce === file)?.parole : undefined);
   const sorgenti = [];
@@ -942,38 +1036,26 @@ export async function analizza(nome, brief, cache) {
       const info = probe(src);
       if (!info.video) continue;
       const disp = dispositivo(f, info.tags);
-      // I-Log: la Insta360 non lo scrive nei metadati (test del 18/10: bt709, 10 bit e basta).
-      // Si riconosce da 10 bit + colori spentissimi; "i-Log" nel brief lo forza, "senza i-Log" lo esclude
-      const noLog = /\b(senza|no)\s+i-?log\b/i.test(brief || '');
-      let iLog = !noLog && (/\bi-?log\b/i.test(Object.values(info.tags).join(' ')) || (disp === 'insta' && /\bi-?log\b/i.test(brief || '')));
-      if (!iLog && !noLog && disp === 'insta' && /10/.test(info.colore?.pix || '') && !HDR.includes(info.colore?.trc)) {
-        const st = statisticheColore(src, info.durata);
-        if (st && st.sat < 6) {
-          iLog = true;
-          logRiconosciuti.push(id);
-          log(`  ${id}: 10 bit e colori spenti (saturazione ${st.sat.toFixed(1)}): la tratto come I-Log`);
-        }
+      // I-Log (Insta360) e HDR: conversione tecnica a Rec.709 (scripts/colore.mjs)
+      const lg = riconosciLog(src, info, disp, brief || '', WORK);
+      const iLog = lg.iLog;
+      if (lg.riconosciuto) {
+        logRiconosciuti.push(id);
+        log(`  ${id}: 10 bit e colori spenti (saturazione ${lg.sat.toFixed(1)}): la tratto come I-Log`);
       }
-      if (iLog && info.colore) info.colore.log = true;
       const hdr = !iLog && HDR.includes(info.colore?.trc);
-      log(`video ${f} (${NOMI_DISPOSITIVO[disp]}, ${info.durata.toFixed(1)} s, ${info.w}x${info.h}${iLog ? ', I-Log → Rec709' : hdr ? ', HDR → SDR' : ''})`);
+      log(`video ${f} (${NOMI_DISPOSITIVO[disp]}, ${info.durata.toFixed(1)} s, ${info.w}x${info.h}, ${info.fps} fps${iLog ? ', I-Log → Rec709' : hdr ? ', HDR → SDR' : ''})`);
       if (disp === 'insta') log(`  ${id}: colore ${JSON.stringify(info.colore)} · metadati ${JSON.stringify(info.tags).slice(0, 800)}`);
       if (iLog) {
-        const dopo = statisticheColore(src, info.durata, filtroColore(info.colore).replace(/,format=yuv420p$/, ''));
-        if (dopo) {
-          const m = Math.max(0.02, (dopo.y - 16) / 219); // luminosità media 0–1 dopo la LUT
-          // al massimo ~1 stop in più: oltre si vede solo rumore
-          if (m < ESPOSIZIONE_LOG - 0.03) info.colore.alza = { da: +m.toFixed(3), a: +Math.min(ESPOSIZIONE_LOG, m * 2).toFixed(3) };
-          if (m < 0.12) logScuri.push(id);
-          log(`  ${id}: luminosità dopo la LUT ${m.toFixed(2)}${info.colore.alza ? `, schiarita a ${info.colore.alza.a}` : ''}`);
-        }
+        if (lg.scuro) logScuri.push(id);
+        if (lg.luce !== null) log(`  ${id}: luminosità dopo la LUT ${lg.luce.toFixed(2)}${info.colore.alza ? `, schiarita a ${info.colore.alza.a}` : ''}`);
         confrontoColore(src, id, info.durata, info.colore);
       }
       // `file` è il nome logico usato dalla regia; i pezzi veri si tagliano dall'originale dopo la regia
       // registrazione dello schermo (nome tipico o formato da telefono più stretto di 9:16): ottima come inserto
       const schermo = /screen|registraz|rpreplay|schermo|scherm/i.test(f) || (info.h > info.w && info.w / info.h < 0.5);
       sorgenti.push({ id, file: `${id}.mp4`, originale: src, tipo: 'video', dispositivo: disp, nomeDispositivo: NOMI_DISPOSITIVO[disp],
-        durata: +info.durata.toFixed(2), orient: info.w > info.h ? 'h' : 'v', haAudio: info.audio, colore: info.colore, data: dataRipresa(info.tags, f),
+        durata: +info.durata.toFixed(2), orient: info.w > info.h ? 'h' : 'v', haAudio: info.audio, colore: info.colore, data: dataRipresa(info.tags, f), fps: info.fps,
         ...(schermo ? { schermo: true } : {}) });
     } else if (AUDIO_EXT.includes(ext)) {
       const info = probe(src);
@@ -1010,7 +1092,7 @@ export async function analizza(nome, brief, cache) {
       const fp = fogliProvino(s.originale, s.id, s.durata, s.sync ? s.sync.offset : 0, s.colore);
       s.fogli = fp.fogli; s.passoFogli = fp.passo;
     }
-    return { cartella: nome, brief, sorgenti, frasi: cache.frasi, foto };
+    return { cartella: nome, brief, sorgenti, frasi: cache.frasi, foto, fps: fpsVideo(sorgenti) };
   }
 
   // inviluppi audio (dall'originale: si legge solo la traccia audio) e rilevamento parlato
@@ -1071,7 +1153,7 @@ export async function analizza(nome, brief, cache) {
       }
       continue;
     }
-    for (const f of frasi(p.parole, db.get(p.id), p.durata)) tutteFrasi.push({ ...f, principale: p.id });
+    for (const f of frasi(p.parole, db.get(p.id), p.durata, DISCORSO ? { pausaMax: 0.5 } : {})) tutteFrasi.push({ ...f, principale: p.id });
   }
   tutteFrasi.forEach((f, i) => { f.id = `F${String(i + 1).padStart(3, '0')}`; });
 
@@ -1103,8 +1185,11 @@ export async function analizza(nome, brief, cache) {
   }
   movRif.clear();
 
-  // fogli provino: per le camere sincronizzate i tempi scritti sono quelli della voce
+  // fogli provino: per le camere sincronizzate i tempi scritti sono quelli della voce. Nel discorso
+  // non servono (niente scelte di inquadrature): su 4–5 minuti di girato si risparmia tempo
+  const senzaFogli = DISCORSO && tutteFrasi.length >= 3;
   for (const s of sorgenti.filter((x) => x.tipo === 'video')) {
+    if (senzaFogli) { s.fogli = []; continue; }
     const fp = fogliProvino(s.originale, s.id, s.durata, s.sync ? s.sync.offset : 0, s.colore);
     s.fogli = fp.fogli; s.passoFogli = fp.passo;
   }
@@ -1118,7 +1203,7 @@ export async function analizza(nome, brief, cache) {
   if (/\bi-?log\b/i.test(brief || '') && !/\b(senza|no)\s+i-?log\b/i.test(brief || '') && !sorgenti.some((s) => s.colore?.log)) {
     avvisi.push('nel brief c\'è "i-Log" ma nessuna clip è riconosciuta come Insta360: colori lasciati come sono');
   }
-  return { cartella: nome, brief, sorgenti, frasi: tutteFrasi, foto, avvisi };
+  return { cartella: nome, brief, sorgenti, frasi: tutteFrasi, foto, avvisi, fps: fpsVideo(sorgenti) };
 }
 
 // ---------- main ----------
@@ -1147,9 +1232,13 @@ async function provaRegia() {
   if (process.env.BRIEF_EXTRA) analisi.brief = `Dal telegram: ${process.env.BRIEF_EXTRA}`;
   stileCorrente = scegliStile(analisi.brief).stile;
   for (const s of analisi.sorgenti) s.fogli = []; // i fogli provino non sono salvati: prova solo sul testo
+  // un solo video (discorso): come nel montaggio vero, sequenza fissa e l'AI sceglie solo le scritte
+  DISCORSO = modoDiscorso(analisi.sorgenti.filter((s) => s.tipo === 'video').length, analisi.brief) && analisi.frasi.length >= 3;
+  if (DISCORSO) preparaDiscorso(analisi);
   const testoMateriale = `${materialePerAI(analisi)}\n\n(Prova veloce: i fogli provino non sono inclusi, scegli le inquadrature solo in base alle sorgenti.)`;
-  await fase(nome, '📝 Prova della regia: solo il testo, senza render', 'regia');
-  const { regia, risultato: { piano, avvisi } } = await chiediRegia(testoMateriale, [], null, (r) => risolviRegia(r, analisi));
+  await fase(nome, `📝 Prova della regia${discorso ? ' del discorso' : ''}: solo il testo, senza render`, 'regia');
+  const { regia, risultato: { piano, avvisi } } = await chiediRegia(testoMateriale, [], null, (r) => risolviRegia(perRegia(r), analisi));
+  if (discorso) Object.assign(regia, { sequenza: conSequenza(regia).sequenza, discorso: true });
   const durata = piano.clips.reduce((t, c) => t + (c.end - c.start), 0);
   const testo = [
     `Testo (${durata.toFixed(0)} s, ${piano.clips.length} tagli, stile ${stileCorrente}): ${piano.testo}`,
@@ -1310,8 +1399,11 @@ async function main() {
     await fase(nome, '🎞️ Analizzo il girato (audio, sincronizzazione, trascrizione, fogli provino)', 'prepara');
 
     const briefFile = fs.existsSync(path.join(SCARICO, 'brief.txt')) ? fs.readFileSync(path.join(SCARICO, 'brief.txt'), 'utf8') : '';
-    const brief = [briefFile, process.env.BRIEF_EXTRA ? `Dal telegram: ${process.env.BRIEF_EXTRA}` : '', cache?.brief && (CORREZIONE || RIRENDER) ? cache.brief : '']
-      .filter(Boolean).join('\n');
+    const brief = unisciBrief(briefFile, process.env.BRIEF_EXTRA, CORREZIONE || RIRENDER ? cache?.brief : '');
+    const videoInCartella = fs.readdirSync(SCARICO).filter((f) => VIDEO_EXT.includes(path.extname(f).toLowerCase()) && !isNostro(f));
+    DISCORSO = modoDiscorso(videoInCartella.length, brief);
+    discorso = null;
+    if (DISCORSO) log(`modalità discorso: ${videoInCartella.length === 1 ? 'un solo video in cartella' : 'chiesta nel brief'} (niente regia, solo pulizia e stile)`);
     const analisi = await analizza(nome, brief, cache);
     const { immagini, foglio: foglioImmagini } = preparaImmagini(analisi.foto || []);
     analisi.immagini = immagini;
@@ -1331,23 +1423,44 @@ async function main() {
     stileCorrente = stile;
     if (stile !== STILI[0]) log(`stile: ${stile}`);
     const pesoAI = ` · materiale ≈ ${kTok(stima.totale)} token`;
+    // modalità discorso: la sequenza la decide lo script (tutte le frasi in ordine, tolte solo false
+    // partenze e ripetizioni); l'AI sceglie solo le scritte dello stile. Se il video non ha parlato
+    // (un solo video di sole riprese) si torna alla regia normale
+    if (DISCORSO && analisi.frasi.length < 3) { DISCORSO = false; log('un solo video ma quasi senza parlato: regia normale'); }
+    const nuovaRegia = !(RIRENDER && regiaPrecedente); // "Solo render" riusa la regia salvata
+    if (DISCORSO && nuovaRegia && !CORREZIONE) {
+      const d = preparaDiscorso(analisi), { durata } = d;
+      log(`discorso: ${d.sequenza.length} frasi su ${analisi.frasi.length} (${durata.toFixed(0)} s)${d.tolte.length ? `, tolte ${d.tolte.map((x) => `${x.id} ${x.motivo}`).join(', ')}` : ''}`);
+      await fase(nome, `🎙️ Discorso: tengo tutto il parlato in ordine (${d.sequenza.length} frasi, ${Math.round(durata)} s), tolgo pause e ripetizioni; l'AI sceglie solo le scritte`, 'regia');
+    }
     if (RIRENDER) await fase(nome, regiaPrecedente ? '🎨 Rifaccio solo il render: stessa regia, colore e grafica aggiornati' : '⚠️ Nessuna regia precedente: la riscrivo', 'regia');
-    else await fase(nome, CORREZIONE ? `🧠 Applico la correzione: “${CORREZIONE.slice(0, 120)}”${pesoAI}`
+    else if (!discorso) await fase(nome, CORREZIONE ? `🧠 Applico la correzione: “${CORREZIONE.slice(0, 120)}”${pesoAI}`
       : `🧠 Scelgo i tagli: ${analisi.sorgenti.length} sorgenti, voce da ${voci || '—'}, ${sinc} camere sincronizzate, ${analisi.frasi.length} frasi${brief ? ', con brief' : ''}${pesoAI}`, 'regia');
     // azione "render": stessa regia del giro prima, si rifanno solo colore, tagli e grafica
-    const { regia, risultato: { piano, avvisi } } = RIRENDER && regiaPrecedente
-      ? (fs.writeFileSync(path.join(WORK, 'regia.json'), JSON.stringify(regiaPrecedente, null, 1)), { regia: regiaPrecedente, risultato: risolviRegia(regiaPrecedente, analisi) })
-      : await chiediRegia(testoMateriale, fogli, CORREZIONE ? regiaPrecedente : null, (r) => risolviRegia(r, analisi));
+    const { regia, risultato: { piano, avvisi } } = !nuovaRegia
+      ? (fs.writeFileSync(path.join(WORK, 'regia.json'), JSON.stringify(regiaPrecedente, null, 1)), { regia: regiaPrecedente, risultato: risolviRegia(perRegia(regiaPrecedente), analisi) })
+      : await chiediRegia(testoMateriale, discorso ? [] : fogli, CORREZIONE ? regiaPrecedente : null, (r) => risolviRegia(perRegia(r), analisi)).catch((e) => {
+        // discorso: senza AI il video esce lo stesso, con i sottotitoli dello stile ma senza scritte grandi
+        if (!discorso) throw e;
+        log(`regia del discorso senza AI (${e.message.split('\n')[0]}): niente scritte grandi`);
+        const r = { titolo: nome, soggetto: '', sequenza: discorso.sequenza, keywords: [], flickers: [], note: 'scritte grandi non scelte: AI non disponibile', discorso: true };
+        return { regia: r, risultato: risolviRegia(r, analisi) };
+      });
+    // salvata con la sequenza vera: "Solo render" e "Correggi" ripartono da questa
+    if (DISCORSO && nuovaRegia) { Object.assign(regia, { sequenza: conSequenza(regia).sequenza, discorso: true }); fs.writeFileSync(path.join(WORK, 'regia.json'), JSON.stringify(regia, null, 1)); }
     if (avvisi.length) log('avvisi regia:', avvisi.join(' | '));
     if (regia.scaletta) log('scaletta:', [].concat(regia.scaletta).join(' → '));
     log('testo montato:', piano.testo);
     if (avvisoStile) analisi.avvisi = [...(analisi.avvisi || []), avvisoStile];
     if (analisi.avvisi?.length) piano.note = [...analisi.avvisi.map((a) => `⚠️ ${a}`), piano.note].filter(Boolean).join(' · ');
+    if (discorso) piano.note = [`🎙️ Discorso (un solo video): tenute tutte le ${discorso.sequenza.length} frasi in ordine${discorso.tolte.length ? `, tolte ${discorso.tolte.length} tra false partenze e ripetizioni` : ''}`, piano.note].filter(Boolean).join(' · ');
     // effetti sonori sotto la voce: più bassa la voce registrata, più bassi gli effetti (~12–16 dB sotto)
     const livelloVoce = Math.max(-60, ...analisi.sorgenti.filter((s) => s.principale && s.livello != null).map((s) => s.livello));
     piano.sfx = process.env.REGISTA_SFX === '0' ? false
       : { volume: +Math.min(0.6, Math.max(0.1, livelloVoce > -60 ? 10 ** ((livelloVoce + 2) / 20) : 0.25)).toFixed(3) };
     if (stileSuMisura) piano.grafica = stileSuMisura.grafica;
+    piano.fps = analisi.fps || 30;
+    if (piano.fps !== 30) log(`video a ${piano.fps} fps (come la camera principale)`);
     // b/n solo se lo stile lo prevede: con "Bianco e nero: no" (o uno stile pronto) i "bn" della regia
     // non valgono (12K Quality rifatto sulla regia del Narrativo, 19/10: un pezzo era uscito in b/n)
     if (!stileSuMisura || stileSuMisura.grafica.biancoNero === 'no') for (const c of piano.clips) delete c.bn;
@@ -1441,14 +1554,19 @@ async function main() {
 }
 
 // Video di anteprima per Telegram: i bot possono inviare al massimo 50 MB,
-// quindi 720p con bitrate calcolato per stare sotto ~45 MB.
+// quindi bitrate calcolato per stare sotto ~45 MB (1080 o 720 secondo quanto resta).
 async function inviaVideo(outFile, nome, testo, durata, info) {
   if (!process.env.NOTIFY_URL) return false;
   try {
     const anteprimaMp4 = path.join(WORK, 'anteprima.mp4');
-    const kbps = Math.max(600, Math.min(4000, Math.floor((45 * 8 * 1000) / Math.max(1, durata)) - 160));
-    run('ffmpeg', ['-y', '-v', 'error', '-i', outFile, '-vf', 'scale=720:-2', '-c:v', 'libx264', '-preset', 'veryfast',
-      '-b:v', `${kbps}k`, '-maxrate', `${kbps}k`, '-bufsize', `${kbps * 2}k`, '-c:a', 'aac', '-b:a', '128k', '-movflags', '+faststart', anteprimaMp4]);
+    // il bot accetta fino a 50 MB: a piena risoluzione (1080) quando il bitrate lo permette, così in
+    // Telegram si giudica la qualità vera e non un 720p sgranato; sotto i 3,5 Mbps meglio il 720 e
+    // sotto 1 Mbps il 540 (discorsi lunghi, fino a ~15 min: oltre arriva solo il messaggio)
+    const kbpsAudio = durata > 300 ? 96 : 128;
+    const kbps = Math.max(300, Math.min(8000, Math.floor((45 * 8 * 1000) / Math.max(1, durata)) - kbpsAudio - 32));
+    run('ffmpeg', ['-y', '-v', 'error', '-i', outFile, '-vf', `scale=${kbps >= 3500 ? 1080 : kbps >= 1000 ? 720 : 540}:-2:flags=lanczos`, '-c:v', 'libx264', '-preset', 'medium',
+      '-b:v', `${kbps}k`, '-maxrate', `${kbps}k`, '-bufsize', `${kbps * 2}k`, '-pix_fmt', 'yuv420p', ...TAG_709,
+      '-c:a', 'aac', '-b:a', `${kbpsAudio}k`, '-movflags', '+faststart', anteprimaMp4]);
     const size = fs.statSync(anteprimaMp4).size;
     if (size > 49 * 1e6) { log(`anteprima troppo grande (${mb(size)})`); return false; }
     const form = new FormData();

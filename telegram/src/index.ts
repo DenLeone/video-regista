@@ -166,6 +166,8 @@ const togliTasti = (env: Env, chat: string, msgId?: number) =>
 const esc = (s: unknown) => String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 const tronca = (s: string, n: number) => (s.length > n ? `${s.slice(0, n - 1)}…` : s);
 const kTok = (n: number) => (n >= 1000 ? `${Math.round(n / 1000)}k` : String(n));
+// durata leggibile: "38.5 s", oltre il minuto "4:32 min" (i discorsi)
+const durataTesto = (s: number) => { const t = Math.round(s); return t >= 60 ? `${Math.floor(t / 60)}:${String(t % 60).padStart(2, '0')} min` : `${s} s`; };
 const ora = (iso: string | number) => new Date(iso).toLocaleString('it-IT', { timeZone: 'Europe/Rome', day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
 const minuti = (from: string, to = new Date().toISOString()) => Math.max(0, Math.round((Date.parse(to) - Date.parse(from)) / 60000));
 // callback_data: al massimo 64 byte (non caratteri), altrimenti Telegram rifiuta tutto il messaggio
@@ -553,6 +555,7 @@ const GUIDA: Schermo = {
     '🆕 <b>Nuovo montaggio</b>: cartella → stile → 🚀 Avvia. Sponsor, durata, tono, giudizio e note sono facoltativi, dal riepilogo.',
     '✍️ Più veloce: scrivimi il nome della cartella e ti propongo di montarla.',
     '📦 <b>Più video</b>: spunti tante cartelle, scegli lo stile, partono tutte insieme.',
+    '🎙️ <b>Un solo video nella cartella = discorso</b>: niente regia. Tengo tutto il parlato in ordine e alla durata vera (anche 4–5 min), tolgo solo pause, false partenze e ripetizioni, poi colore e scritte dello stile. Per la regia normale scegli una durata o scrivi <i>regia completa</i> nelle indicazioni.',
     'La scheda di avanzamento si aggiorna da sola (10–30 min).',
     '',
     '<b>3. Il video finito</b>',
@@ -1412,7 +1415,7 @@ function didascalia(nome: string, info?: Info, testo = ''): string {
   const ai = info.ai ? `🧠 ${esc(info.ai.chi)} ${esc(info.ai.modello.replace(/^claude-/, '').replace(/-\d{8}$/, ''))} · ${kTok(info.ai.input + info.ai.output)} token${info.ai.usd != null ? ` (≈ $${info.ai.usd.toFixed(2)} API)` : ''}` : '';
   const righe = [
     info.prova ? `🧪 <b>${esc(nome)}</b> · prova: i primi ${info.prova} s` : `✅ <b>${esc(nome)}</b> · ${esc(versione)}`,
-    `${info.stile ? `🎨 ${esc(info.stile)}  ·  ` : ''}⏱ ${info.durata} s  ·  ✂️ ${info.tagli} tagli  ·  🎥 ${info.sorgenti} sorgenti`,
+    `${info.stile ? `🎨 ${esc(info.stile)}  ·  ` : ''}⏱ ${durataTesto(info.durata)}  ·  ✂️ ${info.tagli} tagli  ·  🎥 ${info.sorgenti} ${info.sorgenti === 1 ? 'sorgente' : 'sorgenti'}`,
     info.voce ? `🎙 voce ${esc(info.voce)}` : '',
     info.keywords?.length ? `🔑 ${esc(tronca(info.keywords.join(' · '), 160))}` : '',
     ai,

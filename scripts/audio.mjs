@@ -167,7 +167,9 @@ const finePeriodo = (testo) => /[.!?…]$/.test(testo);
 
 // parole: [{w, s, e}] nel tempo dell'audio principale. Restituisce frasi di circa
 // 1,5–5 s con inizio/fine del taglio (dentro le pause, con un respiro) e testo.
-export function frasi(parole, db, durata, { maxDur = 5, minDur = 1.2, pausaMin = 0.1 } = {}) {
+// pausaMax: oltre questa pausa una frase non continua (0,8 s; nella modalità discorso 0,5 s, così i
+// silenzi tra un pensiero e l'altro escono dal video)
+export function frasi(parole, db, durata, { maxDur = 5, minDur = 1.2, pausaMin = 0.1, pausaMax = 0.8 } = {}) {
   if (!parole.length) return [];
   const { fondo, voce } = sogliaVoce(db);
   const soglia = fondo + (voce - fondo) * 0.35;
@@ -210,7 +212,7 @@ export function frasi(parole, db, durata, { maxDur = 5, minDur = 1.2, pausaMin =
 
   // 4) gruppi uniti in frasi scegliendo i punti di taglio migliori (programmazione dinamica):
   //    conviene tagliare su pause lunghe e a fine periodo, frasi intorno ai 3 s, oltre maxDur si
-  //    paga caro; mai unire attraverso una pausa > 0,8 s (resterebbero secondi di vuoto nella frase)
+  //    paga caro; mai unire attraverso una pausa > pausaMax (resterebbero secondi di vuoto nella frase)
   const n = gruppi.length;
   const pausaDopo = gruppi.map((g, j) => (j < n - 1 ? gruppi[j + 1].da - g.a : Infinity));
   const costoConfine = (j) => {
@@ -220,7 +222,7 @@ export function frasi(parole, db, durata, { maxDur = 5, minDur = 1.2, pausaMin =
     return 2.5 * Math.max(0, 1 - forza);
   };
   const costoFrase = (i, j) => {
-    for (let k = i; k < j; k++) if (pausaDopo[k] > 0.8) return Infinity;
+    for (let k = i; k < j; k++) if (pausaDopo[k] > pausaMax) return Infinity;
     const d = gruppi[j].a - gruppi[i].da;
     if (d > 9 && i < j) return Infinity;
     return 0.15 * (d - 3) ** 2 + (d > maxDur ? 4 * (d - maxDur) : 0) + (d < minDur ? 1.5 * (minDur - d) : 0);

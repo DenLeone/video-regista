@@ -2,8 +2,9 @@
 // esegue (tempi esatti). L'AI non fa mai conti sui tempi: sceglie cosa dire e
 // cosa mostrare, i secondi li calcola questo file.
 
-const FPS = 30;
-const q = (s) => +(Math.round(s * FPS) / FPS).toFixed(4); // tempi allineati ai fotogrammi
+// tempi allineati ai fotogrammi del video (analisi.fps: quelli della camera principale, 30 se manca)
+let fpsRegia = 30;
+const q = (s) => +(Math.round(s * fpsRegia) / fpsRegia).toFixed(4);
 
 export const normFrase = (id) => {
   const m = /(\d+)/.exec(String(id || ''));
@@ -20,7 +21,13 @@ export function offsetCamera(c, f) {
   return f.inizio + off >= 0 && f.fine + off <= c.durata - 0.05 ? off : null;
 }
 
+// rallentatore: B-roll girato a 48 fps o più ("lento": true nella regia). Ogni fotogramma della
+// sorgente diventa un fotogramma del video: 60p in un video a 30 = ×2 più lento, a 24 = ×2,5,
+// fluido senza fotogrammi inventati. Restituisce il fattore (1 = velocità normale).
+export const fattoreLento = (b, fps = fpsRegia) => (b?.fps >= 48 ? +(b.fps / fps).toFixed(5) : 1);
+
 export function risolviRegia(regia, analisi) {
+  fpsRegia = analisi.fps || 30;
   const avvisi = [];
   const sorgenti = analisi.sorgenti;
   const trovaSorgente = (nome) => sorgenti.find((s) => baseNome(s.id) === baseNome(nome) || baseNome(s.file) === baseNome(nome));
@@ -70,36 +77,62 @@ export function risolviRegia(regia, analisi) {
     if (taglio < f.fine - 0.1) { fineTaglio.set(idx, { t: taglio, parole: k }); avvisi.push(`${f.id}: tolto "${pf.slice(-k).join(' ')}" ripetuto all'inizio di ${g.id}`); }
   });
 
-  // stacco: { dopo: "<parola detta>", broll: "<id>", da: <s> } oppure { dopo, camera: "<id>" }.
-  // Il taglio cade a metà tra la fine di quella parola e l'inizio della successiva; ogni pezzo
-  // almeno 0,6 s. Restituisce il punto di taglio nella clip e la seconda clip.
-  function staccoDentro(it, clip, paroleF) {
+  // stacco: { dopo: "<parola detta>", broll: "<id>", da: <s> } oppure { dopo, camera: "<id>" }, o una
+  // lista di stacchi (raffica di dettagli sulla stessa frase, come negli esempi di 12K Quality).
+  // Ogni taglio cade a metà tra la fine di quella parola e l'inizio della successiva; ogni pezzo
+  // almeno 0,45 s. Restituisce i pezzi della frase (il primo è la clip di partenza) o null.
+  function stacchiDentro(it, clip, paroleF) {
     const f = frasi.get(normFrase(it.frase));
-    const st = it.stacco;
-    const cerca = paroleDi(st.dopo).join('');
-    const i = paroleF.findIndex((w) => paroleDi(w.w).join('') === cerca);
-    if (!cerca || i < 0) { avvisi.push(`stacco in ${f.id}: parola "${st.dopo}" non trovata, niente stacco`); return null; }
     const dur = clip.end - clip.start;
-    const dopo = paroleF[i + 1];
-    const tc = q((dopo ? (paroleF[i].e + dopo.s) / 2 : paroleF[i].e) - f.inizio);
-    if (tc < 0.6 || dur - tc < 0.6) { avvisi.push(`stacco in ${f.id} dopo "${st.dopo}": pezzo troppo corto, niente stacco`); return null; }
-    const audio = { file: clip.audio.file, start: +(clip.audio.start + tc).toFixed(3) };
-    let nuova = null;
-    if (st.broll) {
-      const b = trovaSorgente(st.broll);
-      if (b && b.tipo === 'video' && b.durata >= dur - tc) {
-        let da = Math.max(0, Number(st.da) || 0);
-        if (da + dur - tc > b.durata) da = Math.max(0, b.durata - (dur - tc) - 0.05);
-        nuova = { file: b.file, start: +da.toFixed(3), end: +(da + dur - tc).toFixed(3), orient: b.orient, audio };
-      }
-    } else if (st.camera) {
-      const cam = trovaSorgente(st.camera);
-      const off = cam ? offsetCamera(cam, f) : null;
-      if (off != null) nuova = { file: cam.file, start: +(f.inizio + off + tc).toFixed(3), end: +(f.inizio + off + dur).toFixed(3), orient: cam.orient, audio };
+    const lista = [].concat(it.stacco).filter((st) => st && typeof st === 'object').slice(0, 6);
+    const tagli = [];
+    let da = -1; // le parole si cercano dopo il taglio precedente
+    for (const st of lista) {
+      const cerca = paroleDi(st.dopo).join('');
+      const i = paroleF.findIndex((w, k) => k > da && paroleDi(w.w).join('') === cerca);
+      if (!cerca || i < 0) { avvisi.push(`stacco in ${f.id}: parola "${st.dopo}" non trovata${da >= 0 ? ' dopo lo stacco prima' : ''}, saltato`); continue; }
+      const dopo = paroleF[i + 1];
+      const tc = q((dopo ? (paroleF[i].e + dopo.s) / 2 : paroleF[i].e) - f.inizio);
+      const prima = tagli.length ? tagli[tagli.length - 1].tc : 0;
+      if (tc - prima < 0.45 || dur - tc < 0.45) { avvisi.push(`stacco in ${f.id} dopo "${st.dopo}": pezzo troppo corto, saltato`); continue; }
+      tagli.push({ tc, st });
+      da = i;
     }
-    if (!nuova) { avvisi.push(`stacco in ${f.id}: ${st.broll || st.camera || 'inquadratura'} non utilizzabile, niente stacco`); return null; }
-    if (nuova.file === clip.file && Math.abs(nuova.start - (clip.start + tc)) < 0.05) return null; // stessa inquadratura che prosegue
-    return { taglio: +(clip.start + tc).toFixed(3), clip: nuova };
+    if (!tagli.length) return null;
+    // pezzo [a, b] della frase con l'inquadratura dello stacco
+    const pezzo = (st, a, b) => {
+      const audio = { file: clip.audio.file, start: +(clip.audio.start + a).toFixed(3) };
+      if (st.broll) {
+        const s = trovaSorgente(st.broll);
+        const lento = st.lento ? fattoreLento(s) : 1;
+        if (!s || s.tipo !== 'video' || s.durata < (b - a) / lento) return null;
+        let x = Math.max(0, Number(st.da) || 0);
+        if (x + (b - a) / lento > s.durata) x = Math.max(0, s.durata - (b - a) / lento - 0.05);
+        return { file: s.file, start: +x.toFixed(3), end: +(x + b - a).toFixed(3), orient: s.orient, audio, punch: false, ...(lento > 1 ? { lento } : {}) };
+      }
+      if (st.camera) {
+        const cam = trovaSorgente(st.camera);
+        const off = cam ? offsetCamera(cam, f) : null;
+        if (off != null) return { file: cam.file, start: +(f.inizio + off + a).toFixed(3), end: +(f.inizio + off + b).toFixed(3), orient: cam.orient, audio, punch: false };
+      }
+      return null;
+    };
+    const pezzi = [];
+    let corrente = { ...clip, end: +(clip.start + tagli[0].tc).toFixed(3) };
+    tagli.forEach(({ tc, st }, k) => {
+      const fine = k + 1 < tagli.length ? tagli[k + 1].tc : dur;
+      const nuova = pezzo(st, tc, fine);
+      if (!nuova) {
+        // inquadratura non utilizzabile: quella prima continua fino al taglio dopo
+        avvisi.push(`stacco in ${f.id}: ${st.broll || st.camera || 'inquadratura'} non utilizzabile, saltato`);
+        corrente.end = +(corrente.end + (fine - tc)).toFixed(3);
+        return;
+      }
+      pezzi.push(corrente);
+      corrente = nuova;
+    });
+    pezzi.push(corrente);
+    return pezzi.length > 1 ? pezzi : null;
   }
 
   const clips = [];
@@ -123,10 +156,13 @@ export function risolviRegia(regia, analisi) {
       const audio = { file: voce.voce, start: +f.inizio.toFixed(3) };
       if (it.broll) {
         const b = trovaSorgente(it.broll);
-        if (b && b.tipo === 'video' && b.durata >= dur) {
+        const lento = it.lento ? fattoreLento(b) : 1;
+        if (it.lento && lento === 1 && b) avvisi.push(`${b.id}: niente rallentatore (non è girata a 50/60 fps)`);
+        // col rallentatore serve meno sorgente: dur / lento secondi
+        if (b && b.tipo === 'video' && b.durata >= dur / lento) {
           let da = Math.max(0, Number(it.da) || 0);
-          if (da + dur > b.durata) da = Math.max(0, b.durata - dur - 0.05);
-          clip = { file: b.file, start: +da.toFixed(3), end: +(da + dur).toFixed(3), orient: b.orient, audio };
+          if (da + dur / lento > b.durata) da = Math.max(0, b.durata - dur / lento - 0.05);
+          clip = { file: b.file, start: +da.toFixed(3), end: +(da + dur).toFixed(3), orient: b.orient, audio, ...(lento > 1 ? { lento } : {}) };
         } else avvisi.push(`B-roll ${it.broll} ${b ? 'troppo corto' : 'inesistente'} per ${f.id}: uso un'inquadratura della voce`);
       }
       if (!clip) {
@@ -147,19 +183,26 @@ export function risolviRegia(regia, analisi) {
       const b = trovaSorgente(it.broll);
       if (!b || b.tipo !== 'video') { avvisi.push(`B-roll ${it.broll} inesistente: saltato`); return; }
       const dur = q(Math.min(6, Math.max(0.4, Number(it.dur) || 1.5)));
+      const lento = it.lento ? fattoreLento(b) : 1;
+      if (it.lento && lento === 1) avvisi.push(`${b.id}: niente rallentatore (non è girata a 50/60 fps)`);
       let da = Math.max(0, Number(it.da) || 0);
-      if (da + dur > b.durata) da = Math.max(0, b.durata - dur - 0.05);
-      clip = { file: b.file, start: +da.toFixed(3), end: +(da + dur).toFixed(3), orient: b.orient };
-      // la Sony registra audio solo dal microfono interno: lo uso come ambiente, ma piano
-      if (it.audio === 'muto' || b.soloImmagini || (senzaVoce && it.audio !== 'ambiente')) clip.muto = true;
+      if (da + dur / lento > b.durata) da = Math.max(0, b.durata - dur / lento - 0.05);
+      // start/end: inizio nella sorgente e durata sul video (col rallentatore la sorgente usata è dur / lento)
+      clip = { file: b.file, start: +da.toFixed(3), end: +(da + dur).toFixed(3), orient: b.orient, ...(lento > 1 ? { lento } : {}) };
+      // la Sony registra audio solo dal microfono interno: lo uso come ambiente, ma piano.
+      // Al rallentatore l'audio della clip non si usa (verrebbe stirato)
+      if (it.audio === 'muto' || b.soloImmagini || lento > 1 || (senzaVoce && it.audio !== 'ambiente')) clip.muto = true;
       else if (b.dispositivo === 'sony') clip.volume = 0.35;
     } else {
       avvisi.push(`elemento ${idx + 1} senza frase né broll: saltato`);
       return;
     }
-    // jump cut sulla stessa inquadratura: alterno lo zoom se l'AI non l'ha deciso
+    // jump cut sulla stessa inquadratura: alterno lo zoom se l'AI non l'ha deciso. Nel discorso
+    // (regia.discorso) solo dove manca davvero un pezzo: tra due frasi attaccate nel girato il taglio
+    // non si vede, e uno zoom ogni 3 s per 4 minuti stancherebbe
     const prev = clips[clips.length - 1];
-    clip.punch = typeof it.punch === 'boolean' ? it.punch : Boolean(prev && prev.file === clip.file && !prev.punch);
+    const attaccata = regia.discorso === true && prev && prev.file === clip.file && Math.abs(clip.start - prev.end) <= 0.12;
+    clip.punch = typeof it.punch === 'boolean' ? it.punch : attaccata ? Boolean(prev.punch) : Boolean(prev && prev.file === clip.file && !prev.punch);
     if (it.bn === true) clip.bn = true; // stili su misura con il bianco e nero nei momenti di racconto
     // inserto: scheda arrotondata sopra l'inquadratura mentre Denis parla di quello che mostra
     if (it.inserto) {
@@ -180,15 +223,11 @@ export function risolviRegia(regia, analisi) {
       } else avvisi.push(`inserto ${nomeIns} ${b ? 'troppo corto' : 'inesistente'}: tolto`);
     }
     inizioVoce[idx] = t;
-    // stacco dentro la frase (ritmo veloce, stile Esplicativo): dopo la parola indicata si passa a
-    // un'altra inquadratura per il resto della frase, con la voce che continua
-    const secondo = it.stacco && !clip.inserto && it.frase ? staccoDentro(it, clip, paroleF) : null;
-    if (secondo) {
-      clips.push({ ...clip, end: secondo.taglio });
-      t = q(t + (secondo.taglio - clip.start));
-      secondo.clip.punch = false;
-      clips.push(secondo.clip);
-      t = q(t + (secondo.clip.end - secondo.clip.start));
+    // stacchi dentro la frase (ritmo veloce, Esplicativo; raffica di dettagli, 12K): dopo le parole
+    // indicate si passa ad altre inquadrature per il resto della frase, con la voce che continua
+    const pezzi = it.stacco && !clip.inserto && it.frase ? stacchiDentro(it, clip, paroleF) : null;
+    if (pezzi) {
+      for (const c of pezzi) { clips.push(c); t = q(t + (c.end - c.start)); }
       return;
     }
     clips.push(clip);
@@ -397,11 +436,74 @@ export function segniFrasi(frasi) {
   return out;
 }
 
+// Modalità discorso (regola di Denis del 20/10): nella cartella c'è un solo video parlato, un suo
+// discorso. Niente regia: tutte le frasi nell'ordine in cui le dice, senza accorciare né riordinare;
+// escono solo le pause (le frasi le tagliano già), le false partenze ridette subito dopo (resta la
+// ripresa), le esitazioni tra le due ("no aspetta") e le frasi fatte solo di riempitivi ("ehm").
+// Restituisce { sequenza: [{ frase }], tolte: [{ id, motivo }] }.
+const RIEMPITIVI = new Set(['ehm', 'eh', 'ehh', 'ehmm', 'uhm', 'um', 'mm', 'mmm', 'mh', 'ah', 'boh', 'beh']);
+// parole d'attacco che non contano per riconoscere una ripresa ("Allora quando ho…" → "Quando ho…")
+const ATTACCHI = new Set(['allora', 'e', 'ed', 'quindi', 'ma', 'cioe', 'dunque', 'poi', 'no', 'ok', 'okay', 'eh', 'ehm', 'beh', 'vabbe']);
+const ESITAZIONI = new Set([...RIEMPITIVI, 'no', 'scusa', 'scusate', 'aspetta', 'aspettate', 'rifaccio', 'rifacciamo', 'riprendo', 'ricomincio',
+  'allora', 'cioe', 'ok', 'okay', 'vabbe', 'dai', 'niente', 'un', 'attimo', 'momento']);
+const senzaAttacco = (ws) => { let k = 0; while (k < ws.length - 1 && ATTACCHI.has(ws[k])) k++; return ws.slice(k); };
+const esitazione = (f) => { const ws = paroleDi(f.testo); return ws.length > 0 && ws.every((w) => ESITAZIONI.has(w)); };
+
+// La frase i è un tentativo ridetto subito dopo? Più prudente dei segni per l'AI (qui nessuno
+// ricontrolla): la ripresa arriva entro 3 frasi e 8 s, con in mezzo solo il seguito del tentativo
+// o esitazioni; comincia con le stesse parole (tolti "allora", "e", "quindi"…), ne contiene quasi
+// tutte e non è più corta. Una frase già chiusa col punto esce solo se ridetta quasi uguale e lunga
+// uguale ("Ho fatto una scelta. Ho fatto una scelta difficile…" è un crescendo voluto e resta).
+// Un tema ripreso più avanti, o una frase ripetuta apposta dopo altro discorso, resta.
+// Restituisce l'indice della ripresa o null.
+function ripresaNelDiscorso(frasi, i) {
+  const f = frasi[i];
+  const a = senzaAttacco(paroleDi(f.testo));
+  if (a.length < 2) return null;
+  const chiusa = finita(f.testo) && !/(\.\.\.|…)$/.test(f.testo.trim());
+  const soglia = chiusa ? 0.85 : 0.6;
+  for (let k = i + 1; k < Math.min(frasi.length, i + 4); k++) {
+    const h = frasi[k];
+    if (h.principale !== f.principale || h.inizio - f.fine > 8) return null;
+    const b = senzaAttacco(paroleDi(h.testo));
+    const n = Math.min(3, a.length);
+    if (b.length >= Math.max(n, a.length * 0.8) && (!chiusa || b.length <= a.length * 1.3) && a.slice(0, n).join(' ') === b.slice(0, n).join(' ')) {
+      const inH = new Set(b);
+      if (a.filter((w) => inH.has(w)).length / a.length >= soglia) return k;
+    }
+    if (successiva(frasi, frasi[k - 1]) !== h && !esitazione(h)) return null;
+  }
+  return null;
+}
+
+export function sequenzaDiscorso(analisi) {
+  const frasi = analisi.frasi;
+  const tolte = new Map();
+  frasi.forEach((f, i) => {
+    if (tolte.has(f.id)) return;
+    const parole = paroleDi(f.testo);
+    if (parole.length && parole.every((w) => RIEMPITIVI.has(w))) { tolte.set(f.id, 'riempitivo'); return; }
+    const h = ripresaNelDiscorso(frasi, i);
+    if (h == null) return;
+    tolte.set(f.id, `ripetuta meglio in ${frasi[h].id}`);
+    // in mezzo: il seguito del tentativo (stessa voce, senza punto) e le esitazioni escono con lui
+    for (let k = i + 1; k < h; k++) tolte.set(frasi[k].id, esitazione(frasi[k]) ? 'esitazione' : `parte della frase ripetuta in ${frasi[h].id}`);
+  });
+  return {
+    sequenza: frasi.filter((f) => !tolte.has(f.id)).map((f) => ({ frase: f.id })),
+    tolte: [...tolte.entries()].map(([id, motivo]) => ({ id, motivo })),
+  };
+}
+
 // Il materiale in forma compatta per l'AI: sorgenti, fogli provino, frasi.
 export function materialePerAI(analisi) {
   const r = [];
   r.push(`# Materiale: ${analisi.cartella}`);
-  r.push(`Brief di Denis: ${analisi.brief ? `\n${analisi.brief}` : '(nessuno)'}`);
+  // le righe "Stile: …" non servono all'AI (lo stile scelto è già nella sezione Grafica) e con un
+  // brief.txt diverso dalla scelta fatta nel bot si contraddirebbero
+  const brief = String(analisi.brief || '').split('\n').map((x) => x.replace(/^(dal telegram:\s*)?stile\s*:\s*[^.\n]*\.?\s*/i, '$1').trim())
+    .filter((x) => x && !/^dal telegram:$/i.test(x)).join('\n');
+  r.push(`Brief di Denis: ${brief ? `\n${brief}` : '(nessuno)'}`);
   r.push('', '## Sorgenti');
   const frasiDi = (id) => analisi.frasi.filter((f) => f.principale === id);
   const segni = segniFrasi(analisi.frasi);
@@ -418,6 +520,7 @@ export function materialePerAI(analisi) {
     else if (s.tipo === 'video') parti.push(s.parlato ? 'ha parlato non sincronizzabile: usala solo come B-roll'
       : s.audioMuto ? 'audio muto, NON sincronizzata: solo B-roll, e mai nei momenti in cui si vede qualcuno parlare (il labiale non tornerebbe)'
         : 'B-roll (non sincronizzata): mettila sopra la voce con "broll" + "da"');
+    if (s.tipo === 'video' && !s.principale && !s.sync && fattoreLento(s, analisi.fps || 30) > 1) parti.push(`girata a ${Math.round(s.fps)} fps: puoi usarla al RALLENTATORE con "lento": true (×${fattoreLento(s, analisi.fps || 30).toFixed(1)} più lenta)`);
     if (s.fogli?.length) parti.push(`fogli: ${s.fogli.join(', ')} (un riquadro ogni ${s.passoFogli} s; tempi ${s.sync || s.principale ? 'nel tempo della voce' : 'della clip, da usare in "da"'})`);
     r.push(parti.join(' · '));
   }
