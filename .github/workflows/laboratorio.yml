@@ -52,7 +52,7 @@ jobs:
           sudo mkdir -p /mnt/lab && sudo chown "$USER" /mnt/lab
           node scripts/laboratorio.mjs
 
-      - name: Confronti sul ramo laboratorio-esiti
+      - name: Confronti sul ramo laboratorio-esiti-<ricetta>
         if: always()
         env:
           GH_TOKEN: ${{ github.token }}
@@ -63,4 +63,6 @@ jobs:
           git init -q -b laboratorio-esiti
           git add -A
           git -c user.name='laboratorio' -c user.email='41898282+github-actions[bot]@users.noreply.github.com' commit -qm "laboratorio: $RICETTA"
-          git push -qf "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" laboratorio-esiti
+          # un ramo per ricetta: due prove in parallelo non si cancellano a vicenda
+          ramo="laboratorio-esiti-$(basename "$RICETTA" .json)"
+          git push -qf "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" "laboratorio-esiti:$ramo"

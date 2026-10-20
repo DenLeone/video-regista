@@ -1,0 +1,14 @@
+{
+  "uscita": "03 · Social — Risorse/Stili/_prove colore/Moero air",
+  "nomeBase": "1 come I-Log (ora)",
+  "griglia": 2,
+  "fotogrammi": [
+    { "file": "98 - Fatti/Moero air/VID_20261020_125903_071_02_17.mp4", "punti": [0.5] },
+    { "file": "98 - Fatti/Moero air/VID_20261020_125919_072_02_17.mp4", "punti": [0.5] },
+    { "file": "98 - Fatti/Moero air/VID_20261020_125936_073_02_17.mp4", "punti": [0.5] },
+    { "file": "98 - Fatti/Moero air/VID_20261020_130143_074_02_17.mp4", "punti": [0.5] }
+  ],
+  "varianti": [
+    { "id": "2 senza conversione", "crudo": true, "filtro": "null" }
+  ]
+}

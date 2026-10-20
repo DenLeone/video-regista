@@ -13,6 +13,7 @@
 //                 adatta = prima la curva di esposizione del pezzo: true come il look 12K,
 //                 "chiaro" o { "obiettivo": 0.5, "guadagno": 2.2 } per i look chiari (curvaChiara)
 //   "griglia": 3,                                                    // confronto anche a griglia (colonne)
+//   varianti con "crudo": true partono dal file com'è, senza la conversione tecnica (I-Log/HDR)
 //   "clip": [{ "file": "...", "da": 3, "dur": 4, "variante": "A" }]   // pezzi brevi in mp4
 // }
 // I percorsi nei filtri (file=lut/…, file=lab/lut/…) sono relativi al repo.
@@ -22,7 +23,7 @@
 import { execFile, execFileSync } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
-import { curvaChiara, curvaEsposizione, filtroTecnico, misuraPezzo, probe, riconosciLog } from './colore.mjs';
+import { curvaChiara, curvaEsposizione, filtroTecnico, misuraPezzo, probe, riconosciLog, statisticheColore } from './colore.mjs';
 import { VIDEO_EXT, dispositivo } from './sorgenti.mjs';
 
 const ROOT = path.resolve(path.dirname(new URL(import.meta.url).pathname.replace(/^\/([A-Za-z]:)/, '$1')), '..');
@@ -65,19 +66,22 @@ function sorgente(file) {
   }
   const info = probe(u);
   const disp = dispositivo(path.basename(file), info.tags);
+  // misure del file com'è (per tarare il riconoscimento dell'I-Log): saturazione e luminosità medie
+  const crudo = statisticheColore(u, info.durata, 'null', path.join(OUT, 'tmp'));
   const lg = riconosciLog(u, info, disp, '', path.join(OUT, 'tmp'));
   const s = { file, u, info, disp, iLog: lg.iLog, tecnico: filtroTecnico(info.colore) };
   const hdr = info.colore?.trc && /arib|2084/.test(info.colore.trc);
   s.riga = `${file} · ${disp} · ${info.w}x${info.h} · ${info.fps} fps · ${info.colore?.pix || '?'} ${info.colore?.trc || ''}`
-    + `${lg.iLog ? ` · I-Log${info.colore.alza ? ` (schiarita ${info.colore.alza.da}→${info.colore.alza.a})` : ''}` : hdr ? ' · HDR' : ''} · ${info.durata.toFixed(1)} s`;
+    + `${lg.iLog ? ` · I-Log${info.colore.alza ? ` (schiarita ${info.colore.alza.da}→${info.colore.alza.a})` : ''}` : hdr ? ' · HDR' : ''} · ${info.durata.toFixed(1)} s`
+    + `${crudo ? ` · crudo: saturazione ${crudo.sat.toFixed(1)}, luminosità ${crudo.y.toFixed(0)}` : ''}`;
   sorgenti.set(file, s);
   return s;
 }
 
 // un fotogramma al tempo t, convertito, alla misura del montaggio (verticale 1080, orizzontale 1920)
-const argsFotogramma = (s, t, out, extra = '') => ['-y', '-v', 'error', '-ss', Math.max(0, t).toFixed(3), '-i', s.u, '-frames:v', '1',
-  '-vf', `scale='if(gt(iw,ih),1920,1080)':-2:flags=lanczos,${s.tecnico.replace(/,?format=yuv420p$/, '') || 'null'}${extra ? `,${extra}` : ''}`, '-q:v', '2', out];
-const fotogramma = (s, t, out, extra) => run('ffmpeg', argsFotogramma(s, t, out, extra));
+const argsFotogramma = (s, t, out, extra = '', crudo = false) => ['-y', '-v', 'error', '-ss', Math.max(0, t).toFixed(3), '-i', s.u, '-frames:v', '1',
+  '-vf', `scale='if(gt(iw,ih),1920,1080)':-2:flags=lanczos,${crudo ? 'null' : s.tecnico.replace(/,?format=yuv420p$/, '') || 'null'}${extra ? `,${extra}` : ''}`, '-q:v', '2', out];
+const fotogramma = (s, t, out, extra, crudo) => run('ffmpeg', argsFotogramma(s, t, out, extra, crudo));
 const fotogrammaA = (s, t, out, extra) => runA('ffmpeg', argsFotogramma(s, t, out, extra));
 
 // il file scaricato si cancella se le altre parti della ricetta non lo usano
@@ -122,9 +126,11 @@ async function catalogo(ric) {
     const ordinate = files.map((f) => strisce.get(f.Path)).filter(Boolean);
     for (let i = 0; i < ordinate.length; i += 10) {
       const parte = ordinate.slice(i, i + 10);
+      const foglio = path.join(OUT, `catalogo-${pulito(path.basename(cartella))}-${i / 10 + 1}.jpg`);
       run('ffmpeg', ['-y', '-v', 'error', ...parte.flatMap((o) => ['-i', o]), '-filter_complex',
-        parte.length > 1 ? `${parte.map((_, k) => `[${k}]`).join('')}vstack=${parte.length}` : 'null', '-q:v', '3',
-        path.join(OUT, `catalogo-${pulito(path.basename(cartella))}-${i / 10 + 1}.jpg`)]);
+        parte.length > 1 ? `${parte.map((_, k) => `[${k}]`).join('')}vstack=${parte.length}` : 'null', '-q:v', '3', foglio]);
+      fs.mkdirSync(GIT, { recursive: true });
+      fs.copyFileSync(foglio, path.join(GIT, path.basename(foglio)));
     }
     fs.writeFileSync(path.join(OUT, 'catalogo.txt'), `${righe.join('\n')}\n`);
     carica();
@@ -155,7 +161,7 @@ function fotogrammiEVarianti(ric) {
           const curva = curvaVariante(v, m);
           if (curva) log(`    ${v.id}: curva ${curva}`);
           const filtro = conPercorsi(v.filtro || 'null');
-          fotogramma(s, t, o, curva ? `curves=master='${curva}',${filtro}` : filtro);
+          fotogramma(s, t, o, curva ? `curves=master='${curva}',${filtro}` : filtro, Boolean(v.crudo));
           fatti.push(o);
           nomi.push(v.id);
         } catch (e) { log(`variante ${v.id} su ${nome}: ${e.message.split('\n')[0]}`); }
