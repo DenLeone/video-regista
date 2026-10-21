@@ -17,6 +17,8 @@ export type BloccoM = { at: number; fine: number; righe: RigaM[]; colpo: number[
 
 const MAX_PICCOLA = 20; // caratteri di una riga piccola (corsivo a 58 px su 1080)
 const MAX_GRANDE = 13;  // caratteri della riga grande
+const TENUTA = 0.45;    // secondi in cui la parola grande, composta, resta ferma prima del blocco dopo
+const TENUTA_MAX = 0.6; // ritardo massimo del blocco dopo rispetto al parlato
 
 // parole da fare enormi: quelle scelte dall'AI (`enfasi`, anche di più parole: "I SUOI RUOLI"),
 // ognuna alla prima volta che la dice dopo la precedente; senza, una parola "piena" ogni ~2,5 s
@@ -81,15 +83,29 @@ export function blocchiParlato(parole: Piano['parole'] = [], enfasi: string[] = 
     }
     cur.ultimo = p.at + p.dur;
   });
+  // la parola grande deve avere il tempo di comporsi e restare ferma un attimo (Manifestazioni,
+  // 21/10: col parlato fitto il blocco dopo arrivava mentre le lettere giravano ancora): se serve
+  // il blocco dopo parte un po' più tardi (al massimo TENUTA_MAX) e le sue prime parole escono insieme
+  for (let k = 0; k + 1 < blocchi.length; k++) {
+    const b = blocchi[k], dopo = blocchi[k + 1];
+    if (!b.colpo.length) continue;
+    const minimo = b.at + Math.max(...b.colpo) + SCRAMBLE + TENUTA;
+    const ritardo = Math.min(TENUTA_MAX, minimo - dopo.at);
+    if (ritardo <= 0) continue;
+    dopo.at += ritardo;
+    for (const r of dopo.righe) for (const p of r.parole) p.da = Math.max(0, p.da - ritardo);
+    dopo.colpo = dopo.colpo.map((d) => Math.max(0, d - ritardo));
+    if (dopo.ultimo < dopo.at) dopo.ultimo = dopo.at;
+  }
   return blocchi.map((b, k) => {
     const dopo = blocchi[k + 1];
-    const fine = dopo && dopo.at - b.ultimo < 0.7 ? dopo.at : b.ultimo + 0.35;
+    const fine = dopo && dopo.at - b.ultimo < 0.7 ? dopo.at : Math.max(b.ultimo + 0.35, b.colpo.length ? b.at + Math.max(...b.colpo) + SCRAMBLE + TENUTA : 0);
     return { at: b.at, fine, righe: b.righe, colpo: b.colpo };
   });
 }
 
 const LETTERE = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
-const SCRAMBLE = 0.42; // secondi per fissare tutte le lettere
+const SCRAMBLE = 0.3; // secondi per fissare tutte le lettere (negli esempi ~0,4 s, ma col parlato fitto serve più svelto)
 
 // una parola grande che entra a scramble: ogni lettera compare a caso (prima rade, poi fitte) con
 // un carattere qualunque che cambia ogni 2 fotogrammi, poi si fissa, più o meno da sinistra a destra.

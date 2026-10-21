@@ -116,6 +116,14 @@ export function unisciBrief(briefFile = '', extra = '', briefPrima = '') {
 // tolte (regia.mjs sequenzaDiscorso), il look e le scritte dello stile. "regia completa" nel brief
 // la toglie, come una durata scelta dal bot ("Durata: 60 s": va accorciato, quindi serve la regia);
 // "modalità discorso" / "solo pulizia" / "niente regia" la forzano anche con più video.
+// un solo video parlato e gli altri solo B-roll (nessuna seconda voce né camera sincronizzata): è
+// ancora un discorso, con i B-roll di Denis sopra la voce (Motion, 21/10)
+export function discorsoConBroll(sorgenti, brief = '') {
+  if (!modoDiscorso(1, brief)) return false;
+  const voci = sorgenti.filter((s) => s.principale);
+  return voci.length === 1 && voci[0].tipo === 'video' && !sorgenti.some((s) => s.sync || (!s.principale && s.parlato && !s.soloImmagini))
+    && sorgenti.some((s) => s.tipo === 'video' && !s.principale);
+}
 export function modoDiscorso(nVideo, brief = '') {
   if (/\bregia\s+(completa|normale)\b|\bmontaggio\s+completo\b|\bdurata\s*:\s*\d/i.test(brief)) return false;
   if (/\bmodalit[àa]\s+discorso\b|\bsolo\s+pulizia\b|\bniente\s+regia\b/i.test(brief)) return true;
@@ -126,14 +134,16 @@ let discorso = null;      // { sequenza, tolte, durata } della modalità discors
 function preparaDiscorso(analisi) {
   const d = sequenzaDiscorso(analisi);
   const durata = d.sequenza.reduce((t, it) => { const f = analisi.frasi.find((x) => x.id === it.frase); return t + (f ? f.fine - f.inizio : 0); }, 0);
-  discorso = { ...d, durata };
+  // B-roll di Denis nella cartella (con i loro fogli provino): l'AI li mette sopra la voce
+  const conBroll = analisi.sorgenti.some((s) => !s.principale && s.tipo === 'video' && s.fogli?.length);
+  discorso = { ...d, durata, conBroll };
   return discorso;
 }
 // la sequenza del discorso vince su quella dell'AI (tiene solo le sue aggiunte di stile: "bn", e nel
 // Motion "fumo", "stock" e gli inserti); `discorso: true` dice a risolviRegia di alternare lo zoom solo
 // dove c'è un salto. Anche per correzioni e "Solo render" di un discorso (DISCORSO senza la sequenza nuova)
-const AGGIUNTE_DISCORSO = ['bn', 'fumo', 'stock', 'inserto', 'inserto_da'];
-const aggiunteDi = (x) => Object.fromEntries(AGGIUNTE_DISCORSO.filter((k) => (k === 'bn' || k === 'fumo' ? x[k] === true : x[k] != null && x[k] !== '')).map((k) => [k, x[k]]));
+const AGGIUNTE_DISCORSO = ['bn', 'fumo', 'stock', 'inserto', 'inserto_da', 'broll', 'da', 'lento'];
+const aggiunteDi = (x) => Object.fromEntries(AGGIUNTE_DISCORSO.filter((k) => (k === 'bn' || k === 'fumo' || k === 'lento' ? x[k] === true : x[k] != null && x[k] !== '')).map((k) => [k, x[k]]));
 const conSequenza = (r) => (discorso ? { ...r, sequenza: discorso.sequenza.map((it) => {
   const x = (r.sequenza || []).find((y) => normFrase(y.frase) === it.frase);
   return { ...it, ...(x ? aggiunteDi(x) : {}) };
@@ -627,12 +637,14 @@ function promptRegia({ modo, testoMateriale, regiaPrecedente }) {
     const scritte = !stileSuMisura || stileSuMisura.grafica.titoli
       ? `Il video dura circa ${Math.round(durata)} s: distribuisci ${cartelli ? 'al massimo' : 'circa'} ${quante} ${cartelli ? 'cartelli' : 'scritte grandi'} su tutta la durata (${cartelli ? 'uno ogni ~45 s' : 'una ogni ~20 s'}), sulle frasi più forti; questo vale più del numero indicato nella sezione Grafica.`
       : 'Questo stile non ha scritte grandi: `keywords` vuoto.';
-    p += `\n\n## MODALITÀ DISCORSO (regola di Denis: nella cartella c'è un solo video)\nÈ un discorso di Denis da montare così com'è: NIENTE regia. Non togliere frasi per accorciare, non riordinare, non scegliere cosa tenere: la sequenza l'ha già decisa lo script (tutte le frasi in ordine, tolte solo pause, false partenze e ripetizioni) e nella regia va copiata identica:\n\`\`\`json\n"sequenza": ${JSON.stringify(discorso.sequenza)}\n\`\`\`\nIl tuo lavoro è SOLO la grafica dello stile (sezione Grafica): \`titolo\`, \`soggetto\`, \`enfasi\` se lo stile ha l'apertura a lettere enormi (sulle prime parole del discorso), le \`keywords\` con le regole dello stile e, se lo stile ha il bianco e nero nei momenti, \`"bn": true\` su qualche elemento della sequenza${stileSuMisura?.grafica.fumo || stileSuMisura?.grafica.stock ? '; se la sezione Grafica li prevede, puoi aggiungere agli elementi anche `fumo`, `stock` e `inserto` (sempre con la stessa `frase`)' : ''}. ${scritte} Ignora le regole su durata, scaletta, inquadrature e B-roll. \`scaletta\` = i 3–6 temi del discorso, \`testo_montato\` vuoto.`;
+    const { conBroll } = discorso;
+    p += `\n\n## MODALITÀ DISCORSO (regola di Denis: nella cartella c'è un solo video parlato)\nÈ un discorso di Denis da montare così com'è: NIENTE regia. Non togliere frasi per accorciare, non riordinare, non scegliere cosa tenere: la sequenza l'ha già decisa lo script (tutte le frasi in ordine, tolte solo pause, false partenze e ripetizioni) e nella regia va copiata identica:\n\`\`\`json\n"sequenza": ${JSON.stringify(discorso.sequenza)}\n\`\`\`\nIl tuo lavoro è SOLO la grafica dello stile (sezione Grafica): \`titolo\`, \`soggetto\`, \`enfasi\` se lo stile ha l'apertura a lettere enormi (sulle prime parole del discorso), le \`keywords\` con le regole dello stile e, se lo stile ha il bianco e nero nei momenti, \`"bn": true\` su qualche elemento della sequenza${stileSuMisura?.grafica.fumo || stileSuMisura?.grafica.stock ? '; se la sezione Grafica li prevede, puoi aggiungere agli elementi anche `fumo`, `stock` e `inserto` (sempre con la stessa `frase`)' : ''}. ${scritte} ${conBroll ? 'Nella cartella ci sono anche dei B-roll di Denis (vedi Sorgenti e fogli provino): mettili sopra la voce aggiungendo all\'elemento `"broll": "<id>", "da": <secondi>` (stessa `frase`), dove mostrano quello che dice in quel momento, circa uno ogni 8–12 s, mai sull\'aggancio né sulla chiusura, e preferiscili al repertorio. Le regole sui B-roll valgono (niente bocca che parla, non riusare lo stesso momento); ignora quelle su durata, scaletta e scelta delle frasi.' : 'Ignora le regole su durata, scaletta, inquadrature e B-roll.'} \`scaletta\` = i 3–6 temi del discorso, \`testo_montato\` vuoto.`;
   }
-  // discorso: niente fogli provino (le inquadrature non si scelgono)
+  // discorso: fogli provino solo dei B-roll, se ci sono
+  const fogliDaLeggere = !discorso || discorso.conBroll;
   p += modo === 'claude'
-    ? `\n\n## Come consegnare\n${discorso ? 'Scrivi' : 'Leggi i fogli provino con lo strumento Read, tutti nello stesso turno (letture in parallelo), poi scrivi'} la regia con lo strumento Write in \`work/regia.json\` e rispondi con 3 righe di riepilogo.`
-    : `\n\n## Come consegnare\n${discorso ? '' : 'I fogli provino sono allegati in ordine, ognuno preceduto dal suo nome. '}Rispondi SOLO con il JSON della regia.`;
+    ? `\n\n## Come consegnare\n${!fogliDaLeggere ? 'Scrivi' : 'Leggi i fogli provino con lo strumento Read, tutti nello stesso turno (letture in parallelo), poi scrivi'} la regia con lo strumento Write in \`work/regia.json\` e rispondi con 3 righe di riepilogo.`
+    : `\n\n## Come consegnare\n${!fogliDaLeggere ? '' : 'I fogli provino sono allegati in ordine, ognuno preceduto dal suo nome. '}Rispondi SOLO con il JSON della regia.`;
   return `${p}\n\n---\n\n${testoMateriale}\n`;
 }
 
@@ -1545,6 +1557,12 @@ async function main() {
     // partenze e ripetizioni); l'AI sceglie solo le scritte dello stile. Se il video non ha parlato
     // (un solo video di sole riprese) si torna alla regia normale
     if (DISCORSO && analisi.frasi.length < 3) { DISCORSO = false; log('un solo video ma quasi senza parlato: regia normale'); }
+    if (!DISCORSO && analisi.frasi.length >= 3 && discorsoConBroll(analisi.sorgenti, brief)) {
+      DISCORSO = true;
+      log('modalità discorso: un solo video parlato, gli altri sono B-roll (tutto il parlato, B-roll sopra la voce)');
+    }
+    // nel discorso l'AI vede solo i fogli dei B-roll (le inquadrature della voce non si scelgono)
+    const fogliDiscorso = analisi.sorgenti.filter((s) => !s.principale).flatMap((s) => s.fogli || []);
     const nuovaRegia = !(RIRENDER && regiaPrecedente); // "Solo render" riusa la regia salvata
     if (DISCORSO && nuovaRegia && !CORREZIONE) {
       const d = preparaDiscorso(analisi), { durata } = d;
@@ -1557,7 +1575,7 @@ async function main() {
     // azione "render": stessa regia del giro prima, si rifanno solo colore, tagli e grafica
     const { regia, risultato: primo } = !nuovaRegia
       ? (fs.writeFileSync(path.join(WORK, 'regia.json'), JSON.stringify(regiaPrecedente, null, 1)), { regia: regiaPrecedente, risultato: risolviRegia(perRegia(regiaPrecedente), analisi) })
-      : await chiediRegia(testoMateriale, discorso ? [] : fogli, CORREZIONE ? regiaPrecedente : null, (r) => risolviRegia(perRegia(r), analisi)).catch((e) => {
+      : await chiediRegia(testoMateriale, discorso ? fogliDiscorso : fogli, CORREZIONE ? regiaPrecedente : null, (r) => risolviRegia(perRegia(r), analisi)).catch((e) => {
         // discorso: senza AI il video esce lo stesso, con i sottotitoli dello stile ma senza scritte grandi
         if (!discorso) throw e;
         log(`regia del discorso senza AI (${e.message.split('\n')[0]}): niente scritte grandi`);
