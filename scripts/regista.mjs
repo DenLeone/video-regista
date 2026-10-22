@@ -25,7 +25,7 @@ import path from 'node:path';
 import { audioMuto, frasi, inviluppo, sincronizza, sogliaVoce } from './audio.mjs';
 import { DIR_EDITARE, DIR_FATTI, DIR_STILI } from './cartelle.mjs';
 import { HDR, curvaChiara, curvaEsposizione, filtroTecnico, misuraPezzo, perFiltro, probe, riconosciLog } from './colore.mjs';
-import { chiaveStock, materialePerAI, normFrase, risolviRegia, sequenzaDiscorso } from './regia.mjs';
+import { chiaveStock, materialePerAI, normFrase, risolviRegia, sequenzaDiscorso, usaTuttoIlMateriale } from './regia.mjs';
 import { movimento, syncMovimento } from './sync-visivo.mjs';
 import { LOOK_FFMPEG, leggiStile, promptSuMisura } from './stile-su-misura.mjs';
 import { AUDIO_EXT, IMAGE_EXT, NOMI_DISPOSITIVO, VIDEO_EXT, dispositivo, prioritaAudio, tagsPiatti } from './sorgenti.mjs';
@@ -130,6 +130,7 @@ export function modoDiscorso(nVideo, brief = '') {
   return nVideo === 1;
 }
 let DISCORSO = false;     // modalità discorso del giro in corso
+let analisiCorrente = null; // il materiale del giro in corso (per il prompt)
 let discorso = null;      // { sequenza, tolte, durata } della modalità discorso (per il prompt)
 function preparaDiscorso(analisi) {
   const d = sequenzaDiscorso(analisi);
@@ -148,7 +149,8 @@ const conSequenza = (r) => (discorso ? { ...r, sequenza: discorso.sequenza.map((
   const x = (r.sequenza || []).find((y) => normFrase(y.frase) === it.frase);
   return { ...it, ...(x ? aggiunteDi(x) : {}) };
 }) } : r);
-const perRegia = (r) => (DISCORSO ? { ...conSequenza(r), discorso: true } : r);
+// in più: i video e le immagini di Denis che l'AI non ha usato vanno messi lo stesso (usaTuttoIlMateriale)
+const perRegia = (r) => usaTuttoIlMateriale(DISCORSO ? { ...conSequenza(r), discorso: true } : r, analisiCorrente);
 
 // ---------- 1. trova la cartella da fare ----------
 // video da Telegram: la cartella non esiste ancora, scelgo un nome libero in 97 e 98
@@ -343,7 +345,12 @@ const FONTI_STOCK = {
   },
 };
 export const fontiStock = () => Object.keys(FONTI_STOCK).filter((n) => process.env[`${n.toUpperCase()}_API_KEY`]);
+// i video e le immagini di Denis nella cartella (oltre alla voce): se ci sono si usano quelli e
+// nessun altro, niente repertorio (Beats pokemon, 22/10)
+export const materialeProprio = (analisi) => analisi.sorgenti.some((s) => s.tipo === 'video' && !s.principale && !s.sync && !s.stock)
+  || (analisi.immagini || []).length > 0;
 async function scaricaStock(regia, analisi) {
+  if (materialeProprio(analisi)) { log('stock: nella cartella ci sono video o immagini di Denis, niente repertorio'); return 0; }
   const richieste = [...new Set((regia.sequenza || []).map((it) => String(it.stock || '').trim()).filter(Boolean))].slice(0, 12);
   if (!richieste.length) return 0;
   const fonti = fontiStock();
@@ -623,7 +630,7 @@ function fogliProvino(file, id, durata, offset = 0, colore = null) {
 // ---------- 3. l'AI scrive la regia ----------
 function promptRegia({ modo, testoMateriale, regiaPrecedente }) {
   let p = fs.readFileSync(path.join(ROOT, 'scripts', 'prompt-regista.md'), 'utf8')
-    .replace('{{GRAFICA}}', stileSuMisura ? promptSuMisura(stileSuMisura.grafica, stileSuMisura.testoAI, { stock: fontiStock().length > 0 })
+    .replace('{{GRAFICA}}', stileSuMisura ? promptSuMisura(stileSuMisura.grafica, stileSuMisura.testoAI, { stock: fontiStock().length > 0 && !(analisiCorrente && materialeProprio(analisiCorrente)) })
       : fs.readFileSync(path.join(ROOT, 'scripts', 'stili', `${stileCorrente}.md`), 'utf8').trim());
   if (regiaPrecedente) {
     p += `\n\n## MODALITÀ CORREZIONE\nEsiste già un montaggio, questa è la sua regia:\n\`\`\`json\n${JSON.stringify(regiaPrecedente, null, 1)}\n\`\`\`\nDenis l'ha guardato e chiede queste modifiche:\n\n> ${CORREZIONE.replace(/\n/g, '\n> ')}\n\nParti da questa regia e applica SOLO quello che chiede, lasciando invariato il resto. I tempi li ricalcola lo script. Nella \`note\` elenca in breve cosa hai cambiato.`;
@@ -638,7 +645,7 @@ function promptRegia({ modo, testoMateriale, regiaPrecedente }) {
       ? `Il video dura circa ${Math.round(durata)} s: distribuisci ${cartelli ? 'al massimo' : 'circa'} ${quante} ${cartelli ? 'cartelli' : 'scritte grandi'} su tutta la durata (${cartelli ? 'uno ogni ~45 s' : 'una ogni ~20 s'}), sulle frasi più forti; questo vale più del numero indicato nella sezione Grafica.`
       : 'Questo stile non ha scritte grandi: `keywords` vuoto.';
     const { conBroll } = discorso;
-    p += `\n\n## MODALITÀ DISCORSO (regola di Denis: nella cartella c'è un solo video parlato)\nÈ un discorso di Denis da montare così com'è: NIENTE regia. Non togliere frasi per accorciare, non riordinare, non scegliere cosa tenere: la sequenza l'ha già decisa lo script (tutte le frasi in ordine, tolte solo pause, false partenze e ripetizioni) e nella regia va copiata identica:\n\`\`\`json\n"sequenza": ${JSON.stringify(discorso.sequenza)}\n\`\`\`\nIl tuo lavoro è SOLO la grafica dello stile (sezione Grafica): \`titolo\`, \`soggetto\`, \`copertina\`, \`enfasi\` se lo stile ha l'apertura a lettere enormi (sulle prime parole del discorso), le \`keywords\` con le regole dello stile e, se lo stile ha il bianco e nero nei momenti, \`"bn": true\` su qualche elemento della sequenza${stileSuMisura?.grafica.fumo || stileSuMisura?.grafica.stock ? '; se la sezione Grafica li prevede, puoi aggiungere agli elementi anche `fumo`, `stock` e `inserto` (sempre con la stessa `frase`)' : ''}. ${scritte} ${conBroll ? 'Nella cartella ci sono anche dei B-roll di Denis (vedi Sorgenti e fogli provino): mettili sopra la voce aggiungendo all\'elemento `"broll": "<id>", "da": <secondi>` (stessa `frase`), dove mostrano quello che dice in quel momento, circa uno ogni 8–12 s, mai sull\'aggancio né sulla chiusura, e preferiscili al repertorio. Le regole sui B-roll valgono (niente bocca che parla, non riusare lo stesso momento); ignora quelle su durata, scaletta e scelta delle frasi.' : 'Ignora le regole su durata, scaletta, inquadrature e B-roll.'} \`scaletta\` = i 3–6 temi del discorso, \`testo_montato\` vuoto.`;
+    p += `\n\n## MODALITÀ DISCORSO (regola di Denis: nella cartella c'è un solo video parlato)\nÈ un discorso di Denis da montare così com'è: NIENTE regia. Non togliere frasi per accorciare, non riordinare, non scegliere cosa tenere: la sequenza l'ha già decisa lo script (tutte le frasi in ordine, tolte solo pause, false partenze e ripetizioni) e nella regia va copiata identica:\n\`\`\`json\n"sequenza": ${JSON.stringify(discorso.sequenza)}\n\`\`\`\nIl tuo lavoro è SOLO la grafica dello stile (sezione Grafica): \`titolo\`, \`soggetto\`, \`copertina\`, \`enfasi\` se lo stile ha l'apertura a lettere enormi (sulle prime parole del discorso), le \`keywords\` con le regole dello stile e, se lo stile ha il bianco e nero nei momenti, \`"bn": true\` su qualche elemento della sequenza${stileSuMisura?.grafica.fumo || stileSuMisura?.grafica.stock ? '; se la sezione Grafica li prevede, puoi aggiungere agli elementi anche `fumo`, `stock` e `inserto` (sempre con la stessa `frase`)' : ''}. ${scritte} ${conBroll ? 'Nella cartella ci sono anche dei B-roll di Denis (vedi Sorgenti e fogli provino): mettili sopra la voce aggiungendo all\'elemento `"broll": "<id>", "da": <secondi>` (stessa `frase`), dove mostrano quello che dice in quel momento, circa uno ogni 8–12 s, mai sull\'aggancio né sulla chiusura: usali TUTTI almeno una volta (anche le registrazioni dello schermo e le immagini, come `inserto`). Le regole sui B-roll valgono (niente bocca che parla, non riusare lo stesso momento); ignora quelle su durata, scaletta e scelta delle frasi.' : 'Ignora le regole su durata, scaletta, inquadrature e B-roll.'} \`scaletta\` = i 3–6 temi del discorso, \`testo_montato\` vuoto.`;
   }
   // discorso: fogli provino solo dei B-roll, se ci sono
   const fogliDaLeggere = !discorso || discorso.conBroll;
@@ -1256,8 +1263,14 @@ export async function analizza(nome, brief, cache) {
   // In Lark A2 c'erano un TikTok già finito e una conversazione di settembre, e le loro voci
   // finivano tra le frasi candidate. Scelta di Denis (18/10): restano come B-roll, la voce mai.
   const recente = Math.max(0, ...sorgenti.filter((s) => s.tipo === 'video' && s.data).map((s) => s.data));
+  // registrazioni dello schermo e video scaricati (TikTok salva col nome "v12044g…"): mai voce.
+  // Beats pokemon, 22/10: Whisper aveva "sentito" un "Grazie a tutti" sulla musica della
+  // registrazione dello schermo, diventata seconda voce: niente discorso e B-roll scelti a caso
+  const altriVideo = sorgenti.filter((x) => x.tipo === 'video' && !x.schermo).length > 0;
   for (const s of sorgenti.filter((x) => x.tipo === 'video')) {
-    const perche = /tik ?tok|reel|export|montat|hq.?grade/i.test(s.id) ? 'video già montato'
+    const perche = s.schermo && altriVideo ? 'registrazione dello schermo'
+      : /^v\d{5}g[a-z0-9]{16,}$/i.test(s.id) ? 'video scaricato da TikTok'
+      : /tik ?tok|reel|export|montat|hq.?grade/i.test(s.id) ? 'video già montato'
       : recente && s.data && recente - s.data > 3 * 86400e3 ? `girato il ${new Date(s.data).toLocaleDateString('it-IT')}, non con il resto` : null;
     if (perche) { s.soloImmagini = perche; log(`${s.id}: solo immagini (${perche})`); }
   }
@@ -1590,6 +1603,7 @@ async function main() {
     const analisi = await analizza(nome, brief, cache);
     const { immagini, foglio: foglioImmagini } = preparaImmagini(analisi.foto || []);
     analisi.immagini = immagini;
+    analisiCorrente = analisi;
     analisi.foglioImmagini = foglioImmagini;
     fs.writeFileSync(path.join(WORK, 'materiale.json'), JSON.stringify(analisi, null, 1));
     const testoMateriale = materialePerAI(analisi);

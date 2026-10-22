@@ -264,8 +264,10 @@ export const Fumi: React.FC<{ piano: Piano }> = ({ piano }) => {
 // la seconda riga (note) dopo la prima, uscita in dissolvenza
 export const Cartello: React.FC<{ k: Keyword; len: number; g: GraficaStile }> = ({ k, len, g }) => {
   const fr = useCurrentFrame();
-  const scuro = interpolate(fr, [0, 6, len - 6, len], [0, 1, 1, 0], clamp);
-  const esce = interpolate(fr, [len - 6, len], [1, 0], clamp);
+  // entrata e uscita di 6 fotogrammi, più corte se il cartello è breve (prova troncata a metà)
+  const b = Math.max(1, Math.min(6, Math.floor(len / 2) - 1));
+  const scuro = interpolate(fr, [0, b, len - b, len], [0, 1, 1, 0], clamp);
+  const esce = interpolate(fr, [len - b, len], [1, 0], clamp);
   const uno = k.word.toUpperCase();
   const due = (k.note || '').replace(/^\/\/\s*/, '').toUpperCase();
   const passo = 1.1; // fotogrammi per lettera

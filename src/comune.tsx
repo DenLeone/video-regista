@@ -115,8 +115,9 @@ function schedeInserti(piano: Piano): Scheda[] {
   return schede;
 }
 
-// cornice "tv" (stile Motion): televisore anni '70 giallo, schermo bombato con righe di scansione;
-// all'accensione 4 fotogrammi di barre colorate, poi il contenuto
+// cornice "tv" (stile Motion): televisore anni '70 giallo marca "BlackDenTV", schermo 4:3 bombato
+// con righe di scansione (Denis prepara le immagini in 4:3, 22/10); all'accensione 4 fotogrammi di
+// barre colorate, poi il contenuto
 const BARRE = ['#C0C0C0', '#C0C000', '#00C0C0', '#00C000', '#C000C0', '#C00000', '#0000C0'];
 const TvView: React.FC<{ s: Scheda; contenuto: React.ReactNode }> = ({ s, contenuto }) => {
   const fr = useCurrentFrame();
@@ -128,23 +129,29 @@ const TvView: React.FC<{ s: Scheda; contenuto: React.ReactNode }> = ({ s, conten
     <AbsoluteFill>
       <AbsoluteFill style={{ backgroundColor: `rgba(0,0,0,${0.45 * vis})` }} />
       <div style={{
-        position: 'absolute', left: 90, top: 380, width: 900, height: 780, borderRadius: 70, backgroundColor: '#E8B22E',
+        position: 'absolute', left: 90, top: 250, width: 900, height: 830, borderRadius: 70, backgroundColor: '#E8B22E',
         background: 'linear-gradient(180deg, #F2C443 0%, #E3A925 60%, #C98E17 100%)',
         boxShadow: '0 50px 110px rgba(0,0,0,0.6), inset 0 -10px 0 rgba(0,0,0,0.12), inset 0 6px 0 rgba(255,255,255,0.25)',
         opacity: vis, transform: `translateY(${(1 - entra) * 220 - esce * 80}px) scale(${0.8 + 0.2 * entra - 0.06 * esce})`,
       }}>
-        <div style={{ position: 'absolute', left: 50, top: 50, width: 800, height: 560, borderRadius: 64, overflow: 'hidden', backgroundColor: '#0A0A0A',
+        <div style={{ position: 'absolute', left: 50, top: 50, width: 800, height: 600, borderRadius: 56, overflow: 'hidden', backgroundColor: '#0A0A0A',
           boxShadow: 'inset 0 0 0 10px #2A2112, 0 0 0 4px rgba(0,0,0,0.25)' }}>
           {fr < 4 ? null : barre
             ? <div style={{ display: 'flex', width: '100%', height: '100%' }}>{BARRE.map((c) => <div key={c} style={{ flex: 1, backgroundColor: c }} />)}</div>
             : contenuto}
           <AbsoluteFill style={{ background: 'repeating-linear-gradient(0deg, rgba(0,0,0,0.16) 0px, rgba(0,0,0,0.16) 2px, rgba(0,0,0,0) 2px, rgba(0,0,0,0) 5px)' }} />
-          <AbsoluteFill style={{ background: 'radial-gradient(ellipse 75% 70% at 50% 45%, rgba(255,255,255,0.08) 0%, rgba(0,0,0,0) 55%, rgba(0,0,0,0.55) 100%)', borderRadius: 64 }} />
+          <AbsoluteFill style={{ background: 'radial-gradient(ellipse 75% 70% at 50% 45%, rgba(255,255,255,0.08) 0%, rgba(0,0,0,0) 55%, rgba(0,0,0,0.55) 100%)', borderRadius: 56 }} />
         </div>
-        {/* manopole e griglia dell'altoparlante */}
-        {[0, 1].map((k) => <div key={k} style={{ position: 'absolute', right: 70 + k * 92, bottom: 48, width: 66, height: 66, borderRadius: 33,
+        {/* targhetta del marchio, griglia dell'altoparlante e manopole */}
+        <div style={{ position: 'absolute', left: 58, bottom: 52, padding: '10px 22px 12px', borderRadius: 14,
+          background: 'linear-gradient(180deg, #2B2B2B 0%, #0E0E0E 100%)', boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.18), 0 3px 6px rgba(0,0,0,0.35)',
+          fontFamily: '"Montserrat", sans-serif', fontWeight: 900, fontStyle: 'italic', fontSize: 46, letterSpacing: '0.01em', lineHeight: 1, whiteSpace: 'nowrap' }}>
+          <span style={{ color: '#F4F4F4' }}>Black</span><span style={{ color: '#F2C443' }}>Den</span>
+          <span style={{ color: '#F4F4F4', fontSize: 30, marginLeft: 6, padding: '2px 8px', borderRadius: 6, border: '3px solid #F4F4F4', position: 'relative', top: -4 }}>TV</span>
+        </div>
+        {[0, 1, 2, 3, 4].map((k) => <div key={`g${k}`} style={{ position: 'absolute', left: 430, bottom: 56 + k * 13, width: 200, height: 6, borderRadius: 3, backgroundColor: 'rgba(60,40,10,0.45)' }} />)}
+        {[0, 1].map((k) => <div key={k} style={{ position: 'absolute', right: 62 + k * 92, bottom: 48, width: 70, height: 70, borderRadius: 35,
           background: 'radial-gradient(circle at 35% 30%, #6B5A3A, #2A2112)', boxShadow: '0 4px 8px rgba(0,0,0,0.4)' }} />)}
-        {[0, 1, 2, 3, 4, 5].map((k) => <div key={`g${k}`} style={{ position: 'absolute', left: 70, bottom: 54 + k * 12, width: 420, height: 5, borderRadius: 3, backgroundColor: 'rgba(60,40,10,0.45)' }} />)}
       </div>
     </AbsoluteFill>
   );

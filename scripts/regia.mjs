@@ -565,3 +565,39 @@ function intervalli(ids) {
   }
   return out.join(', ');
 }
+
+// I video e le immagini di Denis nella cartella vanno usati tutti (Beats pokemon, 22/10: "quando
+// metto video devono essere usati"). Quelli che l'AI ha lasciato fuori si mettono qui, sparsi sul
+// video, su frasi libere (niente B-roll, inserto o stacco già messi, mai la prima né l'ultima) che
+// durano non più del video: registrazioni dello schermo, video orizzontali e immagini come
+// inserto, i verticali come B-roll sopra la voce
+export function usaTuttoIlMateriale(regia, analisi) {
+  if (!analisi || !Array.isArray(regia?.sequenza)) return regia;
+  const propri = [
+    ...analisi.sorgenti.filter((s) => s.tipo === 'video' && !s.principale && !s.sync && !s.stock),
+    ...(analisi.immagini || []).map((im) => ({ ...im, immagine: true })),
+  ];
+  if (!propri.length) return regia;
+  const sequenza = regia.sequenza.map((it) => ({ ...it }));
+  const citati = new Set();
+  for (const it of sequenza) {
+    for (const k of ['broll', 'inserto', 'camera']) if (it[k]) citati.add(baseNome(String(it[k])));
+    for (const st of [].concat(it.stacco || [])) for (const k of ['broll', 'camera']) if (st?.[k]) citati.add(baseNome(String(st[k])));
+  }
+  const mancanti = propri.filter((s) => !citati.has(baseNome(s.id)) && !citati.has(baseNome(s.file || '')));
+  if (!mancanti.length) return regia;
+  const frasi = new Map(analisi.frasi.map((f) => [f.id, f]));
+  const durata = (it) => { const f = frasi.get(normFrase(it.frase)); return f ? f.fine - f.inizio : Infinity; };
+  const libero = (it, i) => it.frase && i > 0 && i < sequenza.length - 1 && !it.broll && !it.inserto && !it.stock && !it.stacco;
+  mancanti.forEach((s, k) => {
+    const obiettivo = Math.round(((k + 1) * sequenza.length) / (mancanti.length + 1));
+    const adatti = sequenza.map((it, i) => i).filter((i) => libero(sequenza[i], i) && (s.immagine || durata(sequenza[i]) <= s.durata - 0.1));
+    if (!adatti.length) return;
+    const i = adatti.reduce((a, b) => (Math.abs(b - obiettivo) < Math.abs(a - obiettivo) ? b : a));
+    const comeInserto = s.immagine || s.schermo || s.orient === 'h';
+    if (comeInserto) Object.assign(sequenza[i], { inserto: s.id, ...(s.immagine ? {} : { inserto_da: 0 }) });
+    else Object.assign(sequenza[i], { broll: s.id, da: +Math.max(0, Math.min(0.5, s.durata - durata(sequenza[i]) - 0.1)).toFixed(2) });
+    delete sequenza[i].camera;
+  });
+  return { ...regia, sequenza };
+}
