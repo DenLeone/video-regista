@@ -161,14 +161,20 @@ jobs:
           python-version: '3.12'
 
       - name: Dipendenze
+        id: dipendenze
         # la prova della sola regia non tocca video: niente ffmpeg né Remotion
         if: steps.check.outputs.cartella != '' && inputs.azione != 'regia'
+        # di solito ~30 s; il 22/10 un mirror di Ubuntu bloccato l'ha tenuto fermo 20 minuti
+        timeout-minutes: 10
         env:
           TELEGRAM: ${{ inputs.telegram }}
         run: |
-          sudo apt-get update -qq
+          # mirror lento o fermo: si molla dopo 30 s e si riprova (fino a 3 giri) invece di aspettare all'infinito
+          APT="-o Acquire::Retries=3 -o Acquire::http::Timeout=30 -o Acquire::https::Timeout=30"
+          for i in 1 2 3; do sudo timeout 180 apt-get $APT update -qq && break; echo "apt update lento, riprovo ($i)"; done
           # libegl1 e libgles2: servono a MediaPipe (ritaglio della persona per le scritte dietro, stili su misura)
-          sudo apt-get install -y -qq ffmpeg fonts-noto-color-emoji libegl1 libgles2
+          for i in 1 2 3; do sudo timeout 300 apt-get $APT install -y -qq ffmpeg fonts-noto-color-emoji libegl1 libgles2 && break; echo "apt install lento, riprovo ($i)"; done
+          command -v ffmpeg >/dev/null || { echo "::error::ffmpeg non installato (server dei pacchetti di Ubuntu irraggiungibile)"; exit 1; }
           npm ci || npm install
           # Telethon (MTProto) per scaricare i file grandi mandati al bot; cryptg lo rende molto più veloce
           if [ -n "$TELEGRAM" ] && [ "$TELEGRAM" != "[]" ]; then pip install --quiet telethon cryptg; fi
@@ -207,6 +213,24 @@ jobs:
           AZIONE: ${{ inputs.azione }}
           PROVA_SECONDI: ${{ inputs.secondi }}
         run: node scripts/regista.mjs
+
+      # installazione fallita (o andata in timeout): il montaggio non parte e non può avvisare da solo;
+      # lo dice il workflow al bot, con 🔁 Riprova, invece di lasciarlo "in attesa del server"
+      - name: Avvisa il bot se l'installazione è fallita
+        if: failure() && steps.check.outputs.cartella != '' && steps.dipendenze.outcome == 'failure'
+        env:
+          NOTIFY_URL: ${{ secrets.NOTIFY_URL }}
+          NOTIFY_TOKEN: ${{ secrets.NOTIFY_TOKEN }}
+          CARTELLA: ${{ steps.check.outputs.cartella }}
+          RICHIESTO: ${{ inputs.cartella }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          [ -n "$NOTIFY_URL" ] || exit 0
+          jq -n --arg n "$CARTELLA" --arg r "$RICHIESTO" --arg u "$RUN_URL" --arg id "$GITHUB_RUN_ID" \
+            '{tipo: "esito", esito: "⚠️ non montato", nome: $n, richiesto: $r, ok: false, run_url: $u, run_id: $id,
+              testo: "Errore: installazione dei programmi non riuscita (server dei pacchetti di Ubuntu lento o fermo). Riprova tra qualche minuto.",
+              info: {errore: "installazione dei programmi non riuscita (server dei pacchetti di Ubuntu lento o fermo): riprova tra qualche minuto"}}' \
+            | curl -s -X POST "$NOTIFY_URL" -H 'content-type: application/json' -H "x-regista-token: $NOTIFY_TOKEN" -d @- > /dev/null || true
 
       - name: Conserva piano e note (debug)
         if: always() && steps.check.outputs.cartella != ''
