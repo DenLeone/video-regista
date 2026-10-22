@@ -1,7 +1,8 @@
 // Pubblicazione dal bot Telegram (tasto 📤 Pubblica → workflow "pubblica"): Instagram come
 // reel di prova e YouTube Shorts, poi il video passa in 03 · Da pubblicare e il bot riceve i link.
 //
-// DATI (JSON dal bot): { nonce, nome, file, fileId, didascalia, titolo, copertina, ig, yt, prova }
+// DATI (JSON dal bot): { nonce, nome, file, fileId, didascalia, titolo, copertina, copertinaId, ig, yt, prova }
+// copertina: ms del fotogramma di copertina; copertinaId: la copertina fatta dal regista (jpg su Drive), se c'è vince lei
 //   prova: 'MANUAL' (passa ai follower quando lo decide Denis dall'app) | 'SS_PERFORMANCE'
 //   (Instagram lo passa da solo se va bene con i non follower) | '' (Reel normale)
 // Instagram: chiave custodita (e rinnovata) dal bot, chiesta a /ig-token. Il video lo scarica
@@ -66,10 +67,13 @@ async function instagram(d) {
   const me = await json(await fetch(`${IG()}/me?fields=user_id,username&access_token=${encodeURIComponent(token)}`), 'account Instagram');
   const io = me.user_id || me.id;
   await linkPubblico(d.fileId, true);
+  // la copertina su Drive va resa pubblica come il video, per il tempo della pubblicazione
+  const conCopertina = Boolean(d.copertinaId) && await linkPubblico(d.copertinaId, true).then(() => true, (e) => { log(`copertina non usata: ${e.message}`); return false; });
   try {
     const campi = new URLSearchParams({
       media_type: 'REELS', video_url: `https://drive.google.com/uc?id=${d.fileId}&export=download`, caption: d.didascalia || '',
-      thumb_offset: String(Math.max(0, Math.round(d.copertina || 0))), access_token: token,
+      ...(conCopertina ? { cover_url: `https://drive.google.com/uc?id=${d.copertinaId}&export=download` } : { thumb_offset: String(Math.max(0, Math.round(d.copertina || 0))) }),
+      access_token: token,
       ...(d.prova ? { trial_params: JSON.stringify({ graduation_strategy: d.prova }) } : { share_to_feed: 'true' }),
     });
     const contenitore = await json(await fetch(`${IG()}/${io}/media`, { method: 'POST', body: campi }), 'caricamento Instagram');
@@ -88,6 +92,7 @@ async function instagram(d) {
     return { ok: true, link: info.permalink || `https://www.instagram.com/${me.username || ''}`, prova: Boolean(d.prova) };
   } finally {
     await linkPubblico(d.fileId, false);
+    if (conCopertina) await linkPubblico(d.copertinaId, false).catch(() => {});
   }
 }
 

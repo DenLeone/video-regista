@@ -32,7 +32,7 @@ const OMBRA_SOTTO = '0 0 2px rgba(0,0,0,0.75), 0 2px 8px rgba(0,0,0,0.55), 0 3px
 
 // carica i font dello stile prima del primo fotogramma: file messi in asset/ (copiati in
 // public/stili/…) oppure Google Fonts per nome. Se un font non arriva si va avanti col ripiego.
-function useFont(fonts: FontStile[]) {
+export function useFont(fonts: FontStile[]) {
   const [attesa] = useState(() => delayRender('font dello stile'));
   useEffect(() => {
     const unici = [...new Map(fonts.map((ft) => [`${ft.famiglia}|${ft.peso}|${ft.corsivo}|${ft.file || ''}`, ft])).values()];

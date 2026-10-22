@@ -1,7 +1,8 @@
 import React from 'react';
-import { Composition } from 'remotion';
+import { Composition, Still } from 'remotion';
 import { Blueprint } from './Blueprint';
 import { Cinematico } from './Cinematico';
+import { Copertina, PropsCopertina } from './Copertina';
 import { SuMisura } from './SuMisura';
 import { durataTotale, FPS, fpsDi, H, Piano, W } from './piano';
 
@@ -33,5 +34,8 @@ export const Root: React.FC = () => (
     {/* stili creati da Drive: la grafica arriva in props.grafica (scripts/stile-su-misura.mjs) */}
     <Composition id="SuMisura" component={SuMisura} fps={FPS} width={W} height={H}
       durationInFrames={90} calculateMetadata={metadati} defaultProps={esempio} />
+    {/* copertina per Reel e TikTok: props da scripts/regista.mjs (copertina) */}
+    <Still id="Copertina" component={Copertina} width={W} height={H}
+      defaultProps={{ sfondo: 'media/copertina-sfondo.jpg', testo: 'Titolo di prova', evidenzia: ['prova'], grafica: null } as PropsCopertina} />
   </>
 );

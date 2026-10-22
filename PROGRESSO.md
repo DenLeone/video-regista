@@ -238,6 +238,11 @@ Poi Claude riattiva il workflow e lancia il primo giro.
 - `B-roll stock: sì`: l'AI scrive `"stock": "<ricerca in inglese>"`, regista.mjs scaricaStock prende un video verticale da Pexels (secret PEXELS_API_KEY, lo mette Denis) e rifà il piano; senza chiave resta l'inquadratura. Nel discorso la sequenza tiene anche fumo/stock/inserto dell'AI.
 - Colori scelti da Denis: parole grandi azzurre #4FC3F7, testo piccolo e cartelli grigio chiarissimo #EDEDED. stile.txt su Drive in "12 · Risorse/Stili/Motion ".
 
+## 22/10 — copertina automatica, B-roll nel discorso, Pixabay
+- Copertina per Reel e TikTok a ogni video finito (non nelle prove): fotogramma più nitido delle inquadrature con la voce (pezzi già colorati, senza scritte) + titolo dell'AI (`copertina: {testo, evidenzia}`) nei font/colori dello stile, src/Copertina.tsx. Su Drive accanto al video, al bot come foto e file (/copertina), su Instagram come cover_url quando si pubblica dal bot. TikTok e YouTube Shorts: niente API, la carica Denis.
+- Discorso con B-roll: un solo video parlato + B-roll = ancora discorso, l'AI mette i B-roll sopra la voce (broll/da). Motion: parola grande composta e ferma ≥0,45 s; massimo un cartello ogni ~45 s.
+- Repertorio da Pixabay (PIXABAY_API_KEY, Pexels non dà più chiavi), solo riprese vere, orizzontali ritagliati in 9:16.
+
 ## Decisioni prese
 - Opzione A (Remotion + GitHub Actions) invece di mini PC: gratis, nessun browser da tenere sveglio.
 - Blueprint resta la firma; i contenitori serviranno solo per inserti/foto prodotto (16/10).

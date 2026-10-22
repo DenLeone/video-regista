@@ -5,6 +5,7 @@
 //   POST /notify   JSON da scripts/regista.mjs e dal workflow: fasi, esiti, elenco cartelle
 //   POST /video    multipart da scripts/regista.mjs: video finale (anteprima ≤ 50 MB)
 //   POST /foto-profilo  multipart dal workflow foto-bot: foto profilo del bot
+//   POST /copertina     multipart dal workflow regista: copertina del video (nome, foto)
 //   GET  /stili.jpg      anteprima degli stili (mostrata quando chiede lo stile)
 //   GET  /setup?k= collega webhook e menu comandi (protetto da TELEGRAM_SECRET)
 //
@@ -237,7 +238,7 @@ type Card = {
 // pubblica: dati del video finito (dal workflow) e scelte di Denis per Instagram/YouTube;
 // pubblicato: 'in corso' o il riepilogo con i link
 type Pubblica = {
-  fileId: string; file?: string; didascalia: string; copertina?: number; youtube?: { titolo?: string; descrizione?: string } | null;
+  fileId: string; file?: string; didascalia: string; copertina?: number; copertinaId?: string; youtube?: { titolo?: string; descrizione?: string } | null;
   ig?: boolean; yt?: boolean;
 };
 // azione/secondi: com'era partito il giro (🔁 Riprova di un render di prova rifà la prova, non un montaggio)
@@ -1331,7 +1332,7 @@ async function tastoPubblica(env: Env, chat: string, azione: string, runId: stri
   const nonce = crypto.randomUUID().replace(/-/g, '');
   const dati = {
     nonce, nome: memo.nome, file: p.file, fileId: p.fileId, didascalia: p.didascalia, titolo: p.youtube?.titolo || memo.nome,
-    copertina: p.copertina ?? 0, ig: dest.ig, yt: dest.yt, prova: PROVA[imp.prova].api,
+    copertina: p.copertina ?? 0, ...(p.copertinaId ? { copertinaId: p.copertinaId } : {}), ig: dest.ig, yt: dest.yt, prova: PROVA[imp.prova].api,
   };
   const r = await gh(env, `/actions/workflows/${PUB_WORKFLOW}/dispatches`, { method: 'POST', body: JSON.stringify({ ref: 'main', inputs: { dati: JSON.stringify(dati) } }) });
   if (r.status !== 204) return mostra(env, chat, { testo: `⚠️ <b>Non sono riuscito ad avviare la pubblicazione</b>\n<code>${esc(tronca(`GitHub ${r.status}: ${await r.text()}`, 400))}</code>`, tasti: [[tasto('🔁 Riprova', `pub!:${runId}`), MENU_TASTO]] }, msgId);
@@ -1572,6 +1573,27 @@ async function onNotify(env: Env, n: Notify) {
   }
 }
 
+// copertina del video per Reel e TikTok: come foto (da guardare) e come file in qualità piena
+// (Telegram comprime le foto; su TikTok si carica dal telefono come copertina)
+async function onCopertina(env: Env, form: FormData) {
+  const foto = form.get('foto');
+  const nome = String(form.get('nome') || '');
+  if (!foto || typeof foto === 'string') return 'foto mancante';
+  for (const chat of autorizzati(env)) {
+    const out = new FormData();
+    out.append('chat_id', chat);
+    out.append('caption', `🖼 <b>Copertina</b> — ${esc(nome)}\nSu Instagram la metto io quando pubblichi dal bot. Per TikTok: salva il file qui sotto e caricalo come copertina.`);
+    out.append('parse_mode', 'HTML');
+    out.append('photo', foto, 'copertina.jpg');
+    await fetch(`https://api.telegram.org/bot${env.TELEGRAM_BOT_TOKEN}/sendPhoto`, { method: 'POST', body: out });
+    const doc = new FormData();
+    doc.append('chat_id', chat);
+    doc.append('document', foto, `${nome || 'video'} - copertina.jpg`);
+    await fetch(`https://api.telegram.org/bot${env.TELEGRAM_BOT_TOKEN}/sendDocument`, { method: 'POST', body: doc });
+  }
+  return 'ok';
+}
+
 // foto profilo del bot (workflow foto-bot, grafica/avatar-bot.jpg): la imposta con
 // setMyProfilePhoto e la manda in chat con l'esito, così Denis la ha comunque
 async function onFotoProfilo(env: Env, form: FormData) {
@@ -1708,10 +1730,11 @@ export default {
       });
     }
 
-    if (req.method === 'POST' && (url.pathname === '/notify' || url.pathname === '/video' || url.pathname === '/foto-profilo')) {
+    if (req.method === 'POST' && (url.pathname === '/notify' || url.pathname === '/video' || url.pathname === '/foto-profilo' || url.pathname === '/copertina')) {
       if (req.headers.get('x-regista-token') !== env.NOTIFY_TOKEN) return new Response('no', { status: 401 });
       if (url.pathname === '/notify') { await onNotify(env, (await req.json()) as Notify); return new Response('ok'); }
       if (url.pathname === '/foto-profilo') return new Response(await onFotoProfilo(env, await req.formData()));
+      if (url.pathname === '/copertina') return new Response(await onCopertina(env, await req.formData()));
       const inviato = await onVideo(env, await req.formData());
       return new Response(inviato ? 'ok' : 'video non inviato', { status: inviato ? 200 : 502 });
     }

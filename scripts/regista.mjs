@@ -638,7 +638,7 @@ function promptRegia({ modo, testoMateriale, regiaPrecedente }) {
       ? `Il video dura circa ${Math.round(durata)} s: distribuisci ${cartelli ? 'al massimo' : 'circa'} ${quante} ${cartelli ? 'cartelli' : 'scritte grandi'} su tutta la durata (${cartelli ? 'uno ogni ~45 s' : 'una ogni ~20 s'}), sulle frasi più forti; questo vale più del numero indicato nella sezione Grafica.`
       : 'Questo stile non ha scritte grandi: `keywords` vuoto.';
     const { conBroll } = discorso;
-    p += `\n\n## MODALITÀ DISCORSO (regola di Denis: nella cartella c'è un solo video parlato)\nÈ un discorso di Denis da montare così com'è: NIENTE regia. Non togliere frasi per accorciare, non riordinare, non scegliere cosa tenere: la sequenza l'ha già decisa lo script (tutte le frasi in ordine, tolte solo pause, false partenze e ripetizioni) e nella regia va copiata identica:\n\`\`\`json\n"sequenza": ${JSON.stringify(discorso.sequenza)}\n\`\`\`\nIl tuo lavoro è SOLO la grafica dello stile (sezione Grafica): \`titolo\`, \`soggetto\`, \`enfasi\` se lo stile ha l'apertura a lettere enormi (sulle prime parole del discorso), le \`keywords\` con le regole dello stile e, se lo stile ha il bianco e nero nei momenti, \`"bn": true\` su qualche elemento della sequenza${stileSuMisura?.grafica.fumo || stileSuMisura?.grafica.stock ? '; se la sezione Grafica li prevede, puoi aggiungere agli elementi anche `fumo`, `stock` e `inserto` (sempre con la stessa `frase`)' : ''}. ${scritte} ${conBroll ? 'Nella cartella ci sono anche dei B-roll di Denis (vedi Sorgenti e fogli provino): mettili sopra la voce aggiungendo all\'elemento `"broll": "<id>", "da": <secondi>` (stessa `frase`), dove mostrano quello che dice in quel momento, circa uno ogni 8–12 s, mai sull\'aggancio né sulla chiusura, e preferiscili al repertorio. Le regole sui B-roll valgono (niente bocca che parla, non riusare lo stesso momento); ignora quelle su durata, scaletta e scelta delle frasi.' : 'Ignora le regole su durata, scaletta, inquadrature e B-roll.'} \`scaletta\` = i 3–6 temi del discorso, \`testo_montato\` vuoto.`;
+    p += `\n\n## MODALITÀ DISCORSO (regola di Denis: nella cartella c'è un solo video parlato)\nÈ un discorso di Denis da montare così com'è: NIENTE regia. Non togliere frasi per accorciare, non riordinare, non scegliere cosa tenere: la sequenza l'ha già decisa lo script (tutte le frasi in ordine, tolte solo pause, false partenze e ripetizioni) e nella regia va copiata identica:\n\`\`\`json\n"sequenza": ${JSON.stringify(discorso.sequenza)}\n\`\`\`\nIl tuo lavoro è SOLO la grafica dello stile (sezione Grafica): \`titolo\`, \`soggetto\`, \`copertina\`, \`enfasi\` se lo stile ha l'apertura a lettere enormi (sulle prime parole del discorso), le \`keywords\` con le regole dello stile e, se lo stile ha il bianco e nero nei momenti, \`"bn": true\` su qualche elemento della sequenza${stileSuMisura?.grafica.fumo || stileSuMisura?.grafica.stock ? '; se la sezione Grafica li prevede, puoi aggiungere agli elementi anche `fumo`, `stock` e `inserto` (sempre con la stessa `frase`)' : ''}. ${scritte} ${conBroll ? 'Nella cartella ci sono anche dei B-roll di Denis (vedi Sorgenti e fogli provino): mettili sopra la voce aggiungendo all\'elemento `"broll": "<id>", "da": <secondi>` (stessa `frase`), dove mostrano quello che dice in quel momento, circa uno ogni 8–12 s, mai sull\'aggancio né sulla chiusura, e preferiscili al repertorio. Le regole sui B-roll valgono (niente bocca che parla, non riusare lo stesso momento); ignora quelle su durata, scaletta e scelta delle frasi.' : 'Ignora le regole su durata, scaletta, inquadrature e B-roll.'} \`scaletta\` = i 3–6 temi del discorso, \`testo_montato\` vuoto.`;
   }
   // discorso: fogli provino solo dei B-roll, se ci sono
   const fogliDaLeggere = !discorso || discorso.conBroll;
@@ -994,6 +994,59 @@ function renderizza(out, stile = STILI[0]) {
       log(`render fallito (tentativo ${tentativo}), riprovo`);
     }
   }
+}
+
+// ---------- copertina per Reel e TikTok ----------
+// Un fotogramma pulito (dai pezzi già tagliati e colorati, senza scritte) di un'inquadratura con la
+// voce principale, il più nitido tra alcuni candidati, e il titolo che l'AI ha scritto in `copertina`
+// (senza: il titolo del video), nei font e colori dello stile (src/Copertina.tsx). Restituisce il jpg
+function nitidezza(file) {
+  try {
+    const r = spawnSync('ffmpeg', ['-v', 'info', '-i', file, '-vf', 'scale=540:-2,blurdetect', '-f', 'null', '-'], { encoding: 'utf8' });
+    const m = /blur mean:\s*([\d.]+)/.exec(r.stderr || '');
+    return m ? Number(m[1]) : 99;
+  } catch { return 99; }
+}
+function copertina(piano, regia, analisi, out) {
+  try {
+    const voci = new Set(analisi.sorgenti.filter((x) => x.principale || x.sync).map((x) => x.id));
+    let t = 0;
+    const pezzi = piano.clips.map((c) => { const p = { c, da: t }; t += c.end - c.start; return p; })
+      .filter(({ c }) => voci.has(c.sorgente) && !c.inserto && c.end - c.start >= 0.6);
+    if (!pezzi.length) return null;
+    // fino a 6 inquadrature sparse sul video, tre fotogrammi ciascuna: vince il meno mosso
+    const scelti = pezzi.length <= 6 ? pezzi : Array.from({ length: 6 }, (_, i) => pezzi[Math.round((i * (pezzi.length - 1)) / 5)]);
+    const dir = path.join(WORK, 'copertina');
+    fs.rmSync(dir, { recursive: true, force: true });
+    fs.mkdirSync(dir, { recursive: true });
+    let migliore = null;
+    scelti.forEach(({ c }, i) => [0.3, 0.5, 0.7].forEach((q, j) => {
+      const jpg = path.join(dir, `${i}-${j}.jpg`);
+      run('ffmpeg', ['-y', '-v', 'error', '-ss', ((c.end - c.start) * q).toFixed(2), '-i', path.join(MEDIA, c.file), '-frames:v', '1', '-q:v', '2', jpg]);
+      const b = nitidezza(jpg);
+      if (!migliore || b < migliore.b) migliore = { jpg, b };
+    }));
+    fs.copyFileSync(migliore.jpg, path.join(MEDIA, 'copertina-sfondo.jpg'));
+    const cop = regia.copertina && typeof regia.copertina === 'object' ? regia.copertina : {};
+    const testo = String(cop.testo || piano.titolo || '').trim().slice(0, 60);
+    const props = { sfondo: 'media/copertina-sfondo.jpg', testo, evidenzia: [].concat(cop.evidenzia || []).map(String).slice(0, 3), grafica: piano.grafica || null };
+    fs.writeFileSync(path.join(WORK, 'copertina.json'), JSON.stringify(props));
+    run('npx', ['remotion', 'still', 'src/index.ts', 'Copertina', out, `--props=${path.join(WORK, 'copertina.json')}`, '--image-format=jpeg', '--jpeg-quality=92',
+      ...(process.env.REMOTION_BROWSER ? [`--browser-executable=${process.env.REMOTION_BROWSER}`] : [])], { cwd: ROOT, stdio: 'inherit', shell: process.platform === 'win32' });
+    log(`copertina: "${testo}" su un fotogramma di ${path.basename(migliore.jpg)} (sfocatura ${migliore.b.toFixed(2)})`);
+    return out;
+  } catch (e) { log('copertina non fatta', e.message); return null; }
+}
+// la copertina al bot (come foto e come file in qualità piena, per TikTok)
+async function inviaCopertina(file, nome) {
+  if (!process.env.NOTIFY_URL || !file) return;
+  try {
+    const form = new FormData();
+    form.append('nome', nome);
+    form.append('foto', new Blob([fs.readFileSync(file)], { type: 'image/jpeg' }), path.basename(file));
+    const r = await fetchRiprova(process.env.NOTIFY_URL.replace(/\/notify$/, '/copertina'), { method: 'POST', headers: { 'x-regista-token': process.env.NOTIFY_TOKEN || '' }, body: form }, 2);
+    log(`copertina al bot: ${r.status}`);
+  } catch (e) { log('copertina non mandata al bot', e.message); }
 }
 
 // ---------- 5. notifiche (bot Telegram) ----------
@@ -1644,6 +1697,9 @@ async function main() {
     fs.writeFileSync(path.join(WORK, 'NOTE.txt'), note);
 
     rclone('copyto', outFile, remote(DEST, nome, finale));
+    // copertina (non nelle prove): stesso nome del video, su Drive accanto a lui
+    const fileCopertina = PROVA_SECONDI ? null : copertina(piano, regia, analisi, outFile.replace(/\.mp4$/i, ' - COPERTINA.jpg'));
+    if (fileCopertina) rclone('copyto', fileCopertina, remote(DEST, nome, path.basename(fileCopertina)));
     rclone('copyto', path.join(WORK, 'NOTE.txt'), remote(DEST, nome, 'NOTE.txt'));
     for (const f of ['regia.json', 'piano.json', 'materiale.json']) rclone('copyto', path.join(WORK, f), remote(DEST, nome, CACHE, f));
     for (const f of fs.readdirSync(WORK).filter((x) => /^colore-.+\.jpg$/.test(x))) rclone('copyto', path.join(WORK, f), remote(DEST, nome, CACHE, f));
@@ -1664,6 +1720,8 @@ async function main() {
     } catch (e) { log('didascalie non scritte', e.message); }
     let fileId = null;
     try { fileId = JSON.parse(run('rclone', ['lsjson', remote(OUT_DIR, nome, finale)]))[0]?.ID || null; } catch (e) { log('ID del video su Drive non trovato', e.message); }
+    let copertinaId = null;
+    if (fileCopertina) try { copertinaId = JSON.parse(run('rclone', ['lsjson', remote(OUT_DIR, nome, path.basename(fileCopertina))]))[0]?.ID || null; } catch (e) { log('ID della copertina su Drive non trovato', e.message); }
 
     // dati per la scheda del bot
     const info = {
@@ -1672,11 +1730,12 @@ async function main() {
       minuti: Math.round((Date.now() - T0) / 60000), correzione: CORREZIONE || '', versione: VERSIONE, stile: nomeStile,
       ...(fileId ? { link: `https://drive.google.com/file/d/${fileId}/view` } : {}),
       ...(PROVA_SECONDI ? { prova: PROVA_SECONDI } : {}),
-      ...(fileId && !PROVA_SECONDI ? { pubblica: { fileId, file: finale, didascalia: didascalie?.instagram || '', copertina: Math.round(tempoCopertina(piano, durataN) * 1000), youtube: didascalie ? { titolo: didascalie.youtube_titolo, descrizione: didascalie.youtube_descrizione } : null } } : {}),
+      ...(fileId && !PROVA_SECONDI ? { pubblica: { fileId, file: finale, didascalia: didascalie?.instagram || '', copertina: Math.round(tempoCopertina(piano, durataN) * 1000), ...(copertinaId ? { copertinaId } : {}), youtube: didascalie ? { titolo: didascalie.youtube_titolo, descrizione: didascalie.youtube_descrizione } : null } } : {}),
     };
     // anteprima: prima provo il video in chat, se non passa mando la foto
     const inviato = await inviaVideo(outFile, nome, note, durataN, info);
     if (!inviato) await notifica('✅ pronto', nome, note, { ok: true, foto: anteprima(outFile, piano, durataN), info });
+    await inviaCopertina(fileCopertina, nome);
   } catch (e) {
     const testo = `Errore: ${e.message}\n\n` + (CORREZIONE ? 'Puoi riprovare la correzione dal bot (✏️) o scrivermi una richiesta diversa.'
       : vai ? `Per riprovare: 🔁 Riprova dal bot, oppure rinomina ${vaiUsato} in ${nomeVaiOriginale(vai)}.` : 'Per riprovare: 🔁 Riprova.');

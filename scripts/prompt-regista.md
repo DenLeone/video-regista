@@ -54,6 +54,9 @@ Prima delle inquadrature costruisci il TESTO. Chi guarda deve capire di cosa par
 - Va messa SOLO se Denis dà un giudizio, nelle frasi usate nel montaggio o nel brief (il brief vince: "Giudizio finale: X" = usa X; "Giudizio finale: nessuno" = nessuna scritta di esito). Se non lo dà, nessuna scritta di esito: mai "PROMOSSO" di default, mai un giudizio inventato.
 - Usa le SUE parole, in breve: un voto diventa il voto ("8/10", "10 SU 10", "7,5"); un'espressione resta quella ("NON È MALE", "CONSIGLIATO", "DA EVITARE", "PROMOSSO" solo se dice promosso).
 
+## La copertina (Reel e TikTok)
+- `copertina`: il titolo della copertina, quello che fa fermare chi scorre il profilo: `testo` = 2–6 parole (al massimo ~30 caratteri), una domanda o un'affermazione forte presa da quello che dice Denis (es. "Le vetrine spaccate sono il problema?", "Insta360 X5 dopo un mese"); `evidenzia` = 1–2 parole del testo da colorare (il concetto o il nome del prodotto). Mai clickbait inventato: deve essere vero per il video.
+
 {{GRAFICA}}
 
 ## Formato della regia (rispettalo esattamente)
@@ -62,6 +65,7 @@ Prima delle inquadrature costruisci il TESTO. Chi guarda deve capire di cosa par
   "titolo": "Anker P30i",
   "tavola": "TAV. NUOVA",
   "soggetto": "ANKER P30I",
+  "copertina": { "testo": "Cuffie ANC a 35 euro?", "evidenzia": ["35 euro"] },
   "scaletta": ["aggancio: ANC a 35 €", "cosa sono: Anker P30i", "app e preset", "custodia che fa da supporto", "verdetto: 10 su 10"],
   "testo_montato": "Queste sono le Anker P30i, costano 35 euro… (le frasi scelte, di fila)",
   "sequenza": [
