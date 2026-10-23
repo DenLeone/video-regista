@@ -22,6 +22,11 @@ jobs:
       - uses: actions/setup-node@v5
         with:
           node-version: 22
+      - name: Tipi e test dell'app
+        run: |
+          npx --yes -p typescript@5.9.3 tsc -p telegram/tsconfig.json --noEmit
+          node --experimental-strip-types --import ./telegram/test/register.mjs --test telegram/test/*.test.ts
+
       - name: Pubblica su Cloudflare
         working-directory: telegram
         env:

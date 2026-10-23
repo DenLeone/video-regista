@@ -7,7 +7,8 @@
   "scripts": {
     "studio": "remotion studio src/index.ts",
     "render": "remotion render src/index.ts Blueprint out/video.mp4 --props=work/piano.json",
-    "regista": "node scripts/regista.mjs"
+    "regista": "node scripts/regista.mjs",
+    "app:check": "npx --yes -p typescript@5.9.3 tsc -p telegram/tsconfig.json --noEmit && node --experimental-strip-types --import ./telegram/test/register.mjs --test telegram/test/*.test.ts"
   },
   "dependencies": {
     "@remotion/cli": "4.0.520",
