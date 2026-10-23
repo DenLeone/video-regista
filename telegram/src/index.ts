@@ -18,6 +18,10 @@
 
 import { DurableObject } from 'cloudflare:workers';
 import { ANTEPRIMA_STILI } from './anteprima-stili';
+import { gestisciApp } from './api';
+import { avvisoUtente } from './push';
+import STILI_BASE from '../../scripts/stili-base.json';
+import type { Ops, Segreti } from './ops';
 
 export interface Env {
   TELEGRAM_BOT_TOKEN: string;
@@ -27,6 +31,18 @@ export interface Env {
   GITHUB_REPO: string;       // "DenLeone/video-regista"
   NOTIFY_TOKEN: string;      // condiviso con il workflow
   IG_TOKEN?: string;         // chiave Instagram (secret, 60 giorni): poi la tiene e la rinnova il bot
+  APP_SETUP_CODE?: string;   // codice segreto per registrare o sostituire la passkey dell'app
+  R2_ACCOUNT_ID?: string;
+  R2_ACCESS_KEY_ID?: string;
+  R2_SECRET_ACCESS_KEY?: string;
+  R2_BUCKET?: string;
+  VAPID_PUBLIC_KEY?: string;
+  VAPID_PRIVATE_KEY?: string;
+  VAPID_SUBJECT?: string;
+  DRIVE_CLIENT_ID?: string;
+  DRIVE_CLIENT_SECRET?: string;
+  DRIVE_REFRESH_TOKEN?: string;
+  ASSETS?: { fetch(req: Request): Promise<Response> };
   MEMORIA: DurableObjectNamespace<Memoria>;
 }
 
@@ -57,6 +73,16 @@ export class Memoria extends DurableObject {
 const mem = (env: Env) => env.MEMORIA.get(env.MEMORIA.idFromName('denis'));
 // i metodi chiamati da remoto (RPC) non portano il tipo generico: lo rimetto qui
 const leggi = async <T>(env: Env, k: string) => (await mem(env).leggi(k)) as T | undefined;
+function memoriaApp(env: Env) {
+  return {
+    leggi: (k: string) => leggi(env, k),
+    scrivi: (k: string, v: unknown) => mem(env).scrivi(k, v),
+    cancella: (k: string) => mem(env).cancella(k),
+  };
+}
+async function avvisaApp(env: Env, a: { tipo: string; titolo: string; corpo: string; url?: string }) {
+  try { await avvisoUtente(env, memoriaApp(env), a); } catch (e) { console.error(e); }
+}
 const autorizzati = (env: Env) => env.ALLOWED_CHAT_ID.split(',').map((s) => s.trim()).filter(Boolean);
 const ok = (env: Env, chat: string) => autorizzati(env).includes(chat);
 
@@ -75,8 +101,8 @@ const LINEA = '━━━━━━━━━━━━━━━━━━';
 // stili pronti: gli stessi nomi di STILI in scripts/regista.mjs; in più quelli su misura che
 // Denis crea su Drive (cartelle in "12 · Risorse/Stili", elenco mandato dal workflow)
 type Stile = { nome: string; tasto: string; cosa: string };
-const STILI: Stile[] = [{ nome: 'Blueprint', tasto: '📐 Blueprint', cosa: 'tavola tecnica, parole chiave in box, effetti digitali' },
-  { nome: 'Cinematico', tasto: '🎬 Cinematico', cosa: 'spot di prodotto caldo, sottotitoli parola per parola, titoli grandi' }];
+// stessi nomi di scripts/regista.mjs: l'elenco sta in scripts/stili-base.json
+const STILI: Stile[] = STILI_BASE;
 let STILI_DRIVE: string[] = []; // letti dalla memoria a ogni richiesta
 // cartella su Drive e riga "Quando usarlo" di stile.txt (dal workflow), per descrizioni e link
 type InfoStile = { nome: string; id?: string; desc?: string };
@@ -194,7 +220,7 @@ async function gh(env: Env, path: string, init: RequestInit = {}) {
 }
 // azione "render": rifà solo il render con la regia salvata (origine 98), senza AI;
 // secondi: render di prova, solo i primi N secondi (Cambia stile → 🧪 Prova)
-type Inputs = { cartella?: string; brief?: string; origine?: '97' | '98'; correzione?: string; telegram?: string; azione?: 'render'; secondi?: number };
+type Inputs = { cartella?: string; brief?: string; origine?: '97' | '98'; correzione?: string; telegram?: string; azione?: 'render'; secondi?: number; r2?: string };
 const dispatch = (env: Env, ref: string, inputs: Record<string, string>) =>
   gh(env, `/actions/workflows/${WORKFLOW}/dispatches`, { method: 'POST', body: JSON.stringify({ ref, inputs }) });
 
@@ -203,11 +229,13 @@ async function avvia(env: Env, i: Inputs, imp: Imp): Promise<string | null> {
   if (i.telegram) base.telegram = i.telegram; // indispensabile: se il workflow non lo conosce, meglio fallire che montare altro
   if (i.azione) base.azione = i.azione;
   if (i.secondi) base.secondi = String(i.secondi); // idem: senza, partirebbe il render intero
+  if (i.r2) base.r2 = i.r2; // girato già su R2: il runner non lo riscarica da Drive
   let r = await dispatch(env, RAMO[imp.versione], { ...base, ai: imp.ai, modello: imp.modello, modello_gemini: imp.gemini });
   // il workflow della versione stabile non conosce ancora ai/modello: riprovo senza
   if (r.status === 422) {
     const t = await r.text();
     if (!/unexpected inputs/i.test(t)) return `GitHub 422: ${t}`;
+    if (i.r2 && /\br2\b/.test(t)) return 'Il workflow non conosce ancora il caricamento dall\'app (input r2). Aggiorna il ramo Stabile.';
     if (i.secondi && /secondi/.test(t)) return 'La versione Beta non ha ancora il render di prova: passa a Stabile da ⚙️ Impostazioni → 🔧 Avanzate.';
     r = await dispatch(env, RAMO[imp.versione], base);
   }
@@ -244,7 +272,7 @@ type Pubblica = {
 // azione/secondi: com'era partito il giro (🔁 Riprova di un render di prova rifà la prova, non un montaggio)
 type RunMemo = {
   nome: string; origine?: '97' | '98'; correzione?: string; brief?: string; pubblica?: Pubblica; pubblicato?: string;
-  azione?: 'render'; secondi?: number; stile?: string;
+  azione?: 'render'; secondi?: number; stile?: string; approvato?: boolean;
 };
 type Pendente = { nome: string; chat: string; msg?: number; quando: number; card: Card; origine?: '97' | '98'; azione?: 'render'; secondi?: number };
 
@@ -823,11 +851,14 @@ const componiBrief = (d: Brief, stileBase: string) => [
 const conStile = (brief: string, stileBase: string) => (/\bstile\s*:/i.test(brief) ? brief : [`Stile: ${stileBase}`, brief].filter(Boolean).join('. '));
 
 // avvio: il messaggio diventa la scheda "in coda", poi la adotta il primo aggiornamento del giro
-async function lancia(env: Env, chat: string, i: Inputs, msgId?: number) {
+async function lancia(env: Env, chat: string, i: Inputs, msgId?: number): Promise<string | null> {
   await mem(env).cancella(kAttesa(chat));
   const imp = await impostazioni(env);
   const err = await avvia(env, i, imp);
-  if (err) return mostra(env, chat, { testo: `⚠️ <b>Non sono riuscito ad avviare</b>\n<code>${esc(tronca(err, 500))}</code>`, tasti: [[MENU_TASTO]] }, msgId);
+  if (err) {
+    await mostra(env, chat, { testo: `⚠️ <b>Non sono riuscito ad avviare</b>\n<code>${esc(tronca(err, 500))}</code>`, tasti: [[MENU_TASTO]] }, msgId);
+    return err;
+  }
   const card: Card = {
     nome: i.cartella || '⚡ cartelle con VAI', fasi: {}, minuti: 0, msg: {}, inCoda: true,
     versione: imp.versione === 'beta' ? 'v2 beta' : undefined, brief: i.brief, correzione: i.correzione,
@@ -837,6 +868,7 @@ async function lancia(env: Env, chat: string, i: Inputs, msgId?: number) {
   const pendenti = ((await leggi<Pendente[]>(env, 'pendenti')) || []).filter((p) => Date.now() - p.quando < 40 * 60000);
   pendenti.push({ nome: i.cartella || '', chat, msg: id, quando: Date.now(), card, origine: i.origine || '97', azione: i.azione, secondi: i.secondi });
   await mem(env).scrivi('pendenti', pendenti);
+  return null;
 }
 
 // nome di una cartella di 97 scritto in chat (senza domande in sospeso): propongo di montarla.
@@ -1192,6 +1224,7 @@ async function onCallback(env: Env, cb: Callback) {
   if (!memo) return avviso('Non trovo più questo montaggio');
   if (azione === 'ok') {
     await avviso('Approvato ✔︎');
+    await mem(env).scrivi(`run:${runId}`, { ...memo, approvato: true });
     return tg(env, 'editMessageReplyMarkup', { chat_id: chat, message_id: msgId, reply_markup: { inline_keyboard: [[tasto('✔︎ Approvato', 'noop'), tasto('📤 Pubblica', `pub:${runId}`)], [link('📂 Drive', URL_98)]] } });
   }
   if (azione.startsWith('pub')) return tastoPubblica(env, chat, azione, runId, memo, msgId, avviso);
@@ -1294,6 +1327,28 @@ async function schermoPubblica(env: Env, runId: string, memo: RunMemo): Promise<
   };
 }
 
+async function confermaPubblicazione(env: Env, chat: string, runId: string, memo: RunMemo, msgId?: number): Promise<string | null> {
+  if (!memo.pubblica?.fileId || !memo.pubblica.file) return 'Mancano i dati per pubblicare. Rifallo con Solo render.';
+  if (memo.pubblicato === 'in corso') return 'Pubblicazione già in corso';
+  if (memo.pubblicato) return 'Già pubblicato';
+  const imp = await impostazioni(env);
+  const p = memo.pubblica;
+  const dest = destinazioni(p, await collegamenti(env));
+  if (!dest.ig && !dest.yt) return p.ig === false && p.yt === false ? 'Scegli almeno Instagram o YouTube' : 'Prima collega Instagram o YouTube';
+  const nonce = crypto.randomUUID().replace(/-/g, '');
+  const dati = {
+    nonce, nome: memo.nome, file: p.file, fileId: p.fileId, didascalia: p.didascalia, titolo: p.youtube?.titolo || memo.nome,
+    copertina: p.copertina ?? 0, ...(p.copertinaId ? { copertinaId: p.copertinaId } : {}), ig: dest.ig, yt: dest.yt, prova: PROVA[imp.prova].api,
+  };
+  const r = await gh(env, `/actions/workflows/${PUB_WORKFLOW}/dispatches`, { method: 'POST', body: JSON.stringify({ ref: 'main', inputs: { dati: JSON.stringify(dati) } }) });
+  if (r.status !== 204) return `GitHub ${r.status}: ${(await r.text()).slice(0, 300)}`;
+  await mem(env).scrivi(`run:${runId}`, { ...memo, pubblicato: 'in corso' } satisfies RunMemo);
+  await mem(env).scrivi(`pub:${nonce}`, { runId, chat, msg: msgId });
+  const dove = [dati.ig ? `📸 Instagram (${PROVA[imp.prova].nome})` : '', dati.yt ? '▶️ YouTube Shorts' : ''].filter(Boolean).join('\n');
+  await mostra(env, chat, { testo: `⏳ <b>Pubblico ${esc(memo.nome)}</b>\n${dove}\n<i>2–4 minuti: ti scrivo qui i link appena è online.</i>` }, msgId);
+  return null;
+}
+
 async function tastoPubblica(env: Env, chat: string, azione: string, runId: string, memo: RunMemo, msgId: number | undefined, avviso: (t?: string) => Promise<unknown>) {
   if (!memo.pubblica?.fileId || !memo.pubblica.file) {
     await avviso();
@@ -1325,21 +1380,9 @@ async function tastoPubblica(env: Env, chat: string, azione: string, runId: stri
     return mem(env).scrivi(kAttesa(chat), { tipo: 'didascalia', runId, campo, msg: id } satisfies Attesa);
   }
   if (azione !== 'pub!') return avviso();
-  const p = memo.pubblica;
-  const dest = destinazioni(p, await collegamenti(env));
-  if (!dest.ig && !dest.yt) { await avviso(p.ig === false && p.yt === false ? 'Scegli almeno Instagram o YouTube' : 'Prima collega Instagram o YouTube'); return; }
   await avviso('Avvio la pubblicazione…');
-  const nonce = crypto.randomUUID().replace(/-/g, '');
-  const dati = {
-    nonce, nome: memo.nome, file: p.file, fileId: p.fileId, didascalia: p.didascalia, titolo: p.youtube?.titolo || memo.nome,
-    copertina: p.copertina ?? 0, ...(p.copertinaId ? { copertinaId: p.copertinaId } : {}), ig: dest.ig, yt: dest.yt, prova: PROVA[imp.prova].api,
-  };
-  const r = await gh(env, `/actions/workflows/${PUB_WORKFLOW}/dispatches`, { method: 'POST', body: JSON.stringify({ ref: 'main', inputs: { dati: JSON.stringify(dati) } }) });
-  if (r.status !== 204) return mostra(env, chat, { testo: `⚠️ <b>Non sono riuscito ad avviare la pubblicazione</b>\n<code>${esc(tronca(`GitHub ${r.status}: ${await r.text()}`, 400))}</code>`, tasti: [[tasto('🔁 Riprova', `pub!:${runId}`), MENU_TASTO]] }, msgId);
-  await mem(env).scrivi(`run:${runId}`, { ...memo, pubblicato: 'in corso' } satisfies RunMemo);
-  await mem(env).scrivi(`pub:${nonce}`, { runId, chat, msg: msgId });
-  const dove = [dati.ig ? `📸 Instagram (${PROVA[imp.prova].nome})` : '', dati.yt ? '▶️ YouTube Shorts' : ''].filter(Boolean).join('\n');
-  return mostra(env, chat, { testo: `⏳ <b>Pubblico ${esc(memo.nome)}</b>\n${dove}\n<i>2–4 minuti: ti scrivo qui i link appena è online.</i>` }, msgId);
+  const err = await confermaPubblicazione(env, chat, runId, memo, msgId);
+  if (err) return mostra(env, chat, { testo: `⚠️ <b>Non sono riuscito ad avviare la pubblicazione</b>\n<code>${esc(tronca(err, 400))}</code>`, tasti: [[tasto('🔁 Riprova', `pub!:${runId}`), MENU_TASTO]] }, msgId);
 }
 
 type EsitoPiattaforma = { ok: boolean; link?: string; errore?: string; saltato?: boolean; prova?: boolean; privato?: boolean };
@@ -1489,8 +1532,21 @@ async function onNotify(env: Env, n: Notify) {
     else for (const chat of chats) await invia(env, chat, s, true);
     return;
   }
-  // analisi degli esempi di uno stile e prova della sola regia: niente scheda di montaggio, solo l'esito
-  if (n.azione === 'esempi' || n.azione === 'regia') {
+    // analisi degli esempi, prova della sola regia, copia degli originali dall'app: niente scheda di montaggio
+  if (n.azione === 'esempi' || n.azione === 'regia' || n.azione === 'archivio') {
+    if (n.azione === 'regia' && n.tipo !== 'fase') {
+      await mem(env).scrivi('app:regia', { nome: n.nome, ok: Boolean(n.ok), testo: n.testo, quando: Date.now(), attesa: false, runUrl: n.run_url });
+      await avvisaApp(env, { tipo: 'regia', titolo: n.ok ? 'Prova della regia' : 'Prova non riuscita', corpo: n.nome, url: '/' });
+    }
+    if (n.azione === 'archivio') {
+      if (n.tipo === 'fase') return;
+      const s: Schermo = n.ok
+        ? { testo: `📥 <b>Originali su Drive</b> · ${esc(n.nome)}\n${esc(tronca(n.testo, 500))}`, tasti: [[link('📂 01 · Da editare', URL_97)]] }
+        : { testo: `⚠️ <b>Copia su Drive non riuscita</b> — ${esc(n.nome)}\n<blockquote>${esc(tronca(n.testo, 500))}</blockquote>`, tasti: [[MENU_TASTO]] };
+      for (const chat of chats) await invia(env, chat, s, true);
+      await avvisaApp(env, { tipo: 'archivio', titolo: n.ok ? 'Originali su Drive' : 'Copia non riuscita', corpo: n.nome, url: '/' });
+      return;
+    }
     if (n.tipo === 'fase') return;
     const log = n.run_url ? [link('🔧 Log', n.run_url)] : [];
     const s: Schermo = !n.ok
@@ -1570,6 +1626,7 @@ async function onNotify(env: Env, n: Notify) {
       runId: n.run_id, nome: n.nome, file: n.info.file, stile: n.info.stile, durata: n.info.durata, prova: n.info.prova, link: n.info.link,
       runUrl: n.run_url, quando: Date.now(), foto: fotoId, corpo,
     });
+    await avvisaApp(env, { tipo: 'video', titolo: n.info.prova ? 'Prova pronta' : 'Video pronto', corpo: n.nome, url: `/?video=${n.run_id}` });
   }
 }
 
@@ -1672,6 +1729,7 @@ async function onVideo(env: Env, form: FormData) {
       runId, nome, file: info?.file, stile: info?.stile, durata: info?.durata, prova: info?.prova, link: info?.link,
       runUrl: runUrl || undefined, quando: Date.now(), video: fileId, corpo,
     });
+    await avvisaApp(env, { tipo: 'video', titolo: info?.prova ? 'Prova pronta' : 'Video pronto', corpo: nome, url: `/?video=${runId}` });
   }
   return almenoUno;
 }
@@ -1701,6 +1759,87 @@ async function segnalaErrore(env: Env, chat: string | undefined, e: unknown) {
   }
 }
 
+async function dispatchSemplice(env: Env, inputs: Record<string, string>): Promise<string | null> {
+  const imp = await impostazioni(env);
+  const r = await dispatch(env, RAMO[imp.versione], inputs);
+  if (r.status === 204) return null;
+  return `GitHub ${r.status}: ${(await r.text()).slice(0, 300)}`;
+}
+async function provaRegiaApp(env: Env, cartella: string, brief: string): Promise<string | null> {
+  const imp = await impostazioni(env);
+  const err = await dispatchSemplice(env, { azione: 'regia', cartella, brief: brief || `Stile: ${imp.stile}`, origine: '98' });
+  if (!err) await mem(env).scrivi('app:regia', { nome: cartella, attesa: true, quando: Date.now() });
+  return err;
+}
+async function archiviaApp(env: Env, cartella: string, r2: string): Promise<string | null> {
+  return dispatchSemplice(env, { azione: 'archivio', cartella, r2, origine: '97' });
+}
+
+function creaOps(): Ops {
+  const e = (env: Segreti) => env as Env;
+  return {
+    chat: (env) => autorizzati(e(env))[0] || '',
+    leggi: (env, k) => leggi(e(env), k),
+    scrivi: (env, k, v) => mem(e(env)).scrivi(k, v),
+    cancella: (env, k) => mem(e(env)).cancella(k),
+    prepara: async (env) => {
+      STILI_DRIVE = (await leggi<string[]>(e(env), 'stili_drive')) || [];
+      INFO_STILI = (await leggi<InfoStile[]>(e(env), 'stili_info')) || [];
+    },
+    impostazioni: (env) => impostazioni(e(env)),
+    salvaImpostazioni: async (env, imp) => { await mem(e(env)).scrivi('impostazioni', imp); },
+    stili: () => tuttiStili().map((s) => ({ ...s, id: infoStile(s.nome)?.id, desc: infoStile(s.nome)?.desc || s.cosa })),
+    cartelle: (env) => leggi(e(env), 'cartelle'),
+    richiediElenco: async (env, forza) => richiediElenco(e(env), autorizzati(e(env))[0] || 'app', Boolean(forza)),
+    lancia: async (env, i) => {
+      const envBot = e(env);
+      const chat = autorizzati(envBot)[0];
+      if (!chat) return 'Manca ALLOWED_CHAT_ID';
+      return lancia(envBot, chat, { ...i, azione: i.azione === 'render' ? 'render' : undefined });
+    },
+    provaRegia: (env, cartella, brief) => provaRegiaApp(e(env), cartella, brief),
+    archivia: (env, cartella, r2) => archiviaApp(e(env), cartella, r2),
+    giri: (env) => giri(e(env)),
+    video: async (env) => (await leggi<VideoFatto[]>(e(env), 'video')) || [],
+    memo: async (env, runId) => {
+      const m = await leggi<RunMemo | string>(e(env), `run:${runId}`);
+      return typeof m === 'string' ? { nome: m } : m;
+    },
+    scriviMemo: (env, runId, m) => mem(e(env)).scrivi(`run:${runId}`, m),
+    card: (env, runId) => leggi(e(env), `card:${runId}`),
+    pendenti: async (env) => (await leggi<Pendente[]>(e(env), 'pendenti')) || [],
+    collegamenti: async (env) => {
+      const envBot = e(env);
+      const c = await collegamenti(envBot);
+      const imp = await impostazioni(envBot);
+      return { ig: c.ig, yt: c.yt, prova: imp.prova, provaNome: PROVA[imp.prova].nome };
+    },
+    confermaPubblicazione: async (env, runId) => {
+      const envBot = e(env);
+      const chat = autorizzati(envBot)[0];
+      if (!chat) return 'Manca ALLOWED_CHAT_ID';
+      const memo = await leggi<RunMemo>(envBot, `run:${runId}`);
+      if (!memo) return 'Non trovo più questo montaggio';
+      return confermaPubblicazione(envBot, chat, runId, memo);
+    },
+    inviaTelegram: async (env, testo) => {
+      const envBot = e(env);
+      const chat = autorizzati(envBot)[0];
+      if (!chat) throw new Error('nessuna chat');
+      const id = await invia(envBot, chat, { testo });
+      if (!id) throw new Error('Telegram non ha accettato il messaggio');
+    },
+    nomeStile,
+    componiBrief,
+    conAltroStile,
+    conStile,
+    PROVA_S,
+    url97: URL_97,
+    url98: URL_98,
+    regia: (env) => leggi(e(env), 'app:regia'),
+  };
+}
+
 export default {
   async fetch(req: Request, env: Env, ctx: { waitUntil(p: Promise<unknown>): void }): Promise<Response> {
     const url = new URL(req.url);
@@ -1709,6 +1848,8 @@ export default {
       STILI_DRIVE = (await leggi<string[]>(env, 'stili_drive').catch(() => undefined)) || STILI_DRIVE;
       INFO_STILI = (await leggi<InfoStile[]>(env, 'stili_info').catch(() => undefined)) || INFO_STILI;
     }
+
+    if (url.pathname.startsWith('/api/')) return gestisciApp(req, env, creaOps());
 
     if (req.method === 'POST' && url.pathname === '/tg') {
       if (req.headers.get('x-telegram-bot-api-secret-token') !== env.TELEGRAM_SECRET) return new Response('no', { status: 401 });
@@ -1750,6 +1891,23 @@ export default {
       await aggiornaComandi(env, true);
       const info = await tg<{ url?: string; allowed_updates?: string[]; last_error_message?: string }>(env, 'getWebhookInfo', {});
       return Response.json({ set: r, url: info.result?.url, allowed_updates: info.result?.allowed_updates, last_error: info.result?.last_error_message });
+    }
+
+    if (req.method === 'GET' && env.ASSETS) {
+      const speciale = url.pathname === '/sw.js' || url.pathname === '/manifest.webmanifest';
+      const asset = await env.ASSETS.fetch(req);
+      if (speciale) {
+        const h = new Headers(asset.headers);
+        if (url.pathname === '/sw.js') h.set('cache-control', 'no-cache');
+        if (url.pathname === '/manifest.webmanifest') h.set('content-type', 'application/manifest+json');
+        return new Response(asset.body, { status: asset.status, headers: h });
+      }
+      if (asset.status !== 404) return asset;
+      if (url.pathname === '/' || !url.pathname.includes('.')) {
+        const index = await env.ASSETS.fetch(new Request(new URL('/index.html', url.origin), req));
+        return new Response(index.body, { status: index.status, headers: index.headers });
+      }
+      return asset;
     }
 
     return new Response('regista bot', { status: 200 });

@@ -36,9 +36,13 @@ on:
         required: false
         default: ''
       azione:
-        description: 'monta (default) | elenco = manda solo al bot le cartelle di 01 · Da editare | regia = prova veloce della sola regia (testo, niente render) su una cartella già montata | render = rifà solo il render con la regia salvata (origine 98) | esempi = fogli di fotogrammi degli esempi di uno stile (cartella = nome dello stile)'
+        description: 'monta (default) | elenco = manda solo al bot le cartelle di 01 · Da editare | regia = prova veloce della sola regia (testo, niente render) su una cartella già montata | render = rifà solo il render con la regia salvata (origine 98) | esempi = fogli di fotogrammi degli esempi di uno stile (cartella = nome dello stile) | archivio = copia su Drive i file caricati dall''app, senza montare'
         required: false
         default: 'monta'
+      r2:
+        description: 'Id del caricamento dall''app (R2). Il runner scarica da lì e copia gli originali in 01 · Da editare'
+        required: false
+        default: ''
       telegram:
         description: 'File mandati al bot (JSON [{"m": id_messaggio, "n": nome}]): originali in 97/<cartella>, risultato in 98/<cartella>'
         required: false
@@ -91,6 +95,7 @@ jobs:
           CARTELLA: ${{ inputs.cartella }}
           AZIONE: ${{ inputs.azione }}
           TELEGRAM: ${{ inputs.telegram }}
+          R2: ${{ inputs.r2 }}
           EVENTO: ${{ github.event_name }}
           GH_TOKEN: ${{ github.token }}
           NOTIFY_URL: ${{ secrets.NOTIFY_URL }}
@@ -110,6 +115,7 @@ jobs:
           trovato="$CARTELLA"
           # file da Telegram: la cartella la crea lo script (nome libero in 97 e 98)
           [ -n "$TELEGRAM" ] && [ "$TELEGRAM" != "[]" ] && trovato="${CARTELLA:-Video da Telegram}"
+          [ -n "$R2" ] && trovato="${CARTELLA:-Video dall'app}"
           liberi=("${con_vai[@]}")
           if [ "$AZIONE" != "elenco" ] && [ "$AZIONE" != "regia" ] && [ "$AZIONE" != "esempi" ] && [ -z "$trovato" ] && [ ${#con_vai[@]} -gt 0 ]; then
             trovato="${con_vai[0]}"
@@ -163,7 +169,7 @@ jobs:
       - name: Dipendenze
         id: dipendenze
         # la prova della sola regia non tocca video: niente ffmpeg né Remotion
-        if: steps.check.outputs.cartella != '' && inputs.azione != 'regia'
+        if: steps.check.outputs.cartella != '' && inputs.azione != 'regia' && inputs.azione != 'archivio'
         # di solito ~30 s; il 22/10 un mirror di Ubuntu bloccato l'ha tenuto fermo 20 minuti
         timeout-minutes: 10
         env:
@@ -203,6 +209,11 @@ jobs:
           NOTIFY_TOKEN: ${{ secrets.NOTIFY_TOKEN }}
           CARTELLA: ${{ steps.check.outputs.cartella }}
           TELEGRAM_FILE: ${{ inputs.telegram }}
+          R2_ID: ${{ inputs.r2 }}
+          R2_ACCOUNT_ID: ${{ secrets.R2_ACCOUNT_ID }}
+          R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          R2_BUCKET: ${{ secrets.R2_BUCKET }}
           # una volta sola: api_id/api_hash da my.telegram.org e il token del bot
           TG_API_ID: ${{ secrets.TG_API_ID }}
           TG_API_HASH: ${{ secrets.TG_API_HASH }}
@@ -212,7 +223,10 @@ jobs:
           CORREZIONE: ${{ inputs.correzione }}
           AZIONE: ${{ inputs.azione }}
           PROVA_SECONDI: ${{ inputs.secondi }}
-        run: node scripts/regista.mjs
+        run: |
+          # l'archivio non installa i pacchetti: la cartella sul disco grande va creata lo stesso
+          sudo mkdir -p /mnt/regista && sudo chown "$USER" /mnt/regista
+          node scripts/regista.mjs
 
       # installazione fallita (o andata in timeout): il montaggio non parte e non può avvisare da solo;
       # lo dice il workflow al bot, con 🔁 Riprova, invece di lasciarlo "in attesa del server"

@@ -21,6 +21,7 @@
 
 import { execFileSync, spawn, spawnSync } from 'node:child_process';
 import fs from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 import { audioMuto, frasi, inviluppo, sincronizza, sogliaVoce } from './audio.mjs';
 import { DIR_EDITARE, DIR_FATTI, DIR_STILI } from './cartelle.mjs';
@@ -28,6 +29,7 @@ import { HDR, curvaChiara, curvaEsposizione, filtroTecnico, misuraPezzo, perFilt
 import { chiaveStock, materialePerAI, normFrase, risolviRegia, sequenzaDiscorso, usaTuttoIlMateriale } from './regia.mjs';
 import { movimento, syncMovimento } from './sync-visivo.mjs';
 import { LOOK_FFMPEG, leggiStile, promptSuMisura } from './stile-su-misura.mjs';
+import { bloccoRemoteR2, comandiCancellaR2, comandiCopiaDrive, comandiScaricoR2 } from './rete.mjs';
 import { AUDIO_EXT, IMAGE_EXT, NOMI_DISPOSITIVO, VIDEO_EXT, dispositivo, prioritaAudio, tagsPiatti } from './sorgenti.mjs';
 
 const REMOTE = process.env.REGISTA_REMOTE || 'gdrive';
@@ -41,6 +43,10 @@ const PROVA_SECONDI = Math.max(0, Number(process.env.PROVA_SECONDI) || 0);
 // file mandati direttamente al bot: [{"m": id_messaggio, "n": "nome.mov"}, ...]
 const TELEGRAM_FILE = (process.env.TELEGRAM_FILE || '').trim();
 const DA_TELEGRAM = Boolean(TELEGRAM_FILE && TELEGRAM_FILE !== '[]');
+// girato caricato dall'app su R2: il runner lo scarica da lì (niente Drive nel collo di bottiglia)
+// e copia gli originali in 01 · Da editare in sottofondo
+const R2_ID = (process.env.R2_ID || '').trim();
+const DA_R2 = /^[A-Za-z0-9_-]{8,80}$/.test(R2_ID);
 const CHIAVI_TELEGRAM = Boolean(process.env.TG_API_ID && process.env.TG_API_HASH && process.env.TELEGRAM_BOT_TOKEN);
 const SRC_DIR = process.env.ORIGINE === '98' || CORREZIONE ? OUT_DIR : IN_DIR;
 const CACHE = '_regista'; // sottocartella con regia.json, piano.json e materiale.json di ogni video
@@ -54,6 +60,26 @@ const log = (...a) => console.log('[regista]', ...a);
 // con stdio 'inherit' execFileSync restituisce null: non va trattato come errore
 const run = (cmd, args, opts = {}) => String(execFileSync(cmd, args, { stdio: ['ignore', 'pipe', 'inherit'], maxBuffer: 1 << 28, ...opts }) ?? '');
 const rclone = (...args) => run('rclone', args);
+function assicuraRemoteR2() {
+  const dir = path.join(os.homedir(), '.config', 'rclone');
+  fs.mkdirSync(dir, { recursive: true });
+  const file = path.join(dir, 'rclone.conf');
+  const attuale = fs.existsSync(file) ? fs.readFileSync(file, 'utf8') : '';
+  if (/^\[r2\]/m.test(attuale)) return;
+  fs.appendFileSync(file, `\n${bloccoRemoteR2({
+    accountId: process.env.R2_ACCOUNT_ID || '',
+    accessKeyId: process.env.R2_ACCESS_KEY_ID || '',
+    secretAccessKey: process.env.R2_SECRET_ACCESS_KEY || '',
+  })}`);
+}
+function scaricaDaR2(id, dest) {
+  assicuraRemoteR2();
+  rclone(...comandiScaricoR2({ id, bucket: process.env.R2_BUCKET || '', dest }));
+}
+function cancellaR2(id) {
+  try { rclone(...comandiCancellaR2({ id, bucket: process.env.R2_BUCKET || '' })); }
+  catch (e) { log('R2 non svuotato', e.message); }
+}
 const remote = (...parts) => `${REMOTE}:${parts.join('/')}`;
 const isVai = (name) => path.parse(name).name.toUpperCase() === 'VAI';
 
@@ -199,6 +225,7 @@ function cartellaUguale(nome) {
 }
 
 function trovaCartella() {
+  if (DA_R2) return { nome: nomeLibero(process.env.CARTELLA), files: [], vai: null };
   if (DA_TELEGRAM) return { nome: nomeLibero(process.env.CARTELLA), files: [], vai: null };
   // avvio da Telegram/manuale con cartella esplicita: VAI non obbligatorio
   if (process.env.CARTELLA) {
@@ -882,7 +909,7 @@ function validaPiano(p) {
 // (le istruzioni di grafica per l'AI, inserite nel prompt al posto di {{GRAFICA}}).
 // Gli altri stili sono "su misura": una cartella su Drive in DIR_STILI con stile.txt e asset/,
 // renderizzata dalla composizione SuMisura (scripts/stile-su-misura.mjs, src/SuMisura.tsx).
-const STILI = ['Blueprint', 'Cinematico'];
+const STILI = JSON.parse(fs.readFileSync(new URL('./stili-base.json', import.meta.url), 'utf8')).map((s) => s.nome);
 let stileCorrente = STILI[0];
 let stileSuMisura = null; // { nome, grafica, testoAI, avvisi }
 let LUT_STILE = null;     // LUT creativa dello stile su misura
@@ -1513,6 +1540,23 @@ async function analizzaEsempi() {
     { ok: true, info: { esempi: video.length, link } });
 }
 
+// Originali arrivati dopo, da Wi-Fi: finiscono nella cartella già usata, senza un nuovo render.
+// Un montaggio già partito non li vede: per usarli serve 🔁 Rifai.
+async function archiviaDaR2() {
+  const nome = String(process.env.CARTELLA || '').trim();
+  if (!nome) throw new Error('archivio: manca il nome della cartella');
+  if (!DA_R2) throw new Error('archivio: manca il caricamento R2');
+  fs.rmSync(SCARICO, { recursive: true, force: true });
+  fs.mkdirSync(SCARICO, { recursive: true });
+  await fase(nome, '📥 Scarico da R2 e copio su Drive', 'scarico');
+  scaricaDaR2(R2_ID, SCARICO);
+  const n = fs.readdirSync(SCARICO).filter((f) => f !== 'manifest.json');
+  if (!n.length) throw new Error('su R2 non ci sono file');
+  rclone(...comandiCopiaDrive(SCARICO, remote(IN_DIR, nome)));
+  cancellaR2(R2_ID);
+  await notifica('📥 originali su Drive', nome, `${n.length} file in ${IN_DIR}/${nome}. Il montaggio già partito non li vede: per usarli, 🔁 Rifai da zero.`, { ok: true });
+}
+
 async function main() {
   if (process.env.AZIONE === 'esempi') {
     return analizzaEsempi().catch(async (e) => {
@@ -1525,6 +1569,13 @@ async function main() {
     return provaRegia().catch(async (e) => {
       log(e.stack || e.message);
       await notifica('⚠️ prova regia', process.env.CARTELLA || '—', `Errore: ${e.message}`);
+      process.exitCode = 1;
+    });
+  }
+  if (process.env.AZIONE === 'archivio') {
+    return archiviaDaR2().catch(async (e) => {
+      log(e.stack || e.message);
+      await notifica('⚠️ copia su Drive', process.env.CARTELLA || '—', `Errore: ${e.message}`);
       process.exitCode = 1;
     });
   }
@@ -1551,13 +1602,19 @@ async function main() {
   }
   const vaiUsato = vai ? `_VAI_usato_${nomeVaiOriginale(vai)}` : null;
 
-  // video da Telegram: originali in 97/<nome>, risultato in 98/<nome> (niente spostamento)
-  const DEST = DA_TELEGRAM ? OUT_DIR : SRC_DIR;
+  // Telegram e app: originali in 01/<nome> in sottofondo, risultato direttamente in 02/<nome>
+  const DEST = DA_TELEGRAM || DA_R2 ? OUT_DIR : SRC_DIR;
   let copiaOriginali = null;
   let avvisoOriginali = '';
   try {
     const isMedia = (f) => VIDEO_EXT.concat(IMAGE_EXT, AUDIO_EXT).includes(path.extname(f.Name).toLowerCase()) && !isNostro(f.Name);
-    if (DA_TELEGRAM) {
+    if (DA_R2) {
+      await fase(nome, '📥 Scarico il girato da R2 (caricato dall\'app)', 'scarico');
+      scaricaDaR2(R2_ID, SCARICO);
+      const n = fs.readdirSync(SCARICO).filter((f) => f !== 'manifest.json');
+      if (!n.length) throw new Error('su R2 non ci sono file per questo caricamento');
+      copiaOriginali = inSottofondo('rclone', comandiCopiaDrive(SCARICO, remote(IN_DIR, nome)));
+    } else if (DA_TELEGRAM) {
       const refs = JSON.parse(TELEGRAM_FILE);
       await fase(nome, `📥 Scarico ${refs.length} file da Telegram`, 'scarico');
       if (!CHIAVI_TELEGRAM) throw new Error(`i video mandati in chat non sono ancora attivi: servono i secret TG_API_ID, TG_API_HASH e TELEGRAM_BOT_TOKEN su GitHub (vedi la Guida del bot). Intanto carica i file su Drive in ${IN_DIR}.`);
@@ -1681,7 +1738,15 @@ async function main() {
     await ritagliPersona(piano);
     // prima di cancellarli, gli originali devono essere su Drive; se la copia fallisce il video si consegna lo stesso
     if (copiaOriginali) {
-      try { await copiaOriginali; } catch (e) { avvisoOriginali = `⚠️ originali non copiati in ${IN_DIR}/${nome} (${e.message}): restano nella chat Telegram`; log(avvisoOriginali); }
+      try {
+        await copiaOriginali;
+        if (DA_R2) cancellaR2(R2_ID);
+      } catch (e) {
+        avvisoOriginali = DA_R2
+          ? `⚠️ originali non copiati in ${IN_DIR}/${nome} (${e.message}): restano su R2, il montaggio usa la copia locale`
+          : `⚠️ originali non copiati in ${IN_DIR}/${nome} (${e.message}): restano nella chat Telegram`;
+        log(avvisoOriginali);
+      }
     }
     fs.rmSync(SCARICO, { recursive: true, force: true });
     fs.writeFileSync(path.join(WORK, 'piano.json'), JSON.stringify(piano, null, 1));
@@ -1705,7 +1770,7 @@ async function main() {
       piano.note ? `Note: ${piano.note}` : '',
       analisi.sorgenti.some((s) => s.stock && piano.clips.some((c) => c.sorgente === s.id)) ? `Repertorio: ${analisi.sorgenti.filter((s) => s.stock && piano.clips.some((c) => c.sorgente === s.id)).map((s) => s.crediti).join(', ')}` : '',
       `File: ${OUT_DIR}/${nome}/${finale}`,
-      DA_TELEGRAM ? (avvisoOriginali || `Originali: ${IN_DIR}/${nome}`) : '',
+      DA_TELEGRAM || DA_R2 ? (avvisoOriginali || `Originali: ${IN_DIR}/${nome}`) : '',
       rigaConsumi(),
     ].filter(Boolean).join('\n');
     fs.writeFileSync(path.join(WORK, 'NOTE.txt'), note);
@@ -1719,7 +1784,7 @@ async function main() {
     for (const f of fs.readdirSync(WORK).filter((x) => /^colore-.+\.jpg$/.test(x))) rclone('copyto', path.join(WORK, f), remote(DEST, nome, CACHE, f));
     if (fotogrammiFinale(outFile, durataN, piano)) rclone('copyto', path.join(WORK, 'fotogrammi.jpg'), remote(DEST, nome, CACHE, 'fotogrammi.jpg'));
     if (vai) rclone('moveto', remote(SRC_DIR, nome, vai), remote(SRC_DIR, nome, vaiUsato));
-    if (SRC_DIR === IN_DIR && !DA_TELEGRAM) rclone('moveto', remote(IN_DIR, nome), remote(OUT_DIR, nome));
+    if (SRC_DIR === IN_DIR && !DA_TELEGRAM && !DA_R2) rclone('moveto', remote(IN_DIR, nome), remote(OUT_DIR, nome));
 
     // per il tasto 📤 Pubblica: didascalie (con 🎨 Solo render quelle già scritte) e ID del file su Drive
     let didascalie = null;
@@ -1756,7 +1821,12 @@ async function main() {
     fs.mkdirSync(WORK, { recursive: true });
     fs.writeFileSync(path.join(WORK, 'ERRORE.txt'), testo);
     // video da Telegram: gli originali devono arrivare in 97 anche se il montaggio è fallito (così 🔁 Riprova funziona)
-    if (copiaOriginali) { try { await copiaOriginali; } catch (e3) { log('copia degli originali non riuscita', e3.message); } }
+    if (copiaOriginali) {
+      try {
+        await copiaOriginali;
+        if (DA_R2) cancellaR2(R2_ID);
+      } catch (e3) { log('copia degli originali non riuscita', e3.message); }
+    }
     try {
       rclone('copyto', path.join(WORK, 'ERRORE.txt'), remote(SRC_DIR, nome, 'ERRORE.txt'));
       if (vai) rclone('moveto', remote(SRC_DIR, nome, vai), remote(SRC_DIR, nome, vaiUsato));

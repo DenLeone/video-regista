@@ -18,6 +18,27 @@ new_sqlite_classes = ["Memoria"]
 [triggers]
 crons = ["17 6 * * 1"]
 
+# L'app (PWA) sta in ./app. Il worker risponde prima: le route del bot e /api restano sue.
+[assets]
+directory = "./app"
+binding = "ASSETS"
+run_worker_first = true
+
 # Segreti (wrangler secret put <NOME>, o dashboard Cloudflare → Variables and Secrets):
 #   TELEGRAM_BOT_TOKEN, TELEGRAM_SECRET, ALLOWED_CHAT_ID,
 #   GITHUB_TOKEN, GITHUB_REPO, NOTIFY_TOKEN, IG_TOKEN (chiave Instagram per 📤 Pubblica)
+#   APP_SETUP_CODE            codice di recupero dell'app (riusabile, solo per Denis)
+#   R2_ACCOUNT_ID             account Cloudflare, 32 hex (lo stesso di account_id va bene)
+#   R2_ACCESS_KEY_ID          chiave S3 del bucket, non il token API di Cloudflare
+#   R2_SECRET_ACCESS_KEY
+#   R2_BUCKET                 bucket dedicato all'inbox. Il CORS (ETag esposto) lo imposta il worker
+#                             al primo caricamento. Consigliata una lifecycle di 7 giorni su inbox/
+#   VAPID_PUBLIC_KEY          notifiche: solo se l'app è sulla Home di iOS
+#   VAPID_PRIVATE_KEY
+#   VAPID_SUBJECT             es. mailto:denis@...
+#   DRIVE_CLIENT_ID           playback nell'app. Senza, si apre il link di Drive
+#   DRIVE_CLIENT_SECRET
+#   DRIVE_REFRESH_TOKEN
+# Sul repo GitHub (Actions), gli stessi quattro valori R2:
+#   R2_ACCOUNT_ID, R2_ACCESS_KEY_ID, R2_SECRET_ACCESS_KEY, R2_BUCKET
+# Il bucket non è un binding del Worker: il deploy non fallisce se non esiste ancora.
