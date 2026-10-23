@@ -7,7 +7,7 @@
 > **Cartelle Drive rinominate da Denis il 20/10**: `97 - Editare` → `01 · Da editare`, `98 - Fatti` → `02 · Fatti`, `99 - Pubblicare` → `03 · Da pubblicare`, `03 · Social — Risorse/Stili` → `12 · Risorse/Stili`. I nomi stanno in `scripts/cartelle.mjs` e nell'`env` dei workflow (regista, pubblica, laboratorio); i link del bot vanno per ID e non cambiano. Nelle note più vecchie qui sotto restano i nomi di allora.
 1. **Da Telegram** (comodo dal telefono): manda i file al bot **come File** (📎 → File, non come video: niente compressione), fino a 2 GB a file (4 GB con Premium); il nome del video come didascalia. Il bot raccoglie tutto in una scheda → 🚀 Monta subito o 📝 Con domande. Originali in `01 · Da editare/<Nome>`, risultato in `02 · Fatti/<Nome>` (se il nome esiste già → "Nome (2)"). Tempo in più rispetto a Drive: ~0–3 min (download via MTProto, copia in 97 in sottofondo).
    **Da Drive**: una cartella per video in `01 · Da editare/` con tutto il girato (iPhone, Sony, Insta360, B-roll, audio del mic). Indicazioni per quel video: `brief.txt` nella cartella (facoltativo).
-2. Avvio: dal bot **🆕 Nuovo montaggio** (uno, guidato) o **📦 Più video** (spunti tante cartelle, partono in parallelo); oppure un file `VAI` in ogni cartella: il giro automatico le prende **tutte insieme**, ognuna nel suo giro.
+2. Avvio: dal bot **🆕 Nuovo montaggio** (uno, guidato), dall'app, o **📦 Più video** (spunti tante cartelle, partono in parallelo). Un file `VAI` non parte più da solo: il controllo ogni 30 minuti è stato tolto il 23/10. Da Nuovo montaggio, «Tutte quelle con VAI» le monta tutte insieme, ognuna nel suo giro.
 3. Ogni video ha una scheda che si aggiorna; il finale (1080×1920, ~15 Mbps) arriva in chat con 👍/📤/✏️/🎨/🔄/🔁 e finisce in `02 · Fatti/<Nome>/`. **📼 Ultimi video** (/video) li rimanda giù in chat con i loro tasti.
 
 ### 20/10: qualità del render, 12K Quality da capo, modalità discorso, controllo generale
@@ -182,7 +182,7 @@ Vyra NON viene toccato: resta per il montaggio a mano (la sua automazione `vyra-
 | `src/piano.ts` | tipo del piano di montaggio (contratto tra Claude e Remotion) |
 | `scripts/regista.mjs` | pipeline completa (Drive → prep → Claude → render (3 tentativi) → Drive → notifica) |
 | `scripts/prompt-regista.md` | istruzioni di stile per Claude (regole Blueprint) |
-| `.github/workflows/regista.yml` | ogni 30 min (7–23) + avvio manuale/Telegram con input `cartella` e `brief` |
+| `.github/workflows/regista.yml` | avvio dal bot, dall'app o da Actions (il cron ogni 30 min è stato tolto il 23/10) |
 | `telegram/` | bot Telegram su Cloudflare Workers (`/monta`, `/stato`, notifiche) |
 
 ## Stato
@@ -194,7 +194,7 @@ Vyra NON viene toccato: resta per il montaggio a mano (la sua automazione `vyra-
 - [x] **Repo GitHub privato** `DenLeone/video-regista` creato e codice caricato (16/10). Da casa: `git clone https://github.com/DenLeone/video-regista` in una cartella su C: (fonte di verità = GitHub; la cartella Drive ha anche lei il `.git`, tenerle allineate con push/pull).
 - [x] Secret repo impostati: `NOTIFY_TOKEN`, `NOTIFY_URL`. Secret worker: `GITHUB_REPO`.
 - [x] **Tutti i secret impostati** (16/10, ~14:27): repo `CLAUDE_CODE_OAUTH_TOKEN`, `GROQ_API_KEY`, `RCLONE_CONF`, `NOTIFY_TOKEN`, `NOTIFY_URL`; worker `TELEGRAM_BOT_TOKEN`, `TELEGRAM_SECRET`, `ALLOWED_CHAT_ID`, `GITHUB_TOKEN`, `GITHUB_REPO`, `NOTIFY_TOKEN`. rclone installato sul PC ufficio (remote `gdrive`, funziona).
-- [x] Workflow `regista` **riattivato** (cron ogni 30 min 7–23 + /monta).
+- [x] Workflow `regista` **riattivato** (il 16/10: cron ogni 30 min 7–23 + /monta). Il cron è stato tolto il 23/10: si parte solo da bot, app o Actions.
 - [x] **Primo giro reale su GitHub riuscito** (16/10, run 38911870639, 15:57–16:55 ora italiana) su `97 - Editare/Cuffie p30i`, versione attuale dello script (2ab1d92): render 1081 frame → `Cuffie p30i - FINALE.mp4` 85 MB, caricato su Drive, anteprima 19 MB inviata al bot (HTTP 200). Fase Monta = 56 min.
   - Prima: run 38900694099 fallito subito (`echo "${{secrets.RCLONE_CONF}}"` mangiava le virgolette → corretto con env + printf). Run 38900918411 su `_TEST_GH` (versione vecchia): render completato (`_TEST_GH - FINALE.mp4` 45 MB, Monta 32 min) ma crash subito dopo l'upload con `Cannot read properties of null (reading 'toString')`: era `execFileSync` con stdio `inherit` che restituisce null, **già corretto** in `run()` (righe 33–34 di `regista.mjs`). `_TEST_GH` resta senza cache `_regista`: la ✏️ correzione lì non funziona, serve un nuovo montaggio.
 - [x] **Bot v2** (16/10): menu a bottoni; `/nuovo` = brief guidato a 5 domande (cartella, sponsor, durata, tono, tavola, note) con riepilogo e 🚀 Avvia; `/stato` con fase in corso e minuti; messaggi silenziosi a ogni fase; a fine montaggio **video 720p in chat** (≤45 MB; se non passa → foto anteprima) con 👍 Va bene / ✏️ Correggi; ✏️ → scrivi cosa cambiare → giro in modalità correzione (`origine=98`) che riparte dal piano salvato e crea `FINALE v2`, `v3`…; errori con 🔁 Riprova. Memoria del bot = Durable Object `Memoria` (KV non creabile: login wrangler senza scope KV).
@@ -247,13 +247,13 @@ Poi Claude riattiva il workflow e lancia il primo giro.
 - Opzione A (Remotion + GitHub Actions) invece di mini PC: gratis, nessun browser da tenere sveglio.
 - Blueprint resta la firma; i contenitori serviranno solo per inserti/foto prodotto (16/10).
 - Clip orizzontali: contenute a tutta larghezza su copia sfocata di sé stesse.
-- Cron ogni 30 min 7–23 per stare nei ~2000 min/mese gratuiti dei repo privati.
+- Cron ogni 30 min 7–23 per stare nei ~2000 min/mese gratuiti dei repo privati. **Tolto il 23/10**: Denis non lo usa; un file VAI non parte più da solo.
 - Notifiche: Telegram al posto dell'email (16/10).
 - I token del bot e di GitHub li inserisce Denis (Claude non maneggia credenziali); i token interni casuali li genera Claude.
 
 ## Rischi / da verificare
 - Token Claude via abbonamento in Actions: da guide di terzi, da confermare sul README ufficiale di claude-code-action.
-- Render su runner GitHub (2 CPU, no GPU): misurato il 16/10, fase Monta completa 32–56 min per video da ~36–42 s. Con ~2000 min/mese gratuiti = circa 25–35 montaggi/mese (i giri a vuoto del cron costano 1 min l'uno; GitHub ne esegue molti meno di uno ogni 30 min, circa 1 ogni 3 ore).
+- Render su runner GitHub (2 CPU, no GPU): misurato il 16/10, fase Monta completa 32–56 min per video da ~36–42 s. Con ~2000 min/mese gratuiti = circa 25–35 montaggi/mese. I giri a vuoto del cron costavano 1 min l'uno; il cron è stato tolto il 23/10.
 - ⚠️ Dal **19/10/2026** `ubuntu-latest` passa a Ubuntu 26: possibili rotture su installazione ffmpeg/rclone o dipendenze di Chrome per Remotion. Valutare di fissare `runs-on: ubuntu-24.04` nel workflow.
 - Idea in valutazione (17/10): comando Telegram "vai su DaVinci" → montaggio fatto in DaVinci Resolve sul PC (vedi chat del 17/10; serve un agente locale sul PC).
 - Clip senza parlato: montaggio basato solo sui fotogrammi → più generico; `brief.txt` o brief dal bot aiuta.

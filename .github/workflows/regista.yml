@@ -1,11 +1,7 @@
 name: regista
 
 on:
-  schedule:
-    # ogni 30 min dalle 7 alle 23 ora italiana (cron in UTC); GitHub può ritardare di qualche minuto.
-    # Ogni giro costa almeno 1 minuto di Actions anche se non c'è niente da fare.
-    - cron: '*/30 5-21 * * *'
-  workflow_dispatch:          # avvio manuale dal tab Actions o dal bot Telegram
+  workflow_dispatch:          # avvio dal bot, dall'app o dal tab Actions
     inputs:
       cartella:
         description: 'Cartella in 01 · Da editare (vuoto = la prima con VAI)'
@@ -61,12 +57,12 @@ env:
 
 # Una coda PER CARTELLA: GitHub tiene un solo giro "in attesa" per gruppo e scarta
 # quelli in attesa più vecchi. Con un gruppo unico, tre avvii di fila ne perdevano uno.
-# Cartelle diverse girano in parallelo; i controlli automatici e l'elenco hanno la loro coda.
+# Cartelle diverse girano in parallelo. Senza nome di cartella, e l'elenco, hanno la loro coda.
 concurrency:
   group: regista-${{ inputs.azione == 'elenco' && 'elenco' || (inputs.azione == 'regia' || inputs.azione == 'esempi') && format('{0}-{1}', inputs.azione, inputs.cartella) || inputs.cartella || 'auto' }}
   cancel-in-progress: false
 
-# il giro automatico avvia un giro per ogni cartella con VAI (gh workflow run)
+# senza nome di cartella, lo script avvia un giro per ogni cartella con VAI (gh workflow run)
 permissions:
   contents: read
   actions: write
@@ -115,7 +111,8 @@ jobs:
           trovato="$CARTELLA"
           # file da Telegram: la cartella la crea lo script (nome libero in 97 e 98)
           [ -n "$TELEGRAM" ] && [ "$TELEGRAM" != "[]" ] && trovato="${CARTELLA:-Video da Telegram}"
-          [ -n "$R2" ] && trovato="${CARTELLA:-Video dall'app}"
+          # l'apostrofo non può stare dentro ${var:-...}: bash non chiude la parentesi e lo step non parte
+          if [ -n "$R2" ] && [ -z "$trovato" ]; then trovato="Video dall'app"; fi
           liberi=("${con_vai[@]}")
           if [ "$AZIONE" != "elenco" ] && [ "$AZIONE" != "regia" ] && [ "$AZIONE" != "esempi" ] && [ -z "$trovato" ] && [ ${#con_vai[@]} -gt 0 ]; then
             trovato="${con_vai[0]}"

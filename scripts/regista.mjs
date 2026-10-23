@@ -100,7 +100,7 @@ async function fetchRiprova(url, opts = {}, tentativi = 4) {
     }
   }
 }
-// VAI "prenotato" appena parte un montaggio: il controllo periodico non lo riprende due volte
+// VAI "prenotato" appena parte un montaggio: un altro avvio non lo riprende due volte
 const isInCorso = (name) => /^_VAI_in_corso_/i.test(name);
 const nomeVaiOriginale = (name) => name.replace(/^_VAI_in_corso_/i, '');
 // file generati da noi o segnali: mai materiale di montaggio
