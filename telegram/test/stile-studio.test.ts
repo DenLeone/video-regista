@@ -258,3 +258,34 @@ test('analisi, chat, salva, rinomina, duplica, elimina', async () => {
   const resti = db.get('app:stili') as { nome: string }[];
   assert.deepEqual(resti.map((s) => s.nome), ['Giallo copia']);
 });
+
+test('Gemini lento o sovraccarico: si passa al Flash Lite, e un 400 riprova senza ragionamento', async () => {
+  const chiesti: string[] = [];
+  const buono = JSON.stringify({ candidates: [{ content: { parts: [{ text: JSON.stringify({ risposta: 'ok', stile: 'Nome: Prova\nTono: diretto\nSottotitoli: parola\nLook: naturale\nRitmo dei tagli: veloce, un taglio ogni secondo\nInquadrature: volto e dettagli' }) }] } }] });
+  const originale = console.error;
+  console.error = () => {};
+  try {
+    const dopo503 = await chiediStile({
+      fetch: async (url) => {
+        chiesti.push(String(url).split('/models/')[1]);
+        return String(url).includes('flash-lite') ? new Response(buono, { status: 200 }) : new Response('', { status: 503 });
+      },
+      geminiKey: 'k', prompt: 'x', foto: [],
+    });
+    assert.equal(dopo503.ok, true);
+    assert.deepEqual(chiesti, ['gemini-flash-latest:generateContent', 'gemini-flash-lite-latest:generateContent']);
+    const corpi: string[] = [];
+    const dopo400 = await chiediStile({
+      fetch: async (_url, init) => {
+        corpi.push(String(init?.body));
+        return corpi.length === 1 ? new Response('', { status: 400 }) : new Response(buono, { status: 200 });
+      },
+      geminiKey: 'k', prompt: 'x', foto: [],
+    });
+    assert.equal(dopo400.ok, true);
+    assert.equal(corpi[0].includes('thinkingConfig'), true);
+    assert.equal(corpi[1].includes('thinkingConfig'), false);
+  } finally {
+    console.error = originale;
+  }
+});
