@@ -19,7 +19,7 @@ const stato = {
 };
 
 function studioVuoto() {
-  return { fase: 'elenco', salvati: [], bozza: null, occupato: '', file: null, nota: '' };
+  return { fase: 'elenco', salvati: [], bozza: null, occupato: '', file: null, nota: '', errore: '' };
 }
 
 function caricaVuota() {
@@ -76,14 +76,22 @@ const demoStile = {
   bozza: null,
 };
 
-async function api(path, { method = 'GET', body } = {}) {
+async function api(path, { method = 'GET', body, ms } = {}) {
   if (DEMO) return demoApi(path, method, body);
-  const r = await fetch(path, {
-    method,
-    credentials: 'same-origin',
-    headers: body === undefined ? undefined : { 'content-type': 'application/json' },
-    body: body === undefined ? undefined : JSON.stringify(body),
-  });
+  let r;
+  try {
+    r = await fetch(path, {
+      method,
+      credentials: 'same-origin',
+      headers: body === undefined ? undefined : { 'content-type': 'application/json' },
+      body: body === undefined ? undefined : JSON.stringify(body),
+      // ms: per le chiamate lunghe (analisi dello stile) un limite chiaro invece di un'attesa infinita
+      ...(ms && typeof AbortSignal !== 'undefined' && AbortSignal.timeout ? { signal: AbortSignal.timeout(ms) } : {}),
+    });
+  } catch (e) {
+    if (e?.name === 'TimeoutError' || e?.name === 'AbortError') throw new Error('Nessuna risposta dal server in tempo. Riprova.');
+    throw new Error('Rete assente o instabile. Riprova quando torna.');
+  }
   const data = await r.json().catch(() => ({}));
   if (r.status === 401 && !path.startsWith('/api/auth')) {
     stato.schermo = 'accesso';
@@ -549,6 +557,7 @@ function htmlStile() {
     <div class="intro"><p class="kicker">Stile</p><h1>Studia uno stile</h1></div>
     <p class="sub">Un video breve, tuo o di un creator. L’AI propone ritmo, scritte, colori e zoom. Poi lo correggi a parole.</p>
     ${s.occupato ? `<div class="card"><p class="kicker">In corso</p><p>${esc(s.occupato)}</p></div>` : ''}
+    ${s.errore ? `<div class="card errore-stile"><p class="kicker">Non è andata</p><p>${esc(s.errore)}</p><small class="meta">Premi di nuovo Studia per riprovare.</small></div>` : ''}
     <div class="card">
       <label class="etichetta">Video di riferimento</label>
       <input class="campo" id="file-stile" type="file" accept="video/*">
@@ -858,6 +867,7 @@ async function pompa(inizio, files) {
   const volo = new Map();
   let prossimo = 0;
   let guasto = null;
+  let inviati = 0;
   const parallelo = inizio.parallelo || 4;
   async function lavoratore() {
     while (prossimo < coda.length && !guasto && !c.stop) {
@@ -1145,30 +1155,40 @@ function notaUpload(testo) {
   if (el) el.textContent = testo;
 }
 
+// fasi sempre visibili (24/10: un errore dell'analisi compariva in un avviso di 4 s mentre il file
+// intero caricava per minuti, e sembrava che non succedesse niente)
+function faseStudio(testo) {
+  stato.studio.occupato = testo;
+  disegna();
+}
+
 async function studiaVideo() {
   if (DEMO) { toast('In demo l’analisi non chiama l’AI. Apri uno stile salvato.'); return; }
   const file = stato.studio.file;
   if (!file) throw new Error('Scegli un video di riferimento.');
-  stato.studio.occupato = 'Guardo i fotogrammi…';
   stato.studio.nota = '';
-  disegna();
+  stato.studio.errore = '';
+  faseStudio('Estraggo i fotogrammi…');
   let campione;
   try {
-    campione = await campionaRiferimento(file);
+    campione = await campionaRiferimento(file, faseStudio);
   } catch (e) {
     stato.studio.occupato = '';
+    stato.studio.errore = e.message || 'Non riesco a leggere questo video sul telefono.';
     disegna();
-    throw e;
+    return;
   }
-  stato.studio.occupato = 'Chiedo lo stile…';
-  disegna();
-  const invio = inviaRiferimento(file).catch((e) => notaUpload(e.message || 'Il file intero non è partito. Lo stile, se c’è, resta.'));
+  faseStudio('L’AI analizza lo stile… (fino a un minuto)');
+  const invio = inviaRiferimento(file).catch((e) => notaUpload(`Il file intero non è partito (${e.message || 'errore'}). Lo stile, se c’è, resta.`));
   try {
-    const r = await api('/api/stile/analizza', { method: 'POST', body: {
+    const r = await api('/api/stile/analizza', { method: 'POST', ms: 120000, body: {
       durata: campione.durata, tagli: campione.tagli, fotogrammi: campione.fotogrammi, audio: campione.audio,
     } });
+    if (!r.bozza?.haTesto) throw new Error('L’AI non ha restituito uno stile. Riprova.');
     stato.studio.bozza = r.bozza;
     stato.studio.fase = 'studio';
+  } catch (e) {
+    stato.studio.errore = `Analisi non riuscita: ${e.message || 'errore sconosciuto'}`;
   } finally {
     stato.studio.occupato = '';
     disegna();
@@ -1270,47 +1290,88 @@ function lumaMedia(ctx, w, h) {
   return n ? sum / n : 0;
 }
 
-async function campionaRiferimento(file) {
+// un fotogramma dopo il seek: su iOS 'seeked' può arrivare prima che il fotogramma sia disegnabile;
+// requestVideoFrameCallback (Safari 15.4+) aspetta quello vero, con un tetto di 600 ms
+function fotogrammaPronto(video) {
+  return new Promise((ok) => {
+    const t = setTimeout(ok, 600);
+    if (typeof video.requestVideoFrameCallback === 'function') video.requestVideoFrameCallback(() => { clearTimeout(t); ok(); });
+    else requestAnimationFrame(() => requestAnimationFrame(() => { clearTimeout(t); ok(); }));
+  });
+}
+
+async function campionaRiferimento(file, fase = () => {}) {
   const url = URL.createObjectURL(file);
   const video = document.createElement('video');
   video.muted = true;
+  video.defaultMuted = true;
   video.playsInline = true;
+  video.setAttribute('playsinline', '');
+  video.setAttribute('muted', '');
   video.preload = 'auto';
+  // iOS decodifica meglio un video che sta nella pagina: minuscolo e invisibile
+  video.style.cssText = 'position:fixed;left:0;top:0;width:2px;height:2px;opacity:0;pointer-events:none';
+  document.body.appendChild(video);
   video.src = url;
   try {
-    await attendiVideo(video, 'loadedmetadata', 8000);
+    await attendiVideo(video, 'loadedmetadata', 10000).catch(() => {
+      throw new Error('Il telefono non apre questo video. Prova un file più corto o esportato in H.264 (MP4).');
+    });
     const durata = video.duration;
     if (!Number.isFinite(durata) || durata < 0.4) throw new Error('Video troppo corto o senza durata.');
+    // un attimo di play da muto "sveglia" il decoder di iOS: senza, i primi drawImage possono uscire neri
+    try { await video.play(); video.pause(); } catch { /* autoplay negato: si va avanti coi seek */ }
+    if (!video.videoWidth) await attendiVideo(video, 'loadeddata', 5000).catch(() => {});
     const piccolo = document.createElement('canvas');
     piccolo.width = 48;
     piccolo.height = 48;
     const ctxP = piccolo.getContext('2d', { willReadFrequently: true });
-    const passi = Math.min(24, Math.max(8, Math.round(durata / 0.5)));
+    // ritmo: fino a 12 seek; uno che non risolve si salta invece di fermare tutto
+    const passi = Math.min(12, Math.max(6, Math.round(durata / 1)));
     const luci = [];
     for (let i = 0; i < passi; i++) {
-      await vaiAlSecondo(video, Math.min(durata - 0.05, durata * (i + 0.5) / passi));
-      ctxP.drawImage(video, 0, 0, 48, 48);
-      luci.push(lumaMedia(ctxP, 48, 48));
+      fase(`Misuro il ritmo dei tagli… ${i + 1}/${passi}`);
+      try {
+        await vaiAlSecondo(video, Math.min(durata - 0.05, durata * (i + 0.5) / passi));
+        await fotogrammaPronto(video);
+        ctxP.drawImage(video, 0, 0, 48, 48);
+        luci.push(lumaMedia(ctxP, 48, 48));
+      } catch { /* seek non risolto: questo punto non conta */ }
     }
     let tagli = 0;
     for (let i = 1; i < luci.length; i++) {
       if (Math.abs(luci[i] - luci[i - 1]) / Math.max(1, Math.abs(luci[i - 1])) >= 0.18) tagli += 1;
     }
+    // stima su meno punti: riportata alla durata come se fossero passi ogni 0,5 s
+    if (luci.length > 1) tagli = Math.round(tagli * Math.max(1, (durata / 0.5) / luci.length) * 0.5);
     const grande = document.createElement('canvas');
     const lato = 320;
     const rap = (video.videoWidth || 9) / (video.videoHeight || 16);
     grande.width = rap >= 1 ? lato : Math.max(2, Math.round(lato * rap));
     grande.height = rap >= 1 ? Math.max(2, Math.round(lato / rap)) : lato;
-    const ctxG = grande.getContext('2d');
+    const ctxG = grande.getContext('2d', { willReadFrequently: true });
     const fotogrammi = [];
     for (let i = 0; i < 6; i++) {
-      await vaiAlSecondo(video, Math.min(durata - 0.05, durata * (i + 0.5) / 6));
-      ctxG.drawImage(video, 0, 0, grande.width, grande.height);
-      fotogrammi.push(jpegBreve(grande));
+      fase(`Estraggo i fotogrammi… ${i + 1}/6`);
+      try {
+        await vaiAlSecondo(video, Math.min(durata - 0.05, durata * (i + 0.5) / 6));
+        await fotogrammaPronto(video);
+        ctxG.drawImage(video, 0, 0, grande.width, grande.height);
+        // fotogramma tutto nero = decoder non pronto: non lo mando
+        if (lumaMedia(ctxG, grande.width, grande.height) < 6) continue;
+        fotogrammi.push(jpegBreve(grande));
+      } catch { /* seek non risolto: un fotogramma in meno */ }
     }
+    if (fotogrammi.length < 2) {
+      throw new Error('Il telefono non riesce a estrarre i fotogrammi da questo video (spesso succede con HEVC/MOV pesanti). Prova un file più corto o esportato in H.264.');
+    }
+    fase('Preparo l’audio…');
     const audio = await audioBreve(file);
     return { durata, tagli, fotogrammi, audio };
   } finally {
+    video.removeAttribute('src');
+    video.load();
+    video.remove();
     URL.revokeObjectURL(url);
   }
 }
@@ -1402,6 +1463,8 @@ async function inviaRiferimento(file) {
         if (!url) continue;
         const etag = await mandaConRiprove(upload.id, job, url, () => {});
         await idbAggiungi(`${job.meta.nome}|${job.meta.size}`, { n: job.n, etag });
+        inviati += 1;
+        notaUpload(`Carico il file intero… ${Math.round((inviati / Math.max(1, coda.length)) * 100)}%`);
         await api(`/api/upload/${upload.id}/parte`, { method: 'POST', body: { nome: job.meta.nome, numero: job.n, etag } });
       } catch (e) { guasto = e; }
     }

@@ -8,6 +8,8 @@ const ILLEGGIBILE = 'L’AI non ha restituito uno stile leggibile. Riprova.';
 export function erroreModello(stato: number, riserva: boolean): string {
   if (stato === 429) return 'L’AI è al limite per un minuto. Riprova tra poco.';
   if (stato === 401 || stato === 403) return 'La chiave dell’AI non è accettata.';
+  if (stato === 0) return 'L’AI non ha risposto entro un minuto (rete o servizio lento). Riprova.';
+  if (stato === 400 || stato === 404) return `L’AI ha rifiutato la richiesta (errore ${stato}): modello o immagini non accettati.`;
   if (riserva) return 'Gemini non ha risposto. Ho provato anche Claude, senza risultato.';
   return 'Gemini non ha risposto e sul Worker non c’è una chiave Claude HTTP. Riprova tra un momento.';
 }
@@ -18,9 +20,15 @@ async function postJson(fetchFn: typeof fetch, url: string, headers: Record<stri
       method: 'POST',
       headers: { 'content-type': 'application/json', ...headers },
       body: JSON.stringify(body),
-      signal: AbortSignal.timeout(20_000),
+      // 6 immagini + ragionamento: Gemini Flash può superare i 20 s (24/10, analisi mai arrivata)
+      signal: AbortSignal.timeout(55_000),
     });
-    if (!r.ok) return { ok: false, stato: r.status };
+    if (!r.ok) {
+      // nei log di Cloudflare (Workers Logs): senza, un 4xx/5xx dell'AI non lasciava traccia. Solo il
+      // codice, mai il testo: può contenere la trascrizione
+      console.error(`stile: ${new URL(url).host} ha risposto ${r.status}`);
+      return { ok: false, stato: r.status };
+    }
     const j = await r.json() as {
       candidates?: { content?: { parts?: { text?: string }[] } }[];
       content?: { text?: string }[];
@@ -28,13 +36,15 @@ async function postJson(fetchFn: typeof fetch, url: string, headers: Record<stri
     const gemini = (j.candidates?.[0]?.content?.parts || []).map((p) => p.text || '').join('');
     const claude = (j.content || []).map((p) => p.text || '').join('');
     return { ok: true, testo: gemini || claude };
-  } catch {
+  } catch (e) {
+    console.error(`stile: ${new URL(url).host} non raggiungibile o troppo lento (${(e as Error).name})`);
     return { ok: false, stato: 0 };
   }
 }
 
 function esitoDaTesto(testo: string): EsitoStile {
   const letto = leggiJsonModello(testo);
+  if (!letto) console.error(`stile: risposta dell'AI illeggibile (${testo.length} caratteri)`);
   return letto ? { ok: true, ...letto } : { ok: false, errore: ILLEGGIBILE };
 }
 
@@ -42,7 +52,9 @@ async function gemini(fetchFn: typeof fetch, chiave: string, prompt: string, fot
   const parts: unknown[] = [{ text: prompt }, ...foto.map((data) => ({ inline_data: { mime_type: 'image/jpeg', data } }))];
   const body = {
     contents: [{ role: 'user', parts }],
-    generationConfig: { responseMimeType: 'application/json', temperature: 0.4, maxOutputTokens: 2048 },
+    // i Flash recenti "ragionano" prima di rispondere e il ragionamento consuma maxOutputTokens: con
+    // 2048 la risposta poteva uscire tagliata e illeggibile
+    generationConfig: { responseMimeType: 'application/json', temperature: 0.4, maxOutputTokens: 8192 },
   };
   const url = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-flash-latest:generateContent';
   let ultimo = 0;
