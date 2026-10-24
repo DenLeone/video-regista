@@ -172,6 +172,43 @@ function disegna() {
     const pct = stato.carica.byteTotali ? Math.min(100, 100 * stato.carica.byteFatti / stato.carica.byteTotali) : 0;
     barra.style.width = `${pct}%`;
   }
+  adattaLista();
+}
+
+function adattaLista() {
+  const lista = root.querySelector('.ultimi .lista');
+  const view = root.querySelector('.view');
+  if (!lista || !view) return;
+  lista.querySelector('.vedi-tutti')?.remove();
+  const voci = [...lista.querySelectorAll(':scope > .voce')];
+  voci.forEach((v) => { v.hidden = false; });
+  const nota = lista.parentElement.querySelector('.nota.piede');
+  const notaH = nota ? nota.getBoundingClientRect().height + 14 : 0;
+  const spazio = view.getBoundingClientRect().bottom - lista.getBoundingClientRect().top - notaH;
+  const gap = 12;
+  const altezza = (el) => el.getBoundingClientRect().height;
+  let usato = 0;
+  let visibili = 0;
+  for (const v of voci) {
+    const prossimo = usato + (visibili ? gap : 0) + altezza(v);
+    if (prossimo > spazio + 1) break;
+    usato = prossimo;
+    visibili += 1;
+  }
+  if (visibili >= voci.length) return;
+  const btnH = 56;
+  while (visibili > 0 && usato + gap + btnH > spazio + 1) {
+    visibili -= 1;
+    usato -= altezza(voci[visibili]) + (visibili ? gap : 0);
+  }
+  for (let i = visibili; i < voci.length; i++) voci[i].hidden = true;
+  const b = document.createElement('button');
+  b.type = 'button';
+  b.className = 'btn ghost pieno vedi-tutti';
+  b.dataset.azione = 'vai';
+  b.dataset.verso = 'video';
+  b.textContent = 'Vedi tutti';
+  lista.appendChild(b);
 }
 
 function toast(testo) {
@@ -213,8 +250,8 @@ function htmlOggi() {
     <div class="intro"><p class="kicker">Oggi</p><h1>Ciao Denis</h1></div>
     <div class="vivo" data-vivo>${htmlStato(s)}</div>
     ${h.upload && !h.upload.avviato ? `<div class="banner attenzione">${h.upload.pronto ? 'Il girato è pronto.' : 'C’è un caricamento aperto.'} <button class="btn mini" data-azione="vai" data-verso="carica">Apri</button></div>` : ''}
-    <section class="ultimi"><h2>Ultimi</h2><div class="lista">${(h.video || []).map((v) => rigaVideo(v)).join('') || '<p class="vuoto">Ancora niente. Carica un girato o avvia una cartella.</p>'}</div></section>
-    ${attivi.length ? '' : '<p class="nota piede">Lo stato si aggiorna da solo mentre l’app è aperta.</p>'}`;
+    <section class="ultimi"><h2>Ultimi</h2><div class="lista">${(h.video || []).map((v) => rigaVideo(v)).join('') || '<p class="vuoto">Ancora niente. Carica un girato o avvia una cartella.</p>'}</div>
+    ${attivi.length ? '' : '<p class="nota piede">Lo stato si aggiorna da solo mentre l’app è aperta.</p>'}</section>`;
 }
 
 function htmlStato(s) {
@@ -938,7 +975,7 @@ setInterval(() => {
     api('/api/stato').then((s) => {
       stato.home.stato = s;
       const box = root.querySelector('[data-vivo]');
-      if (box && stato.schermo === 'oggi') box.innerHTML = htmlStato(s);
+      if (box && stato.schermo === 'oggi') { box.innerHTML = htmlStato(s); adattaLista(); }
     }).catch(() => {});
   }
 }, 5000);
