@@ -1,10 +1,18 @@
 // Guscio dell'app. Nessuna Background Sync: iOS non la esegue, e un upload
 // lasciato in coda qui si perderebbe senza dirlo. I pezzi già confermati restano sul server.
-const CACHE = 'regista-guscio-1';
+const CACHE = 'regista-guscio-2';
 const GUSCIO = ['/', '/app.css', '/app.js', '/manifest.webmanifest', '/icon-192.png', '/icon-512.png'];
 
 self.addEventListener('install', (e) => {
-  e.waitUntil(caches.open(CACHE).then((c) => c.addAll(GUSCIO)).then(() => self.skipWaiting()));
+  e.waitUntil((async () => {
+    const c = await caches.open(CACHE);
+    await Promise.all(GUSCIO.map(async (percorso) => {
+      const r = await fetch(percorso, { cache: 'reload' });
+      if (!r.ok) throw new Error(percorso);
+      await c.put(percorso, r);
+    }));
+    await self.skipWaiting();
+  })());
 });
 
 self.addEventListener('activate', (e) => {
@@ -14,7 +22,7 @@ self.addEventListener('activate', (e) => {
 self.addEventListener('fetch', (e) => {
   const url = new URL(e.request.url);
   if (url.origin !== location.origin || url.pathname.startsWith('/api/') || e.request.method !== 'GET') return;
-  e.respondWith(fetch(e.request).then((r) => {
+  e.respondWith(fetch(e.request, { cache: 'no-cache' }).then((r) => {
     const copia = r.clone();
     caches.open(CACHE).then((c) => c.put(e.request, copia)).catch(() => {});
     return r;

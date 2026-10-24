@@ -113,10 +113,19 @@ function demoStili() {
     { nome: 'Narrativo', tasto: 'Narrativo', cosa: 'racconto lungo, poche scritte, dal Drive' },
   ];
 }
+function demoFatti() {
+  return [
+    { runId: '1', nome: 'Panca puff', stile: 'Cinematico', durata: 39.2, quando: Date.now() - 3600e3, link: 'https://drive.google.com/file/d/demo/view' },
+    { runId: '2', nome: 'Multiplay', stile: 'Motion', durata: 28.1, quando: Date.now() - 7200e3 },
+    { runId: '3', nome: 'Beats pokemon', stile: 'Motion', durata: 35.4, quando: Date.now() - 864e5 },
+    { runId: '4', nome: 'Beats pokemon', stile: 'Motion', durata: 35.1, quando: Date.now() - 2 * 864e5 },
+  ];
+}
 function demoHome() {
+  const corso = new URLSearchParams(location.search).get('stato') === 'corso';
   return {
     impostazioni: { versione: 'stabile', ai: 'gemini', modello: 'sonnet', gemini: 'flash', stile: 'Blueprint', prova: 'manuale' },
-    stato: {
+    stato: corso ? {
       attivi: [{
         runId: '1001', nome: 'Benchy PETG', fase: 'regia', faseNome: 'Regia', minuti: 6, inCoda: false,
         fasi: [
@@ -128,16 +137,13 @@ function demoHome() {
         ],
       }],
       pendenti: [], ultimi: [],
-    },
-    video: [{ runId: '900', nome: 'Caffè del mattino', stile: 'Cinematico', durata: 42, quando: Date.now() - 864e5, link: 'https://drive.google.com/file/d/demo/view' }],
+    } : { attivi: [], pendenti: [], ultimi: [] },
+    video: demoFatti(),
     avvisi: 1, upload: null, push: false, playback: true, r2: true,
   };
 }
 function demoElenco() {
-  return [
-    { runId: '900', nome: 'Caffè del mattino', stile: 'Cinematico', durata: 42, quando: Date.now() - 864e5, link: 'https://drive.google.com/file/d/demo/view' },
-    { runId: '880', nome: 'Benchy notturno', stile: 'Blueprint', durata: 37, prova: 10, quando: Date.now() - 3 * 864e5 },
-  ];
+  return demoFatti();
 }
 function demoDettaglio() {
   return {
@@ -160,7 +166,7 @@ function disegna() {
   const corpo = {
     accesso: htmlAccesso, oggi: htmlOggi, nuovo: htmlNuovo, carica: htmlCarica, video: htmlVideo, dettaglio: htmlDettaglio, altro: htmlAltro,
   }[stato.schermo] || htmlOggi;
-  root.innerHTML = `<div class="app${solo ? ' solo' : ''}">${corpo()} ${solo ? '' : tabbar()} ${stato.toast ? `<div class="toast" role="status">${esc(stato.toast)}</div>` : ''}</div>`;
+  root.innerHTML = `<div class="app${solo ? ' solo' : ''}"><div class="view vista-${esc(stato.schermo)}">${corpo()}</div>${solo ? '' : tabbar()}${stato.toast ? `<div class="toast" role="status">${esc(stato.toast)}</div>` : ''}</div>`;
   const barra = root.querySelector('[data-barra]');
   if (barra) {
     const pct = stato.carica.byteTotali ? Math.min(100, 100 * stato.carica.byteFatti / stato.carica.byteTotali) : 0;
@@ -203,14 +209,12 @@ function htmlOggi() {
   const h = stato.home || {};
   const s = h.stato || { attivi: [], pendenti: [], ultimi: [] };
   const attivi = s.attivi || [];
-  return `<header class="top"><div class="marca"><i>▷</i> Regista</div><span class="meta">${h.avvisi ? `${h.avvisi} avviso` : ''}</span></header>
-    <p class="kicker">Oggi</p>
-    <h1>Ciao Denis</h1>
-    <div data-vivo>${htmlStato(s)}</div>
+  return `<header class="top"><div class="marca"><i>▷</i> Regista</div><span class="avviso">${h.avvisi ? `${h.avvisi} avviso` : ''}</span></header>
+    <div class="intro"><p class="kicker">Oggi</p><h1>Ciao Denis</h1></div>
+    <div class="vivo" data-vivo>${htmlStato(s)}</div>
     ${h.upload && !h.upload.avviato ? `<div class="banner attenzione">${h.upload.pronto ? 'Il girato è pronto.' : 'C’è un caricamento aperto.'} <button class="btn mini" data-azione="vai" data-verso="carica">Apri</button></div>` : ''}
-    <h2 style="margin-top:18px">Ultimi</h2>
-    ${(h.video || []).map((v) => rigaVideo(v)).join('') || '<p class="vuoto">Ancora niente. Carica un girato o avvia una cartella.</p>'}
-    ${attivi.length ? '' : '<p class="nota">Lo stato si aggiorna da solo mentre l’app è aperta.</p>'}`;
+    <section class="ultimi"><h2>Ultimi</h2><div class="lista">${(h.video || []).map((v) => rigaVideo(v)).join('') || '<p class="vuoto">Ancora niente. Carica un girato o avvia una cartella.</p>'}</div></section>
+    ${attivi.length ? '' : '<p class="nota piede">Lo stato si aggiorna da solo mentre l’app è aperta.</p>'}`;
 }
 
 function htmlStato(s) {
@@ -225,7 +229,7 @@ function htmlStato(s) {
 }
 
 function rigaVideo(v) {
-  return `<button class="card scelta" data-azione="apri-video" data-verso="${esc(v.runId)}"><strong>${esc(v.nome)}</strong><small>${esc(v.stile || '')}${v.durata ? ` · ${v.durata} s` : ''}${v.prova ? ' · prova' : ''}</small></button>`;
+  return `<button class="card scelta voce" data-azione="apri-video" data-verso="${esc(v.runId)}"><strong>${esc(v.nome)}</strong><small>${esc(v.stile || '')}${v.durata ? ` · ${v.durata} s` : ''}${v.prova ? ' · prova' : ''}</small></button>`;
 }
 
 function preparaNuovo(passo) {
@@ -254,7 +258,7 @@ function htmlNuovo() {
   if (n.passo === 'cartella') {
     const elenco = stato.cartelle?.cartelle?.elenco || [];
     corpo = `<h1>Quale cartella?</h1><p class="sub">Quelle già su Drive, oppure un nome nuovo se il girato lo carichi da qui.</p>
-      ${elenco.map((c) => `<button class="btn pieno" data-azione="cartella" data-verso="${esc(c)}">${(stato.cartelle?.cartelle?.vai || []).includes(c) ? '⚡ ' : ''}${esc(c)}</button>`).join('')}
+      <div class="griglia">${elenco.map((c) => `<button class="btn pieno" data-azione="cartella" data-verso="${esc(c)}">${(stato.cartelle?.cartelle?.vai || []).includes(c) ? '⚡ ' : ''}${esc(c)}</button>`).join('')}</div>
       <input class="campo" id="nome-cartella" placeholder="Nome nuovo" value="${esc(d.cartella)}">
       <button class="btn primario" data-azione="cartella-testo">Usa questo nome</button>`;
   } else if (n.passo === 'stile') {
@@ -288,7 +292,7 @@ function htmlNuovo() {
       <button class="btn primario" data-azione="avvia-montaggio">Avvia montaggio</button>
       <div class="coppia" style="margin-top:8px"><button class="btn" data-azione="modifica" data-verso="stile">Stile</button><button class="btn" data-azione="modifica" data-verso="note">Note</button></div>`;
   }
-  return `<p class="kicker">Nuovo montaggio</p>${corpo}<button class="btn ghost" data-azione="indietro-nuovo" style="margin-top:12px">Indietro</button>`;
+  return `<div class="intro"><p class="kicker">Nuovo montaggio</p></div>${corpo}<button class="btn ghost" data-azione="indietro-nuovo" style="margin-top:12px">Indietro</button>`;
 }
 
 function htmlProgresso(c) {
@@ -316,7 +320,7 @@ function htmlCarica() {
     ['scelti', 'Solo i file scelti', 'Mandi le clip che servono per far partire la regia. Il resto, dopo, dal Wi-Fi.'],
     ['proxy', 'Copia leggera', 'Circa 720p, sul telefono. Lo schermo resta acceso e ci mette quanto dura il clip. L’audio può mancare. Non è da pubblicare.'],
   ];
-  return `<p class="kicker">In giro</p><h1>Carica il girato</h1>
+  return `<div class="intro"><p class="kicker">In giro</p><h1>Carica il girato</h1></div>
     <p class="sub">Quattro pezzi da 8 MB in parallelo, diretti a Cloudflare. Quelli già arrivati non si rimandano. Drive lo copia il server, dopo.</p>
     <div class="banner${cell ? ' attenzione' : ''}">${cell ? 'Sei sui dati: meglio mandare meno, e il resto dal Wi-Fi.' : 'iPhone non dice da solo se sei in 4G. Se sei fuori, scegli «Solo i file scelti».'}</div>
     ${c.daRiselezionare ? '<div class="banner attenzione">iOS ha chiuso i file. Selezionali di nuovo, stesso nome e stessa dimensione: i pezzi già arrivati restano.</div>' : ''}
@@ -333,8 +337,8 @@ function htmlCarica() {
 }
 
 function htmlVideo() {
-  return `<p class="kicker">Video</p><h1>Fatti</h1>
-    ${stato.video.length ? stato.video.map(rigaVideo).join('') : '<p class="vuoto">Nessun video ancora.</p>'}
+  return `<div class="intro"><p class="kicker">Video</p><h1>Fatti</h1></div>
+    <div class="lista">${stato.video.length ? stato.video.map(rigaVideo).join('') : '<p class="vuoto">Nessun video ancora.</p>'}</div>
     <button class="btn ghost pieno" data-azione="ricarica-video">Aggiorna</button>`;
 }
 
@@ -346,7 +350,7 @@ function htmlDettaglio() {
   const pub = m.pubblica;
   const fileId = pub?.fileId;
   const stili = stato.stili.length ? stato.stili : demoStili();
-  return `<p class="kicker">${esc(m.stile || v.stile || '')}${v.durata ? ` · ${v.durata} s` : ''}</p><h1>${esc(m.nome || v.nome)}</h1>
+  return `<div class="intro"><p class="kicker">${esc(m.stile || v.stile || '')}${v.durata ? ` · ${v.durata} s` : ''}</p><h1>${esc(m.nome || v.nome)}</h1></div>
     ${d.playback && fileId ? `<video class="player" controls playsinline src="/api/media/${esc(fileId)}"></video>` : `<div class="cornice"><div><strong>${esc(m.nome || v.nome)}</strong><p class="meta">${d.playback ? 'Apro il file…' : 'Per vederlo qui servono le chiavi Drive sul Worker.'}</p></div></div>`}
     ${v.link ? `<a class="btn pieno" href="${esc(v.link)}" target="_blank" rel="noopener">Apri su Drive</a>` : ''}
     <div class="azioni" style="margin-top:12px">
@@ -376,7 +380,7 @@ function htmlAltro() {
   const elenco = stato.cartelle?.cartelle?.elenco || [];
   const col = stato.collegamenti || {};
   const regia = stato.regia?.regia;
-  return `<p class="kicker">Altro</p><h1>Impostazioni</h1>
+  return `<div class="intro"><p class="kicker">Altro</p><h1>Impostazioni</h1></div>
     <div class="card">
       <label class="etichetta">Stile predefinito</label>
       <select data-imp="stile">${stili.map((s) => `<option ${s.nome === imp.stile ? 'selected' : ''}>${esc(s.nome)}</option>`).join('')}</select>
@@ -951,8 +955,22 @@ function preparaDemoCarica() {
   };
 }
 
+function avviaServiceWorker() {
+  if (!('serviceWorker' in navigator) || DEMO) return;
+  // Il primo avvio non ricarica: la pagina ha già i file nuovi. Al deploy dopo,
+  // il SW fa skipWaiting e qui si ricarica una volta, senza reinstallare l’app.
+  const giaAttivo = !!navigator.serviceWorker.controller;
+  let ricaricato = false;
+  navigator.serviceWorker.addEventListener('controllerchange', () => {
+    if (!giaAttivo || ricaricato) return;
+    ricaricato = true;
+    location.reload();
+  });
+  navigator.serviceWorker.register('/sw.js').catch(() => {});
+}
+
 async function parti() {
-  if ('serviceWorker' in navigator && !DEMO) navigator.serviceWorker.register('/sw.js').catch(() => {});
+  avviaServiceWorker();
   stato.auth = await api('/api/auth/stato').catch(() => ({ sessione: false, passkey: false }));
   if (!stato.auth.sessione) { vai('accesso'); return; }
   await caricaHome();

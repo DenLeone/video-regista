@@ -3,10 +3,17 @@
   --ink: #f4f4f6;
   --muted: #9b9ba6;
   --line: rgba(255, 255, 255, .14);
-  --glass: rgba(32, 32, 36, .62);
-  --glass-2: rgba(255, 255, 255, .06);
-  --safe-top: max(62px, env(safe-area-inset-top));
-  --safe-bot: max(34px, env(safe-area-inset-bottom));
+  --glass: rgba(32, 32, 36, .72);
+  --glass-2: rgba(255, 255, 255, .07);
+  /* In Safari standalone env() è l’isola e la barra home. Fuori vale 0:
+     il max tiene comunque il respiro di un iPhone 17 Pro Max. */
+  --inset-top: env(safe-area-inset-top, 0px);
+  --inset-bot: env(safe-area-inset-bottom, 0px);
+  --safe-top: max(62px, var(--inset-top));
+  --safe-bot: max(34px, var(--inset-bot));
+  --aria-top: 22px;
+  --tab-h: 68px;
+  --tab-off: 10px;
   color-scheme: dark;
   font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "SF Pro Display", "Segoe UI", sans-serif;
 }
@@ -14,13 +21,22 @@
 * { box-sizing: border-box; }
 html, body { margin: 0; height: 100%; background: var(--bg); color: var(--ink); }
 body { min-height: 100dvh; }
+#app { min-height: 100dvh; height: 100dvh; display: flex; flex-direction: column; }
 button, input, textarea, select { font: inherit; font-size: 16px; color: inherit; }
 button { cursor: pointer; }
 img { max-width: 100%; }
 
 .app {
+  flex: 1 1 auto;
+  width: 100%;
   min-height: 100dvh;
-  padding: var(--safe-top) 18px calc(var(--safe-bot) + 92px);
+  height: 100dvh;
+  display: flex;
+  flex-direction: column;
+  padding:
+    calc(var(--safe-top) + var(--aria-top))
+    20px
+    calc(var(--safe-bot) + var(--tab-h) + var(--tab-off) + 16px);
   background:
     radial-gradient(90% 42% at 100% -8%, rgba(255, 255, 255, .09), transparent 46%),
     radial-gradient(70% 30% at -10% 8%, rgba(255, 255, 255, .04), transparent 40%),
@@ -28,35 +44,132 @@ img { max-width: 100%; }
 }
 .app.solo { padding-bottom: calc(var(--safe-bot) + 28px); }
 
-.top { display: flex; align-items: center; justify-content: space-between; margin-bottom: 18px; }
-.marca { display: flex; gap: 10px; align-items: center; font-weight: 650; letter-spacing: -.03em; }
-.marca i {
-  width: 34px; height: 34px; border-radius: 12px; display: grid; place-items: center;
-  background: rgba(255,255,255,.08); border: 1px solid var(--line);
-  box-shadow: inset 0 1px 0 rgba(255,255,255,.25);
+.view {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: auto;
+  display: flex;
+  flex-direction: column;
+  animation: entra .35s ease;
 }
-.kicker { color: var(--muted); font-size: 13px; letter-spacing: .08em; text-transform: uppercase; margin: 0 0 6px; }
-h1 { font-size: 34px; line-height: 1.05; letter-spacing: -.045em; font-weight: 680; margin: 0 0 8px; }
-h2 { font-size: 22px; letter-spacing: -.03em; margin: 0 0 8px; }
-.sub { color: var(--muted); margin: 0 0 16px; line-height: 1.35; }
+@keyframes entra { from { opacity: 0; } }
+
+/* L’header non ha blur, filtri né transform: su iOS un backdrop-filter
+   (anche su un fratello fixed) finisce sopra al testo e lo sfoca. */
+.top {
+  position: relative;
+  z-index: 4;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin: 0 0 32px;
+  min-height: 44px;
+  background: transparent;
+  filter: none;
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+}
+.marca {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  font-weight: 650;
+  font-size: 18px;
+  letter-spacing: -.03em;
+  color: var(--ink);
+  line-height: 1;
+}
+.marca i {
+  width: 40px; height: 40px; border-radius: 14px; display: grid; place-items: center;
+  background: rgba(255,255,255,.1); border: 1px solid var(--line);
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.28);
+  font-style: normal;
+}
+.avviso {
+  color: var(--muted);
+  font-size: 16px;
+  line-height: 1.2;
+  text-align: right;
+  flex: 0 0 auto;
+}
+.kicker { color: var(--muted); font-size: 13px; letter-spacing: .08em; text-transform: uppercase; margin: 0 0 10px; }
+h1 { font-size: 42px; line-height: 1.02; letter-spacing: -.045em; font-weight: 680; margin: 0 0 18px; }
+h2 { font-size: 26px; letter-spacing: -.03em; margin: 0 0 14px; }
+.sub { color: var(--muted); margin: 0 0 18px; line-height: 1.4; font-size: 17px; }
+.intro { margin: 8px 0 4px; }
 
 .card {
-  background: var(--glass);
+  position: relative;
+  isolation: isolate;
+  display: block;
+  width: 100%;
+  appearance: none;
+  -webkit-appearance: none;
+  background: transparent;
   border: 1px solid var(--line);
   border-radius: 28px;
-  padding: 16px;
-  margin: 0 0 12px;
-  backdrop-filter: blur(28px) saturate(170%);
-  -webkit-backdrop-filter: blur(28px) saturate(170%);
-  box-shadow: 0 16px 40px rgba(0, 0, 0, .28), inset 0 1px 0 rgba(255, 255, 255, .16);
+  padding: 22px;
+  margin: 0 0 14px;
+  color: inherit;
+  text-align: left;
+  box-shadow: 0 16px 40px rgba(0, 0, 0, .28);
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+  filter: none;
 }
-.card.piatta { background: var(--glass-2); }
+/* Il vetro sta dietro al testo, mai sullo stesso layer. */
+.card::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  z-index: -1;
+  pointer-events: none;
+  background: var(--glass);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .16);
+  backdrop-filter: blur(22px) saturate(160%);
+  -webkit-backdrop-filter: blur(22px) saturate(160%);
+}
+.card.piatta::before {
+  background: var(--glass-2);
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+}
+.vivo .card { min-height: 96px; display: flex; flex-direction: column; justify-content: center; }
+.vivo .vuoto { margin: 0; padding: 6px 0; font-size: 17px; }
 
-.view { animation: entra .48s cubic-bezier(.16, .9, .24, 1); }
-@keyframes entra { from { opacity: 0; transform: translateY(12px) scale(.985); } }
+.ultimi, .vista-video .lista { flex: 1 1 auto; min-height: 0; }
+.ultimi {
+  display: flex;
+  flex-direction: column;
+  margin-top: 22px;
+}
+.lista {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.lista > .voce {
+  flex: 1 1 0;
+  min-height: 84px;
+  margin: 0;
+  appearance: none;
+  -webkit-appearance: none;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: flex-start;
+  gap: 6px;
+}
+.voce strong { font-size: 21px; font-weight: 650; letter-spacing: -.03em; }
+.voce small { font-size: 15px; margin-top: 0; }
+.nota.piede { margin-top: 18px; }
 
 .btn {
-  appearance: none; border: 0; border-radius: 18px; padding: 14px 16px;
+  appearance: none; border: 0; border-radius: 18px; padding: 16px 18px;
   background: rgba(255,255,255,.08); color: var(--ink);
   border: 1px solid var(--line);
   transition: transform .12s cubic-bezier(.2, .8, .2, 1);
@@ -74,19 +187,27 @@ h2 { font-size: 22px; letter-spacing: -.03em; margin: 0 0 8px; }
 .btn:disabled { opacity: .45; }
 
 .tabbar {
-  position: fixed; left: 14px; right: 14px; bottom: calc(var(--safe-bot) + 8px);
-  height: 64px; display: flex; padding: 6px;
-  border-radius: 32px;
-  background: rgba(22, 22, 26, .72);
+  position: fixed; left: 16px; right: 16px;
+  bottom: calc(var(--safe-bot) + var(--tab-off));
+  height: var(--tab-h);
+  display: flex;
+  padding: 6px;
+  border-radius: 34px;
+  background: rgba(16, 16, 18, .94);
   border: 1px solid var(--line);
-  backdrop-filter: blur(28px) saturate(180%);
-  -webkit-backdrop-filter: blur(28px) saturate(180%);
-  box-shadow: 0 12px 40px rgba(0,0,0,.4), inset 0 1px 0 rgba(255,255,255,.18);
+  /* Nessun backdrop-filter sul fixed: su iOS il blur della pillola
+     si allarga fino alla status bar e copre «Regista». */
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+  filter: none;
+  box-shadow: 0 12px 40px rgba(0,0,0,.45), inset 0 1px 0 rgba(255,255,255,.2);
   z-index: 5;
 }
 .tab {
+  position: relative;
+  z-index: 1;
   flex: 1; border: 0; background: transparent; color: var(--muted);
-  border-radius: 26px; font-size: 11px; letter-spacing: -.01em;
+  border-radius: 28px; font-size: 11px; letter-spacing: -.01em;
   display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px;
 }
 .tab b { font-size: 16px; font-weight: 650; }
@@ -99,13 +220,23 @@ h2 { font-size: 22px; letter-spacing: -.03em; margin: 0 0 8px; }
 textarea { min-height: 96px; resize: vertical; }
 .etichetta { display: block; color: var(--muted); font-size: 13px; margin: 0 0 6px; }
 
-.griglia { display: grid; gap: 8px; }
+.griglia { display: grid; gap: 10px; }
+/* Nei passi corti (Nuovo) le scelte occupano l’altezza libera, invece di
+   lasciare un buco sopra la barra. */
+.vista-nuovo .griglia,
+.vista-nuovo .coppia {
+  flex: 1 1 auto;
+  align-content: space-evenly;
+}
+.vista-nuovo textarea { flex: 1 1 auto; min-height: 140px; }
 .scelta, .stile {
-  text-align: left; border-radius: 22px; padding: 14px;
+  text-align: left; border-radius: 22px; padding: 16px;
   background: rgba(255,255,255,.05); border: 1px solid var(--line); color: inherit;
 }
+.card.scelta { background: transparent; border-radius: 28px; }
 .scelta.attivo, .stile.attivo { background: rgba(255,255,255,.14); border-color: rgba(255,255,255,.4); }
 .scelta small, .stile small, .meta { display: block; color: var(--muted); font-size: 13px; margin-top: 4px; line-height: 1.3; }
+.card.scelta small { font-size: 15px; }
 
 .fasi { display: flex; gap: 6px; margin-top: 12px; }
 .fase { flex: 1; height: 6px; border-radius: 99px; background: rgba(255,255,255,.12); }
@@ -139,9 +270,11 @@ textarea { min-height: 96px; resize: vertical; }
 }
 .azioni { display: grid; gap: 8px; }
 .toast {
-  position: fixed; left: 18px; right: 18px; bottom: calc(var(--safe-bot) + 84px);
-  background: rgba(20,20,24,.9); border: 1px solid var(--line); color: white;
-  border-radius: 18px; padding: 12px 14px; backdrop-filter: blur(16px);
+  position: fixed; left: 18px; right: 18px; bottom: calc(var(--safe-bot) + var(--tab-h) + var(--tab-off) + 12px);
+  background: rgba(20,20,24,.96); border: 1px solid var(--line); color: white;
+  border-radius: 18px; padding: 12px 14px;
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
   z-index: 6;
 }
 .coppia { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
