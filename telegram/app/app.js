@@ -1,5 +1,6 @@
 const DEMO = (location.hostname === 'localhost' || location.hostname === '127.0.0.1') && new URLSearchParams(location.search).has('demo');
 const DEMO_VISTA = new URLSearchParams(location.search).get('demo') || '';
+const DEMO_STATO = new URLSearchParams(location.search).get('stato') || '';
 const root = document.getElementById('app');
 
 const stato = {
@@ -19,7 +20,7 @@ const stato = {
 };
 
 function studioVuoto() {
-  return { fase: 'elenco', salvati: [], bozza: null, occupato: '', file: null, nota: '', errore: '' };
+  return { fase: 'elenco', salvati: [], bozza: null, occupato: '', file: null, nota: '', errore: '', invio: false };
 }
 
 function caricaVuota() {
@@ -536,12 +537,18 @@ function righeRiassunto(testo) {
   }).join('');
 }
 
+function htmlErroreStile(s) {
+  if (!s.errore) return '';
+  return `<div class="card errore-stile" data-errore-stile><p class="kicker">Non è andata</p><p>${esc(s.errore)}</p><small class="meta">Premi di nuovo Studia per riprovare.</small></div>`;
+}
+
 function htmlStile() {
   const s = stato.studio;
   if (s.fase === 'studio' && s.bozza?.haTesto) {
     const b = s.bozza;
     return `<button class="btn ghost" data-azione="studio-elenco">Elenco</button>
       <div class="intro"><p class="kicker">Stile</p><h1>${esc(b.nome || 'Bozza')}</h1></div>
+      ${htmlErroreStile(s)}
       <div class="card scheda-stile">${righeRiassunto(b.riassunto)}</div>
       ${b.voce === false ? '<p class="nota">Senza trascrizione: solo fotogrammi e ritmo.</p>' : ''}
       <div class="filo">${(b.messaggi || []).map((m) => `<p class="bolla ${m.ruolo === 'denis' ? 'denis' : 'ai'}">${esc(m.testo)}</p>`).join('')}</div>
@@ -556,13 +563,13 @@ function htmlStile() {
   return `<button class="btn ghost" data-azione="studio-chiudi">Indietro</button>
     <div class="intro"><p class="kicker">Stile</p><h1>Studia uno stile</h1></div>
     <p class="sub">Un video breve, tuo o di un creator. L’AI propone ritmo, scritte, colori e zoom. Poi lo correggi a parole.</p>
-    ${s.occupato ? `<div class="card"><p class="kicker">In corso</p><p>${esc(s.occupato)}</p></div>` : ''}
-    ${s.errore ? `<div class="card errore-stile"><p class="kicker">Non è andata</p><p>${esc(s.errore)}</p><small class="meta">Premi di nuovo Studia per riprovare.</small></div>` : ''}
+    ${s.occupato ? `<div class="card" data-passo-stile><p class="kicker">In corso</p><p>${esc(s.occupato)}</p></div>` : ''}
+    ${htmlErroreStile(s)}
     <div class="card">
       <label class="etichetta">Video di riferimento</label>
       <input class="campo" id="file-stile" type="file" accept="video/*">
-      <button class="btn primario" data-azione="studia"${s.occupato ? ' disabled' : ''}>Studia</button>
-      <p class="nota">Sei fotogrammi partono dal telefono. Il file intero va su Cloudflare a pezzi, come in Carica, e si può riprendere. Non apre un montaggio e non compare in Oggi.</p>
+      <button class="btn primario" data-azione="studia"${s.occupato || s.invio ? ' disabled' : ''}>Studia</button>
+      <p class="nota">Prima i fotogrammi e l’analisi, poi il file intero a pezzi. Non apre un montaggio e non compare in Oggi.</p>
       <p class="nota" data-upload-stile>${esc(s.nota || '')}</p>
     </div>
     ${s.bozza?.haTesto ? `<div class="card scheda-stile"><p class="kicker">Bozza</p>${righeRiassunto(s.bozza.riassunto)}<button class="btn pieno" data-azione="studio-continua">Continua</button></div>` : ''}
@@ -867,7 +874,6 @@ async function pompa(inizio, files) {
   const volo = new Map();
   let prossimo = 0;
   let guasto = null;
-  let inviati = 0;
   const parallelo = inizio.parallelo || 4;
   async function lavoratore() {
     while (prossimo < coda.length && !guasto && !c.stop) {
@@ -1137,6 +1143,7 @@ function avviaServiceWorker() {
   let ricaricato = false;
   navigator.serviceWorker.addEventListener('controllerchange', () => {
     if (!giaAttivo || ricaricato) return;
+    if (stato.studio.occupato || stato.studio.invio || stato.carica.fase === 'invio') return;
     ricaricato = true;
     location.reload();
   });
@@ -1162,10 +1169,39 @@ function faseStudio(testo) {
   disegna();
 }
 
+function erroreRete(e) {
+  const m = String(e?.message || '');
+  return /rete assente|nessuna risposta dal server|failed to fetch|load failed|instabile|timeout|connessione/i.test(m);
+}
+
+async function attendiBozza(prima) {
+  const fine = Date.now() + 45000;
+  const eraStudio = stato.studio.fase === 'studio';
+  while (Date.now() < fine) {
+    await new Promise((r) => setTimeout(r, 2500));
+    try {
+      const r = await api('/api/stile');
+      const q = Number(r.bozza?.quando);
+      if (!(r.bozza?.haTesto && Number.isFinite(q) && q > Number(prima || 0))) continue;
+      stato.studio.bozza = r.bozza;
+      stato.studio.fase = 'studio';
+      stato.studio.occupato = '';
+      stato.studio.errore = '';
+      if (!eraStudio) stato.studio.nota = 'Carico il file intero…';
+      else if (String(stato.studio.nota || '').startsWith('Connessione')) stato.studio.nota = '';
+      disegna();
+      return true;
+    } catch { /* la rete è ancora giù */ }
+  }
+  return false;
+}
+
 async function studiaVideo() {
   if (DEMO) { toast('In demo l’analisi non chiama l’AI. Apri uno stile salvato.'); return; }
   const file = stato.studio.file;
-  if (!file) throw new Error('Scegli un video di riferimento.');
+  if (!file) { stato.studio.errore = 'Scegli un video di riferimento.'; disegna(); return; }
+  if (stato.studio.occupato || stato.studio.invio) return;
+  const prima = Number(stato.studio.bozza?.quando) || 0;
   stato.studio.nota = '';
   stato.studio.errore = '';
   faseStudio('Estraggo i fotogrammi…');
@@ -1179,7 +1215,7 @@ async function studiaVideo() {
     return;
   }
   faseStudio('L’AI analizza lo stile… (fino a un minuto)');
-  const invio = inviaRiferimento(file).catch((e) => notaUpload(`Il file intero non è partito (${e.message || 'errore'}). Lo stile, se c’è, resta.`));
+  let scheda = false;
   try {
     const r = await api('/api/stile/analizza', { method: 'POST', ms: 120000, body: {
       durata: campione.durata, tagli: campione.tagli, fotogrammi: campione.fotogrammi, audio: campione.audio,
@@ -1187,24 +1223,42 @@ async function studiaVideo() {
     if (!r.bozza?.haTesto) throw new Error('L’AI non ha restituito uno stile. Riprova.');
     stato.studio.bozza = r.bozza;
     stato.studio.fase = 'studio';
+    stato.studio.errore = '';
+    scheda = true;
   } catch (e) {
-    stato.studio.errore = `Analisi non riuscita: ${e.message || 'errore sconosciuto'}`;
+    if (erroreRete(e)) {
+      stato.studio.nota = 'Connessione interrotta. Controllo se l’analisi è finita…';
+      disegna();
+      scheda = await attendiBozza(prima);
+    }
+    if (!scheda) stato.studio.errore = `Analisi non riuscita: ${e.message || 'errore sconosciuto'}`;
   } finally {
     stato.studio.occupato = '';
     disegna();
   }
-  await invio;
+  stato.studio.invio = true;
+  inviaRiferimento(file).catch((e) => notaUpload(`Il file intero non è partito (${e.message || 'errore'}). Lo stile, se c’è, resta.`)).finally(() => { stato.studio.invio = false; });
 }
 
 async function inviaNotaStile() {
   const detto = root.querySelector('#detto-stile')?.value.trim() || '';
-  if (!detto) throw new Error('Scrivi cosa cambiare.');
-  stato.studio.occupato = 'Aggiorno lo stile…';
-  disegna();
+  if (!detto) { stato.studio.errore = 'Scrivi cosa cambiare.'; disegna(); return; }
+  const prima = Number(stato.studio.bozza?.quando) || 0;
+  stato.studio.errore = '';
+  faseStudio('L’AI aggiorna lo stile…');
   try {
-    const r = await api('/api/stile/chat', { method: 'POST', body: { testo: detto } });
+    const r = await api('/api/stile/chat', { method: 'POST', ms: 120000, body: { testo: detto } });
     stato.studio.bozza = r.bozza;
     stato.studio.fase = 'studio';
+    stato.studio.errore = '';
+  } catch (e) {
+    let ok = false;
+    if (erroreRete(e)) {
+      stato.studio.nota = 'Connessione interrotta. Controllo se l’aggiornamento è finito…';
+      disegna();
+      ok = await attendiBozza(prima);
+    }
+    if (!ok) stato.studio.errore = e.message || 'L’aggiornamento non è riuscito.';
   } finally {
     stato.studio.occupato = '';
     disegna();
@@ -1311,8 +1365,12 @@ async function campionaRiferimento(file, fase = () => {}) {
   video.preload = 'auto';
   // iOS decodifica meglio un video che sta nella pagina: minuscolo e invisibile
   video.style.cssText = 'position:fixed;left:0;top:0;width:2px;height:2px;opacity:0;pointer-events:none';
+  video.setAttribute('webkit-playsinline', '');
   document.body.appendChild(video);
   video.src = url;
+  // play() prima di ogni attesa: su iOS il gesto del tocco vale solo in questo turno
+  const parto = video.play();
+  if (parto && typeof parto.catch === 'function') parto.catch(() => {});
   try {
     await attendiVideo(video, 'loadedmetadata', 10000).catch(() => {
       throw new Error('Il telefono non apre questo video. Prova un file più corto o esportato in H.264 (MP4).');
@@ -1320,7 +1378,12 @@ async function campionaRiferimento(file, fase = () => {}) {
     const durata = video.duration;
     if (!Number.isFinite(durata) || durata < 0.4) throw new Error('Video troppo corto o senza durata.');
     // un attimo di play da muto "sveglia" il decoder di iOS: senza, i primi drawImage possono uscire neri
-    try { await video.play(); video.pause(); } catch { /* autoplay negato: si va avanti coi seek */ }
+    try {
+      await parto;
+      if (!video.paused) video.pause();
+    } catch {
+      try { await video.play(); video.pause(); } catch { /* autoplay negato: si va avanti coi seek */ }
+    }
     if (!video.videoWidth) await attendiVideo(video, 'loadeddata', 5000).catch(() => {});
     const piccolo = document.createElement('canvas');
     piccolo.width = 48;
@@ -1436,7 +1499,7 @@ async function inviaRiferimento(file) {
     file: [{ nome: file.name, size: file.size, tipo: file.type || 'video/mp4' }],
   } });
   const upload = inizio.upload;
-  notaUpload('Invio il file intero, a pezzi. L’analisi non lo aspetta.');
+  notaUpload('Carico il file intero…');
   await sveglia();
   const coda = [];
   for (const meta of upload.file) {
@@ -1453,6 +1516,7 @@ async function inviaRiferimento(file) {
     }
   }
   let prossimo = 0;
+  let inviati = 0;
   let guasto = null;
   const parallelo = inizio.parallelo || 4;
   async function lavoratore() {
@@ -1486,7 +1550,12 @@ async function parti() {
   if (vista === 'dettaglio') { await apriVideo(DEMO ? '900' : (location.hash.split('/')[1] || '')); return; }
   if (vista === 'video') stato.video = (await api('/api/video')).video || [];
   if (vista === 'altro') await caricaAltro();
-  if (vista === 'stile') await caricaStudio();
+  if (vista === 'stile') {
+    await caricaStudio();
+    if (DEMO && DEMO_STATO === 'analizza') stato.studio.occupato = 'L’AI analizza lo stile… (fino a un minuto)';
+    if (DEMO && DEMO_STATO === 'errore') stato.studio.errore = 'Il telefono non riesce a estrarre i fotogrammi da questo video (spesso succede con HEVC/MOV pesanti). Prova un file più corto o esportato in H.264.';
+    if (DEMO && DEMO_STATO === 'carico') stato.studio.nota = 'Carico il file intero… 40%';
+  }
   vai(vista === 'accesso' ? 'accesso' : vista);
 }
 

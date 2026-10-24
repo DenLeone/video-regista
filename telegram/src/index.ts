@@ -1861,7 +1861,7 @@ export default {
       if (app) STILI_APP = app.filter((s): s is { nome: string; desc?: string } => typeof s?.nome === 'string' && s.nome.trim() !== '');
     }
 
-    if (url.pathname.startsWith('/api/')) return gestisciApp(req, env, creaOps());
+    if (url.pathname.startsWith('/api/')) return gestisciApp(req, env, creaOps(), ctx);
 
     if (req.method === 'POST' && url.pathname === '/tg') {
       if (req.headers.get('x-telegram-bot-api-secret-token') !== env.TELEGRAM_SECRET) return new Response('no', { status: 401 });
