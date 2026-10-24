@@ -1,7 +1,3 @@
-import {
-  AUDIO_MAX, bozzaNuova, contaSalti, messaggioDecodifica, ricaricoBloccato, statLuma, èErroreRete,
-} from './campione.js';
-
 const DEMO = (location.hostname === 'localhost' || location.hostname === '127.0.0.1') && new URLSearchParams(location.search).has('demo');
 const DEMO_VISTA = new URLSearchParams(location.search).get('demo') || '';
 const DEMO_STATO = new URLSearchParams(location.search).get('stato') || '';
@@ -24,7 +20,7 @@ const stato = {
 };
 
 function studioVuoto() {
-  return { fase: 'elenco', salvati: [], bozza: null, occupato: '', file: null, nota: '', notaAudio: '', errore: '', invio: false };
+  return { fase: 'elenco', salvati: [], bozza: null, occupato: '', file: null, nota: '', errore: '', invio: false };
 }
 
 function caricaVuota() {
@@ -81,15 +77,22 @@ const demoStile = {
   bozza: null,
 };
 
-async function api(path, { method = 'GET', body, timeout } = {}) {
+async function api(path, { method = 'GET', body, ms } = {}) {
   if (DEMO) return demoApi(path, method, body);
-  const r = await fetch(path, {
-    method,
-    credentials: 'same-origin',
-    headers: body === undefined ? undefined : { 'content-type': 'application/json' },
-    body: body === undefined ? undefined : JSON.stringify(body),
-    signal: timeout ? AbortSignal.timeout(timeout) : undefined,
-  });
+  let r;
+  try {
+    r = await fetch(path, {
+      method,
+      credentials: 'same-origin',
+      headers: body === undefined ? undefined : { 'content-type': 'application/json' },
+      body: body === undefined ? undefined : JSON.stringify(body),
+      // ms: per le chiamate lunghe (analisi dello stile) un limite chiaro invece di un'attesa infinita
+      ...(ms && typeof AbortSignal !== 'undefined' && AbortSignal.timeout ? { signal: AbortSignal.timeout(ms) } : {}),
+    });
+  } catch (e) {
+    if (e?.name === 'TimeoutError' || e?.name === 'AbortError') throw new Error('Nessuna risposta dal server in tempo. Riprova.');
+    throw new Error('Rete assente o instabile. Riprova quando torna.');
+  }
   const data = await r.json().catch(() => ({}));
   if (r.status === 401 && !path.startsWith('/api/auth')) {
     stato.schermo = 'accesso';
@@ -534,8 +537,9 @@ function righeRiassunto(testo) {
   }).join('');
 }
 
-function htmlStatoStudio(s) {
-  return `${s.errore ? `<div class="banner attenzione" data-errore-stile>${esc(s.errore)}</div>` : ''}${s.occupato ? `<div class="card" data-passo-stile><p class="kicker">In corso</p><p>${esc(s.occupato)}</p></div>` : ''}${s.notaAudio ? `<p class="nota">${esc(s.notaAudio)}</p>` : ''}`;
+function htmlErroreStile(s) {
+  if (!s.errore) return '';
+  return `<div class="card errore-stile" data-errore-stile><p class="kicker">Non è andata</p><p>${esc(s.errore)}</p><small class="meta">Premi di nuovo Studia per riprovare.</small></div>`;
 }
 
 function htmlStile() {
@@ -544,7 +548,7 @@ function htmlStile() {
     const b = s.bozza;
     return `<button class="btn ghost" data-azione="studio-elenco">Elenco</button>
       <div class="intro"><p class="kicker">Stile</p><h1>${esc(b.nome || 'Bozza')}</h1></div>
-      ${htmlStatoStudio(s)}
+      ${htmlErroreStile(s)}
       <div class="card scheda-stile">${righeRiassunto(b.riassunto)}</div>
       ${b.voce === false ? '<p class="nota">Senza trascrizione: solo fotogrammi e ritmo.</p>' : ''}
       <div class="filo">${(b.messaggi || []).map((m) => `<p class="bolla ${m.ruolo === 'denis' ? 'denis' : 'ai'}">${esc(m.testo)}</p>`).join('')}</div>
@@ -556,16 +560,16 @@ function htmlStile() {
       <p class="nota" data-upload-stile>${esc(s.nota || 'Salvare lo mette in Nuovo montaggio e nel bot. Non parte nessun montaggio.')}</p>`;
   }
   const salvati = s.salvati || [];
-  const bloccato = Boolean(s.occupato || s.invio);
   return `<button class="btn ghost" data-azione="studio-chiudi">Indietro</button>
     <div class="intro"><p class="kicker">Stile</p><h1>Studia uno stile</h1></div>
     <p class="sub">Un video breve, tuo o di un creator. L’AI propone ritmo, scritte, colori e zoom. Poi lo correggi a parole.</p>
-    ${htmlStatoStudio(s)}
+    ${s.occupato ? `<div class="card" data-passo-stile><p class="kicker">In corso</p><p>${esc(s.occupato)}</p></div>` : ''}
+    ${htmlErroreStile(s)}
     <div class="card">
       <label class="etichetta">Video di riferimento</label>
       <input class="campo" id="file-stile" type="file" accept="video/*">
-      <button class="btn primario" data-azione="studia"${bloccato ? ' disabled' : ''}>Studia</button>
-      <p class="nota">Prima estraggo i fotogrammi e chiedo lo stile. Poi carico il file a pezzi: non apre un montaggio e non compare in Oggi. Se il video non si decodifica, te lo dico.</p>
+      <button class="btn primario" data-azione="studia"${s.occupato || s.invio ? ' disabled' : ''}>Studia</button>
+      <p class="nota">Prima i fotogrammi e l’analisi, poi il file intero a pezzi. Non apre un montaggio e non compare in Oggi.</p>
       <p class="nota" data-upload-stile>${esc(s.nota || '')}</p>
     </div>
     ${s.bozza?.haTesto ? `<div class="card scheda-stile"><p class="kicker">Bozza</p>${righeRiassunto(s.bozza.riassunto)}<button class="btn pieno" data-azione="studio-continua">Continua</button></div>` : ''}
@@ -1139,7 +1143,7 @@ function avviaServiceWorker() {
   let ricaricato = false;
   navigator.serviceWorker.addEventListener('controllerchange', () => {
     if (!giaAttivo || ricaricato) return;
-    if (ricaricoBloccato(stato.studio, stato.carica.fase)) return;
+    if (stato.studio.occupato || stato.studio.invio || stato.carica.fase === 'invio') return;
     ricaricato = true;
     location.reload();
   });
@@ -1158,87 +1162,103 @@ function notaUpload(testo) {
   if (el) el.textContent = testo;
 }
 
-function passoStudio(testo) {
+// fasi sempre visibili (24/10: un errore dell'analisi compariva in un avviso di 4 s mentre il file
+// intero caricava per minuti, e sembrava che non succedesse niente)
+function faseStudio(testo) {
   stato.studio.occupato = testo;
-  stato.studio.errore = '';
   disegna();
 }
 
-function erroreStudio(motivo) {
-  const testo = String(motivo || 'Qualcosa non ha funzionato.');
-  stato.studio.occupato = '';
-  stato.studio.errore = testo.startsWith('Errore:') ? testo : `Errore: ${testo}`;
-  disegna();
+function erroreRete(e) {
+  const m = String(e?.message || '');
+  return /rete assente|nessuna risposta dal server|failed to fetch|load failed|instabile|timeout|connessione/i.test(m);
 }
 
-function applicaBozza(bozza) {
-  stato.studio.bozza = bozza;
-  stato.studio.fase = 'studio';
-  stato.studio.occupato = '';
-  stato.studio.errore = '';
-  stato.studio.nota = 'Carico il video…';
-  disegna();
+async function attendiBozza(prima) {
+  const fine = Date.now() + 45000;
+  const eraStudio = stato.studio.fase === 'studio';
+  while (Date.now() < fine) {
+    await new Promise((r) => setTimeout(r, 2500));
+    try {
+      const r = await api('/api/stile');
+      const q = Number(r.bozza?.quando);
+      if (!(r.bozza?.haTesto && Number.isFinite(q) && q > Number(prima || 0))) continue;
+      stato.studio.bozza = r.bozza;
+      stato.studio.fase = 'studio';
+      stato.studio.occupato = '';
+      stato.studio.errore = '';
+      if (!eraStudio) stato.studio.nota = 'Carico il file intero…';
+      else if (String(stato.studio.nota || '').startsWith('Connessione')) stato.studio.nota = '';
+      disegna();
+      return true;
+    } catch { /* la rete è ancora giù */ }
+  }
+  return false;
 }
 
 async function studiaVideo() {
   if (DEMO) { toast('In demo l’analisi non chiama l’AI. Apri uno stile salvato.'); return; }
   const file = stato.studio.file;
-  if (!file) { erroreStudio('Scegli un video di riferimento.'); return; }
+  if (!file) { stato.studio.errore = 'Scegli un video di riferimento.'; disegna(); return; }
   if (stato.studio.occupato || stato.studio.invio) return;
   const prima = Number(stato.studio.bozza?.quando) || 0;
   stato.studio.nota = '';
-  const lettore = preparaLettore(file);
-  passoStudio('Estraggo i fotogrammi…');
+  stato.studio.errore = '';
+  faseStudio('Estraggo i fotogrammi…');
   let campione;
   try {
-    campione = await campionaRiferimento(lettore, file);
+    campione = await campionaRiferimento(file, faseStudio);
   } catch (e) {
-    const m = String(e?.message || '');
-    erroreStudio(/non si è mosso|non si apre|non si decodifica|HEVC|durata/.test(m) ? (m.includes('durata') ? m : messaggioDecodifica()) : (m || messaggioDecodifica()));
+    stato.studio.occupato = '';
+    stato.studio.errore = e.message || 'Non riesco a leggere questo video sul telefono.';
+    disegna();
     return;
   }
-  stato.studio.notaAudio = campione.nota || '';
-  passoStudio('L’AI analizza…');
+  faseStudio('L’AI analizza lo stile… (fino a un minuto)');
   let scheda = false;
   try {
-    const r = await api('/api/stile/analizza', {
-      method: 'POST', timeout: 55000,
-      body: { durata: campione.durata, tagli: campione.tagli, fotogrammi: campione.fotogrammi, audio: campione.audio },
-    });
-    applicaBozza(r.bozza);
+    const r = await api('/api/stile/analizza', { method: 'POST', ms: 120000, body: {
+      durata: campione.durata, tagli: campione.tagli, fotogrammi: campione.fotogrammi, audio: campione.audio,
+    } });
+    if (!r.bozza?.haTesto) throw new Error('L’AI non ha restituito uno stile. Riprova.');
+    stato.studio.bozza = r.bozza;
+    stato.studio.fase = 'studio';
+    stato.studio.errore = '';
     scheda = true;
   } catch (e) {
-    if (èErroreRete(e)) {
-      stato.studio.occupato = 'L’AI analizza…';
-      stato.studio.errore = '';
+    if (erroreRete(e)) {
       stato.studio.nota = 'Connessione interrotta. Controllo se l’analisi è finita…';
       disegna();
       scheda = await attendiBozza(prima);
-      if (!scheda) erroreStudio('la connessione si è interrotta e non trovo la scheda. Riprova.');
-    } else {
-      erroreStudio(e.message || 'L’analisi non è riuscita.');
     }
+    if (!scheda) stato.studio.errore = `Analisi non riuscita: ${e.message || 'errore sconosciuto'}`;
+  } finally {
+    stato.studio.occupato = '';
+    disegna();
   }
-  avviaInvio(file);
+  stato.studio.invio = true;
+  inviaRiferimento(file).catch((e) => notaUpload(`Il file intero non è partito (${e.message || 'errore'}). Lo stile, se c’è, resta.`)).finally(() => { stato.studio.invio = false; });
 }
 
 async function inviaNotaStile() {
   const detto = root.querySelector('#detto-stile')?.value.trim() || '';
-  if (!detto) { erroreStudio('Scrivi cosa cambiare.'); return; }
-  passoStudio('L’AI aggiorna lo stile…');
+  if (!detto) { stato.studio.errore = 'Scrivi cosa cambiare.'; disegna(); return; }
+  const prima = Number(stato.studio.bozza?.quando) || 0;
+  stato.studio.errore = '';
+  faseStudio('L’AI aggiorna lo stile…');
   try {
-    const r = await api('/api/stile/chat', { method: 'POST', body: { testo: detto }, timeout: 55000 });
+    const r = await api('/api/stile/chat', { method: 'POST', ms: 120000, body: { testo: detto } });
     stato.studio.bozza = r.bozza;
     stato.studio.fase = 'studio';
     stato.studio.errore = '';
   } catch (e) {
-    if (èErroreRete(e)) {
-      const prima = Number(stato.studio.bozza?.quando) || 0;
+    let ok = false;
+    if (erroreRete(e)) {
       stato.studio.nota = 'Connessione interrotta. Controllo se l’aggiornamento è finito…';
       disegna();
-      const ok = await attendiBozza(prima);
-      if (!ok) erroreStudio('la connessione si è interrotta. La nota non è partita: rimandala.');
-    } else erroreStudio(e.message || 'L’aggiornamento non è riuscito.');
+      ok = await attendiBozza(prima);
+    }
+    if (!ok) stato.studio.errore = e.message || 'L’aggiornamento non è riuscito.';
   } finally {
     stato.studio.occupato = '';
     disegna();
@@ -1292,7 +1312,7 @@ function attendiVideo(video, evento, ms = 5000) {
   return new Promise((ok, ko) => {
     const t = setTimeout(() => { pulisci(); ko(new Error('Il video non si è mosso in tempo.')); }, ms);
     const bene = () => { pulisci(); ok(); };
-    const male = () => { pulisci(); ko(new Error(messaggioDecodifica())); };
+    const male = () => { pulisci(); ko(new Error('Questo video non si apre sul telefono.')); };
     function pulisci() {
       clearTimeout(t);
       video.removeEventListener(evento, bene);
@@ -1303,127 +1323,117 @@ function attendiVideo(video, evento, ms = 5000) {
   });
 }
 
-function attendiQuadro(video, ms = 1200) {
-  if (typeof video.requestVideoFrameCallback === 'function') {
-    return new Promise((ok, ko) => {
-      let fatto = false;
-      const t = setTimeout(() => { if (!fatto) { fatto = true; ko(new Error('timeout')); } }, ms);
-      try {
-        video.requestVideoFrameCallback(() => {
-          if (fatto) return;
-          fatto = true;
-          clearTimeout(t);
-          ok();
-        });
-      } catch {
-        clearTimeout(t);
-        if (!fatto) { fatto = true; ko(new Error('timeout')); }
-      }
-    });
-  }
-  return new Promise((ok) => requestAnimationFrame(() => requestAnimationFrame(() => ok())));
-}
-
 async function vaiAlSecondo(video, t) {
-  video.muted = true;
-  if (video.paused) { try { await video.play(); } catch { /* il play nel tocco può bastare */ } }
-  if (Math.abs((video.currentTime || 0) - t) >= 0.04 || video.readyState < 2) {
-    const p = attendiVideo(video, 'seeked', 5000);
-    video.currentTime = t;
-    await p;
-  }
-  try { await attendiQuadro(video); }
-  catch { await new Promise((ok) => requestAnimationFrame(() => requestAnimationFrame(() => ok()))); }
+  if (Math.abs((video.currentTime || 0) - t) < 0.04 && video.readyState >= 2) return;
+  const p = attendiVideo(video, 'seeked');
+  video.currentTime = t;
+  await p;
 }
 
 function jpegBreve(canvas) {
   let url = canvas.toDataURL('image/jpeg', 0.62);
   if (url.length > 160000) url = canvas.toDataURL('image/jpeg', 0.42);
-  if (url.length > 160000) url = canvas.toDataURL('image/jpeg', 0.3);
   return url;
 }
 
-function preparaLettore(file) {
+function lumaMedia(ctx, w, h) {
+  const data = ctx.getImageData(0, 0, w, h).data;
+  let sum = 0;
+  let n = 0;
+  for (let p = 0; p < data.length; p += 16) { sum += data[p] + data[p + 1] + data[p + 2]; n += 1; }
+  return n ? sum / n : 0;
+}
+
+// un fotogramma dopo il seek: su iOS 'seeked' può arrivare prima che il fotogramma sia disegnabile;
+// requestVideoFrameCallback (Safari 15.4+) aspetta quello vero, con un tetto di 600 ms
+function fotogrammaPronto(video) {
+  return new Promise((ok) => {
+    const t = setTimeout(ok, 600);
+    if (typeof video.requestVideoFrameCallback === 'function') video.requestVideoFrameCallback(() => { clearTimeout(t); ok(); });
+    else requestAnimationFrame(() => requestAnimationFrame(() => { clearTimeout(t); ok(); }));
+  });
+}
+
+async function campionaRiferimento(file, fase = () => {}) {
   const url = URL.createObjectURL(file);
   const video = document.createElement('video');
   video.muted = true;
   video.defaultMuted = true;
-  video.volume = 0;
   video.playsInline = true;
   video.setAttribute('playsinline', '');
-  video.setAttribute('webkit-playsinline', '');
+  video.setAttribute('muted', '');
   video.preload = 'auto';
-  video.setAttribute('style', 'position:fixed;left:0;top:0;width:4px;height:4px;opacity:0.01;pointer-events:none');
-  video.src = url;
+  // iOS decodifica meglio un video che sta nella pagina: minuscolo e invisibile
+  video.style.cssText = 'position:fixed;left:0;top:0;width:2px;height:2px;opacity:0;pointer-events:none';
+  video.setAttribute('webkit-playsinline', '');
   document.body.appendChild(video);
+  video.src = url;
+  // play() prima di ogni attesa: su iOS il gesto del tocco vale solo in questo turno
   const parto = video.play();
   if (parto && typeof parto.catch === 'function') parto.catch(() => {});
-  return { url, video, parto };
-}
-
-async function catturaIstante(video, t, tele) {
-  for (let tentativo = 0; tentativo < 2; tentativo++) {
-    const quando = Math.min(Math.max(0, (video.duration || t) - 0.05), Math.max(0, t + tentativo * 0.15));
-    try { await vaiAlSecondo(video, quando); } catch { continue; }
-    if (video.error) return null;
-    tele.ctxP.drawImage(video, 0, 0, 48, 48);
-    const st = statLuma(tele.ctxP.getImageData(0, 0, 48, 48).data);
-    if (st.vuoto) continue;
-    let jpeg;
-    if (tele.grande) {
-      tele.ctxG.drawImage(video, 0, 0, tele.grande.width, tele.grande.height);
-      if (statLuma(tele.ctxG.getImageData(0, 0, tele.grande.width, tele.grande.height).data).vuoto) continue;
-      jpeg = jpegBreve(tele.grande);
-    }
-    return { media: st.media, jpeg };
-  }
-  return null;
-}
-
-async function campionaRiferimento(lettore, file) {
-  const { url, video, parto } = lettore;
   try {
-    await attendiVideo(video, 'loadedmetadata', 12000);
-    await Promise.resolve(parto).catch(() => {});
-    let durata = video.duration;
-    if (!Number.isFinite(durata)) {
-      await attendiVideo(video, 'durationchange', 4000).catch(() => {});
-      durata = video.duration;
+    await attendiVideo(video, 'loadedmetadata', 10000).catch(() => {
+      throw new Error('Il telefono non apre questo video. Prova un file più corto o esportato in H.264 (MP4).');
+    });
+    const durata = video.duration;
+    if (!Number.isFinite(durata) || durata < 0.4) throw new Error('Video troppo corto o senza durata.');
+    // un attimo di play da muto "sveglia" il decoder di iOS: senza, i primi drawImage possono uscire neri
+    try {
+      await parto;
+      if (!video.paused) video.pause();
+    } catch {
+      try { await video.play(); video.pause(); } catch { /* autoplay negato: si va avanti coi seek */ }
     }
-    if (!Number.isFinite(durata) || durata < 0.4) throw new Error('Non leggo la durata di questo video. Prova un MP4 più corto.');
-    if (!video.videoWidth || !video.videoHeight) throw new Error(messaggioDecodifica());
+    if (!video.videoWidth) await attendiVideo(video, 'loadeddata', 5000).catch(() => {});
     const piccolo = document.createElement('canvas');
     piccolo.width = 48;
     piccolo.height = 48;
     const ctxP = piccolo.getContext('2d', { willReadFrequently: true });
+    // ritmo: fino a 12 seek; uno che non risolve si salta invece di fermare tutto
+    const passi = Math.min(12, Math.max(6, Math.round(durata / 1)));
+    const luci = [];
+    for (let i = 0; i < passi; i++) {
+      fase(`Misuro il ritmo dei tagli… ${i + 1}/${passi}`);
+      try {
+        await vaiAlSecondo(video, Math.min(durata - 0.05, durata * (i + 0.5) / passi));
+        await fotogrammaPronto(video);
+        ctxP.drawImage(video, 0, 0, 48, 48);
+        luci.push(lumaMedia(ctxP, 48, 48));
+      } catch { /* seek non risolto: questo punto non conta */ }
+    }
+    let tagli = 0;
+    for (let i = 1; i < luci.length; i++) {
+      if (Math.abs(luci[i] - luci[i - 1]) / Math.max(1, Math.abs(luci[i - 1])) >= 0.18) tagli += 1;
+    }
+    // stima su meno punti: riportata alla durata come se fossero passi ogni 0,5 s
+    if (luci.length > 1) tagli = Math.round(tagli * Math.max(1, (durata / 0.5) / luci.length) * 0.5);
     const grande = document.createElement('canvas');
     const lato = 320;
-    const rap = video.videoWidth / video.videoHeight;
+    const rap = (video.videoWidth || 9) / (video.videoHeight || 16);
     grande.width = rap >= 1 ? lato : Math.max(2, Math.round(lato * rap));
     grande.height = rap >= 1 ? Math.max(2, Math.round(lato / rap)) : lato;
     const ctxG = grande.getContext('2d', { willReadFrequently: true });
-    if (!ctxP || !ctxG) throw new Error(messaggioDecodifica());
-    const passi = Math.min(12, Math.max(6, Math.round(durata / 1.2)));
-    const indiciFoto = new Set();
-    for (let i = 0; i < 6; i++) indiciFoto.add(Math.min(passi - 1, Math.round(((i + 0.5) * passi) / 6)));
-    const luci = [];
     const fotogrammi = [];
-    for (let i = 0; i < passi; i++) {
-      if (video.error) break;
-      const t = Math.min(durata - 0.05, Math.max(0, durata * (i + 0.5) / passi));
-      const preso = await catturaIstante(video, t, { ctxP, grande: indiciFoto.has(i) ? grande : null, ctxG });
-      if (!preso) continue;
-      luci.push(preso.media);
-      if (preso.jpeg) fotogrammi.push(preso.jpeg);
+    for (let i = 0; i < 6; i++) {
+      fase(`Estraggo i fotogrammi… ${i + 1}/6`);
+      try {
+        await vaiAlSecondo(video, Math.min(durata - 0.05, durata * (i + 0.5) / 6));
+        await fotogrammaPronto(video);
+        ctxG.drawImage(video, 0, 0, grande.width, grande.height);
+        // fotogramma tutto nero = decoder non pronto: non lo mando
+        if (lumaMedia(ctxG, grande.width, grande.height) < 6) continue;
+        fotogrammi.push(jpegBreve(grande));
+      } catch { /* seek non risolto: un fotogramma in meno */ }
     }
-    video.pause();
-    if (fotogrammi.length < 2) throw new Error(messaggioDecodifica());
+    if (fotogrammi.length < 2) {
+      throw new Error('Il telefono non riesce a estrarre i fotogrammi da questo video (spesso succede con HEVC/MOV pesanti). Prova un file più corto o esportato in H.264.');
+    }
+    fase('Preparo l’audio…');
     const audio = await audioBreve(file);
-    return { durata, tagli: contaSalti(luci), fotogrammi: fotogrammi.slice(0, 6), audio: audio.audio, nota: audio.nota || '' };
+    return { durata, tagli, fotogrammi, audio };
   } finally {
-    video.pause();
     video.removeAttribute('src');
-    try { video.load(); } catch { /* il lettore non serve più */ }
+    video.load();
     video.remove();
     URL.revokeObjectURL(url);
   }
@@ -1463,13 +1473,12 @@ function b64DaBuffer(buf) {
 }
 
 async function audioBreve(file) {
-  if (file.size > AUDIO_MAX) return { nota: 'Audio non analizzato: il file è grande. Uso i fotogrammi e il ritmo.' };
-  if (typeof AudioContext === 'undefined') return { nota: 'Audio non letto su questo telefono. Uso i fotogrammi.' };
+  if (file.size > 25 * 1024 * 1024 || typeof AudioContext === 'undefined') return undefined;
   try {
     const ctx = new AudioContext();
     const buf = await ctx.decodeAudioData(await file.arrayBuffer());
     const sec = Math.min(20, buf.duration || 0);
-    if (!(sec >= 0.4)) return { nota: 'Audio non letto su questo telefono. Uso i fotogrammi.' };
+    if (!(sec >= 0.4)) return undefined;
     const rate = 16000;
     const off = new OfflineAudioContext(1, Math.floor(sec * rate), rate);
     const src = off.createBufferSource();
@@ -1478,42 +1487,10 @@ async function audioBreve(file) {
     src.start(0);
     const reso = await off.startRendering();
     await ctx.close().catch(() => {});
-    return { audio: b64DaBuffer(wav16(reso.getChannelData(0), rate)) };
+    return b64DaBuffer(wav16(reso.getChannelData(0), rate));
   } catch {
-    return { nota: 'Audio non letto su questo telefono. Uso i fotogrammi.' };
+    return undefined;
   }
-}
-
-async function attendiBozza(prima) {
-  const fine = Date.now() + 45000;
-  const eraStudio = stato.studio.fase === 'studio';
-  while (Date.now() < fine) {
-    await new Promise((r) => setTimeout(r, 2500));
-    try {
-      const r = await api('/api/stile');
-      if (!bozzaNuova(r.bozza, prima)) continue;
-      stato.studio.bozza = r.bozza;
-      stato.studio.fase = 'studio';
-      stato.studio.occupato = '';
-      stato.studio.errore = '';
-      if (!eraStudio) stato.studio.nota = 'Carico il video…';
-      else if (String(stato.studio.nota || '').startsWith('Connessione')) stato.studio.nota = '';
-      disegna();
-      return true;
-    } catch { /* la rete è ancora giù */ }
-  }
-  return false;
-}
-
-function avviaInvio(file) {
-  stato.studio.invio = true;
-  if (!String(stato.studio.nota || '').startsWith('Carico') && !String(stato.studio.nota || '').startsWith('Connessione')) {
-    stato.studio.nota = 'Carico il video…';
-  }
-  notaUpload(stato.studio.nota);
-  inviaRiferimento(file).catch((e) => {
-    notaUpload(`Errore: ${e.message || 'il file intero non è partito. Lo stile, se c’è, resta.'}`);
-  }).finally(() => { stato.studio.invio = false; });
 }
 
 async function inviaRiferimento(file) {
@@ -1522,7 +1499,7 @@ async function inviaRiferimento(file) {
     file: [{ nome: file.name, size: file.size, tipo: file.type || 'video/mp4' }],
   } });
   const upload = inizio.upload;
-  notaUpload('Carico il video…');
+  notaUpload('Carico il file intero…');
   await sveglia();
   const coda = [];
   for (const meta of upload.file) {
@@ -1539,11 +1516,9 @@ async function inviaRiferimento(file) {
     }
   }
   let prossimo = 0;
-  let fatti = 0;
+  let inviati = 0;
   let guasto = null;
   const parallelo = inizio.parallelo || 4;
-  const totale = coda.length;
-  if (totale) notaUpload(`Carico il video… 0 di ${totale}`);
   async function lavoratore() {
     while (prossimo < coda.length && !guasto) {
       const job = coda[prossimo++];
@@ -1552,9 +1527,9 @@ async function inviaRiferimento(file) {
         if (!url) continue;
         const etag = await mandaConRiprove(upload.id, job, url, () => {});
         await idbAggiungi(`${job.meta.nome}|${job.meta.size}`, { n: job.n, etag });
+        inviati += 1;
+        notaUpload(`Carico il file intero… ${Math.round((inviati / Math.max(1, coda.length)) * 100)}%`);
         await api(`/api/upload/${upload.id}/parte`, { method: 'POST', body: { nome: job.meta.nome, numero: job.n, etag } });
-        fatti += 1;
-        notaUpload(`Carico il video… ${fatti} di ${totale}`);
       } catch (e) { guasto = e; }
     }
   }
@@ -1577,10 +1552,9 @@ async function parti() {
   if (vista === 'altro') await caricaAltro();
   if (vista === 'stile') {
     await caricaStudio();
-    if (DEMO && DEMO_STATO === 'fotogrammi') stato.studio.occupato = 'Estraggo i fotogrammi…';
-    if (DEMO && DEMO_STATO === 'analizza') stato.studio.occupato = 'L’AI analizza…';
-    if (DEMO && DEMO_STATO === 'errore') stato.studio.errore = `Errore: ${messaggioDecodifica()}`;
-    if (DEMO && DEMO_STATO === 'carico') stato.studio.nota = 'Carico il video…';
+    if (DEMO && DEMO_STATO === 'analizza') stato.studio.occupato = 'L’AI analizza lo stile… (fino a un minuto)';
+    if (DEMO && DEMO_STATO === 'errore') stato.studio.errore = 'Il telefono non riesce a estrarre i fotogrammi da questo video (spesso succede con HEVC/MOV pesanti). Prova un file più corto o esportato in H.264.';
+    if (DEMO && DEMO_STATO === 'carico') stato.studio.nota = 'Carico il file intero… 40%';
   }
   vai(vista === 'accesso' ? 'accesso' : vista);
 }

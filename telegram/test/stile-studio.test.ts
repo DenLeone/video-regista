@@ -204,9 +204,8 @@ test('un errore dell’AI non riporta trascrizione né titolo', async () => seri
     assert.equal(sporco.ok, false);
     if (!sporco.ok) assert.equal(sporco.errore.includes('SEGRETA'), false);
     assert.equal(log.some((r) => r.includes('SEGRETA')), false);
-    diariPuliti(diario.righe);
-    assert.equal(diario.righe.some((r) => r === 'stile fase=gemini esito=500'), true);
-    assert.equal(diario.righe.some((r) => r === 'stile fase=gemini esito=200'), true);
+    assert.equal(log.some((r) => /ha risposto 500|non riuscito \(500\)/.test(r)), true);
+    assert.equal(log.some((r) => /illeggibile/.test(r)), true);
   } finally {
     console.error = originale;
     diario.ripristina();
@@ -324,7 +323,7 @@ test('se il telefono si stacca, la bozza resta e il log non ha dati', async () =
     assert.equal(String(salvata?.testo || '').includes('parlato segreto'), false);
     diariPuliti(diario.righe);
     assert.equal(diario.righe.includes('stile fase=analizza esito=200'), true);
-    assert.equal(diario.righe.includes('stile fase=gemini esito=200'), true);
+    assert.equal(diario.righe.some((r) => r.startsWith('stile fase=gemini')), false);
 
     const letto = await gestisciStile(new Request('https://regista.test/api/stile'), e, ops, '/api/stile');
     const pagina = await letto.json() as { bozza: { quando: number; haTesto: boolean } };
@@ -332,5 +331,36 @@ test('se il telefono si stacca, la bozza resta e il log non ha dati', async () =
     assert.equal(pagina.bozza.quando, salvata?.quando);
   } finally {
     diario.ripristina();
+  }
+}));
+
+test('Gemini lento o sovraccarico: si passa al Flash Lite, e un 400 riprova senza ragionamento', async () => serie(async () => {
+  const chiesti: string[] = [];
+  const buono = JSON.stringify({ candidates: [{ content: { parts: [{ text: JSON.stringify({ risposta: 'ok', stile: 'Nome: Prova\nTono: diretto\nSottotitoli: parola\nLook: naturale\nRitmo dei tagli: veloce, un taglio ogni secondo\nInquadrature: volto e dettagli' }) }] } }] });
+  const originale = console.error;
+  console.error = () => {};
+  try {
+    const dopo503 = await chiediStile({
+      fetch: async (url) => {
+        chiesti.push(String(url).split('/models/')[1]);
+        return String(url).includes('flash-lite') ? new Response(buono, { status: 200 }) : new Response('', { status: 503 });
+      },
+      geminiKey: 'k', prompt: 'x', foto: [],
+    });
+    assert.equal(dopo503.ok, true);
+    assert.deepEqual(chiesti, ['gemini-flash-latest:generateContent', 'gemini-flash-lite-latest:generateContent']);
+    const corpi: string[] = [];
+    const dopo400 = await chiediStile({
+      fetch: async (_url, init) => {
+        corpi.push(String(init?.body));
+        return corpi.length === 1 ? new Response('', { status: 400 }) : new Response(buono, { status: 200 });
+      },
+      geminiKey: 'k', prompt: 'x', foto: [],
+    });
+    assert.equal(dopo400.ok, true);
+    assert.equal(corpi[0].includes('thinkingConfig'), true);
+    assert.equal(corpi[1].includes('thinkingConfig'), false);
+  } finally {
+    console.error = originale;
   }
 }));

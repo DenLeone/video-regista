@@ -1,7 +1,7 @@
 // Guscio dell'app. Nessuna Background Sync: iOS non la esegue, e un upload
 // lasciato in coda qui si perderebbe senza dirlo. I pezzi già confermati restano sul server.
-const CACHE = 'regista-guscio-5';
-const GUSCIO = ['/', '/app.css', '/app.js', '/campione.js', '/manifest.webmanifest', '/icon-192.png', '/icon-512.png'];
+const CACHE = 'regista-guscio-6';
+const GUSCIO = ['/', '/app.css', '/app.js', '/manifest.webmanifest', '/icon-192.png', '/icon-512.png'];
 
 self.addEventListener('install', (e) => {
   e.waitUntil((async () => {
