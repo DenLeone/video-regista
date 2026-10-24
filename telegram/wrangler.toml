@@ -39,6 +39,9 @@ run_worker_first = true
 #   DRIVE_CLIENT_ID           playback nell'app. Senza, si apre il link di Drive
 #   DRIVE_CLIENT_SECRET
 #   DRIVE_REFRESH_TOKEN
+#   GEMINI_API_KEY            studio stile nell'app. Senza, l'analisi lo dice e non parte
+#   GROQ_API_KEY              trascrizione breve del riferimento, solo se il file è corto
+#   ANTHROPIC_API_KEY         riserva HTTP se Gemini non risponde (la CLI di Claude del runner non gira qui)
 # Sul repo GitHub (Actions), gli stessi quattro valori R2:
 #   R2_ACCOUNT_ID, R2_ACCESS_KEY_ID, R2_SECRET_ACCESS_KEY, R2_BUCKET
 # Il bucket non è un binding del Worker: il deploy non fallisce se non esiste ancora.

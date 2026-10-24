@@ -1,7 +1,10 @@
 # video-regista — PROGRESSO
 
 > File di passaggio tra sessioni (ufficio / casa / in giro). Aggiornato da Claude a ogni passo.
-> Ultimo aggiornamento: **2026-10-20, sessione cloud (Claude Code web)** — qualità del render, 12K Quality rifatto, rallentatore e raffica, modalità discorso (un solo video = niente regia), controllo generale.
+> Ultimo aggiornamento: **2026-10-24** — nell'app, sezione «Studia uno stile» (da Altro, non una sesta scheda).
+
+### 24/10: studio dello stile nell'app
+Denis carica un video di riferimento (multipart R2 già presente, con `riferimento` così non compare in Oggi e non parte un montaggio). Il telefono manda 6 fotogrammi e una stima dei tagli; se il file è sotto i 25 MB, anche 20 s di voce. L'analisi gira nel Worker (Gemini, Claude HTTP solo se c'è `ANTHROPIC_API_KEY`), niente workflow nuovo: i minuti Actions sono quasi finiti. Poi una chat a turni aggiorna la scheda. «Salva stile» scrive `app:stili` nella memoria del bot e `stili/<nome>/stile.txt` su R2. Il nome entra nell'elenco di Nuovo montaggio e del bot. Se Drive non ha la cartella, `scripts/regista.mjs` legge quel file (senza font né musica: non ci sono asset). Log senza trascrizioni né titoli.
 
 ## ▶️ Come si usa adesso (pronto per i lotti)
 > **Cartelle Drive rinominate da Denis il 20/10**: `97 - Editare` → `01 · Da editare`, `98 - Fatti` → `02 · Fatti`, `99 - Pubblicare` → `03 · Da pubblicare`, `03 · Social — Risorse/Stili` → `12 · Risorse/Stili`. I nomi stanno in `scripts/cartelle.mjs` e nell'`env` dei workflow (regista, pubblica, laboratorio); i link del bot vanno per ID e non cambiano. Nelle note più vecchie qui sotto restano i nomi di allora.

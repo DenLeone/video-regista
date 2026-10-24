@@ -176,6 +176,10 @@ export async function scriviOggetto(c: CredenzialiR2, key: string, body: string,
   if (!r.ok) throw new Error(`R2 put ${r.status}: ${(await r.text()).slice(0, 120)}`);
 }
 
+export async function cancellaOggetto(c: CredenzialiR2, key: string): Promise<void> {
+  await chiamataR2(c, { method: 'DELETE', key }).catch(() => undefined);
+}
+
 // sha256 è usato dai test di webauthn; bytesToB64url no, ma la firma JWT sta in push.
 void sha256;
 void bytesToB64url;

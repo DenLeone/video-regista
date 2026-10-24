@@ -291,6 +291,24 @@ textarea { min-height: 96px; resize: vertical; }
 .vuoto { color: var(--muted); padding: 12px 0; }
 .check { display: flex; gap: 10px; align-items: center; padding: 8px 0; }
 
+.filo { display: flex; flex-direction: column; gap: 8px; margin: 0 0 12px; }
+.bolla {
+  max-width: 92%;
+  padding: 12px 14px;
+  border-radius: 18px;
+  background: rgba(255, 255, 255, .06);
+  border: 1px solid var(--line);
+  line-height: 1.35;
+}
+.bolla.denis { align-self: flex-end; background: rgba(255, 255, 255, .14); }
+.vista-stile .btn.ghost { padding: 8px 2px 10px; margin: 0; }
+.scheda-stile { padding: 16px 18px 10px; }
+.scheda-stile .riga { align-items: flex-start; padding: 3px 0; }
+.scheda-stile .riga strong { font-weight: 560; text-align: right; }
+.azioni-riga { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 8px; }
+.azioni-riga .btn { padding: 10px 12px; border-radius: 14px; }
+textarea.detto { min-height: 72px; }
+
 @media (prefers-reduced-motion: reduce) {
   .view, .btn, .barra i { animation: none; transition: none; }
 }
