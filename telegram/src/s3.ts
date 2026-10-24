@@ -151,26 +151,6 @@ export async function annullaMultipart(c: CredenzialiR2, key: string, uploadId: 
   await chiamataR2(c, { method: 'DELETE', key, query: { uploadId } }).catch(() => undefined);
 }
 
-/** Il browser può leggere l'ETag solo se il bucket lo espone. Lo imposta il worker, una volta. */
-export async function impostaCors(c: CredenzialiR2, origin: string): Promise<void> {
-  const body = `<?xml version="1.0" encoding="UTF-8"?>
-<CORSConfiguration><CORSRule>
-<AllowedOrigin>${xml(origin)}</AllowedOrigin>
-<AllowedMethod>PUT</AllowedMethod>
-<AllowedMethod>GET</AllowedMethod>
-<AllowedMethod>HEAD</AllowedMethod>
-<AllowedHeader>*</AllowedHeader>
-<ExposeHeader>ETag</ExposeHeader>
-<MaxAgeSeconds>3600</MaxAgeSeconds>
-</CORSRule></CORSConfiguration>`;
-  const r = await chiamataR2(c, { method: 'PUT', query: { cors: '' }, contentType: 'application/xml', body, key: undefined });
-  // PutBucketCors è sul bucket, non sull'oggetto: uri /bucket?cors
-  if (!r.ok) {
-    // chiamataR2 con key undefined usa /bucket. Ma ho passato key undefined esplicitamente. Vedere funzione.
-    throw new Error(`CORS R2 ${r.status}: ${(await r.text()).slice(0, 180)}`);
-  }
-}
-
 export async function scriviOggetto(c: CredenzialiR2, key: string, body: string, contentType: string): Promise<void> {
   const r = await chiamataR2(c, { method: 'PUT', key, body, contentType });
   if (!r.ok) throw new Error(`R2 put ${r.status}: ${(await r.text()).slice(0, 120)}`);

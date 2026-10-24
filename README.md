@@ -32,7 +32,7 @@ Sul Worker (`npx wrangler secret put`, dalla cartella `telegram/`):
 
 Su GitHub Actions, gli stessi quattro valori R2: `R2_ACCOUNT_ID`, `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`, `R2_BUCKET`.
 
-Il bucket va creato a mano. Il Worker imposta il CORS al primo caricamento ed espone `ETag` (senza, il telefono non può confermare i pezzi). Una lifecycle di 7 giorni su `inbox/` è una rete di sicurezza: il runner cancella i file solo dopo che la copia su Drive è riuscita.
+Il bucket va creato a mano. CORS (origin dell’app, PUT/GET/HEAD, header `*`, `ETag` esposto) e la lifecycle su `inbox/` si impostano sul bucket: la chiave dell’app è solo Object Read & Write e non può scriverli. Senza `ETag` esposto il telefono non conferma i pezzi. La lifecycle è una rete di sicurezza: il runner cancella i file solo dopo che la copia su Drive è riuscita.
 
 Chiavi VAPID, una volta: `npx web-push generate-vapid-keys` non serve nel repo; si possono generare con `node -e` e WebCrypto, oppure con qualsiasi strumento VAPID. Non vanno nel codice.
 

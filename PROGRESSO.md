@@ -1,7 +1,7 @@
 # video-regista — PROGRESSO
 
 > File di passaggio tra sessioni (ufficio / casa / in giro). Aggiornato da Claude a ogni passo.
-> Ultimo aggiornamento: **2026-10-24** — nell'app, sezione «Studia uno stile» (da Altro, non una sesta scheda).
+> Ultimo aggiornamento: **2026-10-24** — l’upload non prova più a scrivere il CORS di R2 (la chiave è solo Object Read & Write; le regole restano sul bucket).
 
 ### 24/10: studio dello stile nell'app
 Denis carica un video di riferimento (multipart R2 già presente, con `riferimento` così non compare in Oggi e non parte un montaggio). Il telefono manda 6 fotogrammi e una stima dei tagli; se il file è sotto i 25 MB, anche 20 s di voce. L'analisi gira nel Worker (Gemini, Claude HTTP solo se c'è `ANTHROPIC_API_KEY`), niente workflow nuovo: i minuti Actions sono quasi finiti. Poi una chat a turni aggiorna la scheda. «Salva stile» scrive `app:stili` nella memoria del bot e `stili/<nome>/stile.txt` su R2. Il nome entra nell'elenco di Nuovo montaggio e del bot. Se Drive non ha la cartella, `scripts/regista.mjs` legge quel file (senza font né musica: non ci sono asset). Log senza trascrizioni né titoli.

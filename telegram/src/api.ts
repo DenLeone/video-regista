@@ -1,7 +1,7 @@
 // Route dell'app. Lo stato dei montaggi è quello del bot: stessa memoria, stessi workflow.
 import { sha256Hex, timingSafeEqual, b64urlToBytes, bytesToB64url } from './b64';
 import type { BriefApp, Imp, MemoApp, Ops, Segreti } from './ops';
-import { credenzialiOk, completaMultipart, creaMultipart, impostaCors, scriviOggetto, urlPezzo, annullaMultipart, type CredenzialiR2 } from './s3';
+import { credenzialiOk, completaMultipart, creaMultipart, scriviOggetto, urlPezzo, annullaMultipart, type CredenzialiR2 } from './s3';
 import {
   PARTE, PARALLELO, MAX_FILE, byteFatti, dimensioneParte, etagValido, limiteFile, nomeSicuro,
   numeroParti, partiMancanti, registraEtag, type ModalitaUpload, type ParteFatta,
@@ -514,10 +514,8 @@ export async function gestisciApp(req: Request, env: Segreti, ops: Ops): Promise
       if (err) return errore(400, `${f.nome}: ${err}`);
     }
     const modalita: ModalitaUpload = body.modalita === 'scelti' || body.modalita === 'proxy' ? body.modalita : 'originali';
-    if ((await ops.leggi(env, 'app:r2_cors')) !== url.origin) {
-      try { await impostaCors(c, url.origin); await ops.scrivi(env, 'app:r2_cors', url.origin); }
-      catch (e) { return errore(502, `Non riesco a preparare R2: ${(e as Error).message}`); }
-    }
+    // CORS e lifecycle stanno sul bucket (li imposta Denis). La chiave dell'app è solo
+    // Object Read & Write: PutBucketCors risponde 403 e non va ritentato.
     const id = crypto.randomUUID().replace(/-/g, '');
     const usati = new Set<string>();
     const file: FileUp[] = [];
