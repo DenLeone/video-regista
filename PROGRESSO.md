@@ -1,10 +1,12 @@
 # video-regista — PROGRESSO
 
 > File di passaggio tra sessioni (ufficio / casa / in giro). Aggiornato da Claude a ogni passo.
-> Ultimo aggiornamento: **2026-10-24** — l’upload non prova più a scrivere il CORS di R2 (la chiave è solo Object Read & Write; le regole restano sul bucket).
+> Ultimo aggiornamento: **2026-10-24** — dopo l’upload di un riferimento, «Studia uno stile» mostra i passi e non resta in silenzio se l’analisi si stacca. L’upload non prova più a scrivere il CORS di R2.
 
 ### 24/10: studio dello stile nell'app
-Denis carica un video di riferimento (multipart R2 già presente, con `riferimento` così non compare in Oggi e non parte un montaggio). Il telefono manda 6 fotogrammi e una stima dei tagli; se il file è sotto i 25 MB, anche 20 s di voce. L'analisi gira nel Worker (Gemini, Claude HTTP solo se c'è `ANTHROPIC_API_KEY`), niente workflow nuovo: i minuti Actions sono quasi finiti. Poi una chat a turni aggiorna la scheda. «Salva stile» scrive `app:stili` nella memoria del bot e `stili/<nome>/stile.txt` su R2. Il nome entra nell'elenco di Nuovo montaggio e del bot. Se Drive non ha la cartella, `scripts/regista.mjs` legge quel file (senza font né musica: non ci sono asset). Log senza trascrizioni né titoli.
+Denis carica un video di riferimento (multipart R2 già presente, con `riferimento` così non compare in Oggi e non parte un montaggio). Il telefono manda qualche fotogramma e una stima dei tagli; se il file è sotto gli 8 MB, anche 20 s di voce. L'analisi gira nel Worker (Gemini, Claude HTTP solo se c'è `ANTHROPIC_API_KEY`), niente workflow nuovo: i minuti Actions sono quasi finiti. Poi una chat a turni aggiorna la scheda. «Salva stile» scrive `app:stili` nella memoria del bot e `stili/<nome>/stile.txt` su R2. Il nome entra nell'elenco di Nuovo montaggio e del bot. Se Drive non ha la cartella, `scripts/regista.mjs` legge quel file (senza font né musica: non ci sono asset). Log senza trascrizioni né titoli: solo `stile fase=… esito=…`.
+
+Il caricamento su R2 non avvia l’analisi. L’analisi è una richiesta a parte, fatta prima del file intero, e resta in corso anche se il telefono chiude la connessione. A schermo restano i passi («Estraggo i fotogrammi…», «L’AI analizza…», «Carico il video…») o un «Errore: …». Se il MOV non si decodifica (HEVC), l’app lo dice e non manda fotogrammi neri.
 
 ## ▶️ Come si usa adesso (pronto per i lotti)
 > **Cartelle Drive rinominate da Denis il 20/10**: `97 - Editare` → `01 · Da editare`, `98 - Fatti` → `02 · Fatti`, `99 - Pubblicare` → `03 · Da pubblicare`, `03 · Social — Risorse/Stili` → `12 · Risorse/Stili`. I nomi stanno in `scripts/cartelle.mjs` e nell'`env` dei workflow (regista, pubblica, laboratorio); i link del bot vanno per ID e non cambiano. Nelle note più vecchie qui sotto restano i nomi di allora.

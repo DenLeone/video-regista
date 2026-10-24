@@ -175,6 +175,20 @@ export function leggiJsonModello(raw: string): { risposta: string; stile: string
   return { risposta, stile };
 }
 
+const FASI_DIARIO = ['analizza', 'chat', 'gemini', 'claude', 'voce'] as const;
+export type FaseDiario = (typeof FASI_DIARIO)[number];
+
+/** Una riga sola, fase ed esito. Non accetta testo libero: niente titoli, nomi o trascrizioni. */
+export function rigaDiario(fase: FaseDiario, esito: number | 'avvio'): string {
+  const f = FASI_DIARIO.includes(fase) ? fase : 'analizza';
+  const e = esito === 'avvio' ? 'avvio' : String(Math.max(0, Math.min(999, esito | 0)));
+  return `stile fase=${f} esito=${e}`;
+}
+
+export function diarioStile(fase: FaseDiario, esito: number | 'avvio'): void {
+  console.log(rigaDiario(fase, esito));
+}
+
 export type VoceStile = { nome: string; tasto: string; cosa: string };
 
 /** Base, poi Drive, poi quelli studiati nell'app. Un nome già preso non si ripete. */

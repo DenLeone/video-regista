@@ -1,5 +1,5 @@
 // Chiamate corte a Gemini (e, se c'è la chiave HTTP, a Claude). Nessun log del testo.
-import { leggiJsonModello } from './stile-studio';
+import { diarioStile, leggiJsonModello } from './stile-studio';
 
 export type EsitoStile = { ok: true; risposta: string; stile: string } | { ok: false; errore: string };
 
@@ -48,11 +48,15 @@ async function gemini(fetchFn: typeof fetch, chiave: string, prompt: string, fot
   let ultimo = 0;
   for (let i = 0; i < 2; i++) {
     const r = await postJson(fetchFn, url, { 'x-goog-api-key': chiave }, body);
-    if (r.ok) return esitoDaTesto(r.testo);
+    if (r.ok) {
+      diarioStile('gemini', 200);
+      return esitoDaTesto(r.testo);
+    }
     ultimo = r.stato;
     if (r.stato !== 429 && r.stato < 500) break;
     if (i === 0) await new Promise((ok) => setTimeout(ok, 800));
   }
+  diarioStile('gemini', ultimo);
   return { ok: false, stato: ultimo };
 }
 
@@ -63,6 +67,7 @@ async function claude(fetchFn: typeof fetch, chiave: string, prompt: string, fot
     'x-api-key': chiave,
     'anthropic-version': '2023-06-01',
   }, { model: 'claude-haiku-4-5', max_tokens: 2048, messages: [{ role: 'user', content }] });
+  diarioStile('claude', r.ok ? 200 : r.stato);
   if (!r.ok) return { ok: false, stato: r.stato };
   return esitoDaTesto(r.testo);
 }
@@ -112,11 +117,13 @@ export async function trascriviBreve(fetchFn: typeof fetch, chiave: string | und
       body: form,
       signal: AbortSignal.timeout(20_000),
     });
+    diarioStile('voce', r.ok ? 200 : r.status);
     if (!r.ok) return undefined;
     const j = await r.json() as { text?: string };
     const t = String(j.text || '').trim();
     return t ? t.slice(0, 1500) : undefined;
   } catch {
+    diarioStile('voce', 0);
     return undefined;
   }
 }

@@ -7,7 +7,7 @@ import type { Ops, Segreti } from '../src/ops';
 import { chiediStile } from '../src/stile-ai';
 import { gestisciStile } from '../src/stile-api';
 import {
-  audioPulito, fotogrammiPuliti, leggiJsonModello, riassuntoStile, ritmoSicuro, unisciNomi,
+  audioPulito, diarioStile, fotogrammiPuliti, leggiJsonModello, rigaDiario, riassuntoStile, ritmoSicuro, unisciNomi,
 } from '../src/stile-studio';
 
 const STILE = `Nome: Giallo veloce
@@ -96,6 +96,36 @@ function env(extra: Partial<Segreti> = {}): Segreti {
   };
 }
 
+let catena: Promise<unknown> = Promise.resolve();
+function serie<T>(fn: () => Promise<T>): Promise<T> {
+  const fatto = catena.then(fn, fn);
+  catena = fatto.then(() => undefined, () => undefined);
+  return fatto;
+}
+
+function spiaDiario() {
+  const righe: string[] = [];
+  const originale = console.log;
+  console.log = (...a: unknown[]) => {
+    const r = a.map(String).join(' ');
+    if (r.startsWith('stile ')) righe.push(r);
+    originale.apply(console, a);
+  };
+  return {
+    righe,
+    ripristina() { console.log = originale; },
+  };
+}
+
+const RIGA = /^stile fase=(analizza|chat|gemini|claude|voce) esito=(avvio|\d{1,3})$/;
+function diariPuliti(righe: string[]) {
+  assert.equal(righe.length > 0, true);
+  for (const r of righe) {
+    assert.match(r, RIGA);
+    assert.equal(/segreto|parlato|giallo|trascrizione|chiave|img_|benchy|\.mov|\.mp4/i.test(r), false);
+  }
+}
+
 function rispostaModello(stile: string, risposta = 'Tagli corti e scritte in basso.') {
   return new Response(JSON.stringify({
     candidates: [{ content: { parts: [{ text: JSON.stringify({ risposta, stile }) }] } }],
@@ -151,10 +181,11 @@ test('slug, ritmo e stile.txt restano quelli che il montaggio sa leggere', () =>
   assert.equal(uniti[2].tasto, '✦ Giallo veloce');
 });
 
-test('un errore dell’AI non riporta trascrizione né titolo', async () => {
+test('un errore dell’AI non riporta trascrizione né titolo', async () => serie(async () => {
   const log: string[] = [];
   const originale = console.error;
   console.error = (...a: unknown[]) => { log.push(a.map(String).join(' ')); };
+  const diario = spiaDiario();
   try {
     const ko = await chiediStile({
       fetch: async () => new Response('TRASCRIZIONE SEGRETA titolo privato', { status: 500 }),
@@ -173,12 +204,16 @@ test('un errore dell’AI non riporta trascrizione né titolo', async () => {
     assert.equal(sporco.ok, false);
     if (!sporco.ok) assert.equal(sporco.errore.includes('SEGRETA'), false);
     assert.equal(log.some((r) => r.includes('SEGRETA')), false);
+    diariPuliti(diario.righe);
+    assert.equal(diario.righe.some((r) => r === 'stile fase=gemini esito=500'), true);
+    assert.equal(diario.righe.some((r) => r === 'stile fase=gemini esito=200'), true);
   } finally {
     console.error = originale;
+    diario.ripristina();
   }
-});
+}));
 
-test('analisi, chat, salva, rinomina, duplica, elimina', async () => {
+test('analisi, chat, salva, rinomina, duplica, elimina', async () => serie(async () => {
   const { ops, db } = memoria();
   const e = env({ GROQ_API_KEY: 'groq-test' });
   await ops.scrivi(e, `app:sess:${TOKEN}`, { exp: Date.now() + 86_400_000 });
@@ -210,7 +245,9 @@ test('analisi, chat, salva, rinomina, duplica, elimina', async () => {
     body: JSON.stringify({ durata: 9.5, tagli: 4, fotogrammi: [FOTO, FOTO], audio: wav }),
   }), e, ops, '/api/stile/analizza', rete);
   assert.equal(fatto.status, 200);
-  const analisi = await fatto.json() as { bozza: { riassunto: string; voce: boolean; messaggi: { testo: string }[] } };
+  const analisi = await fatto.json() as { bozza: { riassunto: string; voce: boolean; quando: number; messaggi: { testo: string }[] } };
+  assert.equal(typeof analisi.bozza.quando, 'number');
+  assert.equal(analisi.bozza.quando > 0, true);
   assert.equal(analisi.bozza.voce, true);
   assert.match(analisi.bozza.riassunto, /Ritmo/);
   assert.equal(JSON.stringify(analisi).includes('parlato segreto'), false);
@@ -257,4 +294,43 @@ test('analisi, chat, salva, rinomina, duplica, elimina', async () => {
   assert.equal(via.status, 200);
   const resti = db.get('app:stili') as { nome: string }[];
   assert.deepEqual(resti.map((s) => s.nome), ['Giallo copia']);
-});
+}));
+
+test('se il telefono si stacca, la bozza resta e il log non ha dati', async () => serie(async () => {
+  assert.equal(rigaDiario('analizza', 'avvio'), 'stile fase=analizza esito=avvio');
+  assert.equal(rigaDiario('gemini', 502), 'stile fase=gemini esito=502');
+  diarioStile('voce', 200);
+  const { ops, db } = memoria();
+  const e = env();
+  const diario = spiaDiario();
+  try {
+    let sblocca: (r: Response) => void = () => {};
+    const rete = () => new Promise<Response>((ok) => { sblocca = ok; });
+    const attesi: Promise<unknown>[] = [];
+    const pendente = gestisciStile(new Request('https://regista.test/api/stile/analizza', {
+      method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ durata: 9.5, tagli: 4, fotogrammi: [FOTO, FOTO], audio: 'parlato segreto del video' }),
+    }), e, ops, '/api/stile/analizza', rete, { waitUntil(p) { attesi.push(p); } });
+    await new Promise((ok) => setTimeout(ok, 30));
+    assert.equal(attesi.length, 1);
+    assert.equal(db.get('app:stile_bozza'), undefined);
+    assert.equal(diario.righe.includes('stile fase=analizza esito=avvio'), true);
+    sblocca(rispostaModello(STILE, 'Tagli corti.'));
+    const res = await pendente;
+    await attesi[0];
+    assert.equal(res.status, 200);
+    const salvata = db.get('app:stile_bozza') as { quando?: number; testo?: string } | undefined;
+    assert.equal(typeof salvata?.quando, 'number');
+    assert.equal(String(salvata?.testo || '').includes('parlato segreto'), false);
+    diariPuliti(diario.righe);
+    assert.equal(diario.righe.includes('stile fase=analizza esito=200'), true);
+    assert.equal(diario.righe.includes('stile fase=gemini esito=200'), true);
+
+    const letto = await gestisciStile(new Request('https://regista.test/api/stile'), e, ops, '/api/stile');
+    const pagina = await letto.json() as { bozza: { quando: number; haTesto: boolean } };
+    assert.equal(pagina.bozza.haTesto, true);
+    assert.equal(pagina.bozza.quando, salvata?.quando);
+  } finally {
+    diario.ripristina();
+  }
+}));

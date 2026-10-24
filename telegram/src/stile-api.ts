@@ -3,7 +3,7 @@ import type { Ops, Segreti } from './ops';
 import { cancellaOggetto, credenzialiOk, scriviOggetto, type CredenzialiR2 } from './s3';
 import { chiediStile, trascriviBreve } from './stile-ai';
 import {
-  audioPulito, chiaveStileR2, conNome, descrizioneStile, fotogrammiPuliti, nomeStilePulito,
+  audioPulito, chiaveStileR2, conNome, descrizioneStile, diarioStile, fotogrammiPuliti, nomeStilePulito,
   promptAnalisi, promptChat, riassuntoStile, ritmoSicuro, slugStile,
   type BozzaStile, type MessaggioStile, type StileSalvato,
 } from './stile-studio';
@@ -37,6 +37,7 @@ function bozzaPubblica(b: BozzaStile | undefined) {
   return {
     nome: b.nome, riassunto: b.riassunto, messaggi: b.messaggi, haTesto: true,
     voce: Boolean(b.voce), durata: b.durata, tagli: b.tagli, taglioMedio: b.taglioMedio,
+    quando: b.quando || 0,
   };
 }
 
@@ -91,26 +92,22 @@ function aggiungiMessaggio(lista: MessaggioStile[], ruolo: MessaggioStile['ruolo
   return [...lista, { ruolo, testo: testo.slice(0, 500) }].slice(-24);
 }
 
-export async function gestisciStile(req: Request, env: Segreti, ops: Ops, path: string, rete: typeof fetch = fetch): Promise<Response> {
+export type AttesaWorker = { waitUntil(p: Promise<unknown>): void };
 
-  if (req.method === 'GET' && path === '/api/stile') {
-    return json({ salvati: pubblici(await salvati(env, ops)), bozza: bozzaPubblica(await bozza(env, ops)) });
-  }
-
-  const body = req.method === 'POST' ? await req.json().catch(() => ({})) as Record<string, unknown> : {};
-
-  if (req.method === 'POST' && path === '/api/stile/analizza') {
-    const ritmo = ritmoSicuro(body.durata, body.tagli);
-    if ('errore' in ritmo) return errore(400, ritmo.errore);
-    const foto = fotogrammiPuliti(body.fotogrammi);
-    if ('errore' in foto) return errore(400, foto.errore);
-    const wav = audioPulito(body.audio);
+async function eseguiAnalisi(
+  env: Segreti, ops: Ops, rete: typeof fetch,
+  ritmo: { durata: number; tagli: number; taglioMedio: number }, foto: string[], wav: Uint8Array | undefined,
+): Promise<Response> {
+  try {
     const trascrizione = await trascriviBreve(rete, env.GROQ_API_KEY, wav);
     const esito = await chiediStile({
       fetch: rete, geminiKey: env.GEMINI_API_KEY, anthropicKey: env.ANTHROPIC_API_KEY,
-      prompt: promptAnalisi({ ...ritmo, trascrizione }), foto: foto.foto,
+      prompt: promptAnalisi({ ...ritmo, trascrizione }), foto,
     });
-    if (!esito.ok) return errore(502, esito.errore);
+    if (!esito.ok) {
+      diarioStile('analizza', 502);
+      return errore(502, esito.errore);
+    }
     const nome = nomeStilePulito((/^\s*Nome:\s*(.+)$/m.exec(esito.stile) || [])[1] || '') || 'Nuovo stile';
     const testo = conNome(esito.stile, nome);
     const fatta: BozzaStile = {
@@ -120,25 +117,81 @@ export async function gestisciStile(req: Request, env: Segreti, ops: Ops, path: 
       voce: Boolean(trascrizione), quando: Date.now(),
     };
     await ops.scrivi(env, BOZZA, fatta);
+    diarioStile('analizza', 200);
     return json({ bozza: bozzaPubblica(fatta) });
+  } catch {
+    diarioStile('analizza', 500);
+    return errore(502, 'L’analisi si è interrotta. Riprova.');
   }
+}
 
-  if (req.method === 'POST' && path === '/api/stile/chat') {
-    const detto = String(body.testo || '').trim().slice(0, 500);
-    if (!detto) return errore(400, 'Scrivi cosa cambiare.');
-    const b = await bozza(env, ops);
-    if (!b?.testo) return errore(400, 'Prima studia un video, oppure apri uno stile salvato.');
+async function eseguiChat(env: Segreti, ops: Ops, rete: typeof fetch, b: BozzaStile, detto: string): Promise<Response> {
+  try {
     const esito = await chiediStile({
       fetch: rete, geminiKey: env.GEMINI_API_KEY, anthropicKey: env.ANTHROPIC_API_KEY,
       prompt: promptChat(b.testo, b.messaggi, detto), foto: [],
     });
-    if (!esito.ok) return errore(502, esito.errore);
+    if (!esito.ok) {
+      diarioStile('chat', 502);
+      return errore(502, esito.errore);
+    }
     b.testo = esito.stile;
     b.riassunto = riassuntoStile(esito.stile);
     b.messaggi = aggiungiMessaggio(aggiungiMessaggio(b.messaggi, 'denis', detto), 'ai', esito.risposta);
     b.quando = Date.now();
     await ops.scrivi(env, BOZZA, b);
+    diarioStile('chat', 200);
     return json({ bozza: bozzaPubblica(b) });
+  } catch {
+    diarioStile('chat', 500);
+    return errore(502, 'L’aggiornamento si è interrotto. Riprova.');
+  }
+}
+
+export async function gestisciStile(
+  req: Request, env: Segreti, ops: Ops, path: string,
+  rete: typeof fetch = fetch, attesa?: AttesaWorker,
+): Promise<Response> {
+
+  if (req.method === 'GET' && path === '/api/stile') {
+    return json({ salvati: pubblici(await salvati(env, ops)), bozza: bozzaPubblica(await bozza(env, ops)) });
+  }
+
+  const body = req.method === 'POST' ? await req.json().catch(() => ({})) as Record<string, unknown> : {};
+
+  if (req.method === 'POST' && path === '/api/stile/analizza') {
+    diarioStile('analizza', 'avvio');
+    const ritmo = ritmoSicuro(body.durata, body.tagli);
+    if ('errore' in ritmo) {
+      diarioStile('analizza', 400);
+      return errore(400, ritmo.errore);
+    }
+    const foto = fotogrammiPuliti(body.fotogrammi);
+    if ('errore' in foto) {
+      diarioStile('analizza', 400);
+      return errore(400, foto.errore);
+    }
+    const wav = audioPulito(body.audio);
+    const lavoro = eseguiAnalisi(env, ops, rete, ritmo, foto.foto, wav);
+    attesa?.waitUntil(lavoro);
+    return lavoro;
+  }
+
+  if (req.method === 'POST' && path === '/api/stile/chat') {
+    diarioStile('chat', 'avvio');
+    const detto = String(body.testo || '').trim().slice(0, 500);
+    if (!detto) {
+      diarioStile('chat', 400);
+      return errore(400, 'Scrivi cosa cambiare.');
+    }
+    const b = await bozza(env, ops);
+    if (!b?.testo) {
+      diarioStile('chat', 400);
+      return errore(400, 'Prima studia un video, oppure apri uno stile salvato.');
+    }
+    const lavoro = eseguiChat(env, ops, rete, b, detto);
+    attesa?.waitUntil(lavoro);
+    return lavoro;
   }
 
   if (req.method === 'POST' && path === '/api/stile/salva') {

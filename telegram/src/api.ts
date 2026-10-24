@@ -262,7 +262,9 @@ async function uploadPerId(env: Segreti, ops: Ops, id: string): Promise<Sessione
   return ops.leggi<SessioneUpload>(env, `app:upload:${id}`);
 }
 
-export async function gestisciApp(req: Request, env: Segreti, ops: Ops): Promise<Response> {
+export async function gestisciApp(
+  req: Request, env: Segreti, ops: Ops, attesa?: { waitUntil(p: Promise<unknown>): void },
+): Promise<Response> {
   const url = new URL(req.url);
   const path = url.pathname;
   if (!path.startsWith('/api/')) return new Response('no', { status: 404 });
@@ -498,7 +500,7 @@ export async function gestisciApp(req: Request, env: Segreti, ops: Ops): Promise
     return json({ ok: true });
   }
 
-  if (path.startsWith('/api/stile')) return gestisciStile(req, env, ops, path);
+  if (path.startsWith('/api/stile')) return gestisciStile(req, env, ops, path, fetch, attesa);
 
   if (req.method === 'POST' && path === '/api/upload/inizia') {
     const c = cred(env);
