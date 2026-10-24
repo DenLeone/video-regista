@@ -15,7 +15,12 @@ const stato = {
   nuovo: null,
   toast: '',
   carica: caricaVuota(),
+  studio: studioVuoto(),
 };
+
+function studioVuoto() {
+  return { fase: 'elenco', salvati: [], bozza: null, occupato: '', file: null, nota: '' };
+}
 
 function caricaVuota() {
   return {
@@ -64,6 +69,13 @@ const demoMem = {
   titolo: 'Provo questo caffè',
 };
 
+const demoStile = {
+  salvati: [
+    { id: 'stiledemo01', nome: 'Giallo veloce', desc: 'Reel tech, tagli corti, scritte in basso', quando: Date.now() - 86400000 },
+  ],
+  bozza: null,
+};
+
 async function api(path, { method = 'GET', body } = {}) {
   if (DEMO) return demoApi(path, method, body);
   const r = await fetch(path, {
@@ -102,16 +114,67 @@ function demoApi(path, method, body) {
   if (path === '/api/collegamenti') return { ig: true, yt: true, prova: 'manuale', provaNome: 'A mano' };
   if (path === '/api/regia' && method === 'GET') return { regia: { nome: 'Caffè del mattino', ok: true, testo: 'Tengo il primo piano sul versamento e chiudo sulla tazza.', quando: Date.now() } };
   if (path === '/api/push/chiave') return { attivo: false, chiave: null };
+  if (path === '/api/stile' && method === 'GET') return { salvati: demoStile.salvati, bozza: demoStile.bozza };
+  if (path === '/api/stile/apri' && method === 'POST') {
+    const s = demoStile.salvati.find((x) => x.id === body?.id) || demoStile.salvati[0];
+    demoStile.bozza = {
+      nome: s?.nome || 'Stile',
+      riassunto: 'Quando usarlo: reel tech, tagli corti\nRitmo: un taglio ogni 1,2 s\nSottotitoli: parola · Montserrat 700 · #FFFFFF · basso\nColori: caldo\nTransizioni: no\nInquadrature: punch-in sul volto\nMusica: no',
+      messaggi: [{ ruolo: 'ai', testo: 'Tagli corti, sottotitoli bianchi in basso, look caldo. Dimmi cosa cambiare.' }],
+      haTesto: true,
+      voce: false,
+    };
+    return { bozza: demoStile.bozza };
+  }
+  if (path === '/api/stile/chat' && method === 'POST') {
+    const detto = String(body?.testo || '');
+    const b = demoStile.bozza || { nome: 'Bozza', riassunto: '', messaggi: [], haTesto: true, voce: false };
+    b.messaggi = [...(b.messaggi || []), { ruolo: 'denis', testo: detto }];
+    if (/giall/i.test(detto)) {
+      b.riassunto = String(b.riassunto).replace('#FFFFFF', '#FFE62E');
+      b.messaggi.push({ ruolo: 'ai', testo: 'Sottotitoli gialli, in basso.' });
+    } else if (/veloc/i.test(detto)) {
+      b.riassunto = String(b.riassunto).replace('1,2 s', '0,6 s');
+      b.messaggi.push({ ruolo: 'ai', testo: 'Ritmo più veloce: un taglio ogni 0,6 s.' });
+    } else if (/zoom/i.test(detto)) {
+      b.riassunto = String(b.riassunto).replace('punch-in sul volto', 'niente zoom');
+      b.messaggi.push({ ruolo: 'ai', testo: 'Tolto lo zoom.' });
+    } else b.messaggi.push({ ruolo: 'ai', testo: 'Ho tenuto lo stile e ho segnato la nota.' });
+    demoStile.bozza = b;
+    return { bozza: b };
+  }
+  if (path === '/api/stile/salva' && method === 'POST') {
+    const nome = String(body?.nome || '').trim() || 'Senza nome';
+    demoStile.salvati = [{ id: `salvato${demoStile.salvati.length}`, nome, desc: 'studiato nell’app', quando: Date.now() }, ...demoStile.salvati.filter((s) => s.nome !== nome)];
+    return { ok: true, salvati: demoStile.salvati, avviso: null };
+  }
+  if (path === '/api/stile/rinomina' && method === 'POST') {
+    demoStile.salvati = demoStile.salvati.map((s) => (s.id === body?.id ? { ...s, nome: body.nome } : s));
+    return { ok: true, salvati: demoStile.salvati };
+  }
+  if (path === '/api/stile/duplica' && method === 'POST') {
+    const s = demoStile.salvati.find((x) => x.id === body?.id);
+    demoStile.salvati = [...demoStile.salvati, { id: `copia${demoStile.salvati.length}`, nome: body?.nome || `${s?.nome || 'Stile'} copia`, desc: s?.desc || '', quando: Date.now() }];
+    return { ok: true, salvati: demoStile.salvati };
+  }
+  if (path === '/api/stile/elimina' && method === 'POST') {
+    demoStile.salvati = demoStile.salvati.filter((s) => s.id !== body?.id);
+    return { ok: true, salvati: demoStile.salvati };
+  }
   if (method === 'POST') return { ok: true, inviato: true, upload: { id: 'demo', nome: body?.nome || 'Video', pronto: true, file: [] } };
   return {};
 }
 
 function demoStili() {
-  return [
+  const base = [
     { nome: 'Blueprint', tasto: '📐 Blueprint', cosa: 'tavola tecnica, parole chiave in box, effetti digitali' },
     { nome: 'Cinematico', tasto: '🎬 Cinematico', cosa: 'spot di prodotto caldo, sottotitoli parola per parola, titoli grandi' },
     { nome: 'Narrativo', tasto: 'Narrativo', cosa: 'racconto lungo, poche scritte, dal Drive' },
   ];
+  const extra = demoStile.salvati
+    .filter((s) => !base.some((b) => b.nome.toLowerCase() === s.nome.toLowerCase()))
+    .map((s) => ({ nome: s.nome, tasto: `✦ ${s.nome}`, cosa: s.desc || 'studiato nell’app' }));
+  return [...base, ...extra];
 }
 function demoFatti() {
   return [
@@ -158,13 +221,14 @@ function demoDettaglio() {
 
 function tabbar() {
   const voci = [['oggi', 'Oggi'], ['nuovo', 'Nuovo'], ['carica', 'Carica'], ['video', 'Video'], ['altro', 'Altro']];
-  return `<nav class="tabbar">${voci.map(([id, nome]) => `<button class="tab${stato.schermo === id ? ' attivo' : ''}" data-azione="vai" data-verso="${id}"><b>${nome === 'Carica' ? '↑' : nome === 'Oggi' ? '●' : nome === 'Nuovo' ? '+' : nome === 'Video' ? '▷' : '•••'}</b>${nome}</button>`).join('')}</nav>`;
+  const attivo = stato.schermo === 'stile' ? 'altro' : stato.schermo;
+  return `<nav class="tabbar">${voci.map(([id, nome]) => `<button class="tab${attivo === id ? ' attivo' : ''}" data-azione="vai" data-verso="${id}"><b>${nome === 'Carica' ? '↑' : nome === 'Oggi' ? '●' : nome === 'Nuovo' ? '+' : nome === 'Video' ? '▷' : '•••'}</b>${nome}</button>`).join('')}</nav>`;
 }
 
 function disegna() {
   const solo = stato.schermo === 'accesso';
   const corpo = {
-    accesso: htmlAccesso, oggi: htmlOggi, nuovo: htmlNuovo, carica: htmlCarica, video: htmlVideo, dettaglio: htmlDettaglio, altro: htmlAltro,
+    accesso: htmlAccesso, oggi: htmlOggi, nuovo: htmlNuovo, carica: htmlCarica, video: htmlVideo, dettaglio: htmlDettaglio, altro: htmlAltro, stile: htmlStile,
   }[stato.schermo] || htmlOggi;
   root.innerHTML = `<div class="app${solo ? ' solo' : ''}"><div class="view vista-${esc(stato.schermo)}">${corpo()}</div>${solo ? '' : tabbar()}${stato.toast ? `<div class="toast" role="status">${esc(stato.toast)}</div>` : ''}</div>`;
   const barra = root.querySelector('[data-barra]');
@@ -222,7 +286,7 @@ function vai(verso) {
   if (verso === 'nuovo' && !stato.nuovo) preparaNuovo();
   if (verso === 'carica' && stato.carica.fase === 'scelta' && !stato.carica.nome) stato.carica.cellulare = reteCellulare() || stato.carica.cellulare;
   stato.schermo = verso;
-  if (verso === 'oggi' || verso === 'video' || verso === 'altro' || verso === 'dettaglio') location.hash = verso === 'dettaglio' && stato.dettaglio ? `video/${stato.dettaglio.id}` : verso;
+  if (verso === 'oggi' || verso === 'video' || verso === 'altro' || verso === 'dettaglio' || verso === 'stile') location.hash = verso === 'dettaglio' && stato.dettaglio ? `video/${stato.dettaglio.id}` : verso;
   disegna();
 }
 
@@ -418,6 +482,7 @@ function htmlAltro() {
   const col = stato.collegamenti || {};
   const regia = stato.regia?.regia;
   return `<div class="intro"><p class="kicker">Altro</p><h1>Impostazioni</h1></div>
+    <button class="card scelta voce" data-azione="vai" data-verso="stile"><strong>Studia uno stile</strong><small>Un video di riferimento, poi lo metti a punto con l’AI. Nessun montaggio parte da solo.</small></button>
     <div class="card">
       <label class="etichetta">Stile predefinito</label>
       <select data-imp="stile">${stili.map((s) => `<option ${s.nome === imp.stile ? 'selected' : ''}>${esc(s.nome)}</option>`).join('')}</select>
@@ -455,6 +520,56 @@ function htmlAltro() {
     <p class="nota">Cartelle Drive: 01 · Da editare, 02 · Fatti, 03 · Da pubblicare. Il secondo account Telegram non entra nell’app.</p>`;
 }
 
+function righeRiassunto(testo) {
+  return String(testo || '').split('\n').filter(Boolean).map((r) => {
+    const i = r.indexOf(':');
+    if (i < 0) return `<p>${esc(r)}</p>`;
+    return `<div class="riga"><span class="meta">${esc(r.slice(0, i))}</span><strong>${esc(r.slice(i + 1).trim())}</strong></div>`;
+  }).join('');
+}
+
+function htmlStile() {
+  const s = stato.studio;
+  if (s.fase === 'studio' && s.bozza?.haTesto) {
+    const b = s.bozza;
+    return `<button class="btn ghost" data-azione="studio-elenco">Elenco</button>
+      <div class="intro"><p class="kicker">Stile</p><h1>${esc(b.nome || 'Bozza')}</h1></div>
+      <div class="card scheda-stile">${righeRiassunto(b.riassunto)}</div>
+      ${b.voce === false ? '<p class="nota">Senza trascrizione: solo fotogrammi e ritmo.</p>' : ''}
+      <div class="filo">${(b.messaggi || []).map((m) => `<p class="bolla ${m.ruolo === 'denis' ? 'denis' : 'ai'}">${esc(m.testo)}</p>`).join('')}</div>
+      <textarea class="detto" id="detto-stile" placeholder="Più veloce, sottotitoli gialli, meno zoom"></textarea>
+      <button class="btn primario" data-azione="studio-invia"${s.occupato ? ' disabled' : ''}>${s.occupato ? esc(s.occupato) : 'Invia'}</button>
+      <label class="etichetta">Nome dello stile</label>
+      <input class="campo" id="nome-stile" value="${esc(b.nome || '')}" maxlength="40">
+      <button class="btn pieno" data-azione="studio-salva">Salva stile</button>
+      <p class="nota" data-upload-stile>${esc(s.nota || 'Salvare lo mette in Nuovo montaggio e nel bot. Non parte nessun montaggio.')}</p>`;
+  }
+  const salvati = s.salvati || [];
+  return `<button class="btn ghost" data-azione="studio-chiudi">Indietro</button>
+    <div class="intro"><p class="kicker">Stile</p><h1>Studia uno stile</h1></div>
+    <p class="sub">Un video breve, tuo o di un creator. L’AI propone ritmo, scritte, colori e zoom. Poi lo correggi a parole.</p>
+    ${s.occupato ? `<div class="card"><p class="kicker">In corso</p><p>${esc(s.occupato)}</p></div>` : ''}
+    <div class="card">
+      <label class="etichetta">Video di riferimento</label>
+      <input class="campo" id="file-stile" type="file" accept="video/*">
+      <button class="btn primario" data-azione="studia"${s.occupato ? ' disabled' : ''}>Studia</button>
+      <p class="nota">Sei fotogrammi partono dal telefono. Il file intero va su Cloudflare a pezzi, come in Carica, e si può riprendere. Non apre un montaggio e non compare in Oggi.</p>
+      <p class="nota" data-upload-stile>${esc(s.nota || '')}</p>
+    </div>
+    ${s.bozza?.haTesto ? `<div class="card scheda-stile"><p class="kicker">Bozza</p>${righeRiassunto(s.bozza.riassunto)}<button class="btn pieno" data-azione="studio-continua">Continua</button></div>` : ''}
+    <h2>Salvati</h2>
+    <div class="lista">${salvati.length ? salvati.map((v) => `<article class="card">
+        <strong>${esc(v.nome)}</strong>
+        <small class="meta">${esc(v.desc || '')}</small>
+        <div class="azioni-riga">
+          <button class="btn" data-azione="studio-apri" data-verso="${esc(v.id)}">Apri</button>
+          <button class="btn" data-azione="studio-rinomina" data-verso="${esc(v.id)}">Rinomina</button>
+          <button class="btn" data-azione="studio-duplica" data-verso="${esc(v.id)}">Duplica</button>
+          <button class="btn pericolo" data-azione="studio-elimina" data-verso="${esc(v.id)}">Elimina</button>
+        </div>
+      </article>`).join('') : '<p class="vuoto">Nessuno ancora. Il primo che salvi compare anche in Nuovo montaggio.</p>'}</div>`;
+}
+
 document.addEventListener('click', async (e) => {
   const el = e.target.closest('[data-azione]');
   if (!el || !root.contains(el)) return;
@@ -465,6 +580,7 @@ document.addEventListener('click', async (e) => {
       if (verso === 'nuovo') preparaNuovo(DEMO && DEMO_VISTA === 'nuovo' ? 'stile' : undefined);
       if (verso === 'video') stato.video = (await api('/api/video')).video || [];
       if (verso === 'altro') await caricaAltro();
+      if (verso === 'stile') { await caricaStudio(); stato.studio.fase = 'elenco'; }
       vai(verso);
     } else if (azione === 'chiedi-codice') {
       await api('/api/auth/codice', { method: 'POST', body: {} });
@@ -503,6 +619,16 @@ document.addEventListener('click', async (e) => {
     else if (azione === 'push') await attivaPush();
     else if (azione === 'sblocco') { await api('/api/auth/sblocco', { method: 'POST', body: {} }); toast('Codice mandato su Telegram. Vale 10 minuti sul telefono nuovo.'); }
     else if (azione === 'esci') { await api('/api/auth/esci', { method: 'POST', body: {} }); stato.schermo = 'accesso'; disegna(); }
+    else if (azione === 'studio-chiudi') vai('altro');
+    else if (azione === 'studio-elenco') { stato.studio.fase = 'elenco'; await caricaStudio(); disegna(); }
+    else if (azione === 'studio-continua') { stato.studio.fase = 'studio'; disegna(); }
+    else if (azione === 'studia') await studiaVideo();
+    else if (azione === 'studio-invia') await inviaNotaStile();
+    else if (azione === 'studio-salva') await salvaStile();
+    else if (azione === 'studio-apri') await apriStile(verso);
+    else if (azione === 'studio-rinomina') await rinominaStile(verso);
+    else if (azione === 'studio-duplica') await duplicaStile(verso);
+    else if (azione === 'studio-elimina') await eliminaStile(verso);
   } catch (err) {
     toast(err.message || 'Non ha funzionato.');
   }
@@ -522,6 +648,7 @@ document.addEventListener('change', async (e) => {
   if (e.target.id === 'nome-video') stato.carica.nome = e.target.value;
   if (e.target.id === 'proxy-da') stato.carica.da = Number(e.target.value) || 0;
   if (e.target.id === 'proxy-a') stato.carica.a = Number(e.target.value) || 90;
+  if (e.target.id === 'file-stile') stato.studio.file = e.target.files?.[0] || null;
 });
 
 function prossimo(da) {
@@ -1006,6 +1133,285 @@ function avviaServiceWorker() {
   navigator.serviceWorker.register('/sw.js').catch(() => {});
 }
 
+async function caricaStudio() {
+  const r = await api('/api/stile');
+  stato.studio.salvati = r.salvati || [];
+  if (r.bozza) stato.studio.bozza = r.bozza;
+}
+
+function notaUpload(testo) {
+  stato.studio.nota = testo;
+  const el = root.querySelector('[data-upload-stile]');
+  if (el) el.textContent = testo;
+}
+
+async function studiaVideo() {
+  if (DEMO) { toast('In demo l’analisi non chiama l’AI. Apri uno stile salvato.'); return; }
+  const file = stato.studio.file;
+  if (!file) throw new Error('Scegli un video di riferimento.');
+  stato.studio.occupato = 'Guardo i fotogrammi…';
+  stato.studio.nota = '';
+  disegna();
+  let campione;
+  try {
+    campione = await campionaRiferimento(file);
+  } catch (e) {
+    stato.studio.occupato = '';
+    disegna();
+    throw e;
+  }
+  stato.studio.occupato = 'Chiedo lo stile…';
+  disegna();
+  const invio = inviaRiferimento(file).catch((e) => notaUpload(e.message || 'Il file intero non è partito. Lo stile, se c’è, resta.'));
+  try {
+    const r = await api('/api/stile/analizza', { method: 'POST', body: {
+      durata: campione.durata, tagli: campione.tagli, fotogrammi: campione.fotogrammi, audio: campione.audio,
+    } });
+    stato.studio.bozza = r.bozza;
+    stato.studio.fase = 'studio';
+  } finally {
+    stato.studio.occupato = '';
+    disegna();
+  }
+  await invio;
+}
+
+async function inviaNotaStile() {
+  const detto = root.querySelector('#detto-stile')?.value.trim() || '';
+  if (!detto) throw new Error('Scrivi cosa cambiare.');
+  stato.studio.occupato = 'Aggiorno lo stile…';
+  disegna();
+  try {
+    const r = await api('/api/stile/chat', { method: 'POST', body: { testo: detto } });
+    stato.studio.bozza = r.bozza;
+    stato.studio.fase = 'studio';
+  } finally {
+    stato.studio.occupato = '';
+    disegna();
+  }
+}
+
+async function salvaStile() {
+  const nome = root.querySelector('#nome-stile')?.value.trim() || '';
+  const r = await api('/api/stile/salva', { method: 'POST', body: { nome } });
+  stato.studio.salvati = r.salvati || stato.studio.salvati;
+  stato.studio.fase = 'elenco';
+  try { stato.stili = (await api('/api/stili')).stili || stato.stili; } catch { /* l’elenco si rinfresca alla prossima apertura */ }
+  toast(r.avviso || 'Stile salvato. Lo trovi in Nuovo montaggio e nel bot.');
+}
+
+async function apriStile(id) {
+  const r = await api('/api/stile/apri', { method: 'POST', body: { id } });
+  stato.studio.bozza = r.bozza;
+  stato.studio.fase = 'studio';
+  disegna();
+}
+
+async function rinominaStile(id) {
+  const attuale = stato.studio.salvati.find((s) => s.id === id)?.nome || '';
+  const nome = prompt('Nuovo nome', attuale);
+  if (!nome || !nome.trim()) return;
+  const r = await api('/api/stile/rinomina', { method: 'POST', body: { id, nome: nome.trim() } });
+  stato.studio.salvati = r.salvati || stato.studio.salvati;
+  toast(r.avviso || 'Rinominato.');
+}
+
+async function duplicaStile(id) {
+  const attuale = stato.studio.salvati.find((s) => s.id === id)?.nome || 'Stile';
+  const nome = prompt('Nome della copia', `${attuale} copia`);
+  if (!nome || !nome.trim()) return;
+  const r = await api('/api/stile/duplica', { method: 'POST', body: { id, nome: nome.trim() } });
+  stato.studio.salvati = r.salvati || stato.studio.salvati;
+  toast('Copia salvata.');
+  disegna();
+}
+
+async function eliminaStile(id) {
+  const nome = stato.studio.salvati.find((s) => s.id === id)?.nome || 'questo stile';
+  if (!confirm(`Elimino «${nome}»?`)) return;
+  const r = await api('/api/stile/elimina', { method: 'POST', body: { id } });
+  stato.studio.salvati = r.salvati || [];
+  disegna();
+}
+
+function attendiVideo(video, evento, ms = 5000) {
+  return new Promise((ok, ko) => {
+    const t = setTimeout(() => { pulisci(); ko(new Error('Il video non si è mosso in tempo.')); }, ms);
+    const bene = () => { pulisci(); ok(); };
+    const male = () => { pulisci(); ko(new Error('Questo video non si apre sul telefono.')); };
+    function pulisci() {
+      clearTimeout(t);
+      video.removeEventListener(evento, bene);
+      video.removeEventListener('error', male);
+    }
+    video.addEventListener(evento, bene);
+    video.addEventListener('error', male);
+  });
+}
+
+async function vaiAlSecondo(video, t) {
+  if (Math.abs((video.currentTime || 0) - t) < 0.04 && video.readyState >= 2) return;
+  const p = attendiVideo(video, 'seeked');
+  video.currentTime = t;
+  await p;
+}
+
+function jpegBreve(canvas) {
+  let url = canvas.toDataURL('image/jpeg', 0.62);
+  if (url.length > 160000) url = canvas.toDataURL('image/jpeg', 0.42);
+  return url;
+}
+
+function lumaMedia(ctx, w, h) {
+  const data = ctx.getImageData(0, 0, w, h).data;
+  let sum = 0;
+  let n = 0;
+  for (let p = 0; p < data.length; p += 16) { sum += data[p] + data[p + 1] + data[p + 2]; n += 1; }
+  return n ? sum / n : 0;
+}
+
+async function campionaRiferimento(file) {
+  const url = URL.createObjectURL(file);
+  const video = document.createElement('video');
+  video.muted = true;
+  video.playsInline = true;
+  video.preload = 'auto';
+  video.src = url;
+  try {
+    await attendiVideo(video, 'loadedmetadata', 8000);
+    const durata = video.duration;
+    if (!Number.isFinite(durata) || durata < 0.4) throw new Error('Video troppo corto o senza durata.');
+    const piccolo = document.createElement('canvas');
+    piccolo.width = 48;
+    piccolo.height = 48;
+    const ctxP = piccolo.getContext('2d', { willReadFrequently: true });
+    const passi = Math.min(24, Math.max(8, Math.round(durata / 0.5)));
+    const luci = [];
+    for (let i = 0; i < passi; i++) {
+      await vaiAlSecondo(video, Math.min(durata - 0.05, durata * (i + 0.5) / passi));
+      ctxP.drawImage(video, 0, 0, 48, 48);
+      luci.push(lumaMedia(ctxP, 48, 48));
+    }
+    let tagli = 0;
+    for (let i = 1; i < luci.length; i++) {
+      if (Math.abs(luci[i] - luci[i - 1]) / Math.max(1, Math.abs(luci[i - 1])) >= 0.18) tagli += 1;
+    }
+    const grande = document.createElement('canvas');
+    const lato = 320;
+    const rap = (video.videoWidth || 9) / (video.videoHeight || 16);
+    grande.width = rap >= 1 ? lato : Math.max(2, Math.round(lato * rap));
+    grande.height = rap >= 1 ? Math.max(2, Math.round(lato / rap)) : lato;
+    const ctxG = grande.getContext('2d');
+    const fotogrammi = [];
+    for (let i = 0; i < 6; i++) {
+      await vaiAlSecondo(video, Math.min(durata - 0.05, durata * (i + 0.5) / 6));
+      ctxG.drawImage(video, 0, 0, grande.width, grande.height);
+      fotogrammi.push(jpegBreve(grande));
+    }
+    const audio = await audioBreve(file);
+    return { durata, tagli, fotogrammi, audio };
+  } finally {
+    URL.revokeObjectURL(url);
+  }
+}
+
+function wav16(samples, rate) {
+  const n = samples.length;
+  const buf = new ArrayBuffer(44 + n * 2);
+  const v = new DataView(buf);
+  const scrivi = (o, s) => { for (let i = 0; i < s.length; i++) v.setUint8(o + i, s.charCodeAt(i)); };
+  scrivi(0, 'RIFF');
+  v.setUint32(4, 36 + n * 2, true);
+  scrivi(8, 'WAVE');
+  scrivi(12, 'fmt ');
+  v.setUint32(16, 16, true);
+  v.setUint16(20, 1, true);
+  v.setUint16(22, 1, true);
+  v.setUint32(24, rate, true);
+  v.setUint32(28, rate * 2, true);
+  v.setUint16(32, 2, true);
+  v.setUint16(34, 16, true);
+  scrivi(36, 'data');
+  v.setUint32(40, n * 2, true);
+  for (let i = 0; i < n; i++) {
+    const x = Math.max(-1, Math.min(1, samples[i]));
+    v.setInt16(44 + i * 2, x < 0 ? x * 0x8000 : x * 0x7fff, true);
+  }
+  return buf;
+}
+
+function b64DaBuffer(buf) {
+  const bytes = new Uint8Array(buf);
+  let s = '';
+  const passo = 0x8000;
+  for (let i = 0; i < bytes.length; i += passo) s += String.fromCharCode(...bytes.subarray(i, i + passo));
+  return btoa(s);
+}
+
+async function audioBreve(file) {
+  if (file.size > 25 * 1024 * 1024 || typeof AudioContext === 'undefined') return undefined;
+  try {
+    const ctx = new AudioContext();
+    const buf = await ctx.decodeAudioData(await file.arrayBuffer());
+    const sec = Math.min(20, buf.duration || 0);
+    if (!(sec >= 0.4)) return undefined;
+    const rate = 16000;
+    const off = new OfflineAudioContext(1, Math.floor(sec * rate), rate);
+    const src = off.createBufferSource();
+    src.buffer = buf;
+    src.connect(off.destination);
+    src.start(0);
+    const reso = await off.startRendering();
+    await ctx.close().catch(() => {});
+    return b64DaBuffer(wav16(reso.getChannelData(0), rate));
+  } catch {
+    return undefined;
+  }
+}
+
+async function inviaRiferimento(file) {
+  const inizio = await api('/api/upload/inizia', { method: 'POST', body: {
+    nome: 'Riferimento', modalita: 'originali', riferimento: true,
+    file: [{ nome: file.name, size: file.size, tipo: file.type || 'video/mp4' }],
+  } });
+  const upload = inizio.upload;
+  notaUpload('Invio il file intero, a pezzi. L’analisi non lo aspetta.');
+  await sveglia();
+  const coda = [];
+  for (const meta of upload.file) {
+    const fatti = new Set(meta.fatteNumeri || []);
+    for (const p of await idbLeggi(`${meta.nome}|${meta.size}`)) {
+      if (fatti.has(p.n)) continue;
+      await api(`/api/upload/${upload.id}/parte`, { method: 'POST', body: { nome: meta.nome, numero: p.n, etag: p.etag } });
+      fatti.add(p.n);
+    }
+    const noti = (inizio.url || []).find((u) => u.nome === meta.nome)?.pezzi || [];
+    for (let n = 1; n <= meta.totale; n++) {
+      if (fatti.has(n)) continue;
+      coda.push({ meta, file, n, url: noti.find((p) => p.n === n)?.url || null });
+    }
+  }
+  let prossimo = 0;
+  let guasto = null;
+  const parallelo = inizio.parallelo || 4;
+  async function lavoratore() {
+    while (prossimo < coda.length && !guasto) {
+      const job = coda[prossimo++];
+      try {
+        let url = job.url || await chiediUrl(upload.id, job);
+        if (!url) continue;
+        const etag = await mandaConRiprove(upload.id, job, url, () => {});
+        await idbAggiungi(`${job.meta.nome}|${job.meta.size}`, { n: job.n, etag });
+        await api(`/api/upload/${upload.id}/parte`, { method: 'POST', body: { nome: job.meta.nome, numero: job.n, etag } });
+      } catch (e) { guasto = e; }
+    }
+  }
+  await Promise.all(Array.from({ length: parallelo }, lavoratore));
+  if (guasto) throw guasto;
+  for (const meta of upload.file) await api(`/api/upload/${upload.id}/completa`, { method: 'POST', body: { nome: meta.nome } });
+  notaUpload('File di riferimento al sicuro. Nessun montaggio è partito.');
+}
+
 async function parti() {
   avviaServiceWorker();
   stato.auth = await api('/api/auth/stato').catch(() => ({ sessione: false, passkey: false }));
@@ -1017,6 +1423,7 @@ async function parti() {
   if (vista === 'dettaglio') { await apriVideo(DEMO ? '900' : (location.hash.split('/')[1] || '')); return; }
   if (vista === 'video') stato.video = (await api('/api/video')).video || [];
   if (vista === 'altro') await caricaAltro();
+  if (vista === 'stile') await caricaStudio();
   vai(vista === 'accesso' ? 'accesso' : vista);
 }
 

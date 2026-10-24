@@ -8,6 +8,7 @@ import {
 } from './upload-stato';
 import { verificaAccesso, verificaRegistrazione, type Passkey } from './webauthn';
 import { pushAttivo } from './push';
+import { gestisciStile } from './stile-api';
 
 const COOKIE = '__Host-regista';
 const ALFABETO = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
@@ -20,6 +21,7 @@ type FileUp = {
 };
 type SessioneUpload = {
   id: string; nome: string; modalita: ModalitaUpload; parziale: boolean; archivio?: boolean;
+  riferimento?: boolean;
   quando: number; file: FileUp[]; pronto?: boolean; avviato?: boolean;
 };
 
@@ -496,10 +498,12 @@ export async function gestisciApp(req: Request, env: Segreti, ops: Ops): Promise
     return json({ ok: true });
   }
 
+  if (path.startsWith('/api/stile')) return gestisciStile(req, env, ops, path);
+
   if (req.method === 'POST' && path === '/api/upload/inizia') {
     const c = cred(env);
     if (!c) return errore(503, 'Caricamento rapido non attivo: sul Worker mancano R2_ACCOUNT_ID, R2_ACCESS_KEY_ID, R2_SECRET_ACCESS_KEY e R2_BUCKET. I file si possono ancora mettere su Drive o mandare al bot come File.');
-    const body = await req.json().catch(() => ({})) as { nome?: string; modalita?: ModalitaUpload; archivio?: boolean; file?: { nome: string; size: number; tipo?: string }[] };
+    const body = await req.json().catch(() => ({})) as { nome?: string; modalita?: ModalitaUpload; archivio?: boolean; riferimento?: boolean; file?: { nome: string; size: number; tipo?: string }[] };
     const nome = String(body.nome || '').replace(/[\\/:*?"<>|]+/g, ' ').trim().slice(0, 80);
     const lista = Array.isArray(body.file) ? body.file : [];
     if (!nome) return errore(400, 'Manca il nome del video.');
@@ -529,11 +533,14 @@ export async function gestisciApp(req: Request, env: Segreti, ops: Ops): Promise
       for (const f of file) await annullaMultipart(c, f.key, f.uploadId);
       return errore(502, `R2 non ha aperto il caricamento: ${(e as Error).message}`);
     }
+    const riferimento = Boolean(body.riferimento);
     const sess: SessioneUpload = {
-      id, nome, modalita, parziale: modalita !== 'originali', archivio: Boolean(body.archivio), quando: Date.now(), file,
+      id, nome, modalita, parziale: modalita !== 'originali', archivio: Boolean(body.archivio),
+      riferimento, quando: Date.now(), file,
     };
     await ops.scrivi(env, `app:upload:${id}`, sess);
-    await ops.scrivi(env, 'app:upload_aperto', id);
+    // Un video di riferimento per lo stile non è un girato da montare: non compare in Oggi.
+    if (!riferimento) await ops.scrivi(env, 'app:upload_aperto', id);
     const urlIniziali = [];
     for (const f of file) {
       const primi = Math.min(PARALLELO, numeroParti(f.size, f.parte));

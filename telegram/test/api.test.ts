@@ -150,6 +150,15 @@ test('auth, blocco del secondo iPhone e caricamento che non rimanda i pezzi fatt
     const stato = await chiama(ops, e, `/api/upload/${id}`, 'GET', undefined, cookie);
     const riassunto = await stato.json() as { file: { fatteNumeri: number[] }[] };
     assert.deepEqual(riassunto.file[0].fatteNumeri, [1]);
+
+    const rif = await chiama(ops, e, '/api/upload/inizia', 'POST', {
+      nome: 'Riferimento', riferimento: true,
+      file: [{ nome: 'reel.mp4', size: 12 * 1024 * 1024, tipo: 'video/mp4' }],
+    }, cookie);
+    assert.equal(rif.status, 200);
+    const dopo = await chiama(ops, e, '/api/home', 'GET', undefined, cookie);
+    const homeJson = await dopo.json() as { upload: { id: string } | null };
+    assert.equal(homeJson.upload?.id, id);
   } finally {
     globalThis.fetch = originale;
   }

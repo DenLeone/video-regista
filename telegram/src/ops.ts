@@ -19,6 +19,9 @@ export interface Segreti {
   DRIVE_CLIENT_ID?: string;
   DRIVE_CLIENT_SECRET?: string;
   DRIVE_REFRESH_TOKEN?: string;
+  GEMINI_API_KEY?: string;
+  GROQ_API_KEY?: string;
+  ANTHROPIC_API_KEY?: string;
   ASSETS?: { fetch(req: Request): Promise<Response> };
 }
 

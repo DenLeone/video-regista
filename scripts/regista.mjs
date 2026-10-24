@@ -29,6 +29,7 @@ import { HDR, curvaChiara, curvaEsposizione, filtroTecnico, misuraPezzo, perFilt
 import { chiaveStock, materialePerAI, normFrase, risolviRegia, sequenzaDiscorso, usaTuttoIlMateriale } from './regia.mjs';
 import { movimento, syncMovimento } from './sync-visivo.mjs';
 import { LOOK_FFMPEG, leggiStile, promptSuMisura } from './stile-su-misura.mjs';
+import { chiaveStileR2, preparaStileApp } from './stile-app.mjs';
 import { bloccoRemoteR2, comandiCancellaR2, comandiCopiaDrive, comandiScaricoR2 } from './rete.mjs';
 import { AUDIO_EXT, IMAGE_EXT, NOMI_DISPOSITIVO, VIDEO_EXT, dispositivo, prioritaAudio, tagsPiatti } from './sorgenti.mjs';
 
@@ -936,7 +937,38 @@ function scegliStile(brief) {
       return { stile: 'SuMisura', avviso: stileSuMisura.avvisi.join(' · ') || undefined };
     }
   } catch (e) { log('stili su Drive non leggibili', e.message); }
+  if (leggiStileAppDaR2(richiesto)) {
+    return { stile: 'SuMisura', avviso: stileSuMisura.avvisi.filter(Boolean).join(' · ') || undefined };
+  }
   return { stile: STILI[0], avviso: `lo stile "${richiesto}" non esiste in ${DIR_STILI}: ho usato ${STILI[0]}` };
+}
+
+// Stile studiato nell'app: niente cartella su Drive, solo stile.txt su R2. Nessun asset.
+function applicaStileTesto(nome, testo) {
+  const p = preparaStileApp(nome, testo);
+  LOOK_12K = p.look12k;
+  LOOK_STILE = p.lookFfmpeg;
+  LUT_STILE = LOOK_12K ? path.join(ROOT, 'lut', '12k.cube') : null;
+  stileSuMisura = { nome: p.nome, grafica: p.grafica, testoAI: p.testoAI, avvisi: p.avvisi };
+}
+
+function leggiStileAppDaR2(nome) {
+  const bucket = process.env.R2_BUCKET || '';
+  const chiave = chiaveStileR2(nome);
+  if (!chiave || !/^[a-z0-9][a-z0-9.-]{1,61}[a-z0-9]$/.test(bucket) || !process.env.R2_ACCESS_KEY_ID) return false;
+  try {
+    assicuraRemoteR2();
+    const dest = path.join(WORK, 'stile-app.txt');
+    fs.rmSync(dest, { force: true });
+    rclone('copyto', `r2:${bucket}/${chiave}`, dest);
+    if (!fs.existsSync(dest) || !fs.statSync(dest).size) return false;
+    applicaStileTesto(nome, fs.readFileSync(dest, 'utf8'));
+    log('stile app letto da R2');
+    return true;
+  } catch {
+    log('stile app su R2 non letto');
+    return false;
+  }
 }
 
 // scarica da Drive stile.txt e asset/ (niente video di esempio), legge la grafica e prepara

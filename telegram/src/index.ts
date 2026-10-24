@@ -22,6 +22,7 @@ import { gestisciApp } from './api';
 import { avvisoUtente } from './push';
 import STILI_BASE from '../../scripts/stili-base.json';
 import type { Ops, Segreti } from './ops';
+import { unisciNomi } from './stile-studio';
 
 export interface Env {
   TELEGRAM_BOT_TOKEN: string;
@@ -42,6 +43,9 @@ export interface Env {
   DRIVE_CLIENT_ID?: string;
   DRIVE_CLIENT_SECRET?: string;
   DRIVE_REFRESH_TOKEN?: string;
+  GEMINI_API_KEY?: string;
+  GROQ_API_KEY?: string;
+  ANTHROPIC_API_KEY?: string;
   ASSETS?: { fetch(req: Request): Promise<Response> };
   MEMORIA: DurableObjectNamespace<Memoria>;
 }
@@ -107,10 +111,13 @@ let STILI_DRIVE: string[] = []; // letti dalla memoria a ogni richiesta
 // cartella su Drive e riga "Quando usarlo" di stile.txt (dal workflow), per descrizioni e link
 type InfoStile = { nome: string; id?: string; desc?: string };
 let INFO_STILI: InfoStile[] = [];
+let STILI_APP: { nome: string; desc?: string }[] = []; // studiati nell'app, chiave app:stili
 const infoStile = (nome: string) => INFO_STILI.find((x) => x.nome.toLowerCase() === nome.toLowerCase());
-const tuttiStili = (): Stile[] => [...STILI, ...STILI_DRIVE
-  .filter((n) => !STILI.some((x) => x.nome.toLowerCase() === n.toLowerCase()))
-  .map((n) => ({ nome: n, tasto: `✨ ${n}`, cosa: infoStile(n)?.desc || 'su misura, da Drive' }))];
+const tuttiStili = (): Stile[] => unisciNomi(
+  STILI,
+  STILI_DRIVE.map((n) => ({ nome: n, cosa: infoStile(n)?.desc || 'su misura, da Drive' })),
+  STILI_APP,
+);
 // nome esatto; se il tasto l'ha accorciato (64 byte), l'unico stile che inizia così
 function nomeStile(x?: string) {
   const t = String(x || '').toLowerCase();
@@ -1783,8 +1790,11 @@ function creaOps(): Ops {
     scrivi: (env, k, v) => mem(e(env)).scrivi(k, v),
     cancella: (env, k) => mem(e(env)).cancella(k),
     prepara: async (env) => {
-      STILI_DRIVE = (await leggi<string[]>(e(env), 'stili_drive')) || [];
-      INFO_STILI = (await leggi<InfoStile[]>(e(env), 'stili_info')) || [];
+      const envBot = e(env);
+      STILI_DRIVE = (await leggi<string[]>(envBot, 'stili_drive')) || [];
+      INFO_STILI = (await leggi<InfoStile[]>(envBot, 'stili_info')) || [];
+      const app = (await leggi<{ nome?: string; desc?: string }[]>(envBot, 'app:stili')) || [];
+      STILI_APP = app.filter((s): s is { nome: string; desc?: string } => typeof s?.nome === 'string' && s.nome.trim() !== '');
     },
     impostazioni: (env) => impostazioni(e(env)),
     salvaImpostazioni: async (env, imp) => { await mem(e(env)).scrivi('impostazioni', imp); },
@@ -1847,6 +1857,8 @@ export default {
     if (req.method === 'POST') {
       STILI_DRIVE = (await leggi<string[]>(env, 'stili_drive').catch(() => undefined)) || STILI_DRIVE;
       INFO_STILI = (await leggi<InfoStile[]>(env, 'stili_info').catch(() => undefined)) || INFO_STILI;
+      const app = await leggi<{ nome?: string; desc?: string }[]>(env, 'app:stili').catch(() => undefined);
+      if (app) STILI_APP = app.filter((s): s is { nome: string; desc?: string } => typeof s?.nome === 'string' && s.nome.trim() !== '');
     }
 
     if (url.pathname.startsWith('/api/')) return gestisciApp(req, env, creaOps());

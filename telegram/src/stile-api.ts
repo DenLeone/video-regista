@@ -1,0 +1,243 @@
+// Studio stile: parte solo da un'azione di Denis. Memoria nell'oggetto, copia su R2 per il montaggio.
+import type { Ops, Segreti } from './ops';
+import { cancellaOggetto, credenzialiOk, scriviOggetto, type CredenzialiR2 } from './s3';
+import { chiediStile, trascriviBreve } from './stile-ai';
+import {
+  audioPulito, chiaveStileR2, conNome, descrizioneStile, fotogrammiPuliti, nomeStilePulito,
+  promptAnalisi, promptChat, riassuntoStile, ritmoSicuro, slugStile,
+  type BozzaStile, type MessaggioStile, type StileSalvato,
+} from './stile-studio';
+
+const CHIAVE = 'app:stili';
+const BOZZA = 'app:stile_bozza';
+const MAX = 40;
+
+function json(body: unknown, status = 200): Response {
+  return new Response(JSON.stringify(body), {
+    status,
+    headers: { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store' },
+  });
+}
+const errore = (status: number, messaggio: string) => json({ errore: messaggio }, status);
+
+function cred(env: Segreti): CredenzialiR2 | null {
+  const c = {
+    accountId: env.R2_ACCOUNT_ID || '', accessKeyId: env.R2_ACCESS_KEY_ID || '',
+    secretAccessKey: env.R2_SECRET_ACCESS_KEY || '', bucket: env.R2_BUCKET || '',
+  };
+  return credenzialiOk(c) ? c : null;
+}
+
+function pubblici(lista: StileSalvato[]) {
+  return lista.map((s) => ({ id: s.id, nome: s.nome, desc: s.desc, quando: s.quando }));
+}
+
+function bozzaPubblica(b: BozzaStile | undefined) {
+  if (!b?.testo) return null;
+  return {
+    nome: b.nome, riassunto: b.riassunto, messaggi: b.messaggi, haTesto: true,
+    voce: Boolean(b.voce), durata: b.durata, tagli: b.tagli, taglioMedio: b.taglioMedio,
+  };
+}
+
+async function salvati(env: Segreti, ops: Ops): Promise<StileSalvato[]> {
+  return (await ops.leggi<StileSalvato[]>(env, CHIAVE)) || [];
+}
+async function bozza(env: Segreti, ops: Ops): Promise<BozzaStile | undefined> {
+  return ops.leggi<BozzaStile>(env, BOZZA);
+}
+
+function nuovoId(): string {
+  return crypto.randomUUID().replace(/-/g, '').slice(0, 16);
+}
+
+function riservati(ops: Ops, lista: StileSalvato[]): Set<string> {
+  const app = new Set(lista.map((s) => s.nome.toLowerCase()));
+  const out = new Set<string>();
+  for (const s of ops.stili()) if (!app.has(s.nome.toLowerCase())) out.add(s.nome.toLowerCase());
+  return out;
+}
+
+function nomeLibero(ops: Ops, lista: StileSalvato[], nome: string, tranneId?: string): string | null {
+  if (riservati(ops, lista).has(nome.toLowerCase())) return 'Questo nome è già uno stile pronto, su Drive o tra quelli di base.';
+  if (lista.some((s) => s.id !== tranneId && s.nome.toLowerCase() === nome.toLowerCase())) return 'Hai già uno stile con questo nome.';
+  const slug = slugStile(nome);
+  if (!slug) return 'Questo nome non si può usare.';
+  if (lista.some((s) => s.id !== tranneId && slugStile(s.nome) === slug)) return 'Questo nome si confonde con un altro stile già salvato.';
+  return null;
+}
+
+async function mettiR2(env: Segreti, nome: string, testo: string, nomePrima?: string): Promise<string | undefined> {
+  const c = cred(env);
+  const chiave = chiaveStileR2(nome);
+  if (!c || !chiave) return 'Salvato nell’app. Manca R2 sul Worker: un montaggio non trova questo stile finché non lo risalvi.';
+  try {
+    await scriviOggetto(c, chiave, testo, 'text/plain; charset=utf-8');
+    const prima = nomePrima ? chiaveStileR2(nomePrima) : '';
+    if (prima && prima !== chiave) await cancellaOggetto(c, prima);
+    return undefined;
+  } catch {
+    return 'Salvato nell’app. La copia per il montaggio non è partita: risalva quando la rete torna.';
+  }
+}
+
+async function togliR2(env: Segreti, nome: string) {
+  const c = cred(env);
+  const chiave = chiaveStileR2(nome);
+  if (c && chiave) await cancellaOggetto(c, chiave);
+}
+
+function aggiungiMessaggio(lista: MessaggioStile[], ruolo: MessaggioStile['ruolo'], testo: string): MessaggioStile[] {
+  return [...lista, { ruolo, testo: testo.slice(0, 500) }].slice(-24);
+}
+
+export async function gestisciStile(req: Request, env: Segreti, ops: Ops, path: string, rete: typeof fetch = fetch): Promise<Response> {
+
+  if (req.method === 'GET' && path === '/api/stile') {
+    return json({ salvati: pubblici(await salvati(env, ops)), bozza: bozzaPubblica(await bozza(env, ops)) });
+  }
+
+  const body = req.method === 'POST' ? await req.json().catch(() => ({})) as Record<string, unknown> : {};
+
+  if (req.method === 'POST' && path === '/api/stile/analizza') {
+    const ritmo = ritmoSicuro(body.durata, body.tagli);
+    if ('errore' in ritmo) return errore(400, ritmo.errore);
+    const foto = fotogrammiPuliti(body.fotogrammi);
+    if ('errore' in foto) return errore(400, foto.errore);
+    const wav = audioPulito(body.audio);
+    const trascrizione = await trascriviBreve(rete, env.GROQ_API_KEY, wav);
+    const esito = await chiediStile({
+      fetch: rete, geminiKey: env.GEMINI_API_KEY, anthropicKey: env.ANTHROPIC_API_KEY,
+      prompt: promptAnalisi({ ...ritmo, trascrizione }), foto: foto.foto,
+    });
+    if (!esito.ok) return errore(502, esito.errore);
+    const nome = nomeStilePulito((/^\s*Nome:\s*(.+)$/m.exec(esito.stile) || [])[1] || '') || 'Nuovo stile';
+    const testo = conNome(esito.stile, nome);
+    const fatta: BozzaStile = {
+      id: nuovoId(), nome, testo, riassunto: riassuntoStile(testo),
+      messaggi: [{ ruolo: 'ai', testo: esito.risposta }],
+      durata: ritmo.durata, tagli: ritmo.tagli, taglioMedio: ritmo.taglioMedio,
+      voce: Boolean(trascrizione), quando: Date.now(),
+    };
+    await ops.scrivi(env, BOZZA, fatta);
+    return json({ bozza: bozzaPubblica(fatta) });
+  }
+
+  if (req.method === 'POST' && path === '/api/stile/chat') {
+    const detto = String(body.testo || '').trim().slice(0, 500);
+    if (!detto) return errore(400, 'Scrivi cosa cambiare.');
+    const b = await bozza(env, ops);
+    if (!b?.testo) return errore(400, 'Prima studia un video, oppure apri uno stile salvato.');
+    const esito = await chiediStile({
+      fetch: rete, geminiKey: env.GEMINI_API_KEY, anthropicKey: env.ANTHROPIC_API_KEY,
+      prompt: promptChat(b.testo, b.messaggi, detto), foto: [],
+    });
+    if (!esito.ok) return errore(502, esito.errore);
+    b.testo = esito.stile;
+    b.riassunto = riassuntoStile(esito.stile);
+    b.messaggi = aggiungiMessaggio(aggiungiMessaggio(b.messaggi, 'denis', detto), 'ai', esito.risposta);
+    b.quando = Date.now();
+    await ops.scrivi(env, BOZZA, b);
+    return json({ bozza: bozzaPubblica(b) });
+  }
+
+  if (req.method === 'POST' && path === '/api/stile/salva') {
+    const nome = nomeStilePulito(body.nome);
+    if (!nome) return errore(400, 'Dammi un nome, da 2 a 40 caratteri.');
+    const b = await bozza(env, ops);
+    if (!b?.testo) return errore(400, 'Non c’è uno stile da salvare.');
+    const lista = await salvati(env, ops);
+    const id = b.salvatoId && lista.some((s) => s.id === b.salvatoId) ? b.salvatoId : nuovoId();
+    const occupato = nomeLibero(ops, lista, nome, id);
+    if (occupato) return errore(400, occupato);
+    if (!b.salvatoId && lista.length >= MAX) return errore(400, 'Troppi stili salvati. Eliminane uno.');
+    const prima = lista.find((s) => s.id === id)?.nome;
+    const testo = conNome(b.testo, nome);
+    const voce: StileSalvato = { id, nome, testo, quando: Date.now(), desc: descrizioneStile(testo) };
+    const tutti = [voce, ...lista.filter((s) => s.id !== id)];
+    await ops.scrivi(env, CHIAVE, tutti);
+    b.salvatoId = id;
+    b.nome = nome;
+    b.testo = testo;
+    b.riassunto = riassuntoStile(testo);
+    await ops.scrivi(env, BOZZA, b);
+    const avviso = await mettiR2(env, nome, testo, prima);
+    return json({ ok: true, salvati: pubblici(tutti), avviso: avviso || null });
+  }
+
+  if (req.method === 'POST' && path === '/api/stile/apri') {
+    const id = String(body.id || '');
+    const voce = (await salvati(env, ops)).find((s) => s.id === id);
+    if (!voce) return errore(404, 'Stile non trovato.');
+    const aperta: BozzaStile = {
+      id: nuovoId(), nome: voce.nome, testo: voce.testo, riassunto: riassuntoStile(voce.testo),
+      messaggi: [{ ruolo: 'ai', testo: 'Questo è lo stile salvato. Dimmi cosa cambiare.' }],
+      salvatoId: voce.id, quando: Date.now(),
+    };
+    await ops.scrivi(env, BOZZA, aperta);
+    return json({ bozza: bozzaPubblica(aperta) });
+  }
+
+  if (req.method === 'POST' && path === '/api/stile/rinomina') {
+    const id = String(body.id || '');
+    const nome = nomeStilePulito(body.nome);
+    if (!nome) return errore(400, 'Dammi un nome, da 2 a 40 caratteri.');
+    const lista = await salvati(env, ops);
+    const voce = lista.find((s) => s.id === id);
+    if (!voce) return errore(404, 'Stile non trovato.');
+    const occupato = nomeLibero(ops, lista, nome, id);
+    if (occupato) return errore(400, occupato);
+    const prima = voce.nome;
+    voce.nome = nome;
+    voce.testo = conNome(voce.testo, nome);
+    voce.desc = descrizioneStile(voce.testo);
+    voce.quando = Date.now();
+    await ops.scrivi(env, CHIAVE, lista);
+    const b = await bozza(env, ops);
+    if (b?.salvatoId === id) {
+      b.nome = nome;
+      b.testo = conNome(b.testo, nome);
+      b.riassunto = riassuntoStile(b.testo);
+      await ops.scrivi(env, BOZZA, b);
+    }
+    const avviso = await mettiR2(env, nome, voce.testo, prima);
+    return json({ ok: true, salvati: pubblici(lista), avviso: avviso || null });
+  }
+
+  if (req.method === 'POST' && path === '/api/stile/duplica') {
+    const id = String(body.id || '');
+    const lista = await salvati(env, ops);
+    const voce = lista.find((s) => s.id === id);
+    if (!voce) return errore(404, 'Stile non trovato.');
+    if (lista.length >= MAX) return errore(400, 'Troppi stili salvati. Eliminane uno.');
+    const nome = nomeStilePulito(body.nome) || nomeStilePulito(`${voce.nome} copia`);
+    if (!nome) return errore(400, 'Dammi un nome per la copia.');
+    const occupato = nomeLibero(ops, lista, nome);
+    if (occupato) return errore(400, occupato);
+    const copia: StileSalvato = {
+      id: nuovoId(), nome, testo: conNome(voce.testo, nome), quando: Date.now(), desc: descrizioneStile(voce.testo),
+    };
+    const tutti = [copia, ...lista];
+    await ops.scrivi(env, CHIAVE, tutti);
+    const avviso = await mettiR2(env, nome, copia.testo);
+    return json({ ok: true, salvati: pubblici(tutti), avviso: avviso || null });
+  }
+
+  if (req.method === 'POST' && path === '/api/stile/elimina') {
+    const id = String(body.id || '');
+    const lista = await salvati(env, ops);
+    const voce = lista.find((s) => s.id === id);
+    if (!voce) return errore(404, 'Stile non trovato.');
+    const resti = lista.filter((s) => s.id !== id);
+    await ops.scrivi(env, CHIAVE, resti);
+    await togliR2(env, voce.nome);
+    const b = await bozza(env, ops);
+    if (b?.salvatoId === id) {
+      b.salvatoId = undefined;
+      await ops.scrivi(env, BOZZA, b);
+    }
+    return json({ ok: true, salvati: pubblici(resti) });
+  }
+
+  return errore(404, 'Route sconosciuta.');
+}
