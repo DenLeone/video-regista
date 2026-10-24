@@ -97,10 +97,17 @@ test('auth, blocco del secondo iPhone e caricamento che non rimanda i pezzi fatt
   const { ops, telegram } = memoria();
   const e = env();
   const originale = globalThis.fetch;
-  globalThis.fetch = (async (input: RequestInfo | URL) => {
+  const logErrori: string[] = [];
+  const consoleOrig = console.error;
+  console.error = (...a: unknown[]) => { logErrori.push(a.map(String).join(' ')); };
+  const chiamate: string[] = [];
+  globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
     const u = String(input);
-    if (u.includes('cors')) return new Response('<ok/>', { status: 200 });
-    if (u.includes('uploads')) return new Response('<InitiateMultipartUploadResult><UploadId>UP123</UploadId></InitiateMultipartUploadResult>', { status: 200 });
+    chiamate.push(`${init?.method || 'GET'} ${u}`);
+    if (/[?&]cors=/.test(u) || u.includes('lifecycle')) return new Response('AccessDenied', { status: 403 });
+    if (u.includes('uploads=')) return new Response('<InitiateMultipartUploadResult><UploadId>UP123</UploadId></InitiateMultipartUploadResult>', { status: 200 });
+    if ((init?.method || 'GET') === 'POST' && u.includes('uploadId=')) return new Response('<CompleteMultipartUploadResult/>', { status: 200 });
+    if ((init?.method || 'GET') === 'PUT') return new Response('', { status: 200 });
     return new Response('no', { status: 500 });
   }) as typeof fetch;
   try {
@@ -136,10 +143,15 @@ test('auth, blocco del secondo iPhone e caricamento che non rimanda i pezzi fatt
       file: [{ nome: 'IMG_20261022.mov', size: 20 * 1024 * 1024, tipo: 'video/quicktime' }],
     }, cookie);
     assert.equal(inizio.status, 200);
-    const avvio = await inizio.json() as { upload: { id: string; file: { nome: string; fatteNumeri: number[] }[] }; url: { pezzi: { n: number }[] }[] };
+    const avvio = await inizio.json() as { upload: { id: string; file: { nome: string; fatteNumeri: number[] }[] }; url: { pezzi: { n: number; url: string }[] }[] };
     assert.equal(avvio.upload.file[0].nome, 'IMG_20261022.mov');
     assert.deepEqual(avvio.upload.file[0].fatteNumeri, []);
     assert.ok(avvio.url[0].pezzi.length >= 1);
+    const firmato = new URL(avvio.url[0].pezzi[0].url);
+    assert.equal(firmato.searchParams.has('cors'), false);
+    assert.equal(firmato.searchParams.has('lifecycle'), false);
+    assert.match(firmato.pathname, /\/inbox\//);
+    assert.equal(firmato.searchParams.get('X-Amz-Algorithm'), 'AWS4-HMAC-SHA256');
     const id = avvio.upload.id;
 
     const segna = await chiama(ops, e, `/api/upload/${id}/parte`, 'POST', { nome: 'IMG_20261022.mov', numero: 1, etag: '"etag-1"' }, cookie);
@@ -148,8 +160,15 @@ test('auth, blocco del secondo iPhone e caricamento che non rimanda i pezzi fatt
     const pezzi = await url.json() as { pezzi: { n: number }[] };
     assert.deepEqual(pezzi.pezzi.map((p) => p.n), [2]);
     const stato = await chiama(ops, e, `/api/upload/${id}`, 'GET', undefined, cookie);
-    const riassunto = await stato.json() as { file: { fatteNumeri: number[] }[] };
+    const riassunto = await stato.json() as { file: { fatteNumeri: number[]; totale: number }[] };
     assert.deepEqual(riassunto.file[0].fatteNumeri, [1]);
+    for (let n = 2; n <= riassunto.file[0].totale; n++) {
+      const altro = await chiama(ops, e, `/api/upload/${id}/parte`, 'POST', { nome: 'IMG_20261022.mov', numero: n, etag: `"etag-${n}"` }, cookie);
+      assert.equal(altro.status, 200);
+    }
+    const fine = await chiama(ops, e, `/api/upload/${id}/completa`, 'POST', { nome: 'IMG_20261022.mov' }, cookie);
+    assert.equal(fine.status, 200);
+    assert.equal(((await fine.json()) as { pronto: boolean }).pronto, true);
 
     const rif = await chiama(ops, e, '/api/upload/inizia', 'POST', {
       nome: 'Riferimento', riferimento: true,
@@ -159,7 +178,12 @@ test('auth, blocco del secondo iPhone e caricamento che non rimanda i pezzi fatt
     const dopo = await chiama(ops, e, '/api/home', 'GET', undefined, cookie);
     const homeJson = await dopo.json() as { upload: { id: string } | null };
     assert.equal(homeJson.upload?.id, id);
+    assert.equal(chiamate.some((c) => /[?&]cors=/.test(c) || c.includes('lifecycle')), false);
+    assert.ok(chiamate.some((c) => c.startsWith('POST ') && c.includes('/inbox/') && c.includes('uploads=')));
+    assert.ok(chiamate.some((c) => c.startsWith('POST ') && c.includes('/inbox/') && c.includes('uploadId=')));
+    assert.equal(logErrori.some((r) => /AccessDenied|IMG_|Benchy|reel/i.test(r)), false);
   } finally {
+    console.error = consoleOrig;
     globalThis.fetch = originale;
   }
 });
