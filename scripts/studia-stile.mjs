@@ -15,6 +15,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { bloccoRemoteR2, comandiScaricoR2 } from './rete.mjs';
 import { MODELLO } from './stile-su-misura.mjs';
+import REGOLE from './regole-stile.json' with { type: 'json' };
 
 const ROOT = path.resolve(path.dirname(new URL(import.meta.url).pathname), '..');
 const WORK = path.join(ROOT, 'work', 'studio-stile');
@@ -126,9 +127,8 @@ function prompt({ durata, tagli, taglioMedio }) {
     'Scrivi lo stile come stile.txt: SOLO i campi del modello qui sotto, con valori tra quelli ammessi (le note dopo # dicono quali). I campi di REGIA invece sono testo libero: lì metti tutto quello che serve all\'AI che monta (ritmo, struttura, inquadrature, cose da evitare), in modo preciso e concreto. Sopra i campi puoi mettere righe che iniziano con # per spiegare le scelte. Obbligatori: Nome, Sottotitoli, Look, Ritmo dei tagli e almeno 8 campi in tutto.',
     'Il livello di dettaglio deve essere quello degli esempi qui sotto, stili fatti a mano studiando i video: copia il livello di precisione, non i valori.',
     '',
-    'Effetti che ESISTONO GIÀ come opzioni, da usare e MAI da mettere in "da_creare": parole grandi che entrano a lettere casuali che si compongono (Entrata parole grandi: scramble), transizioni a nuvola di fumo (Transizioni: fumo), parlato a blocchi davanti al petto con parole chiave enormi (Sottotitoli: blocchi), cartelli a tutto schermo battuti a macchina (Titoli: cartelli), inserti in un televisore anni \'70 (Inserti: tv), video di repertorio (B-roll stock: sì), scritte che passano dietro alla persona (Scritte dietro di me), bianco e nero nei momenti di racconto, soggetto in risalto, inizio "prima e dopo".',
-    'Sempre: "Chiusura: no" e "Firma: no" (Denis non vuole il suo nome Instagram nei video, il valore negli esempi del modello è solo un esempio) e "Musica: no" (gli stili studiati non hanno brani). Un effetto d\'apertura con un titolo enorme (anche dietro la persona) si fa con "Apertura: grande" (+ "Scritte dietro di me: sì" se passa dietro), non descrivendolo solo nella regia. Inviti finali a schermo (commenta, segui, salva) che non sono tra le opzioni vanno in "da_creare".',
-    'Coerenza: con "Sottotitoli: blocchi" le parole chiave grandi le fanno già i blocchi, quindi "Titoli" va su cartelli (scritte a tutto schermo) o no, mai "parole grandi" o "frasi"; con i blocchi "Posizione sottotitoli" e "Dimensione sottotitoli" non servono.',
+    'REGOLE DI DENIS (vincolanti, imparate correggendo gli stili precedenti):',
+    ...REGOLE.regole.map((r) => `- ${r}`),
     'Quello che nel video c\'è ma le opzioni del modello non sanno rifare (un\'entrata delle scritte diversa, una cornice, una transizione, un effetto grafico) NON va forzato su un\'opzione sbagliata: scegli l\'opzione più vicina e descrivilo in "da_creare", una voce per effetto, con cosa si vede, dove e come si muove, abbastanza preciso da poterlo programmare.',
     '',
     'Rispondi SOLO con JSON: {"risposta": "2-4 frasi per Denis in italiano: cosa hai visto e cosa rende riconoscibile lo stile", "stile": "il testo di stile.txt", "da_creare": ["…"]}',

@@ -4,7 +4,7 @@ import { cancellaOggetto, credenzialiOk, scriviOggetto, type CredenzialiR2 } fro
 import { chiediStile, trascriviBreve } from './stile-ai';
 import {
   audioPulito, chiaveStileR2, conNome, descrizioneStile, diarioStile, fotogrammiPuliti, nomeStilePulito,
-  promptAnalisi, promptChat, riassuntoStile, ritmoSicuro, slugStile, stileUsabile,
+  applicaCorrezioni, conRegole, promptAnalisi, promptChat, riassuntoStile, ritmoSicuro, slugStile, stileUsabile,
   type BozzaStile, type MessaggioStile, type StileSalvato,
 } from './stile-studio';
 
@@ -112,7 +112,7 @@ async function eseguiAnalisi(
       return errore(502, esito.errore);
     }
     const nome = nomeStilePulito((/^\s*Nome:\s*(.+)$/m.exec(esito.stile) || [])[1] || '') || 'Nuovo stile';
-    const testo = conNome(esito.stile, nome);
+    const testo = conNome(conRegole(esito.stile), nome);
     const fatta: BozzaStile = {
       id: nuovoId(), nome, testo, riassunto: riassuntoStile(testo),
       messaggi: [{ ruolo: 'ai', testo: esito.risposta }],
@@ -331,7 +331,7 @@ export async function riceviEsitoStile(env: Segreti, ops: Ops, dati: Record<stri
     await ops.inviaTelegram(env, `⚠️ <b>Studio dello stile non riuscito</b>\n${motivo}\nRiprova dall’app (Altro → Studia uno stile).`).catch(() => {});
     return json({ ok: true });
   }
-  const grezzo = String(dati.stile || '').slice(0, 12000);
+  const grezzo = conRegole(String(dati.stile || '').slice(0, 12000));
   if (!stileUsabile(grezzo)) {
     const motivo = 'L’AI ha scritto uno stile incompleto (mancano sottotitoli, look o ritmo). Riprova.';
     await ops.scrivi(env, ANALISI, { ...attesa, errore: motivo } satisfies AnalisiVideo);
@@ -357,25 +357,7 @@ export async function riceviEsitoStile(env: Segreti, ops: Ops, dati: Record<stri
 
 // Correzione di uno stile salvato senza passare dall'app (POST /stile-correggi, protetto da
 // NOTIFY_TOKEN in index.ts; lo usa il workflow stile-correggi.yml, cioè Claude su richiesta di
-// Denis): `campi` = { "Chiave": "valore" } sostituisce la riga, null la toglie, una chiave nuova
-// va in fondo al suo gruppo; `note` = righe "# …" aggiunte in fondo. Risponde col testo nuovo.
-export function applicaCorrezioni(testo: string, campi: Record<string, string | null>, note: string[] = []): string {
-  let righe = testo.replace(/\r\n/g, '\n').split('\n');
-  for (const [chiave, valore] of Object.entries(campi)) {
-    const re = new RegExp(`^\\s*${chiave.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\s*:`, 'i');
-    const i = righe.findIndex((r) => re.test(r));
-    if (valore === null) { if (i >= 0) righe.splice(i, 1); continue; }
-    const riga = `${chiave}: ${String(valore).replace(/\s+/g, ' ').trim()}`;
-    if (i >= 0) { righe[i] = riga; continue; }
-    // chiave nuova: prima del primo gruppo "# --- REGIA" se c'è, altrimenti in fondo
-    const regia = righe.findIndex((r) => /^#\s*---\s*REGIA/i.test(r));
-    if (regia > 0) righe.splice(regia, 0, riga, ''); else righe.push(riga);
-  }
-  righe = righe.join('\n').replace(/\n{3,}/g, '\n\n').trimEnd().split('\n');
-  const nuove = note.map((n) => `# ${String(n).replace(/^#\s*/, '').replace(/\s+/g, ' ').trim()}`).filter((n) => n.length > 2 && !righe.includes(n));
-  return `${righe.join('\n')}${nuove.length ? `\n${nuove.join('\n')}` : ''}\n`;
-}
-
+// Denis): `campi` = { "Chiave": "valore" } sostituisce la riga, null la toglie (applicaCorrezioni).
 export async function correggiStileSalvato(env: Segreti, ops: Ops, dati: Record<string, unknown>): Promise<Response> {
   const nome = String(dati.nome || '').trim().toLowerCase();
   const lista = await salvati(env, ops);

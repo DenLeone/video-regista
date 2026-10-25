@@ -1,4 +1,5 @@
 // Testo dello stile, prompt e controlli. Nessuna chiamata di rete: si prova da solo.
+import REGOLE from '../../scripts/regole-stile.json';
 import { chiaveStileR2, nomeStilePulito, slugStile } from '../../scripts/stile-app.mjs';
 
 export { chiaveStileR2, nomeStilePulito, slugStile };
@@ -72,6 +73,35 @@ export function audioPulito(raw: unknown): Uint8Array | undefined {
   }
 }
 
+// Regole di Denis per gli stili (scripts/regole-stile.json): nei prompt di analisi e chat, e i campi
+// "forza" imposti su ogni stile nuovo (analisi veloce e studio sul video intero; la chat no)
+export const REGOLE_STILE: string[] = REGOLE.regole;
+const righeRegole = () => ['REGOLE DI DENIS (vincolanti):', ...REGOLE_STILE.map((r) => `- ${r}`)].join('\n');
+
+// cambia (o con null toglie) righe "Chiave: valore"; una chiave nuova va prima della regia; `note`
+// diventano righe "# …" in fondo
+export function applicaCorrezioni(testo: string, campi: Record<string, string | null>, note: string[] = []): string {
+  let righe = testo.replace(/\r\n/g, '\n').split('\n');
+  for (const [chiave, valore] of Object.entries(campi)) {
+    const re = new RegExp(`^\\s*${chiave.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\s*:`, 'i');
+    const i = righe.findIndex((r) => re.test(r));
+    if (valore === null) { if (i >= 0) righe.splice(i, 1); continue; }
+    const riga = `${chiave}: ${String(valore).replace(/\s+/g, ' ').trim()}`;
+    if (i >= 0) { righe[i] = riga; continue; }
+    // chiave nuova: prima del primo gruppo "# --- REGIA" se c'è, altrimenti in fondo
+    const regia = righe.findIndex((r) => /^#\s*---\s*REGIA/i.test(r));
+    if (regia > 0) righe.splice(regia, 0, riga, ''); else righe.push(riga);
+  }
+  righe = righe.join('\n').replace(/\n{3,}/g, '\n\n').trimEnd().split('\n');
+  const nuove = note.map((n) => `# ${String(n).replace(/^#\s*/, '').replace(/\s+/g, ' ').trim()}`).filter((n) => n.length > 2 && !righe.includes(n));
+  return `${righe.join('\n')}${nuove.length ? `\n${nuove.join('\n')}` : ''}\n`;
+}
+
+
+export function conRegole(testo: string): string {
+  return applicaCorrezioni(testo, REGOLE.forza as Record<string, string | null>);
+}
+
 export function promptAnalisi(d: { durata: number; tagli: number; taglioMedio: number; trascrizione?: string }): string {
   const voce = d.trascrizione
     ? `Trascrizione parziale (può essere incompleta; non ricopiarla nella risposta): ${d.trascrizione.slice(0, 1500)}`
@@ -88,6 +118,7 @@ export function promptAnalisi(d: { durata: number; tagli: number; taglioMedio: n
     'Colori #RRGGBB. Font: un nome di Google Fonts col peso, es. Montserrat 700.',
     'Ritmo dei tagli e Inquadrature dicono durata dei tagli, transizioni, zoom e punch-in. Musica ed effetti solo se si capiscono.',
     'Se non vedi una cosa, il valore sobrio (Look: naturale, Transizioni: no, Musica: no), non inventare. Nome: un nome breve in italiano.',
+    righeRegole(),
   ].join('\n');
 }
 
@@ -99,6 +130,7 @@ export function promptChat(stile: string, storia: MessaggioStile[], detto: strin
     stile.slice(0, 12000),
     filo ? `Conversazione:\n${filo}` : '',
     `Denis: ${detto.slice(0, 500)}`,
+    `${righeRegole()}\nQueste regole valgono salvo che Denis, qui sopra, chieda esplicitamente il contrario.`,
     'Rispondi SOLO con JSON {"risposta":"una frase, cosa hai cambiato","stile":"stile.txt intero"}.',
   ].filter(Boolean).join('\n\n');
 }

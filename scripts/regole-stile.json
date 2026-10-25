@@ -1,0 +1,15 @@
+{
+  "_nota": "Regole di Denis per gli stili, imparate correggendo Motion, Prova studio e Cinematic Talk (22-25/10). Le leggono lo studio sul video intero (scripts/studia-stile.mjs), l'analisi veloce e la chat dell'app (telegram/src/stile-studio.ts). 'forza' = campi che lo studio imposta sempre, anche se l'AI li dimentica (la chat no: lì decide Denis).",
+  "regole": [
+    "Niente nome Instagram di Denis nei video: \"Chiusura: no\" e \"Firma: no\" (il valore @_black_den negli esempi del modello è solo un esempio). Solo se Denis lo chiede esplicitamente in chat.",
+    "\"Musica: no\": gli stili creati dall'app non hanno brani. Solo se Denis lo chiede in chat.",
+    "Un titolo enorme all'inizio del video (anche dietro la persona) si fa con \"Apertura: grande\" (+ \"Scritte dietro di me: sì\" se passa dietro la testa), con font e colore in \"Font apertura\" e \"Colore apertura\". Non basta descriverlo nelle indicazioni di regia.",
+    "Effetti che ESISTONO GIÀ come opzioni, da usare e mai da segnare come da creare: parole grandi che entrano a lettere casuali (Entrata parole grandi: scramble), transizioni a nuvola di fumo (Transizioni: fumo), parlato a blocchi con parole chiave enormi (Sottotitoli: blocchi), cartelli a tutto schermo battuti a macchina (Titoli: cartelli), inserti dentro il televisore BlackDenTV (Inserti: tv), repertorio (B-roll stock: sì), scritte dietro la persona (Scritte dietro di me: sì), bianco e nero nei momenti di racconto, soggetto in risalto, inizio \"prima e dopo\".",
+    "Con \"Sottotitoli: blocchi\" le parole chiave grandi le fanno già i blocchi: \"Titoli\" va su cartelli o no, mai \"parole grandi\" o \"frasi\" (si sovrappongono).",
+    "Inviti a schermo (commenta la parola, segui, salva) e altre grafiche che le opzioni non hanno vanno tra i \"da creare\", descritti in modo preciso.",
+    "Le indicazioni di regia parlano di quello che il montaggio può fare (ritmo dei tagli, frasi, B-roll, quali inquadrature usare tra quelle girate), non di come girare (luogo, luci, sfondo, sfocatura): il girato è già fatto.",
+    "I video e le immagini che Denis mette nella cartella vengono usati tutti; il repertorio è solo una riserva quando non ne ha messi.",
+    "Colori: se il riferimento non ha un look marcato, \"Look: naturale\" (Denis preferisce i colori originali del girato, come nel Motion)."
+  ],
+  "forza": { "Chiusura": "no", "Firma": "no", "Musica": "no", "Volume musica": null }
+}
