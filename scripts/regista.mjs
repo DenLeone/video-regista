@@ -1290,6 +1290,7 @@ export async function analizza(nome, brief, cache) {
       // I-Log (Insta360) e HDR: conversione tecnica a Rec.709 (scripts/colore.mjs)
       const lg = riconosciLog(src, info, disp, brief || '', WORK);
       const iLog = lg.iLog;
+      if (lg.scartato) log(`  ${id}: colori spenti ma dopo la LUT quasi nero (${lg.luce.toFixed(2)}): non è I-Log, colori originali`);
       if (lg.riconosciuto) {
         logRiconosciuti.push(id);
         log(`  ${id}: 10 bit e colori spenti (saturazione ${lg.sat.toFixed(1)}): la tratto come I-Log`);

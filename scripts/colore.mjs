@@ -77,7 +77,9 @@ export function riconosciLog(src, info, disp, brief = '', tmpDir) {
   let riconosciuto = false, sat = null;
   if (!iLog && !noLog && disp === 'insta' && /10/.test(info.colore?.pix || '') && !HDR.includes(info.colore?.trc)) {
     const st = statisticheColore(src, info.durata, 'null', tmpDir);
-    if (st && st.sat < 6) { iLog = true; riconosciuto = true; sat = st.sat; }
+    // l'I-Log è piatto ma chiaro (ombre alzate): un video normale girato al buio ha colori spenti
+    // anche lui, ma è scuro. Anime (25/10): sera, saturazione 5.5, preso per I-Log → colori sballati
+    if (st && st.sat < 6 && st.y >= 45) { iLog = true; riconosciuto = true; sat = st.sat; }
   }
   if (!iLog || !info.colore) return { iLog: false };
   info.colore.log = true;
@@ -85,6 +87,8 @@ export function riconosciLog(src, info, disp, brief = '', tmpDir) {
   let luce = null;
   if (dopo) {
     luce = Math.max(0.02, (dopo.y - 16) / 219); // luminosità media 0–1 dopo la LUT
+    // riconosciuto dai colori ma dopo la LUT quasi nero: non era I-Log, si lascia com'è
+    if (riconosciuto && luce < 0.06) { delete info.colore.log; return { iLog: false, scartato: true, sat, luce }; }
     // al massimo ~1 stop in più: oltre si vede solo rumore
     if (luce < ESPOSIZIONE_LOG - 0.03) info.colore.alza = { da: +luce.toFixed(3), a: +Math.min(ESPOSIZIONE_LOG, luce * 2).toFixed(3) };
   }
