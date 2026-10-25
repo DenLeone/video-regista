@@ -334,15 +334,18 @@ export const SuMisura: React.FC<Piano> = (piano) => {
   useFont([g.fontApertura, g.fontSottotitoli, g.fontTitoli, g.fontCorsivo]);
   const totale = f(durataTotale(piano));
   const sfx = g.sfx ? volumeSfx(piano) : 0;
-  const frasi = g.titoli && g.tipoTitoli === 'frasi' ? piano.keywords : [];
-  const titoli = g.titoli && g.tipoTitoli === 'titoli' ? piano.keywords : [];
-  const forti = g.titoli && g.tipoTitoli === 'parole' ? piano.keywords : [];
-  const cartelli = g.titoli && g.tipoTitoli === 'cartelli' ? piano.keywords : [];
+  const aperture = g.apertura === 'grande' ? blocchiApertura(piano.parole, piano.enfasi) : [];
+  const fineApertura = aperture.length ? aperture[aperture.length - 1].fine : 0;
+  // durante l'apertura grande nessun'altra scritta: la frase forte dell'AI sulla stessa frase
+  // usciva sopra il corsivo dell'apertura (Cinematic Talk su Manifestazioni, 25/10)
+  const scritte = (piano.keywords || []).filter((k) => k.at >= fineApertura - 0.05);
+  const frasi = g.titoli && g.tipoTitoli === 'frasi' ? scritte : [];
+  const titoli = g.titoli && g.tipoTitoli === 'titoli' ? scritte : [];
+  const forti = g.titoli && g.tipoTitoli === 'parole' ? scritte : [];
+  const cartelli = g.titoli && g.tipoTitoli === 'cartelli' ? scritte : [];
   // Motion: tutto il parlato a blocchi (le parole chiave dell'AI enormi), tranne dove c'è un cartello
   const blocchi = g.sottotitoli === 'blocchi' ? blocchiParlato(piano.parole, piano.enfasi, cartelli) : [];
   const grandi = paroleGrandi(piano.parole, forti);
-  const aperture = g.apertura === 'grande' ? blocchiApertura(piano.parole, piano.enfasi) : [];
-  const fineApertura = aperture.length ? aperture[aperture.length - 1].fine : 0;
   const dopoApertura = (piano.parole || []).filter((p) => p.at >= fineApertura - 0.01);
   const occupato = [...titoli, ...frasi, ...forti];
   const pezzi = g.sottotitoli === 'nessuno' || g.sottotitoli === 'blocchi' ? []
