@@ -163,6 +163,9 @@ export function leggiStile(testo, nomeCartella) {
   if (campi.transizioni) g.fumo = /fum/.test(norm(campi.transizioni));
   if (campi.inserti) g.cornice = /tv|telev/.test(norm(campi.inserti)) ? 'tv' : 'scheda';
   if (campi['b-roll stock']) g.stock = si(campi['b-roll stock']);
+  // i blocchi fanno già le parole chiave enormi: "parole grandi" o "frasi" in più si sovrapporrebbero
+  // (stile studiato dall'AI sul Motion, 25/10); restano i cartelli a tutto schermo
+  if (g.sottotitoli === 'blocchi' && (g.tipoTitoli === 'parole' || g.tipoTitoli === 'frasi')) g.tipoTitoli = 'cartelli';
   const bn = norm(campi['bianco e nero']);
   if (bn) g.biancoNero = /sempre|tutto/.test(bn) ? 'sempre' : /^no/.test(bn) ? 'no' : 'momenti';
   if (g.biancoNero === 'sempre') g.look = 'bianco e nero';
