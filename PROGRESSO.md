@@ -248,6 +248,10 @@ Poi Claude riattiva il workflow e lancia il primo giro.
 - Discorso con B-roll: un solo video parlato + B-roll = ancora discorso, l'AI mette i B-roll sopra la voce (broll/da). Motion: parola grande composta e ferma ≥0,45 s; massimo un cartello ogni ~45 s.
 - Repertorio da Pixabay (PIXABAY_API_KEY, Pexels non dà più chiavi), solo riprese vere, orizzontali ritagliati in 9:16.
 
+## 25/10 — Studia uno stile sul video intero
+- Prima: 6 fotogrammi da 320 px e Gemini Flash dal Worker → stili generici. Ora l'app carica il riferimento su R2 e il bot avvia il workflow `stile.yml` (scripts/studia-stile.mjs): 720p H.264, tagli misurati con ffmpeg, video intero con audio su Gemini (File API), Gemini Pro con riserva Flash, opzioni di stile.txt (MODELLO) ed esempi fatti a mano (scripts/stili/esempi-studio: Motion, Esplicativo).
+- Esito su /stile-esito (NOTIFY_TOKEN) → bozza nell'app + avviso Telegram; gli effetti che le opzioni non sanno fare finiscono in "Da creare" (anche come `# DA CREARE:` nello stile salvato) da programmare con Claude. Se lo studio su GitHub non parte, l'app torna all'analisi veloce dei fotogrammi.
+
 ## Decisioni prese
 - Opzione A (Remotion + GitHub Actions) invece di mini PC: gratis, nessun browser da tenere sveglio.
 - Blueprint resta la firma; i contenitori serviranno solo per inserti/foto prodotto (16/10).

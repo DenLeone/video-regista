@@ -4,12 +4,15 @@ import { cancellaOggetto, credenzialiOk, scriviOggetto, type CredenzialiR2 } fro
 import { chiediStile, trascriviBreve } from './stile-ai';
 import {
   audioPulito, chiaveStileR2, conNome, descrizioneStile, diarioStile, fotogrammiPuliti, nomeStilePulito,
-  promptAnalisi, promptChat, riassuntoStile, ritmoSicuro, slugStile,
+  promptAnalisi, promptChat, riassuntoStile, ritmoSicuro, slugStile, stileUsabile,
   type BozzaStile, type MessaggioStile, type StileSalvato,
 } from './stile-studio';
 
 const CHIAVE = 'app:stili';
 const BOZZA = 'app:stile_bozza';
+// studio sul video intero in corso su GitHub (workflow stile.yml): { r2, quando, errore? }
+const ANALISI = 'app:stile_analisi';
+type AnalisiVideo = { r2: string; quando: number; errore?: string };
 const MAX = 40;
 
 function json(body: unknown, status = 200): Response {
@@ -37,7 +40,7 @@ function bozzaPubblica(b: BozzaStile | undefined) {
   return {
     nome: b.nome, riassunto: b.riassunto, messaggi: b.messaggi, haTesto: true,
     voce: Boolean(b.voce), durata: b.durata, tagli: b.tagli, taglioMedio: b.taglioMedio,
-    quando: b.quando || 0,
+    quando: b.quando || 0, daCreare: b.daCreare || [],
   };
 }
 
@@ -154,10 +157,29 @@ export async function gestisciStile(
 ): Promise<Response> {
 
   if (req.method === 'GET' && path === '/api/stile') {
-    return json({ salvati: pubblici(await salvati(env, ops)), bozza: bozzaPubblica(await bozza(env, ops)) });
+    const a = await ops.leggi<AnalisiVideo>(env, ANALISI);
+    // oltre 30 minuti senza esito: il giro su GitHub è morto senza avvisare
+    const analisi = a && (a.errore || Date.now() - a.quando < 30 * 60000) ? a : null;
+    return json({ salvati: pubblici(await salvati(env, ops)), bozza: bozzaPubblica(await bozza(env, ops)), analisi });
   }
 
   const body = req.method === 'POST' ? await req.json().catch(() => ({})) as Record<string, unknown> : {};
+
+  // studio sul video intero: il riferimento è già su R2 (caricamento "riferimento" completo);
+  // lo guarda Gemini da un giro su GitHub, l'esito arriva su /stile-esito (riceviEsitoStile)
+  if (req.method === 'POST' && path === '/api/stile/video') {
+    const id = String(body.upload || '');
+    if (!/^[A-Za-z0-9_-]{8,80}$/.test(id)) return errore(400, 'Caricamento non valido.');
+    const sess = await ops.leggi<{ riferimento?: boolean; pronto?: boolean }>(env, `app:upload:${id}`);
+    if (!sess?.riferimento) return errore(404, 'Video di riferimento non trovato. Ricaricalo.');
+    if (!sess.pronto) return errore(409, 'Il video non è ancora arrivato tutto su Cloudflare.');
+    const ko = await ops.studiaStile(env, id);
+    if (ko) return errore(502, `Non riesco ad avviare lo studio su GitHub (${ko}).`);
+    const analisi: AnalisiVideo = { r2: id, quando: Date.now() };
+    await ops.scrivi(env, ANALISI, analisi);
+    diarioStile('video', 'avvio');
+    return json({ analisi });
+  }
 
   if (req.method === 'POST' && path === '/api/stile/analizza') {
     diarioStile('analizza', 'avvio');
@@ -293,4 +315,42 @@ export async function gestisciStile(
   }
 
   return errore(404, 'Route sconosciuta.');
+}
+
+// Esito del workflow stile.yml (POST /stile-esito, protetto da NOTIFY_TOKEN in index.ts): lo stile
+// diventa la bozza dell'app, con quello che le opzioni non sanno fare in fondo come "# DA CREARE";
+// un avviso su Telegram dice che è pronto (o perché no). Il testo dello stile non va nei log.
+export async function riceviEsitoStile(env: Segreti, ops: Ops, dati: Record<string, unknown>): Promise<Response> {
+  const r2 = String(dati.r2 || '');
+  const attesa = await ops.leggi<AnalisiVideo>(env, ANALISI);
+  if (!attesa || attesa.r2 !== r2) return errore(409, 'Nessuno studio in corso con questo video.');
+  if (!dati.ok) {
+    const motivo = String(dati.errore || 'errore sconosciuto').slice(0, 300);
+    await ops.scrivi(env, ANALISI, { ...attesa, errore: motivo } satisfies AnalisiVideo);
+    diarioStile('video', 502);
+    await ops.inviaTelegram(env, `⚠️ <b>Studio dello stile non riuscito</b>\n${motivo}\nRiprova dall’app (Altro → Studia uno stile).`).catch(() => {});
+    return json({ ok: true });
+  }
+  const grezzo = String(dati.stile || '').slice(0, 12000);
+  if (!stileUsabile(grezzo)) {
+    const motivo = 'L’AI ha scritto uno stile incompleto (mancano sottotitoli, look o ritmo). Riprova.';
+    await ops.scrivi(env, ANALISI, { ...attesa, errore: motivo } satisfies AnalisiVideo);
+    diarioStile('video', 422);
+    return json({ ok: false });
+  }
+  const daCreare = (Array.isArray(dati.daCreare) ? dati.daCreare : []).map((x) => String(x).replace(/\s+/g, ' ').trim().slice(0, 400)).filter(Boolean).slice(0, 8);
+  const nome = nomeStilePulito((/^\s*Nome:\s*(.+)$/m.exec(grezzo) || [])[1] || '') || 'Nuovo stile';
+  const testo = conNome(grezzo, nome) + (daCreare.length ? `\n\n# --- DA CREARE (grafiche nuove viste nel riferimento, da fare con Claude) ---\n${daCreare.map((d) => `# DA CREARE: ${d}`).join('\n')}\n` : '');
+  const durata = Number(dati.durata) || undefined;
+  const fatta: BozzaStile = {
+    id: nuovoId(), nome, testo, riassunto: riassuntoStile(testo),
+    messaggi: [{ ruolo: 'ai', testo: String(dati.risposta || 'Ho guardato tutto il video. Dimmi cosa cambiare.').slice(0, 600) }],
+    durata, tagli: Number(dati.tagli) || 0, taglioMedio: Number(dati.taglioMedio) || undefined,
+    voce: true, quando: Date.now(), daCreare,
+  };
+  await ops.scrivi(env, BOZZA, fatta);
+  await ops.cancella(env, ANALISI);
+  diarioStile('video', 200);
+  await ops.inviaTelegram(env, `✨ <b>Stile pronto: ${nome.replace(/[<>&]/g, '')}</b>\nL’AI ha guardato tutto il video${daCreare.length ? ` e ha trovato ${daCreare.length} effett${daCreare.length === 1 ? 'o' : 'i'} da creare` : ''}. Aprilo nell’app (Altro → Studia uno stile) per correggerlo e salvarlo.`).catch(() => {});
+  return json({ ok: true });
 }

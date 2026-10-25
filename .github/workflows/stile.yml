@@ -1,0 +1,62 @@
+name: stile
+
+# Studia uno stile dal video di riferimento intero (scripts/studia-stile.mjs). Lo avvia il bot
+# quando nell'app "Studia uno stile" il file è arrivato su R2; l'esito torna al bot (/stile-esito),
+# che lo mette nell'app come bozza e avvisa su Telegram. Nessun montaggio parte da qui.
+on:
+  workflow_dispatch:
+    inputs:
+      r2:
+        description: 'ID del caricamento su R2 (inbox/<id>/) con il video di riferimento'
+        required: true
+
+concurrency:
+  group: stile-${{ inputs.r2 }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  studia:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+
+      - name: Programmi
+        timeout-minutes: 10
+        run: |
+          APT="-o Acquire::Retries=3 -o Acquire::http::Timeout=30 -o Acquire::https::Timeout=30"
+          for i in 1 2 3; do sudo timeout 180 apt-get $APT update -qq && break; done
+          for i in 1 2 3; do sudo timeout 300 apt-get $APT install -y -qq ffmpeg && break; done
+          curl -fsSL https://rclone.org/install.sh | sudo bash > /dev/null
+
+      - name: Studia
+        id: studia
+        env:
+          R2_ID: ${{ inputs.r2 }}
+          R2_ACCOUNT_ID: ${{ secrets.R2_ACCOUNT_ID }}
+          R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          R2_BUCKET: ${{ secrets.R2_BUCKET }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          NOTIFY_URL: ${{ secrets.NOTIFY_URL }}
+          NOTIFY_TOKEN: ${{ secrets.NOTIFY_TOKEN }}
+        run: node scripts/studia-stile.mjs
+
+      # si è fermato prima dello script (installazione): l'app non resta "in analisi" per sempre
+      - name: Avvisa il bot se si è fermato prima
+        if: failure() && steps.studia.outcome != 'failure'
+        env:
+          NOTIFY_URL: ${{ secrets.NOTIFY_URL }}
+          NOTIFY_TOKEN: ${{ secrets.NOTIFY_TOKEN }}
+          R2_ID: ${{ inputs.r2 }}
+        run: |
+          [ -n "$NOTIFY_URL" ] || exit 0
+          jq -n --arg r "$R2_ID" '{r2: $r, ok: false, errore: "lo studio si è fermato su GitHub prima di finire: riprova"}' \
+            | curl -s -X POST "${NOTIFY_URL%/notify}/stile-esito" -H 'content-type: application/json' -H "x-regista-token: $NOTIFY_TOKEN" -d @- > /dev/null || true

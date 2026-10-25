@@ -25,6 +25,7 @@ function memoria(): { ops: Ops; db: Map<string, unknown>; telegram: string[] } {
     lancia: async () => null,
     provaRegia: async () => null,
     archivia: async () => null,
+    studiaStile: async () => null,
     giri: async () => [],
     video: async () => [],
     memo: async () => undefined,

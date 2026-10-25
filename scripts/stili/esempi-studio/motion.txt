@@ -1,0 +1,37 @@
+# STILE MOTION — studiato fotogramma per fotogramma da un podcast montato "motion", rifatto in verticale 9:16
+Nome: Motion
+Quando usarlo: discorsi, opinioni, racconti e podcast: quando conta quello che dico più del prodotto
+Tono: diretto, d'impatto, ritmo da podcast montato
+
+# --- SCRITTE ---
+# tutto il parlato a blocchi davanti al petto: corsivo piccolo parola per parola, parole chiave enormi
+Apertura: normale
+Sottotitoli: blocchi
+Font corsivo: Montserrat Italic 600
+Colore sottotitoli: #EDEDED
+Font apertura: Montserrat Italic 900
+Colore apertura: #4FC3F7
+# le parole grandi entrano con lettere a caso che si fissano in mezzo secondo
+Entrata parole grandi: scramble
+Titoli: cartelli
+Font titoli: Oswald 700
+Colore titoli: #EDEDED
+Font sottotitoli: Montserrat 600
+
+# --- IMMAGINE ---
+Look: naturale
+Vignettatura: 25
+Transizioni: fumo
+Inserti: tv
+B-roll stock: sì
+Firma: no
+Chiusura: no
+
+# --- AUDIO ---
+Effetti sonori: sì
+Musica: no
+
+# --- REGIA (indicazioni per l'AI) ---
+Ritmo dei tagli: il volto resta la base; ogni 8–15 s uno stacco su un mio B-roll (o sul repertorio, se non ne ho messi) che illustra quello che dico, poi si torna al volto
+Inquadrature: i miei video e le mie immagini vanno usati tutti; il repertorio deve mostrare cose concrete di cui parlo (luoghi, oggetti, persone generiche, archivio), mai a caso
+Cose da evitare: parole grandi su articoli e preposizioni; due parole grandi attaccate senza parole piccole in mezzo

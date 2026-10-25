@@ -1,0 +1,42 @@
+# STILE ESPLICATIVO — studiato da 2 reel tech americani: spiegare un prodotto in un minuto in modo veloce e chiaro
+Nome: Esplicativo
+Quando usarlo: spiegare un prodotto tech o una novità, cos'è, cosa cambia e perché conviene: tastiere, mouse, gadget, PC
+Tono: diretto e sicuro, frasi brevi, entusiasta il giusto
+
+# --- SCRITTE ---
+# Le parole escono una alla volta, tutto minuscolo con la punteggiatura (come negli esempi):
+# le frasi forti (aggancio, numeri, punti chiave) enormi al centro, il resto piccolo in basso.
+Apertura: normale
+Sottotitoli: parola
+Font sottotitoli: Montserrat 700
+Colore sottotitoli: #FFFFFF
+Maiuscolo sottotitoli: minuscole
+Posizione sottotitoli: basso
+Dimensione sottotitoli: 46
+Titoli: parole grandi
+Font titoli: Montserrat 800
+Colore titoli: #FFFFFF
+Posizione titoli: centro
+Scritte dietro di me: no
+
+# --- IMMAGINE ---
+Look: naturale
+Soggetto in risalto: no
+Bianco e nero: no
+Vignettatura: 0
+Inizio: normale
+Chiusura: no
+# ritmo veloce come negli esempi: l'inquadratura cambia anche a metà frase, sulla parola che nomina la cosa
+Tagli dentro le frasi: sì
+
+# --- AUDIO ---
+Effetti sonori: sì
+Musica: no
+Volume musica: 10
+
+# --- REGIA (indicazioni per l'AI) ---
+Ritmo dei tagli: veloce, un'inquadratura ogni 1,5–2,5 s e mai oltre 3 s; alterna il volto che parla e B-roll che mostrano esattamente la cosa detta in quel momento: la funzione, il dettaglio, il prodotto in uso
+Struttura: aggancio forte nei primi 2–3 s, cos'è e perché è speciale; poi cos'è in una frase; poi 2–4 punti chiave con i numeri; poi cosa cambia per chi lo usa; chiusura con il giudizio o una frase netta
+Inquadrature: prodotto vicino e ben illuminato, mani che lo usano, dettagli come schermo, knob, interruttori e porte; il volto per l'aggancio, i passaggi di ragionamento e la chiusura
+Durata: 35–60 s di parlato pieno, senza pause morte
+Cose da evitare: frasi ripetute o lasciate a metà, B-roll che non c'entra con quello che dici, la stessa inquadratura per più di 3 s

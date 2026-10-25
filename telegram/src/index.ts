@@ -18,6 +18,7 @@
 
 import { DurableObject } from 'cloudflare:workers';
 import { ANTEPRIMA_STILI } from './anteprima-stili';
+import { riceviEsitoStile } from './stile-api';
 import { gestisciApp } from './api';
 import { avvisoUtente } from './push';
 import STILI_BASE from '../../scripts/stili-base.json';
@@ -1808,6 +1809,10 @@ function creaOps(): Ops {
       return lancia(envBot, chat, { ...i, azione: i.azione === 'render' ? 'render' : undefined });
     },
     provaRegia: (env, cartella, brief) => provaRegiaApp(e(env), cartella, brief),
+    studiaStile: async (env, r2) => {
+      const r = await gh(e(env), '/actions/workflows/stile.yml/dispatches', { method: 'POST', body: JSON.stringify({ ref: 'main', inputs: { r2 } }) });
+      return r.status === 204 ? null : `GitHub ${r.status}: ${(await r.text()).slice(0, 200)}`;
+    },
     archivia: (env, cartella, r2) => archiviaApp(e(env), cartella, r2),
     giri: (env) => giri(e(env)),
     video: async (env) => (await leggi<VideoFatto[]>(e(env), 'video')) || [],
@@ -1883,11 +1888,13 @@ export default {
       });
     }
 
-    if (req.method === 'POST' && (url.pathname === '/notify' || url.pathname === '/video' || url.pathname === '/foto-profilo' || url.pathname === '/copertina')) {
+    if (req.method === 'POST' && (url.pathname === '/notify' || url.pathname === '/video' || url.pathname === '/foto-profilo' || url.pathname === '/copertina' || url.pathname === '/stile-esito')) {
       if (req.headers.get('x-regista-token') !== env.NOTIFY_TOKEN) return new Response('no', { status: 401 });
       if (url.pathname === '/notify') { await onNotify(env, (await req.json()) as Notify); return new Response('ok'); }
       if (url.pathname === '/foto-profilo') return new Response(await onFotoProfilo(env, await req.formData()));
       if (url.pathname === '/copertina') return new Response(await onCopertina(env, await req.formData()));
+      // esito dello studio di uno stile (workflow stile.yml): bozza nell'app e avviso su Telegram
+      if (url.pathname === '/stile-esito') return riceviEsitoStile(env, creaOps(), await req.json().catch(() => ({})));
       const inviato = await onVideo(env, await req.formData());
       return new Response(inviato ? 'ok' : 'video non inviato', { status: inviato ? 200 : 502 });
     }

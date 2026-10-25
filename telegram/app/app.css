@@ -316,3 +316,7 @@ textarea.detto { min-height: 72px; }
 /* errore dello studio stile: resta finché non si riprova (un avviso di 4 s passava inosservato) */
 .card.errore-stile { border: 1px solid rgba(255,120,120,.45); background: rgba(255,90,90,.08); }
 .card.errore-stile p { color: #ffb4b4; }
+
+/* studio stile: effetti del riferimento che lo stile non sa ancora fare */
+.card.da-creare ul { margin: 8px 0 0; padding-left: 18px; }
+.card.da-creare li { margin: 4px 0; line-height: 1.35; }

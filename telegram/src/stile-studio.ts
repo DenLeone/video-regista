@@ -20,6 +20,8 @@ export type BozzaStile = {
   taglioMedio?: number;
   voce?: boolean;
   quando: number;
+  // effetti visti nel riferimento che le opzioni di stile.txt non sanno rifare (studio sul video intero)
+  daCreare?: string[];
 };
 
 const CAMPI = [
@@ -175,7 +177,7 @@ export function leggiJsonModello(raw: string): { risposta: string; stile: string
   return { risposta, stile };
 }
 
-const FASI_DIARIO = ['analizza', 'chat', 'gemini', 'claude', 'voce'] as const;
+const FASI_DIARIO = ['analizza', 'chat', 'gemini', 'claude', 'voce', 'video'] as const;
 export type FaseDiario = (typeof FASI_DIARIO)[number];
 
 /** Una riga sola, fase ed esito. Non accetta testo libero: niente titoli, nomi o trascrizioni. */

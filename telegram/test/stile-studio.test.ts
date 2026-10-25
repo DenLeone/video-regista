@@ -5,7 +5,7 @@ import { leggiStile } from '../../scripts/stile-su-misura.mjs';
 import { gestisciApp } from '../src/api';
 import type { Ops, Segreti } from '../src/ops';
 import { chiediStile } from '../src/stile-ai';
-import { gestisciStile } from '../src/stile-api';
+import { gestisciStile, riceviEsitoStile } from '../src/stile-api';
 import {
   audioPulito, diarioStile, fotogrammiPuliti, leggiJsonModello, rigaDiario, riassuntoStile, ritmoSicuro, unisciNomi,
 } from '../src/stile-studio';
@@ -66,6 +66,7 @@ function memoria() {
     lancia: async () => null,
     provaRegia: async () => null,
     archivia: async () => null,
+    studiaStile: async () => null,
     giri: async () => [],
     video: async () => [],
     memo: async () => undefined,
@@ -363,4 +364,38 @@ test('Gemini lento o sovraccarico: si passa al Flash Lite, e un 400 riprova senz
   } finally {
     console.error = originale;
   }
+}));
+
+test('studio sul video intero: avvio su GitHub, esito in bozza con gli effetti da creare', async () => serie(async () => {
+  const { ops, db } = memoria();
+  const e = env();
+  const avviati: string[] = [];
+  const messaggi: string[] = [];
+  const o = { ...ops, studiaStile: async (_e: Segreti, r2: string) => { avviati.push(r2); return null; }, inviaTelegram: async (_e: Segreti, t: string) => { messaggi.push(t); } } satisfies Ops;
+  const post = (p: string, b: unknown) => gestisciStile(new Request(`https://regista.test${p}`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(b) }), e, o, p);
+
+  db.set('app:upload:rifabcdef12', { riferimento: true, pronto: false });
+  assert.equal((await post('/api/stile/video', { upload: 'rifabcdef12' })).status, 409);
+  db.set('app:upload:rifabcdef12', { riferimento: true, pronto: true });
+  const avvio = await post('/api/stile/video', { upload: 'rifabcdef12' });
+  assert.equal(avvio.status, 200);
+  assert.deepEqual(avviati, ['rifabcdef12']);
+  const inCorso = await (await gestisciStile(new Request('https://regista.test/api/stile'), e, o, '/api/stile')).json() as { analisi: { r2: string } | null };
+  assert.equal(inCorso.analisi?.r2, 'rifabcdef12');
+
+  assert.equal((await riceviEsitoStile(e, o, { r2: 'altro12345', ok: true })).status, 409);
+  const stile = 'Nome: Polaroid veloce\nTono: ironico\nSottotitoli: parola\nLook: caldo\nTitoli: frasi\nRitmo dei tagli: un taglio al secondo\nInquadrature: volto e dettagli';
+  const ok = await riceviEsitoStile(e, o, { r2: 'rifabcdef12', ok: true, stile, risposta: 'Ho visto cornici a polaroid.', daCreare: ['cornice a polaroid che entra ruotando'], durata: 31.2, tagli: 28, taglioMedio: 1.1 });
+  assert.equal(ok.status, 200);
+  const dopo = await (await gestisciStile(new Request('https://regista.test/api/stile'), e, o, '/api/stile')).json() as { analisi: unknown; bozza: { nome: string; daCreare: string[] } };
+  assert.equal(dopo.analisi, null);
+  assert.equal(dopo.bozza.nome, 'Polaroid veloce');
+  assert.deepEqual(dopo.bozza.daCreare, ['cornice a polaroid che entra ruotando']);
+  assert.match(String((db.get('app:stile_bozza') as { testo: string }).testo), /# DA CREARE: cornice a polaroid/);
+  assert.equal(messaggi.length, 1);
+
+  db.set('app:stile_analisi', { r2: 'rifabcdef12', quando: Date.now() });
+  await riceviEsitoStile(e, o, { r2: 'rifabcdef12', ok: false, errore: 'Gemini non ha elaborato il video' });
+  const ko = await (await gestisciStile(new Request('https://regista.test/api/stile'), e, o, '/api/stile')).json() as { analisi: { errore: string } };
+  assert.equal(ko.analisi.errore, 'Gemini non ha elaborato il video');
 }));

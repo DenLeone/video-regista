@@ -551,6 +551,7 @@ function htmlStile() {
       ${htmlErroreStile(s)}
       <div class="card scheda-stile">${righeRiassunto(b.riassunto)}</div>
       ${b.voce === false ? '<p class="nota">Senza trascrizione: solo fotogrammi e ritmo.</p>' : ''}
+      ${(b.daCreare || []).length ? `<div class="card da-creare"><p class="kicker">Da creare</p><p class="meta">Nel riferimento ci sono effetti che lo stile non sa ancora fare: per ora usa i più vicini. Si possono programmare con Claude.</p><ul>${b.daCreare.map((d) => `<li>${esc(d)}</li>`).join('')}</ul></div>` : ''}
       <div class="filo">${(b.messaggi || []).map((m) => `<p class="bolla ${m.ruolo === 'denis' ? 'denis' : 'ai'}">${esc(m.testo)}</p>`).join('')}</div>
       <textarea class="detto" id="detto-stile" placeholder="Più veloce, sottotitoli gialli, meno zoom"></textarea>
       <button class="btn primario" data-azione="studio-invia"${s.occupato ? ' disabled' : ''}>${s.occupato ? esc(s.occupato) : 'Invia'}</button>
@@ -569,7 +570,7 @@ function htmlStile() {
       <label class="etichetta">Video di riferimento</label>
       <input class="campo" id="file-stile" type="file" accept="video/*">
       <button class="btn primario" data-azione="studia"${s.occupato || s.invio ? ' disabled' : ''}>Studia</button>
-      <p class="nota">Prima i fotogrammi e l’analisi, poi il file intero a pezzi. Non apre un montaggio e non compare in Oggi.</p>
+      <p class="nota">Il video va su Cloudflare a pezzi (si riprende se si interrompe), poi l’AI lo guarda tutto, con l’audio, in 2–5 minuti: puoi chiudere l’app, ti avviso su Telegram. Non apre un montaggio e non compare in Oggi.</p>
       <p class="nota" data-upload-stile>${esc(s.nota || '')}</p>
     </div>
     ${s.bozza?.haTesto ? `<div class="card scheda-stile"><p class="kicker">Bozza</p>${righeRiassunto(s.bozza.riassunto)}<button class="btn pieno" data-azione="studio-continua">Continua</button></div>` : ''}
@@ -1154,6 +1155,9 @@ async function caricaStudio() {
   const r = await api('/api/stile');
   stato.studio.salvati = r.salvati || [];
   if (r.bozza) stato.studio.bozza = r.bozza;
+  // studio sul video intero ancora in corso (app chiusa e riaperta): si riprende ad aspettarlo
+  if (r.analisi && !r.analisi.errore && !stato.studio.occupato) attendiStudioVideo(Number(r.bozza?.quando) || 0);
+  else if (r.analisi?.errore && !stato.studio.errore) stato.studio.errore = `Studio non riuscito: ${r.analisi.errore}`;
 }
 
 function notaUpload(testo) {
@@ -1196,6 +1200,10 @@ async function attendiBozza(prima) {
   return false;
 }
 
+// Studio sul video intero (25/10): il file va su Cloudflare, poi un giro su GitHub lo fa guardare
+// tutto a Gemini Pro con gli stili fatti a mano come esempio (scripts/studia-stile.mjs) e la bozza
+// arriva qui e su Telegram. Se lo studio su GitHub non parte, si torna all'analisi veloce dei
+// 6 fotogrammi fatta dal Worker (studiaVeloce)
 async function studiaVideo() {
   if (DEMO) { toast('In demo l’analisi non chiama l’AI. Apri uno stile salvato.'); return; }
   const file = stato.studio.file;
@@ -1204,6 +1212,63 @@ async function studiaVideo() {
   const prima = Number(stato.studio.bozza?.quando) || 0;
   stato.studio.nota = '';
   stato.studio.errore = '';
+  faseStudio('Carico il video su Cloudflare… 0%');
+  let id;
+  try {
+    stato.studio.invio = true;
+    id = await inviaRiferimento(file, (pct) => faseStudio(`Carico il video su Cloudflare… ${pct}%`));
+  } catch (e) {
+    stato.studio.occupato = '';
+    stato.studio.errore = `Il video non è arrivato su Cloudflare: ${e.message || 'errore'}. Riprova: i pezzi già mandati non ripartono.`;
+    disegna();
+    return;
+  } finally {
+    stato.studio.invio = false;
+  }
+  try {
+    await api('/api/stile/video', { method: 'POST', body: { upload: id } });
+  } catch (e) {
+    stato.studio.nota = `Studio completo non disponibile (${e.message || 'errore'}): faccio l’analisi veloce sui fotogrammi.`;
+    await studiaVeloce(file, prima);
+    return;
+  }
+  await attendiStudioVideo(prima);
+}
+
+// aspetta la bozza dello studio sul video intero: di solito 2–5 minuti; si può chiudere l'app
+async function attendiStudioVideo(prima) {
+  faseStudio('L’AI guarda tutto il video, con l’audio… di solito 2–5 minuti. Puoi chiudere l’app: ti avviso su Telegram.');
+  const fine = Date.now() + 25 * 60000;
+  while (Date.now() < fine) {
+    await new Promise((r) => setTimeout(r, 8000));
+    let r;
+    try { r = await api('/api/stile'); } catch { continue; } // rete giù: si riprova
+    const q = Number(r.bozza?.quando);
+    if (r.bozza?.haTesto && Number.isFinite(q) && q > prima) {
+      stato.studio.bozza = r.bozza;
+      stato.studio.fase = 'studio';
+      stato.studio.occupato = '';
+      stato.studio.errore = '';
+      stato.studio.nota = '';
+      disegna();
+      return true;
+    }
+    if (r.analisi?.errore) {
+      stato.studio.occupato = '';
+      stato.studio.errore = `Studio non riuscito: ${r.analisi.errore}`;
+      disegna();
+      return false;
+    }
+    if (!r.analisi) break; // né studio in corso né bozza nuova: si è perso
+  }
+  stato.studio.occupato = '';
+  stato.studio.errore = 'Lo studio non ha dato notizie. Se arriva, lo trovi qui e su Telegram; altrimenti premi di nuovo Studia.';
+  disegna();
+  return false;
+}
+
+// analisi veloce dei fotogrammi sul Worker (com'era prima): solo se lo studio completo non parte
+async function studiaVeloce(file, prima) {
   faseStudio('Estraggo i fotogrammi…');
   let campione;
   try {
@@ -1236,8 +1301,6 @@ async function studiaVideo() {
     stato.studio.occupato = '';
     disegna();
   }
-  stato.studio.invio = true;
-  inviaRiferimento(file).catch((e) => notaUpload(`Il file intero non è partito (${e.message || 'errore'}). Lo stile, se c’è, resta.`)).finally(() => { stato.studio.invio = false; });
 }
 
 async function inviaNotaStile() {
@@ -1493,7 +1556,7 @@ async function audioBreve(file) {
   }
 }
 
-async function inviaRiferimento(file) {
+async function inviaRiferimento(file, avanzamento = (pct) => notaUpload(`Carico il file intero… ${pct}%`)) {
   const inizio = await api('/api/upload/inizia', { method: 'POST', body: {
     nome: 'Riferimento', modalita: 'originali', riferimento: true,
     file: [{ nome: file.name, size: file.size, tipo: file.type || 'video/mp4' }],
@@ -1528,7 +1591,7 @@ async function inviaRiferimento(file) {
         const etag = await mandaConRiprove(upload.id, job, url, () => {});
         await idbAggiungi(`${job.meta.nome}|${job.meta.size}`, { n: job.n, etag });
         inviati += 1;
-        notaUpload(`Carico il file intero… ${Math.round((inviati / Math.max(1, coda.length)) * 100)}%`);
+        avanzamento(Math.round((inviati / Math.max(1, coda.length)) * 100));
         await api(`/api/upload/${upload.id}/parte`, { method: 'POST', body: { nome: job.meta.nome, numero: job.n, etag } });
       } catch (e) { guasto = e; }
     }
@@ -1537,6 +1600,7 @@ async function inviaRiferimento(file) {
   if (guasto) throw guasto;
   for (const meta of upload.file) await api(`/api/upload/${upload.id}/completa`, { method: 'POST', body: { nome: meta.nome } });
   notaUpload('File di riferimento al sicuro. Nessun montaggio è partito.');
+  return upload.id;
 }
 
 async function parti() {
