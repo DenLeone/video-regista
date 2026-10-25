@@ -46,6 +46,13 @@ function scaricaRiferimento() {
   return video;
 }
 
+function scaricaDaDrive(percorso) {
+  const dest = path.join(WORK, 'in', path.basename(percorso));
+  fs.mkdirSync(path.dirname(dest), { recursive: true });
+  run('rclone', ['copyto', `${process.env.REGISTA_REMOTE || 'gdrive'}:${percorso}`, dest]);
+  return dest;
+}
+
 function durataDi(file) {
   return Number(run('ffprobe', ['-v', 'error', '-show_entries', 'format=duration', '-of', 'csv=p=0', file]).trim()) || 0;
 }
@@ -171,7 +178,7 @@ async function chiediStile(fileGemini, misure, chiave) {
 }
 
 async function rispondi(dati) {
-  if (!process.env.NOTIFY_URL) { log('NOTIFY_URL mancante: risultato solo nel log', JSON.stringify(dati).slice(0, 500)); return; }
+  if (!process.env.NOTIFY_URL || !R2_ID) { log('NOTIFY_URL mancante: risultato solo nel log', JSON.stringify(dati).slice(0, 500)); return; }
   const url = process.env.NOTIFY_URL.replace(/\/notify$/, '/stile-esito');
   for (let i = 1; i <= 3; i++) {
     try {
@@ -190,8 +197,9 @@ async function main() {
   let fileGemini = null;
   try {
     if (!chiave) throw new Error('manca GEMINI_API_KEY nei secret di GitHub');
-    // STILE_FILE: un file locale al posto di R2 (prove in locale)
-    const sorgente = process.env.STILE_FILE || scaricaRiferimento();
+    // STILE_FILE: un file locale (prove in locale); STILE_DRIVE: un video su Drive (prove dal
+    // workflow, per confrontare con gli stili fatti a mano); altrimenti il riferimento su R2
+    const sorgente = process.env.STILE_FILE || (process.env.STILE_DRIVE ? scaricaDaDrive(process.env.STILE_DRIVE) : scaricaRiferimento());
     log(`riferimento: ${path.basename(sorgente)} (${(fs.statSync(sorgente).size / 1e6).toFixed(1)} MB)`);
     const video = preparaVideo(sorgente);
     const durata = durataDi(video);
@@ -199,6 +207,11 @@ async function main() {
     log(`durata ${durata.toFixed(1)} s, ${tagli} tagli, inquadratura media ${taglioMedio} s`);
     fileGemini = await caricaSuGemini(video, chiave);
     const esito = await chiediStile(fileGemini, { durata, tagli, taglioMedio }, chiave);
+    // nel riepilogo del giro su GitHub: lo stile si legge anche senza aprire l'app
+    const riepilogo = `## Stile studiato (${esito.modello})\n\n${esito.risposta}\n\n\`\`\`\n${esito.stile}\n\`\`\`\n${esito.daCreare.length ? `\n### Da creare\n${esito.daCreare.map((d) => `- ${d}`).join('\n')}\n` : ''}`;
+    if (process.env.GITHUB_STEP_SUMMARY) fs.appendFileSync(process.env.GITHUB_STEP_SUMMARY, riepilogo);
+    fs.writeFileSync(path.join(WORK, 'stile.txt'), esito.stile);
+    fs.writeFileSync(path.join(WORK, 'esito.json'), JSON.stringify(esito, null, 1));
     await rispondi({ ok: true, ...esito, durata: +durata.toFixed(1), tagli, taglioMedio });
   } catch (e) {
     log('studio non riuscito:', e.message);

@@ -8,10 +8,13 @@ on:
     inputs:
       r2:
         description: 'ID del caricamento su R2 (inbox/<id>/) con il video di riferimento'
-        required: true
+        required: false
+      drive:
+        description: 'In alternativa (prove): percorso di un video su Drive, es. 12 · Risorse/Stili/Motion /esempio.mp4'
+        required: false
 
 concurrency:
-  group: stile-${{ inputs.r2 }}
+  group: stile-${{ inputs.r2 || inputs.drive }}
   cancel-in-progress: false
 
 permissions:
@@ -36,10 +39,19 @@ jobs:
           for i in 1 2 3; do sudo timeout 300 apt-get $APT install -y -qq ffmpeg && break; done
           curl -fsSL https://rclone.org/install.sh | sudo bash > /dev/null
 
+      - name: Drive (solo per le prove da Drive)
+        if: inputs.drive != ''
+        env:
+          RCLONE_CONF: ${{ secrets.RCLONE_CONF }}
+        run: |
+          mkdir -p ~/.config/rclone
+          printf '%s\n' "$RCLONE_CONF" > ~/.config/rclone/rclone.conf
+
       - name: Studia
         id: studia
         env:
           R2_ID: ${{ inputs.r2 }}
+          STILE_DRIVE: ${{ inputs.drive }}
           R2_ACCOUNT_ID: ${{ secrets.R2_ACCOUNT_ID }}
           R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
           R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
@@ -49,9 +61,20 @@ jobs:
           NOTIFY_TOKEN: ${{ secrets.NOTIFY_TOKEN }}
         run: node scripts/studia-stile.mjs
 
+      - name: Conserva lo stile
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: stile
+          path: |
+            work/studio-stile/stile.txt
+            work/studio-stile/esito.json
+          if-no-files-found: ignore
+          retention-days: 7
+
       # si è fermato prima dello script (installazione): l'app non resta "in analisi" per sempre
       - name: Avvisa il bot se si è fermato prima
-        if: failure() && steps.studia.outcome != 'failure'
+        if: failure() && steps.studia.outcome != 'failure' && inputs.r2 != ''
         env:
           NOTIFY_URL: ${{ secrets.NOTIFY_URL }}
           NOTIFY_TOKEN: ${{ secrets.NOTIFY_TOKEN }}
