@@ -1,5 +1,11 @@
 # Regista
 
+> **Progetto personale e privato, pubblicato solo per comodità.**
+> Non è un prodotto: funziona soltanto con gli account, le chiavi e i servizi di chi l'ha scritto,
+> non ha documentazione per altri e non riceve supporto, issue o pull request.
+> **Nessuna licenza**: il codice resta di proprietà dell'autore (tutti i diritti riservati) e non può
+> essere copiato, modificato o riutilizzato.
+
 Montaggio automatico 9:16. Il bot Telegram resta com’è. L’app è una PWA sullo stesso Worker, solo per Denis: il secondo chat id di `ALLOWED_CHAT_ID` continua a usare Telegram e non entra nell’app.
 
 ## Installarla sull’iPhone
