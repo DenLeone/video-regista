@@ -212,6 +212,17 @@ async function main() {
     if (process.env.GITHUB_STEP_SUMMARY) fs.appendFileSync(process.env.GITHUB_STEP_SUMMARY, riepilogo);
     fs.writeFileSync(path.join(WORK, 'stile.txt'), esito.stile);
     fs.writeFileSync(path.join(WORK, 'esito.json'), JSON.stringify(esito, null, 1));
+    // prova da Drive: lo stile va anche in Stili/<STILE_SALVA_DRIVE>/ (con i "da creare" come note),
+    // così si prova subito con un render breve
+    if (process.env.STILE_SALVA_DRIVE) {
+      const cartella = `${process.env.DIR_STILI || '12 · Risorse/Stili'}/${process.env.STILE_SALVA_DRIVE}`;
+      const testo = esito.stile.replace(/^\s*Nome:.*$/m, `Nome: ${process.env.STILE_SALVA_DRIVE}`)
+        + (esito.daCreare.length ? `\n\n# --- DA CREARE ---\n${esito.daCreare.map((d) => `# DA CREARE: ${d}`).join('\n')}\n` : '');
+      fs.writeFileSync(path.join(WORK, 'stile-drive.txt'), testo);
+      run('rclone', ['copyto', path.join(WORK, 'stile-drive.txt'), `${process.env.REGISTA_REMOTE || 'gdrive'}:${cartella}/stile.txt`]);
+      log(`stile salvato su Drive in ${cartella}`);
+    }
+    console.log(esito.stile);
     await rispondi({ ok: true, ...esito, durata: +durata.toFixed(1), tagli, taglioMedio });
   } catch (e) {
     log('studio non riuscito:', e.message);

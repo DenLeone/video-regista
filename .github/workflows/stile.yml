@@ -12,6 +12,9 @@ on:
       drive:
         description: 'In alternativa (prove): percorso di un video su Drive, es. 12 · Risorse/Stili/Motion /esempio.mp4'
         required: false
+      salva:
+        description: 'Con drive: salva lo stile su Drive in Stili/<nome> (per provarlo subito)'
+        required: false
 
 concurrency:
   group: stile-${{ inputs.r2 || inputs.drive }}
@@ -52,6 +55,7 @@ jobs:
         env:
           R2_ID: ${{ inputs.r2 }}
           STILE_DRIVE: ${{ inputs.drive }}
+          STILE_SALVA_DRIVE: ${{ inputs.salva }}
           R2_ACCOUNT_ID: ${{ secrets.R2_ACCOUNT_ID }}
           R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
           R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
