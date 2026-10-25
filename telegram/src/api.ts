@@ -593,7 +593,12 @@ export async function gestisciApp(
       if (mancanti.length) return errore(409, `Mancano ancora ${mancanti.length} pezzi.`);
       if (!file.completo) {
         try { await completaMultipart(c, file.key, file.uploadId, file.parti); }
-        catch (e) { return errore(502, (e as Error).message); }
+        catch (e) {
+          // l'XML di R2 così com'è non dice niente a Denis
+          const m = (e as Error).message;
+          if (/InvalidPart|NoSuchUpload/.test(m)) return errore(409, 'Alcuni pezzi non risultano su Cloudflare. Ricarica il video da capo.');
+          return errore(502, `Cloudflare non ha chiuso il caricamento (${(/<Code>([^<]+)<\/Code>/.exec(m) || [])[1] || 'errore'}). Riprova.`);
+        }
         file.completo = true;
       }
       if (sess.file.every((f) => f.completo)) {

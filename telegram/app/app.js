@@ -854,7 +854,7 @@ async function pompa(inizio, files) {
     const file = abbina(files, meta);
     if (!file) { c.daRiselezionare = true; continue; }
     const fatti = new Set(meta.fatteNumeri || []);
-    for (const p of await idbLeggi(`${meta.nome}|${meta.size}`)) {
+    for (const p of await idbLeggi(chiavePezzi(upload.id, meta.nome, meta.size))) {
       if (fatti.has(p.n)) continue;
       await api(`/api/upload/${upload.id}/parte`, { method: 'POST', body: { nome: meta.nome, numero: p.n, etag: p.etag } });
       fatti.add(p.n);
@@ -889,7 +889,7 @@ async function pompa(inizio, files) {
           aggiornaBarra(campioni, volo);
         });
         volo.delete(chiave);
-        await idbAggiungi(`${job.meta.nome}|${job.meta.size}`, { n: job.n, etag });
+        await idbAggiungi(chiavePezzi(upload.id, job.meta.nome, job.meta.size), { n: job.n, etag });
         await api(`/api/upload/${upload.id}/parte`, { method: 'POST', body: { nome: job.meta.nome, numero: job.n, etag } });
         c.pezziFatti += 1;
         c.byteFatti += bytePezzo(job.meta, job.n);
@@ -1064,6 +1064,11 @@ async function sveglia() {
 document.addEventListener('visibilitychange', () => {
   if (document.visibilityState === 'visible' && stato.carica.fase === 'invio') sveglia();
 });
+
+// i pezzi ricordati valgono solo per il loro caricamento: ogni /upload/inizia apre un multipart
+// nuovo su R2, e gli ETag di un tentativo precedente dello stesso file lì non esistono (25/10:
+// "InvalidPart" al completamento dopo un secondo Studia sullo stesso video)
+const chiavePezzi = (id, nome, size) => `${id}|${nome}|${size}`;
 
 function idb() {
   return new Promise((ok, ko) => {
@@ -1567,7 +1572,7 @@ async function inviaRiferimento(file, avanzamento = (pct) => notaUpload(`Carico 
   const coda = [];
   for (const meta of upload.file) {
     const fatti = new Set(meta.fatteNumeri || []);
-    for (const p of await idbLeggi(`${meta.nome}|${meta.size}`)) {
+    for (const p of await idbLeggi(chiavePezzi(upload.id, meta.nome, meta.size))) {
       if (fatti.has(p.n)) continue;
       await api(`/api/upload/${upload.id}/parte`, { method: 'POST', body: { nome: meta.nome, numero: p.n, etag: p.etag } });
       fatti.add(p.n);
@@ -1589,7 +1594,7 @@ async function inviaRiferimento(file, avanzamento = (pct) => notaUpload(`Carico 
         let url = job.url || await chiediUrl(upload.id, job);
         if (!url) continue;
         const etag = await mandaConRiprove(upload.id, job, url, () => {});
-        await idbAggiungi(`${job.meta.nome}|${job.meta.size}`, { n: job.n, etag });
+        await idbAggiungi(chiavePezzi(upload.id, job.meta.nome, job.meta.size), { n: job.n, etag });
         inviati += 1;
         avanzamento(Math.round((inviati / Math.max(1, coda.length)) * 100));
         await api(`/api/upload/${upload.id}/parte`, { method: 'POST', body: { nome: job.meta.nome, numero: job.n, etag } });
