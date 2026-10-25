@@ -3,7 +3,7 @@ import { AbsoluteFill, Audio, continueRender, delayRender, Easing, interpolate, 
 import { Clips, f, Inserti, Ritagli, Sfx, usaFps, volumeSfx } from './comune';
 import { gruppiParole } from './Cinematico';
 import { durataTotale, FontStile, GraficaStile, Keyword, Piano, Posizione, W } from './piano';
-import { clamp, norm, OMBRA, pulisci, RACCORDO, stileFont } from './testo';
+import { clamp, norm, OMBRA, pulisci, RACCORDO, stileFont, larghezzaTesto } from './testo';
 import { BlocchiMotion, blocchiParlato, Cartello, Firma, Fumi, tagliFumo } from './Motion';
 
 // Stile "su misura": tutta la grafica arriva da Drive (Stili/<nome>/stile.txt, letto da
@@ -146,7 +146,8 @@ export function blocchiApertura(parole: Piano['parole'] = [], enfasi: string[] =
   if (!parole.length) return [];
   const limite = fineApertura(parole);
   const usate = parole.filter((p) => p.at < limite);
-  const enf = new Set(enfasi.map(norm));
+  // l'AI può dare enfasi di più parole ("SPACE ONE"): conta ogni parola (Space One, 25/10)
+  const enf = new Set(enfasi.flatMap((e) => String(e).split(/\s+/)).filter(Boolean).map(norm));
   const gruppi: { at: number; fine: number; parole: { w: string; at: number }[] }[] = [];
   usate.forEach((p, i) => {
     const prima = usate[i - 1];
@@ -165,7 +166,16 @@ const ScrittaDueLivelli: React.FC<{ righe: Riga[]; len: number; g: GraficaStile;
   const fr = useCurrentFrame();
   const esce = interpolate(fr, [len - 5, len], [0, 1], clamp);
   const lungaGrande = Math.max(1, ...righe.filter((r) => r.tipo === 'grande').map((r) => r.parole.map((x) => x.w).join(' ').length));
-  const fsGrande = Math.max(110, Math.min(250, 940 / (lungaGrande * 0.5)));
+  // stima a 0,5 em a lettera, poi la misura vera nel font: "SOUNDCORE" in Oswald 700 usciva dai
+  // bordi (Space One, 25/10). Le righe grandi stanno sempre in W - 140
+  const stima = Math.max(110, Math.min(250, 940 / (lungaGrande * 0.5)));
+  const misure = righe.filter((r) => r.tipo === 'grande').map((r) => {
+    const testo = r.parole.map((x) => x.w.toUpperCase()).join(' ');
+    const l = larghezzaTesto(testo, g.fontApertura, stima);
+    return l === null ? null : l + stima * 0.18 * r.parole.length;
+  });
+  const piu = Math.max(0, ...misure.map((l) => l ?? 0));
+  const fsGrande = piu > W - 140 ? Math.floor(stima * (W - 140) / piu) : stima;
   const vistaGrande = righe.findIndex((r) => r.tipo === 'grande');
   return (
     <AbsoluteFill style={{ opacity: 1 - esce, filter: `blur(${esce * 10}px)` }}>

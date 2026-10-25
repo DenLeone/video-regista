@@ -5,6 +5,14 @@ export const OMBRA = '0 3px 14px rgba(0,0,0,0.55), 0 1px 3px rgba(0,0,0,0.7)';
 export const clamp = { extrapolateLeft: 'clamp', extrapolateRight: 'clamp' } as const;
 export const famiglia = (ft: FontStile) => `"${ft.famiglia}", "Montserrat", sans-serif`;
 export const stileFont = (ft: FontStile) => ({ fontFamily: famiglia(ft), fontWeight: ft.peso, fontStyle: ft.corsivo ? 'italic' : 'normal' });
+// larghezza vera di una riga nel font scelto (canvas del browser che fa il render); null fuori dal browser
+let tela: CanvasRenderingContext2D | null | undefined;
+export function larghezzaTesto(testo: string, ft: FontStile, fs: number): number | null {
+  if (tela === undefined) tela = typeof document === 'undefined' ? null : document.createElement('canvas').getContext('2d');
+  if (!tela) return null;
+  tela.font = `${ft.corsivo ? 'italic ' : ''}${ft.peso} ${fs}px ${famiglia(ft)}`;
+  return tela.measureText(testo).width;
+}
 export const pulisci = (w: string) => w.replace(/^[«"“(]+|[»"”).,;:…]+$/g, '');
 export const norm = (w: string) => pulisci(w).toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
 
