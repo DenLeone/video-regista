@@ -18,7 +18,7 @@
 
 import { DurableObject } from 'cloudflare:workers';
 import { ANTEPRIMA_STILI } from './anteprima-stili';
-import { riceviEsitoStile } from './stile-api';
+import { correggiStileSalvato, riceviEsitoStile } from './stile-api';
 import { gestisciApp } from './api';
 import { avvisoUtente } from './push';
 import STILI_BASE from '../../scripts/stili-base.json';
@@ -1888,13 +1888,15 @@ export default {
       });
     }
 
-    if (req.method === 'POST' && (url.pathname === '/notify' || url.pathname === '/video' || url.pathname === '/foto-profilo' || url.pathname === '/copertina' || url.pathname === '/stile-esito')) {
+    if (req.method === 'POST' && (url.pathname === '/notify' || url.pathname === '/video' || url.pathname === '/foto-profilo' || url.pathname === '/copertina' || url.pathname === '/stile-esito' || url.pathname === '/stile-correggi')) {
       if (req.headers.get('x-regista-token') !== env.NOTIFY_TOKEN) return new Response('no', { status: 401 });
       if (url.pathname === '/notify') { await onNotify(env, (await req.json()) as Notify); return new Response('ok'); }
       if (url.pathname === '/foto-profilo') return new Response(await onFotoProfilo(env, await req.formData()));
       if (url.pathname === '/copertina') return new Response(await onCopertina(env, await req.formData()));
       // esito dello studio di uno stile (workflow stile.yml): bozza nell'app e avviso su Telegram
       if (url.pathname === '/stile-esito') return riceviEsitoStile(env, creaOps(), await req.json().catch(() => ({})));
+      // correzione di uno stile salvato nell'app (workflow stile-correggi.yml)
+      if (url.pathname === '/stile-correggi') return correggiStileSalvato(env, creaOps(), await req.json().catch(() => ({})));
       const inviato = await onVideo(env, await req.formData());
       return new Response(inviato ? 'ok' : 'video non inviato', { status: inviato ? 200 : 502 });
     }

@@ -1,0 +1,40 @@
+name: stile-correggi
+
+# Corregge uno stile salvato nell'app (memoria del bot + copia su R2 per il montaggio), quando
+# Denis chiede a Claude di sistemarlo: campi da cambiare in JSON, note "# …" da aggiungere.
+on:
+  workflow_dispatch:
+    inputs:
+      nome:
+        description: 'Nome dello stile salvato nell’app (es. Cinematic Talk)'
+        required: true
+      campi:
+        description: 'JSON {"Chiave": "valore" | null}, es. {"Apertura": "grande", "Volume musica": null}'
+        required: true
+      note:
+        description: 'JSON di righe da aggiungere in fondo come note (es. ["DA CREARE: …"])'
+        required: false
+        default: '[]'
+
+permissions:
+  contents: read
+
+jobs:
+  correggi:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Correggi lo stile
+        env:
+          NOTIFY_URL: ${{ secrets.NOTIFY_URL }}
+          NOTIFY_TOKEN: ${{ secrets.NOTIFY_TOKEN }}
+          NOME: ${{ inputs.nome }}
+          CAMPI: ${{ inputs.campi }}
+          NOTE: ${{ inputs.note }}
+        run: |
+          jq -n --arg n "$NOME" --argjson c "$CAMPI" --argjson o "${NOTE:-[]}" '{nome: $n, campi: $c, note: $o}' > corpo.json
+          codice=$(curl -s -o risposta.json -w '%{http_code}' -X POST "${NOTIFY_URL%/notify}/stile-correggi" \
+            -H 'content-type: application/json' -H "x-regista-token: $NOTIFY_TOKEN" -d @corpo.json)
+          echo "risposta $codice"
+          jq -r '.testo // .errore // .' risposta.json
+          [ "$codice" = "200" ]

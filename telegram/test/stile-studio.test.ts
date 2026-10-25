@@ -5,7 +5,7 @@ import { leggiStile } from '../../scripts/stile-su-misura.mjs';
 import { gestisciApp } from '../src/api';
 import type { Ops, Segreti } from '../src/ops';
 import { chiediStile } from '../src/stile-ai';
-import { gestisciStile, riceviEsitoStile } from '../src/stile-api';
+import { correggiStileSalvato, gestisciStile, riceviEsitoStile } from '../src/stile-api';
 import {
   audioPulito, diarioStile, fotogrammiPuliti, leggiJsonModello, rigaDiario, riassuntoStile, ritmoSicuro, unisciNomi,
 } from '../src/stile-studio';
@@ -398,4 +398,22 @@ test('studio sul video intero: avvio su GitHub, esito in bozza con gli effetti d
   await riceviEsitoStile(e, o, { r2: 'rifabcdef12', ok: false, errore: 'Gemini non ha elaborato il video' });
   const ko = await (await gestisciStile(new Request('https://regista.test/api/stile'), e, o, '/api/stile')).json() as { analisi: { errore: string } };
   assert.equal(ko.analisi.errore, 'Gemini non ha elaborato il video');
+}));
+
+test('correzione di uno stile salvato: sostituisce, toglie, aggiunge e copia su R2', async () => serie(async () => {
+  const { ops, db } = memoria();
+  const e = env();
+  const testo = 'Nome: Cinematic Talk\nTono: calmo\n\n# --- SCRITTE ---\nApertura: normale\nSottotitoli: parola\nTitoli: parole grandi\n\n# --- IMMAGINE ---\nLook: caldo\nChiusura: @_black_den\n\n# --- AUDIO ---\nMusica: sì\nVolume musica: 15\n\n# --- REGIA ---\nRitmo dei tagli: disteso\nInquadrature: piano medio';
+  db.set('app:stili', [{ id: 'ct1', nome: 'Cinematic Talk', testo, quando: 1, desc: '' }]);
+  assert.equal((await correggiStileSalvato(e, ops, { nome: 'nessuno', campi: {} })).status, 404);
+  const r = await correggiStileSalvato(e, ops, { nome: 'cinematic talk', campi: { Apertura: 'grande', 'Font apertura': 'Oswald 700', Chiusura: 'no', Musica: 'no', 'Volume musica': null }, note: ['DA CREARE: invito finale'] });
+  assert.equal(r.status, 200);
+  const nuovo = (db.get('app:stili') as { testo: string }[])[0].testo;
+  assert.match(nuovo, /^Apertura: grande$/m);
+  assert.match(nuovo, /^Font apertura: Oswald 700$/m);
+  assert.match(nuovo, /^Chiusura: no$/m);
+  assert.match(nuovo, /^Musica: no$/m);
+  assert.equal(/Volume musica/.test(nuovo), false);
+  assert.match(nuovo, /^# DA CREARE: invito finale$/m);
+  assert.ok(nuovo.indexOf('Font apertura') < nuovo.indexOf('# --- REGIA'));
 }));

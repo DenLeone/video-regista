@@ -354,3 +354,47 @@ export async function riceviEsitoStile(env: Segreti, ops: Ops, dati: Record<stri
   await ops.inviaTelegram(env, `✨ <b>Stile pronto: ${nome.replace(/[<>&]/g, '')}</b>\nL’AI ha guardato tutto il video${daCreare.length ? ` e ha trovato ${daCreare.length} effett${daCreare.length === 1 ? 'o' : 'i'} da creare` : ''}. Aprilo nell’app (Altro → Studia uno stile) per correggerlo e salvarlo.`).catch(() => {});
   return json({ ok: true });
 }
+
+// Correzione di uno stile salvato senza passare dall'app (POST /stile-correggi, protetto da
+// NOTIFY_TOKEN in index.ts; lo usa il workflow stile-correggi.yml, cioè Claude su richiesta di
+// Denis): `campi` = { "Chiave": "valore" } sostituisce la riga, null la toglie, una chiave nuova
+// va in fondo al suo gruppo; `note` = righe "# …" aggiunte in fondo. Risponde col testo nuovo.
+export function applicaCorrezioni(testo: string, campi: Record<string, string | null>, note: string[] = []): string {
+  let righe = testo.replace(/\r\n/g, '\n').split('\n');
+  for (const [chiave, valore] of Object.entries(campi)) {
+    const re = new RegExp(`^\\s*${chiave.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\s*:`, 'i');
+    const i = righe.findIndex((r) => re.test(r));
+    if (valore === null) { if (i >= 0) righe.splice(i, 1); continue; }
+    const riga = `${chiave}: ${String(valore).replace(/\s+/g, ' ').trim()}`;
+    if (i >= 0) { righe[i] = riga; continue; }
+    // chiave nuova: prima del primo gruppo "# --- REGIA" se c'è, altrimenti in fondo
+    const regia = righe.findIndex((r) => /^#\s*---\s*REGIA/i.test(r));
+    if (regia > 0) righe.splice(regia, 0, riga, ''); else righe.push(riga);
+  }
+  righe = righe.join('\n').replace(/\n{3,}/g, '\n\n').trimEnd().split('\n');
+  const nuove = note.map((n) => `# ${String(n).replace(/^#\s*/, '').replace(/\s+/g, ' ').trim()}`).filter((n) => n.length > 2 && !righe.includes(n));
+  return `${righe.join('\n')}${nuove.length ? `\n${nuove.join('\n')}` : ''}\n`;
+}
+
+export async function correggiStileSalvato(env: Segreti, ops: Ops, dati: Record<string, unknown>): Promise<Response> {
+  const nome = String(dati.nome || '').trim().toLowerCase();
+  const lista = await salvati(env, ops);
+  const voce = lista.find((s) => s.nome.toLowerCase() === nome);
+  if (!voce) return errore(404, `Nessuno stile salvato nell’app con questo nome. Ci sono: ${lista.map((s) => s.nome).join(', ') || 'nessuno'}.`);
+  const campi = (dati.campi && typeof dati.campi === 'object' ? dati.campi : {}) as Record<string, string | null>;
+  const note = Array.isArray(dati.note) ? dati.note.map(String).slice(0, 10) : [];
+  const testo = conNome(applicaCorrezioni(voce.testo, campi, note), voce.nome);
+  if (!stileUsabile(testo)) return errore(400, 'Dopo la correzione lo stile non è più completo (sottotitoli, look, ritmo).');
+  voce.testo = testo;
+  voce.desc = descrizioneStile(testo);
+  voce.quando = Date.now();
+  await ops.scrivi(env, CHIAVE, lista);
+  const b = await bozza(env, ops);
+  if (b?.salvatoId === voce.id) {
+    b.testo = testo;
+    b.riassunto = riassuntoStile(testo);
+    await ops.scrivi(env, BOZZA, b);
+  }
+  const avviso = await mettiR2(env, voce.nome, testo);
+  return json({ ok: true, nome: voce.nome, testo, avviso: avviso || null });
+}
