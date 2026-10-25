@@ -146,14 +146,16 @@ test('slug, ritmo e stile.txt restano quelli che il montaggio sa leggere', () =>
   const letto = leggiStile(STILE, 'Giallo veloce');
   assert.equal(letto.grafica.sottotitoli, 'parola');
   assert.equal(letto.grafica.coloreSottotitoli, '#FFFFFF');
-  assert.equal(letto.grafica.look, 'caldo');
+  // colori sempre naturali (25/10): "Look: caldo" nello stile non cambia il girato
+  assert.equal(letto.grafica.look, 'naturale');
+  assert.equal(letto.grafica.vignetta, 0);
   assert.match(letto.testoAI, /Ritmo dei tagli/);
   const pronto = preparaStileApp('Giallo veloce', STILE);
   assert.equal(pronto.look12k, false);
   assert.equal(pronto.lookFfmpeg, null);
   assert.match(pronto.testoAI, /punch-in/);
   const teal = preparaStileApp('Notte', STILE.replace('Look: caldo', 'Look: teal e arancio').replace('Musica: no', 'Musica: sì'));
-  assert.equal(teal.look12k, true);
+  assert.equal(teal.look12k, false); // anche "teal e arancio" resta naturale
   assert.equal(teal.avvisi.length, 1);
 
   const ritmo = ritmoSicuro(12.2, 5);

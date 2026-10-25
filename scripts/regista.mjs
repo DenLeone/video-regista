@@ -1012,7 +1012,9 @@ function caricaStile(nome) {
   }
   // LUT: quella in asset/ dello stile; con "Look: teal e arancio" il look 12K del repo (lut/12k.cube,
   // scripts/look/lut12k.py) con l'esposizione adattata a ogni pezzo
-  const lutAsset = tutti.find((p) => /\.cube$/i.test(p));
+  // colori sempre naturali (25/10): la LUT creativa in asset/ non si usa più
+  const lutAsset = null;
+  if (tutti.some((p) => /\.cube$/i.test(p))) log(`stile ${nome}: LUT in asset/ ignorata (colori naturali)`);
   LOOK_12K = !lutAsset && grafica.look === 'teal';
   const lut = lutAsset || (LOOK_12K ? path.join(ROOT, 'lut', '12k.cube') : null);
   if (lut) { LUT_STILE = lut; log(`stile ${nome}: LUT ${path.basename(lut)}${LOOK_12K ? ' (look 12K: esposizione per pezzo e nitidezza)' : ''}`); }

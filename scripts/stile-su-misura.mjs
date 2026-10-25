@@ -36,12 +36,12 @@ Colore accento: #FFE62E       # sottotitolo dei titoli
 Posizione titoli: alto        # alto | centro | basso
 
 # --- IMMAGINE ---
-Look: naturale                # naturale | chiaro caldo (volto ben esposto anche in controluce, luce calda) | caldo | freddo | bianco e nero | teal e arancio (spot notturno: neri profondi, sfondi petrolio, pelle calda)
-Soggetto in risalto: no       # sì = tu luminoso e nitido, sfondo più buio e freddo (ritaglio automatico della persona)
-Sfondo sfocato: no            # sì = con il soggetto in risalto, lo sfondo si sfoca anche (finto diaframma aperto)
+Look: naturale                # sempre naturale: Denis non vuole modifiche ai colori (gli altri look sono disattivati)
+Soggetto in risalto: no       # sempre no (colori naturali)
+Sfondo sfocato: no            # sempre no (colori naturali)
 Bianco e nero: no             # no | momenti (l'AI mette in b/n i momenti di racconto) | sempre
-Vignettatura: 20              # 0–100
-Inizio: normale               # normale | prima e dopo (si parte dall'immagine piatta, come girata, che si colora)
+Vignettatura: 0               # sempre 0 (colori naturali)
+Inizio: normale               # sempre normale ("prima e dopo" disattivato: colori naturali)
 Tagli dentro le frasi: no     # sì = ritmo veloce: l'inquadratura può cambiare a metà frase, sulla parola che nomina la cosa
 Chiusura: no                  # no | il tuo nome Instagram (es. @_black_den): finale scurito con logo e nome
 Firma: no                     # no | il tuo nome Instagram: logo e nome fissi in basso a sinistra per tutto il video
@@ -174,6 +174,14 @@ export function leggiStile(testo, nomeCartella) {
   // musica: "sì" = a caso tra i brani in asset, altrimenti il nome del file da usare
   const musica = campi.musica && !/^no\b/.test(norm(campi.musica)) ? (si(campi.musica) ? '*' : campi.musica) : null;
   const volumeMusica = numero(campi['volume musica'], 12, 0, 100) / 100;
+  // colori sempre naturali, qualunque cosa dica lo stile (Denis, 25/10: "non voglio modifiche"):
+  // niente look, risalto, sfocatura, vignetta né "prima e dopo". Resta solo la conversione I-Log
+  g.look = 'naturale';
+  g.risalto = false;
+  g.sfoca = false;
+  g.rivela = false;
+  g.vignetta = 0;
+  if (g.biancoNero === 'sempre') g.biancoNero = 'no';
   return { grafica: g, testoAI: perAI.join('\n'), musica, volumeMusica };
 }
 

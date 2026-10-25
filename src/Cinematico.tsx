@@ -17,7 +17,8 @@ const OMBRA = '0 4px 24px rgba(0,0,0,0.45), 0 1px 3px rgba(0,0,0,0.6)';
 const OMBRA_PAROLE = '0 0 2px rgba(0,0,0,0.7), 0 2px 8px rgba(0,0,0,0.55), 0 4px 26px rgba(0,0,0,0.4)';
 // look caldo sulle clip: un filo di contrasto e saturazione, tinta calda leggera; senza
 // scurire (Giacca autunnale, 18/10: con l'I-Log convertito il volto quasi non si vedeva)
-const LOOK = 'contrast(1.03) saturate(1.08) sepia(0.1)';
+// colori sempre naturali (Denis, 25/10): nessun filtro sul girato
+const LOOK: string | undefined = undefined;
 const SFX = { whoosh: 0.55, impatto: 0.7 } as const;
 const CENTRO_PAROLE = 1100; // y del centro dei sottotitoli
 const clamp = { extrapolateLeft: 'clamp', extrapolateRight: 'clamp' } as const;

@@ -9,7 +9,16 @@
     "Inviti a schermo (commenta la parola, segui, salva) e altre grafiche che le opzioni non hanno vanno tra i \"da creare\", descritti in modo preciso.",
     "Le indicazioni di regia parlano di quello che il montaggio può fare (ritmo dei tagli, frasi, B-roll, quali inquadrature usare tra quelle girate), non di come girare (luogo, luci, sfondo, sfocatura): il girato è già fatto.",
     "I video e le immagini che Denis mette nella cartella vengono usati tutti; il repertorio è solo una riserva quando non ne ha messi.",
-    "Colori: se il riferimento non ha un look marcato, \"Look: naturale\" (Denis preferisce i colori originali del girato, come nel Motion)."
+    "Colori SEMPRE naturali, in ogni stile: \"Look: naturale\", \"Soggetto in risalto: no\", \"Sfondo sfocato: no\", \"Vignettatura: 0\", niente \"prima e dopo\". Denis non vuole nessuna modifica ai colori del girato, anche se il riferimento ha un look marcato."
   ],
-  "forza": { "Chiusura": "no", "Firma": "no", "Musica": "no", "Volume musica": null }
+  "forza": {
+    "Chiusura": "no",
+    "Firma": "no",
+    "Musica": "no",
+    "Volume musica": null,
+    "Look": "naturale",
+    "Soggetto in risalto": "no",
+    "Sfondo sfocato": "no",
+    "Vignettatura": "0"
+  }
 }
