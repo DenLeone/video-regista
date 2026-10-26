@@ -141,6 +141,19 @@ function prompt({ durata, tagli, taglioMedio }) {
   ].join('\n');
 }
 
+// Tempi lunghi voluti (26/10): Pro può riprovare, Flash aspetta fino a 9 minuti su un video intero.
+// Non si accorciano. Si ricorda solo la quota del giorno, e non si apre un altro tentativo se il
+// giro ha già passato il tetto (un tentativo già partito arriva in fondo).
+export const ATTESE_STILE = { 'gemini-pro-latest': 9, 'gemini-flash-latest': 9, 'gemini-flash-lite-latest': 6 };
+export const TETTO_STILE_MS = 22 * 60 * 1000;
+const quoteStile = new Set();
+export function quotaGiornoDaTesto(status, testo) {
+  return status === 429 && /PerDay/i.test(String(testo || ''));
+}
+export function ricordaQuotaStile(modello) { if (modello) quoteStile.add(modello); }
+export function quotaStileFinita(modello) { return quoteStile.has(modello); }
+export function azzeraQuoteStile() { quoteStile.clear(); }
+
 // Il timeout di fetch in inglese («The operation was aborted due to timeout») arrivava
 // così nell'app. Qui diventa una frase italiana, senza cambiare i tentativi sui modelli.
 export function testoErroreModello(modello, e) {
@@ -171,17 +184,31 @@ async function chiediStile(fileGemini, misure, chiave) {
   let ultimo = '';
   // 26/10: Pro occupato (429 due volte a 15 s) e Flash oltre i 5 minuti su un video di 96 s →
   // studio fallito. Ora: Pro 3 tentativi con attesa crescente (o quella chiesta da Google),
-  // Flash fino a 9 minuti, poi Flash Lite. Il giro su GitHub ha 30 minuti in tutto
-  const ATTESA_MAX = { 'gemini-pro-latest': 9, 'gemini-flash-latest': 9, 'gemini-flash-lite-latest': 6 };
+  // Flash fino a 9 minuti, poi Flash Lite. Il giro su GitHub ha 30 minuti in tutto.
+  // Il tetto non taglia un tentativo già aperto: evita solo di iniziarne un altro dopo.
+  const inizio = Date.now();
   for (const modello of MODELLI) {
+    if (quotaStileFinita(modello)) { log(`${modello}: richieste del giorno finite, salto`); continue; }
     const tentativi = /pro/.test(modello) ? 3 : 2;
     for (let tentativo = 1; tentativo <= tentativi; tentativo++) {
+      if (Date.now() - inizio >= TETTO_STILE_MS) {
+        ultimo = 'tempo massimo dello studio';
+        log(ultimo);
+        throw new Error(`nessun modello ha scritto lo stile (${ultimo})`);
+      }
       try {
         const r = await fetch(`${GEMINI}/v1beta/models/${modello}:generateContent`, {
           method: 'POST', headers: { 'x-goog-api-key': chiave, 'content-type': 'application/json' },
-          body: JSON.stringify(corpo), signal: AbortSignal.timeout((ATTESA_MAX[modello] || 8) * 60 * 1000),
+          body: JSON.stringify(corpo), signal: AbortSignal.timeout((ATTESE_STILE[modello] || 8) * 60 * 1000),
         });
         if (r.status === 429 || r.status >= 500) {
+          const corpoErr = await r.text();
+          if (quotaGiornoDaTesto(r.status, corpoErr)) {
+            ricordaQuotaStile(modello);
+            ultimo = `${modello}: richieste del giorno finite`;
+            log(ultimo, '(non riprovo)');
+            break;
+          }
           ultimo = `${modello}: HTTP ${r.status}`;
           if (tentativo === tentativi) { log(ultimo, '(passo al modello successivo)'); break; }
           const chiesta = Number(r.headers.get('retry-after'));

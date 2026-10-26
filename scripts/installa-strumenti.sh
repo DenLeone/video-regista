@@ -1,12 +1,13 @@
 #!/usr/bin/env bash
-# Strumenti in più rispetto ad apt (scripts/apt-ubuntu.sh, che resta il fallback).
-# Se questa cache c'è, il suo ffmpeg va davanti a quello di Ubuntu nel PATH: ha arnndn,
-# loudnorm, vidstab, libass e libvmaf. Se lo scarico fallisce non si tocca apt: il
-# montaggio usa il ffmpeg appena installato da apt-ubuntu.sh. In cache anche Montserrat,
-# Source Sans 3, PySceneDetect (opencv headless) e auto-editor. Niente Demucs né GPU.
+# Strumenti in cache, prima di apt (lo chiama scripts/programma-video.sh, non questo file).
+# Il ffmpeg GPL da GitHub, se c'è, va davanti a quello di Ubuntu: ha arnndn, loudnorm,
+# vidstab, libass e libvmaf. Se lo scarico fallisce non si chiama apt da qui: ci pensa
+# programma-video.sh, e solo per ffmpeg. In cache anche Montserrat, Source Sans 3,
+# PySceneDetect (opencv headless) e auto-editor. Niente Demucs né GPU.
 # Il montaggio non cambia: questi programmi devono solo essere nel PATH.
 set -euo pipefail
 
+QUI=$(cd "$(dirname "$0")" && pwd)
 DIR="${STRUMENTI_DIR:-$HOME/opt/regista-strumenti}"
 # build condivisa: i binari statici sono 165 MB l'uno e triplicano la cache
 FFMPEG_URL="${FFMPEG_URL:-https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-n8.1-latest-linux64-gpl-shared-8.1.tar.xz}"
@@ -172,23 +173,27 @@ fi
 hash -r
 
 echo "--- controllo ---"
-echo "ffmpeg: $(command -v ffmpeg)"
-ffmpeg -hide_banner -filters | grep -E 'arnndn|vidstab|loudnorm|libvmaf|\bass\b' || true
+echo "ffmpeg: $(command -v ffmpeg || echo assente)"
+ffmpeg -hide_banner -filters 2>/dev/null | grep -E 'arnndn|vidstab|loudnorm|libvmaf|\bass\b' || true
 scenedetect --version
 auto-editor --version
 fc-list : family | grep -i -E 'montserrat|liberation|dejavu' | sort -u || true
 manca=0
-elenco="$(ffmpeg -hide_banner -filters 2>/dev/null || true)"
-for nome in arnndn vidstabdetect vidstabtransform loudnorm; do
-  grep -Eq "(^|[[:space:]])$nome([[:space:]]|$)" <<<"$elenco" || { echo "::error::ffmpeg senza $nome"; manca=1; }
-done
-grep -Eq '(^|[[:space:]])ass([[:space:]]|$)' <<<"$elenco" || { echo "::error::ffmpeg senza libass (filtro ass)"; manca=1; }
-if grep -Eq '(^|[[:space:]])libvmaf([[:space:]]|$)' <<<"$elenco"; then
-  log "libvmaf presente"
+if bash "$QUI/ffmpeg-pronto.sh"; then
+  elenco="$(ffmpeg -hide_banner -filters 2>/dev/null || true)"
+  if grep -Eq '(^|[[:space:]])libvmaf([[:space:]]|$)' <<<"$elenco"; then
+    log "libvmaf presente"
+  elif [ "$ffmpeg_cache" = 1 ]; then
+    echo "::error::ffmpeg in cache senza libvmaf"; manca=1
+  else
+    log "libvmaf non c'è nel ffmpeg di apt: la cache non è disponibile"
+  fi
 elif [ "$ffmpeg_cache" = 1 ]; then
-  echo "::error::ffmpeg in cache senza libvmaf"; manca=1
+  echo "::error::ffmpeg in cache senza arnndn, vidstab, loudnorm o libass"
+  manca=1
 else
-  log "libvmaf non c'è nel ffmpeg di apt: la cache non è disponibile"
+  # niente ::error: programma-video.sh prova apt solo se questo ffmpeg non c'è
+  log "ffmpeg in cache assente: se serve, il giro usa apt"
 fi
 scenedetect --version >/dev/null || manca=1
 auto-editor --version >/dev/null || manca=1

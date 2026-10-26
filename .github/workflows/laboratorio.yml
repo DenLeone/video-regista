@@ -50,8 +50,7 @@ jobs:
       - name: ffmpeg
         timeout-minutes: 16
         run: |
-          bash scripts/apt-ubuntu.sh ffmpeg fonts-dejavu-core
-          bash scripts/installa-strumenti.sh
+          bash scripts/programma-video.sh fonts-dejavu-core
 
       - uses: actions/setup-node@v5
         with:
