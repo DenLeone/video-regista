@@ -26,7 +26,7 @@ permissions:
 jobs:
   studia:
     runs-on: ubuntu-24.04
-    timeout-minutes: 25
+    timeout-minutes: 32
     steps:
       - uses: actions/checkout@v5
 

@@ -1243,7 +1243,7 @@ async function studiaVideo() {
 // aspetta la bozza dello studio sul video intero: di solito 2–5 minuti; si può chiudere l'app
 async function attendiStudioVideo(prima) {
   faseStudio('L’AI guarda tutto il video, con l’audio… di solito 2–5 minuti. Puoi chiudere l’app: ti avviso su Telegram.');
-  const fine = Date.now() + 25 * 60000;
+  const fine = Date.now() + 32 * 60000;
   while (Date.now() < fine) {
     await new Promise((r) => setTimeout(r, 8000));
     let r;

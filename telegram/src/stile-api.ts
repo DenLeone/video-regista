@@ -158,8 +158,8 @@ export async function gestisciStile(
 
   if (req.method === 'GET' && path === '/api/stile') {
     const a = await ops.leggi<AnalisiVideo>(env, ANALISI);
-    // oltre 30 minuti senza esito: il giro su GitHub è morto senza avvisare
-    const analisi = a && (a.errore || Date.now() - a.quando < 30 * 60000) ? a : null;
+    // oltre 35 minuti senza esito: il giro su GitHub è morto senza avvisare
+    const analisi = a && (a.errore || Date.now() - a.quando < 35 * 60000) ? a : null;
     return json({ salvati: pubblici(await salvati(env, ops)), bozza: bozzaPubblica(await bozza(env, ops)), analisi });
   }
 

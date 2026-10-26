@@ -21,7 +21,7 @@ const ROOT = path.resolve(path.dirname(new URL(import.meta.url).pathname), '..')
 const WORK = path.join(ROOT, 'work', 'studio-stile');
 const GEMINI = process.env.GEMINI_URL || 'https://generativelanguage.googleapis.com';
 const R2_ID = (process.env.R2_ID || '').trim();
-const MODELLI = (process.env.STILE_MODELLI || 'gemini-pro-latest,gemini-flash-latest').split(',').map((m) => m.trim()).filter(Boolean);
+const MODELLI = (process.env.STILE_MODELLI || 'gemini-pro-latest,gemini-flash-latest,gemini-flash-lite-latest').split(',').map((m) => m.trim()).filter(Boolean);
 const MAX_SECONDI = 180; // un riferimento più lungo si studia sui primi 3 minuti
 
 const log = (...a) => console.log('[stile]', ...a);
@@ -159,14 +159,27 @@ async function chiediStile(fileGemini, misure, chiave) {
     generationConfig: { responseMimeType: 'application/json', temperature: 0.3, maxOutputTokens: 16384 },
   };
   let ultimo = '';
+  // 26/10: Pro occupato (429 due volte a 15 s) e Flash oltre i 5 minuti su un video di 96 s →
+  // studio fallito. Ora: Pro 3 tentativi con attesa crescente (o quella chiesta da Google),
+  // Flash fino a 9 minuti, poi Flash Lite. Il giro su GitHub ha 30 minuti in tutto
+  const ATTESA_MAX = { 'gemini-pro-latest': 9, 'gemini-flash-latest': 9, 'gemini-flash-lite-latest': 6 };
   for (const modello of MODELLI) {
-    for (let tentativo = 1; tentativo <= 2; tentativo++) {
+    const tentativi = /pro/.test(modello) ? 3 : 2;
+    for (let tentativo = 1; tentativo <= tentativi; tentativo++) {
       try {
         const r = await fetch(`${GEMINI}/v1beta/models/${modello}:generateContent`, {
           method: 'POST', headers: { 'x-goog-api-key': chiave, 'content-type': 'application/json' },
-          body: JSON.stringify(corpo), signal: AbortSignal.timeout(5 * 60 * 1000),
+          body: JSON.stringify(corpo), signal: AbortSignal.timeout((ATTESA_MAX[modello] || 8) * 60 * 1000),
         });
-        if (r.status === 429 || r.status >= 500) { ultimo = `${modello}: HTTP ${r.status}`; log(ultimo, '(riprovo)'); await attesa(15000); continue; }
+        if (r.status === 429 || r.status >= 500) {
+          ultimo = `${modello}: HTTP ${r.status}`;
+          if (tentativo === tentativi) { log(ultimo, '(passo al modello successivo)'); break; }
+          const chiesta = Number(r.headers.get('retry-after'));
+          const ms = Number.isFinite(chiesta) && chiesta > 0 ? Math.min(90, chiesta) * 1000 : 20000 * tentativo;
+          log(ultimo, `(riprovo tra ${Math.round(ms / 1000)} s)`);
+          await attesa(ms);
+          continue;
+        }
         const j = await json(r, modello);
         const testo = (j.candidates?.[0]?.content?.parts || []).map((p) => p.text || '').join('');
         const letto = leggiRisposta(testo);
