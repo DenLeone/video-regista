@@ -192,8 +192,27 @@ export function frasi(parole, db, durata, { maxDur = 5, minDur = 1.2, pausaMin =
     }
     if (g) g.parole.push(p);
   }
+  // gruppi senza parole che iniziano lì ma dentro la durata di una parola di Whisper: è la fine di
+  // quella parola o la parola dopo con il tempo sbagliato (AI, 26/10: "ufficio che" tenuto 0,36 s,
+  // il "che" vero 1 s dopo in un gruppo "vuoto" buttato via → parole mozzate o sparite). Si uniscono
+  // al gruppo prima se la pausa è breve, sennò a quello dopo
+  // Se è staccato da tutti e due, resta un gruppo suo e si porta dietro la parola che lo copre di più
+  const dentro = (p, g) => Math.min(p.e, g.a) - Math.max(p.s, g.da);
+  for (let k = 0; k < gruppi.length; k++) {
+    const g = gruppi[k];
+    if (g.parole.length) continue;
+    const coprenti = w.filter((p) => dentro(p, g) > 0.05);
+    if (!coprenti.length) continue;
+    const prima = gruppi[k - 1], dopo = gruppi[k + 1];
+    if (prima?.parole.length && g.da - prima.a <= pausaMax) { prima.a = g.a; prima.dopo = g.dopo; gruppi.splice(k--, 1); continue; }
+    if (dopo && dopo.da - g.a <= pausaMax) { dopo.da = g.da; dopo.prima = g.prima; gruppi.splice(k--, 1); continue; }
+    const p = coprenti.reduce((m, x) => (dentro(x, g) > dentro(m, g) ? x : m));
+    const casa = gruppi.find((x) => x.parole.includes(p));
+    if (casa && casa.parole.length > 1 && dentro(p, g) > dentro(p, casa)) { casa.parole = casa.parole.filter((x) => x !== p); g.parole = [p]; }
+    else g.voce = true; // la parola resta dov'è (non si ripete nel testo), ma l'audio si tiene
+  }
   // gruppi senza parole: rumore (mani, oggetti), respiri, "ehm" → fuori
-  gruppi = gruppi.filter((g) => g.parole.length);
+  gruppi = gruppi.filter((g) => g.parole.length || g.voce);
   // 3) un gruppo lunghissimo senza pause (raro): si divide sul punto più silenzioso tra due parole
   const spezza = (g) => {
     if (g.a - g.da <= 8 || g.parole.length < 4) return [g];
@@ -217,7 +236,7 @@ export function frasi(parole, db, durata, { maxDur = 5, minDur = 1.2, pausaMin =
   const pausaDopo = gruppi.map((g, j) => (j < n - 1 ? gruppi[j + 1].da - g.a : Infinity));
   const costoConfine = (j) => {
     if (j === n - 1) return 0;
-    const ultima = gruppi[j].parole[gruppi[j].parole.length - 1].w;
+    const ultima = gruppi[j].parole[gruppi[j].parole.length - 1]?.w || '';
     const forza = Math.min(1, pausaDopo[j] / 0.4) + (finePeriodo(ultima) ? 0.7 : /[,;:]$/.test(ultima) ? 0.3 : 0);
     return 2.5 * Math.max(0, 1 - forza);
   };
@@ -244,7 +263,8 @@ export function frasi(parole, db, durata, { maxDur = 5, minDur = 1.2, pausaMin =
   return unite.map((gr, k) => {
     const primo = gr[0], ultimo = gr[gr.length - 1];
     const inizio = Math.max(0, primo.da - Math.min(0.1, (primo.prima.a - primo.prima.da) / 2));
-    const fine = Math.min(durata, ultimo.a + Math.min(0.15, (ultimo.dopo.a - ultimo.dopo.da) / 2));
+    // coda 0,2 s: le finali sussurrate di Denis stanno sotto la soglia della voce
+    const fine = Math.min(durata, ultimo.a + Math.min(0.2, (ultimo.dopo.a - ultimo.dopo.da) / 2));
     return {
       id: `F${String(k + 1).padStart(3, '0')}`,
       inizio: +inizio.toFixed(3), fine: +fine.toFixed(3),
