@@ -47,7 +47,7 @@ export type Giro = {
 
 export type CardApp = {
   nome: string; fasi: Partial<Record<string, string>>; corrente?: string; minuti: number;
-  fine?: 'ok' | 'ko'; inCoda?: boolean; prova?: number; soloRender?: boolean;
+  fine?: 'ok' | 'ko'; inCoda?: boolean; prova?: number; soloRender?: boolean; errore?: string;
   correzione?: string; brief?: string; versione?: string;
 };
 

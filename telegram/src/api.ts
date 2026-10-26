@@ -9,11 +9,10 @@ import {
 import { verificaAccesso, verificaRegistrazione, type Passkey } from './webauthn';
 import { pushAttivo } from './push';
 import { gestisciStile } from './stile-api';
+import { FASI_APP, faseAttuale, minutiMancanti, motivoChiaro, nomeRiprovabile, schedaFasi, testoMancano } from './stato-giro';
 
 const COOKIE = '__Host-regista';
 const ALFABETO = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
-const FASI = ['scarico', 'prepara', 'regia', 'render', 'carico'] as const;
-const NOME_FASE: Record<string, string> = { scarico: 'Download', prepara: 'Analisi', regia: 'Regia', render: 'Render', carico: 'Upload' };
 
 type FileUp = {
   nome: string; size: number; tipo: string; key: string; uploadId: string;
@@ -148,22 +147,52 @@ function riassuntoUpload(s: SessioneUpload) {
 async function inCorso(env: Segreti, ops: Ops) {
   const g = await ops.giri(env);
   const pendenti = (await ops.pendenti(env)).filter((p) => Date.now() - p.quando < 40 * 60_000);
-  if (typeof g === 'string') return { errore: g, attivi: [] as unknown[], pendenti, ultimi: [] as unknown[] };
+  if (typeof g === 'string') return { errore: g, attivi: [] as unknown[], pendenti, falliti: [] as unknown[], ultimi: [] as unknown[] };
   const attivi = [];
+  const nomiAttivi = new Set<string>();
   for (const w of g.filter((x) => x.status !== 'completed')) {
     const c = await ops.card(env, String(w.id));
+    const inCoda = c?.inCoda ?? !c;
+    const fase = faseAttuale(c?.corrente, inCoda);
+    const nome = c?.nome || 'Montaggio';
+    nomiAttivi.add(nome.toLowerCase());
+    const mancano = minutiMancanti(c?.corrente, inCoda);
     attivi.push({
-      runId: String(w.id), nome: c?.nome || 'Montaggio', fase: c?.corrente || null, faseNome: NOME_FASE[c?.corrente || ''] || 'Preparazione',
-      fasi: FASI.map((id) => ({ id, nome: NOME_FASE[id], dettaglio: c?.fasi?.[id] || '', fatta: c?.fine === 'ok' || (c?.corrente ? FASI.indexOf(c.corrente as typeof FASI[number]) > FASI.indexOf(id) : false) })),
-      minuti: c?.minuti ?? 0, inCoda: c?.inCoda ?? !c, prova: c?.prova, soloRender: c?.soloRender, runUrl: w.html_url,
+      runId: String(w.id), nome, fase, faseNome: FASI_APP.find((f) => f.id === fase)?.nome || 'Installazione',
+      fasi: schedaFasi({ corrente: c?.corrente, inCoda, fasi: c?.fasi }),
+      dettaglio: (c?.corrente && c.fasi?.[c.corrente]) || (inCoda ? 'Il server si sta avviando' : ''),
+      minuti: c?.minuti ?? 0, mancano, mancanoTesto: testoMancano(mancano),
+      inCoda, prova: c?.prova, soloRender: c?.soloRender, runUrl: w.html_url,
     });
   }
+  const limite = Date.now() - 12 * 3600_000;
+  const falliti = [];
+  for (const w of g.filter((x) => x.status === 'completed' && x.conclusion && x.conclusion !== 'success' && x.conclusion !== 'skipped' && x.conclusion !== 'neutral')) {
+    const quando = new Date(w.updated_at || w.created_at).getTime();
+    if (Number.isFinite(quando) && quando < limite) continue;
+    const c = await ops.card(env, String(w.id));
+    if (c?.fine === 'ok') continue;
+    const m = await ops.memo(env, String(w.id));
+    const nome = c?.nome || m?.nome || 'Montaggio';
+    if (nomiAttivi.has(nome.toLowerCase())) continue;
+    falliti.push({
+      runId: String(w.id), nome, errore: motivoChiaro(c?.errore, w.conclusion),
+      puoRiprovare: nomeRiprovabile(m?.nome), runUrl: w.html_url,
+    });
+  }
+  const coda = pendenti.filter((p) => !nomiAttivi.has((p.nome || '').toLowerCase())).map((p) => ({
+    ...p,
+    faseNome: 'Installazione',
+    fasi: schedaFasi({ inCoda: true }),
+    dettaglio: 'In attesa che il server parta',
+    mancanoTesto: testoMancano(minutiMancanti(undefined, true)),
+  }));
   const ultimi = [];
   for (const w of g.filter((x) => x.status === 'completed').slice(0, 8)) {
     const m = await ops.memo(env, String(w.id));
     ultimi.push({ runId: String(w.id), nome: m?.nome || '—', ok: w.conclusion === 'success', quando: w.created_at, runUrl: w.html_url });
   }
-  return { attivi, pendenti, ultimi };
+  return { attivi, pendenti: coda, falliti, ultimi };
 }
 
 function idDalLink(link?: string) {

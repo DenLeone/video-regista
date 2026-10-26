@@ -193,23 +193,36 @@ function demoFatti() {
     { runId: '4', nome: 'Beats pokemon', stile: 'Motion', durata: 35.1, quando: Date.now() - 2 * 864e5 },
   ];
 }
+function barreDemo(corrente, dettaglio) {
+  const elenco = [
+    ['installazione', 'Installazione'], ['scarico', 'Scarico'], ['prepara', 'Analisi'],
+    ['regia', 'Regia'], ['tagli', 'Tagli'], ['render', 'Render'], ['carico', 'Upload'],
+  ];
+  const idx = Math.max(0, elenco.findIndex(([id]) => id === corrente));
+  return elenco.map(([id, nome], i) => ({
+    id, nome, dettaglio: id === corrente ? (dettaglio || '') : '', fatta: i < idx, ora: i === idx, ko: false,
+  }));
+}
 function demoHome() {
-  const corso = new URLSearchParams(location.search).get('stato') === 'corso';
+  const vista = new URLSearchParams(location.search).get('stato');
+  const corso = vista === 'corso' ? {
+    attivi: [{
+      runId: '1001', nome: 'Benchy PETG', fase: 'render', faseNome: 'Render', minuti: 14, inCoda: false,
+      dettaglio: '39 secondi, 12 tagli',
+      mancano: 6, mancanoTesto: 'Mancano circa 6 min',
+      fasi: barreDemo('render', '39 secondi, 12 tagli'),
+    }],
+    pendenti: [], falliti: [], ultimi: [],
+  } : vista === 'fallito' ? {
+    attivi: [], pendenti: [], ultimi: [],
+    falliti: [{
+      runId: '1002', nome: 'Anime', puoRiprovare: true,
+      errore: 'Non trovo la cartella "Anime" in 01 · Da editare.',
+    }],
+  } : { attivi: [], pendenti: [], falliti: [], ultimi: [] };
   return {
     impostazioni: { versione: 'stabile', ai: 'gemini', modello: 'sonnet', gemini: 'flash', stile: 'Blueprint', prova: 'manuale' },
-    stato: corso ? {
-      attivi: [{
-        runId: '1001', nome: 'Benchy PETG', fase: 'regia', faseNome: 'Regia', minuti: 6, inCoda: false,
-        fasi: [
-          { id: 'scarico', nome: 'Download', dettaglio: 'da R2', fatta: true },
-          { id: 'prepara', nome: 'Analisi', dettaglio: '4 sorgenti', fatta: true },
-          { id: 'regia', nome: 'Regia', dettaglio: 'scelgo i tagli', fatta: false },
-          { id: 'render', nome: 'Render', dettaglio: '', fatta: false },
-          { id: 'carico', nome: 'Upload', dettaglio: '', fatta: false },
-        ],
-      }],
-      pendenti: [], ultimi: [],
-    } : { attivi: [], pendenti: [], ultimi: [] },
+    stato: corso,
     video: demoFatti(),
     avvisi: 1, upload: null, push: false, playback: true, r2: true,
   };
@@ -319,23 +332,48 @@ function htmlOggi() {
   const h = stato.home || {};
   const s = h.stato || { attivi: [], pendenti: [], ultimi: [] };
   const attivi = s.attivi || [];
+  const vivo = attivi.length || (s.pendenti || []).length || (s.falliti || []).length;
   return `<header class="top"><div class="marca"><i>▷</i> Regista</div><span class="avviso">${h.avvisi ? `${h.avvisi} avviso` : ''}</span></header>
     <div class="intro"><p class="kicker">Oggi</p><h1>Ciao Denis</h1></div>
     <div class="vivo" data-vivo>${htmlStato(s)}</div>
     ${h.upload && !h.upload.avviato ? `<div class="banner attenzione">${h.upload.pronto ? 'Il girato è pronto.' : 'C’è un caricamento aperto.'} <button class="btn mini" data-azione="vai" data-verso="carica">Apri</button></div>` : ''}
     <section class="ultimi"><h2>Ultimi</h2><div class="lista">${(h.video || []).map((v) => rigaVideo(v)).join('') || '<p class="vuoto">Ancora niente. Carica un girato o avvia una cartella.</p>'}</div>
-    ${attivi.length ? '' : '<p class="nota piede">Lo stato si aggiorna da solo mentre l’app è aperta.</p>'}</section>`;
+    ${vivo ? '' : '<p class="nota piede">Lo stato si aggiorna da solo mentre l’app è aperta.</p>'}</section>`;
+}
+
+function htmlCorso(a) {
+  const fasi = a.fasi || [];
+  return `<article class="card">
+      <p class="kicker">In corso · ${esc(a.faseNome || 'Installazione')}</p>
+      <h2>${esc(a.nome || 'Montaggio')}</h2>
+      <div class="fasi">${fasi.map((f) => `<i class="fase${f.fatta ? ' fatta' : ''}${f.ora ? ' ora' : ''}${f.ko ? ' ko' : ''}" title="${esc(f.nome)}"></i>`).join('')}</div>
+      <div class="nomi-fasi">${fasi.map((f) => `<span class="${f.fatta ? 'fatta' : ''}${f.ora ? ' ora' : ''}${f.ko ? ' ko' : ''}">${esc(f.nome)}</span>`).join('')}</div>
+      <p class="meta">${esc(a.dettaglio || fasi.find((f) => f.ora)?.dettaglio || '')}</p>
+      ${a.mancanoTesto ? `<p class="manca">${esc(a.mancanoTesto)}</p>` : ''}
+    </article>`;
+}
+
+function htmlFallito(f) {
+  return `<article class="card errore-giro">
+      <p class="kicker">Non riuscito</p>
+      <h2>${esc(f.nome || 'Montaggio')}</h2>
+      <p class="motivo">${esc(f.errore || 'Si è fermato senza un motivo scritto.')}</p>
+      ${f.puoRiprovare ? `<button class="btn primario" data-azione="riprova-giro" data-verso="${esc(f.runId)}">Riprova</button>` : ''}
+    </article>`;
 }
 
 function htmlStato(s) {
   const attivi = s.attivi || [];
-  if (!attivi.length && !(s.pendenti || []).length) return '<div class="card piatta"><p class="vuoto">Nessun montaggio in corso.</p></div>';
-  return attivi.map((a) => `<article class="card">
-      <p class="kicker">${esc(a.faseNome || 'In corso')} · ${a.minuti || 0} min</p>
-      <h2>${esc(a.nome)}</h2>
-      <div class="fasi">${(a.fasi || []).map((f) => `<i class="fase${f.fatta ? ' fatta' : ''}${f.id === a.fase ? ' ora' : ''}" title="${esc(f.nome)}"></i>`).join('')}</div>
-      <p class="meta">${esc((a.fasi || []).find((f) => f.id === a.fase)?.dettaglio || a.faseNome || '')}</p>
-    </article>`).join('') + (s.pendenti || []).map((p) => `<article class="card piatta"><h2>${esc(p.nome || 'In coda')}</h2><p class="meta">In attesa del server</p></article>`).join('');
+  const pendenti = s.pendenti || [];
+  const falliti = s.falliti || [];
+  if (!attivi.length && !pendenti.length && !falliti.length) return '<div class="card piatta"><p class="vuoto">Nessun montaggio in corso.</p></div>';
+  return [
+    ...attivi.map(htmlCorso),
+    ...pendenti.map((p) => p.fasi
+      ? htmlCorso({ ...p, nome: p.nome || 'In coda', faseNome: p.faseNome || 'Installazione', dettaglio: p.dettaglio || 'In attesa che il server parta' })
+      : `<article class="card piatta"><h2>${esc(p.nome || 'In coda')}</h2><p class="meta">In attesa del server</p></article>`),
+    ...falliti.map(htmlFallito),
+  ].join('');
 }
 
 function rigaVideo(v) {
@@ -630,6 +668,15 @@ document.addEventListener('click', async (e) => {
     else if (azione === 'apri-video') await apriVideo(verso);
     else if (azione === 'ricarica-video') { stato.video = (await api('/api/video')).video || []; disegna(); }
     else if (azione === 'video') await azioneVideo(verso);
+    else if (azione === 'riprova-giro') {
+      if (DEMO) { toast('In demo non rilancio un giro vero.'); return; }
+      el.disabled = true;
+      await api(`/api/video/${encodeURIComponent(verso)}`, { method: 'POST', body: { azione: 'riprova' } });
+      toast('Riparto con gli stessi dati.');
+      const fresco = await api('/api/stato');
+      if (stato.home) stato.home.stato = fresco;
+      disegna();
+    }
     else if (azione === 'salva-didascalia') await azioneVideo('didascalia', root.querySelector('#didascalia').value);
     else if (azione === 'salva-titolo') await azioneVideo('titolo', root.querySelector('#titolo-yt').value);
     else if (azione === 'correggi') await azioneVideo('correggi', root.querySelector('#correzione').value);
