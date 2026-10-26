@@ -1,16 +1,27 @@
 #!/usr/bin/env bash
-# Pacchetti di Ubuntu per i giri su GitHub (regista.yml, stile.yml). Il server che usa GitHub
-# (azure.archive.ubuntu.com) il 25 e 26/10 è rimasto appeso per 10 minuti e il montaggio non partiva:
-# se non risponde si passa agli altri server ufficiali di Ubuntu, con tempi massimi brevi.
+# Pacchetti di Ubuntu per i giri su GitHub (regista.yml, stile.yml). Il 25 e 26/10 l'installazione è
+# rimasta appesa per 10 minuti: "apt-get update" interroga anche gli archivi extra dell'immagine di
+# GitHub (Microsoft, PPA…) e ne basta uno fermo. Qui si legge SOLO l'archivio di Ubuntu, e se il suo
+# server non risponde si passa agli altri server ufficiali, con tempi massimi brevi. Il log dice
+# quale passaggio si è fermato.
 set -uo pipefail
 APT="-o Acquire::Retries=2 -o Acquire::http::Timeout=20 -o Acquire::https::Timeout=20"
+SOLO=$(mktemp -d)
+[ -s /etc/apt/sources.list.d/ubuntu.sources ] && sudo cp /etc/apt/sources.list.d/ubuntu.sources "$SOLO/ubuntu.sources"
+grep -qiE '^deb .*ubuntu\.com' /etc/apt/sources.list 2>/dev/null && sudo cp /etc/apt/sources.list "$SOLO/ubuntu.list"
+ls "$SOLO" | sed 's/^/archivi usati: /'
+LISTE="-o Dir::Etc::sourcelist=/dev/null -o Dir::Etc::sourceparts=$SOLO"
 for server in azure.archive.ubuntu.com archive.ubuntu.com us.archive.ubuntu.com; do
-  # ubuntu.sources (24.04) e sources.list (vecchie immagini): stesso server per i pacchetti e per la sicurezza
-  sudo sed -i -E "s#https?://[a-z.]*archive\.ubuntu\.com#http://$server#g; s#https?://security\.ubuntu\.com#http://$server#g" \
-    /etc/apt/sources.list.d/ubuntu.sources /etc/apt/sources.list 2>/dev/null || true
+  sudo sed -i -E "s#https?://[a-z.]*archive\.ubuntu\.com#http://$server#g; s#https?://security\.ubuntu\.com#http://$server#g" "$SOLO"/* 2>/dev/null || true
   echo "server di Ubuntu: $server"
-  sudo timeout 120 apt-get $APT update -qq && sudo timeout 180 apt-get $APT install -y -qq "$@" && exit 0
-  echo "$server lento o fermo: provo il prossimo"
+  t=$SECONDS
+  if ! sudo timeout 120 apt-get $APT $LISTE update -q; then echo "elenco pacchetti fermo dopo $((SECONDS - t)) s: provo il prossimo"; continue; fi
+  echo "elenco pacchetti in $((SECONDS - t)) s"
+  t=$SECONDS
+  if sudo timeout 240 apt-get $APT $LISTE install -y -q "$@" > /tmp/apt-install.log 2>&1; then
+    echo "installati in $((SECONDS - t)) s: $*"; exit 0
+  fi
+  echo "installazione ferma dopo $((SECONDS - t)) s:"; tail -n 5 /tmp/apt-install.log
 done
-echo "::error::programmi non installati: tutti i server di Ubuntu lenti o fermi, riprova tra qualche minuto"
+echo "::error::programmi non installati: server di Ubuntu lenti o fermi, riprova tra qualche minuto"
 exit 1
