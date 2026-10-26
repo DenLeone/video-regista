@@ -163,6 +163,14 @@ jobs:
         with:
           python-version: '3.12'
 
+      - name: Cache strumenti
+        # stessa chiave di stile.yml, laboratorio.yml e del giro «strumenti»: un solo scarico
+        if: steps.check.outputs.cartella != '' && inputs.azione != 'regia' && inputs.azione != 'archivio'
+        uses: actions/cache@v4
+        with:
+          path: ~/opt/regista-strumenti
+          key: regista-strumenti-v2-${{ runner.os }}
+
       - name: Dipendenze
         id: dipendenze
         # la prova della sola regia non tocca video: niente ffmpeg né Remotion
@@ -176,6 +184,8 @@ jobs:
           # Server di Ubuntu fermo (25-26/10: 10 minuti appesi): a ogni giro si cambia server ufficiale
           bash scripts/apt-ubuntu.sh ffmpeg fonts-noto-color-emoji libegl1 libgles2
           command -v ffmpeg >/dev/null || { echo "::error::ffmpeg non installato (server dei pacchetti di Ubuntu irraggiungibile)"; exit 1; }
+          # build in cache (arnndn, vidstab, libass, libvmaf) davanti a quella di apt; se manca, resta apt
+          bash scripts/installa-strumenti.sh
           npm ci || npm install
           # Telethon (MTProto) per scaricare i file grandi mandati al bot; cryptg lo rende molto più veloce
           if [ -n "$TELEGRAM" ] && [ "$TELEGRAM" != "[]" ]; then pip install --quiet telethon cryptg; fi

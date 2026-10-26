@@ -1,0 +1,27 @@
+name: strumenti
+
+# Solo installazione e controllo (ffmpeg, font, PySceneDetect, auto-editor).
+# Nessun montaggio, nessun secret, nessun Drive. Serve a riempire la cache
+# e a vedere quanto dura lo step, senza spendere i minuti di un video.
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  prova:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Cache strumenti
+        uses: actions/cache@v4
+        with:
+          path: ~/opt/regista-strumenti
+          key: regista-strumenti-v2-${{ runner.os }}
+
+      - name: Installa e controlla
+        timeout-minutes: 6
+        run: bash scripts/installa-strumenti.sh
