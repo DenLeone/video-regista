@@ -331,6 +331,16 @@ jobs:
           df -h / /mnt | sed 's/^/  /'
           # Claude Code si installa da solo solo se serve (Gemini è l'AI principale)
 
+      - name: Prova dei tagli in parallelo
+        # Stesso test del bot. Lì ffmpeg non c'è e il test si salta; qui c'è e non deve saltare.
+        if: steps.check.outputs.cartella != '' && inputs.azione != 'regia' && inputs.azione != 'archivio'
+        run: |
+          node --experimental-strip-types --import ./telegram/test/register.mjs --test --test-reporter=tap telegram/test/tagli-paralleli.test.ts | tee /tmp/tagli-prova.tap
+          if grep -q '# SKIP' /tmp/tagli-prova.tap; then
+            echo "::error::la prova dei tagli è stata saltata: serve ffmpeg con libx264"
+            exit 1
+          fi
+
       - name: Monta
         id: monta
         if: steps.check.outputs.cartella != ''
