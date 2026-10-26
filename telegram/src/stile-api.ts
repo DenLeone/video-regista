@@ -222,10 +222,14 @@ export async function gestisciStile(
     const b = await bozza(env, ops);
     if (!b?.testo) return errore(400, 'Non c’è uno stile da salvare.');
     const lista = await salvati(env, ops);
-    const id = b.salvatoId && lista.some((s) => s.id === b.salvatoId) ? b.salvatoId : nuovoId();
+    // si sovrascrive lo stile aperto solo se lo salvi con lo stesso nome: con un nome diverso è
+    // uno stile nuovo (26/10: "Strategic Creator" salvato sopra Cinematic Talk lo ha cancellato)
+    const aperto = b.salvatoId ? lista.find((s) => s.id === b.salvatoId) : undefined;
+    const stesso = aperto && aperto.nome.toLowerCase() === nome.toLowerCase();
+    const id = stesso ? aperto.id : nuovoId();
     const occupato = nomeLibero(ops, lista, nome, id);
     if (occupato) return errore(400, occupato);
-    if (!b.salvatoId && lista.length >= MAX) return errore(400, 'Troppi stili salvati. Eliminane uno.');
+    if (!stesso && lista.length >= MAX) return errore(400, 'Troppi stili salvati. Eliminane uno.');
     const prima = lista.find((s) => s.id === id)?.nome;
     const testo = conNome(b.testo, nome);
     const voce: StileSalvato = { id, nome, testo, quando: Date.now(), desc: descrizioneStile(testo) };
@@ -361,8 +365,18 @@ export async function riceviEsitoStile(env: Segreti, ops: Ops, dati: Record<stri
 export async function correggiStileSalvato(env: Segreti, ops: Ops, dati: Record<string, unknown>): Promise<Response> {
   const nome = String(dati.nome || '').trim().toLowerCase();
   const lista = await salvati(env, ops);
-  const voce = lista.find((s) => s.nome.toLowerCase() === nome);
+  // `testo` (stile intero): ripristina uno stile perso o lo crea se nell'app non c'è
+  const intero = typeof dati.testo === 'string' && dati.testo.trim() ? dati.testo.slice(0, 12000) : '';
+  let voce = lista.find((s) => s.nome.toLowerCase() === nome);
+  if (!voce && intero) {
+    const pulito = nomeStilePulito(String(dati.nome || ''));
+    if (!pulito) return errore(400, 'Nome non valido.');
+    if (lista.length >= MAX) return errore(400, 'Troppi stili salvati.');
+    voce = { id: nuovoId(), nome: pulito, testo: '', quando: Date.now(), desc: '' };
+    lista.unshift(voce);
+  }
   if (!voce) return errore(404, `Nessuno stile salvato nell’app con questo nome. Ci sono: ${lista.map((s) => s.nome).join(', ') || 'nessuno'}.`);
+  if (intero) voce.testo = intero;
   const campi = (dati.campi && typeof dati.campi === 'object' ? dati.campi : {}) as Record<string, string | null>;
   const note = Array.isArray(dati.note) ? dati.note.map(String).slice(0, 10) : [];
   const testo = conNome(applicaCorrezioni(voce.testo, campi, note), voce.nome);

@@ -418,4 +418,27 @@ test('correzione di uno stile salvato: sostituisce, toglie, aggiunge e copia su 
   assert.equal(/Volume musica/.test(nuovo), false);
   assert.match(nuovo, /^# DA CREARE: invito finale$/m);
   assert.ok(nuovo.indexOf('Font apertura') < nuovo.indexOf('# --- REGIA'));
+
+  // ripristino di uno stile perso, con il testo intero
+  const perso = testo.replace('Cinematic Talk', 'Vecchio stile');
+  const rip = await correggiStileSalvato(e, ops, { nome: 'Vecchio stile', campi: {}, testo: perso });
+  assert.equal(rip.status, 200);
+  assert.deepEqual((db.get('app:stili') as { nome: string }[]).map((s) => s.nome), ['Vecchio stile', 'Cinematic Talk']);
+}));
+
+test('salvare con un altro nome lo stile aperto crea uno stile nuovo, non lo sovrascrive', async () => serie(async () => {
+  const { ops, db } = memoria();
+  const e = env();
+  const testo = 'Nome: Cinematic Talk\nSottotitoli: parola\nLook: naturale\nRitmo dei tagli: disteso\nInquadrature: piano medio';
+  db.set('app:stili', [{ id: 'ct1', nome: 'Cinematic Talk', testo, quando: 1, desc: '' }]);
+  const post = (path: string, body: unknown) => gestisciStile(new Request(`https://regista.test${path}`, {
+    method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body),
+  }), e, ops, path);
+  assert.equal((await post('/api/stile/apri', { id: 'ct1' })).status, 200);
+  assert.equal((await post('/api/stile/salva', { nome: 'Strategic Creator' })).status, 200);
+  assert.deepEqual((db.get('app:stili') as { nome: string }[]).map((s) => s.nome).sort(), ['Cinematic Talk', 'Strategic Creator']);
+  // con lo stesso nome invece si aggiorna
+  assert.equal((await post('/api/stile/apri', { id: 'ct1' })).status, 200);
+  assert.equal((await post('/api/stile/salva', { nome: 'Cinematic Talk' })).status, 200);
+  assert.equal((db.get('app:stili') as unknown[]).length, 2);
 }));
