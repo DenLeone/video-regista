@@ -35,11 +35,9 @@ jobs:
           node-version: 22
 
       - name: Programmi
-        timeout-minutes: 10
+        timeout-minutes: 16
         run: |
-          APT="-o Acquire::Retries=3 -o Acquire::http::Timeout=30 -o Acquire::https::Timeout=30"
-          for i in 1 2 3; do sudo timeout 180 apt-get $APT update -qq && break; done
-          for i in 1 2 3; do sudo timeout 300 apt-get $APT install -y -qq ffmpeg && break; done
+          bash scripts/apt-ubuntu.sh ffmpeg
           curl -fsSL https://rclone.org/install.sh | sudo bash > /dev/null
 
       - name: Drive (solo per le prove da Drive)
