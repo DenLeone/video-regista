@@ -141,6 +141,16 @@ function prompt({ durata, tagli, taglioMedio }) {
   ].join('\n');
 }
 
+// Il timeout di fetch in inglese («The operation was aborted due to timeout») arrivava
+// così nell'app. Qui diventa una frase italiana, senza cambiare i tentativi sui modelli.
+export function testoErroreModello(modello, e) {
+  const nome = String(modello || 'modello');
+  const raw = String(e?.message || e || 'errore');
+  const timeout = e?.name === 'TimeoutError' || e?.name === 'AbortError' || /aborted due to timeout|operation was aborted/i.test(raw);
+  const msg = timeout ? 'tempo scaduto' : raw.replace(/\s+/g, ' ').slice(0, 140);
+  return `${nome}: ${msg || 'errore'}`;
+}
+
 function leggiRisposta(testo) {
   const t = String(testo || '').trim().replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/i, '');
   const i = t.indexOf('{'), j = t.lastIndexOf('}');
@@ -186,7 +196,7 @@ async function chiediStile(fileGemini, misure, chiave) {
         if (letto) { log(`stile scritto da ${modello}`); return { ...letto, modello }; }
         ultimo = `${modello}: risposta illeggibile`;
         log(ultimo);
-      } catch (e) { ultimo = `${modello}: ${e.message}`; log(ultimo); }
+      } catch (e) { ultimo = testoErroreModello(modello, e); log(ultimo); }
       break;
     }
   }

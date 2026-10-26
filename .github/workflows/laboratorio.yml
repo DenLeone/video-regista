@@ -41,10 +41,15 @@ jobs:
           printf '%s\n' "$RCLONE_CONF" > ~/.config/rclone/rclone.conf
           rclone lsf "gdrive:$DIR_FATTI" --dirs-only > /dev/null && echo "Drive OK"
 
+      - name: Cache strumenti
+        uses: actions/cache@v4
+        with:
+          path: ~/opt/regista-strumenti
+          key: regista-strumenti-v2-${{ runner.os }}
+
       - name: ffmpeg
-        run: |
-          sudo apt-get update -qq
-          sudo apt-get install -y -qq ffmpeg fonts-dejavu-core
+        timeout-minutes: 8
+        run: bash scripts/installa-strumenti.sh
 
       - uses: actions/setup-node@v5
         with:

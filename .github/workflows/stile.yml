@@ -34,10 +34,16 @@ jobs:
         with:
           node-version: 22
 
+      - name: Cache strumenti
+        uses: actions/cache@v4
+        with:
+          path: ~/opt/regista-strumenti
+          key: regista-strumenti-v2-${{ runner.os }}
+
       - name: Programmi
-        timeout-minutes: 16
+        timeout-minutes: 8
         run: |
-          bash scripts/apt-ubuntu.sh ffmpeg
+          bash scripts/installa-strumenti.sh
           curl -fsSL https://rclone.org/install.sh | sudo bash > /dev/null
 
       - name: Drive (solo per le prove da Drive)

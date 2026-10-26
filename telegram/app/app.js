@@ -541,8 +541,9 @@ function htmlErroreStile(s) {
   if (!s.errore) return '';
   // sotto resta lo stile di prima: non è stato toccato (26/10, sembrava che lo studio fallito
   // avesse sostituito Cinematic Talk)
+  const testo = String(s.errore).replace(/The operation was aborted due to timeout/gi, 'tempo scaduto').replace(/aborted due to timeout/gi, 'tempo scaduto');
   const prima = s.bozza?.nome ? ` «${esc(s.bozza.nome)}» qui sotto è quello di prima: non è stato toccato.` : '';
-  return `<div class="card errore-stile" data-errore-stile><p class="kicker">Non è andata</p><p>${esc(s.errore)}</p><small class="meta">Premi di nuovo Studia per riprovare.${prima}</small></div>`;
+  return `<div class="card errore-stile" data-errore-stile><p class="kicker">Non è andata</p><p>${esc(testo)}</p><small class="meta">Premi di nuovo Studia per riprovare.${prima}</small></div>`;
 }
 
 function htmlStile() {
@@ -550,7 +551,7 @@ function htmlStile() {
   if (s.fase === 'studio' && s.bozza?.haTesto) {
     const b = s.bozza;
     return `<button class="btn ghost" data-azione="studio-elenco">Elenco</button>
-      <div class="intro"><p class="kicker">Stile</p><h1>${esc(b.nome || 'Bozza')}</h1></div>
+      <div class="intro"><p class="kicker">${s.errore ? 'Bozza precedente' : 'Stile'}</p><h1>${esc(b.nome || 'Bozza')}</h1></div>
       ${htmlErroreStile(s)}
       <div class="card scheda-stile">${righeRiassunto(b.riassunto)}</div>
       ${b.voce === false ? '<p class="nota">Senza trascrizione: solo fotogrammi e ritmo.</p>' : ''}
@@ -576,7 +577,7 @@ function htmlStile() {
       <p class="nota">Il video va su Cloudflare a pezzi (si riprende se si interrompe), poi l’AI lo guarda tutto, con l’audio, in 2–5 minuti: puoi chiudere l’app, ti avviso su Telegram. Non apre un montaggio e non compare in Oggi.</p>
       <p class="nota" data-upload-stile>${esc(s.nota || '')}</p>
     </div>
-    ${s.bozza?.haTesto ? `<div class="card scheda-stile"><p class="kicker">Bozza</p>${righeRiassunto(s.bozza.riassunto)}<button class="btn pieno" data-azione="studio-continua">Continua</button></div>` : ''}
+    ${s.bozza?.haTesto ? `<div class="card scheda-stile"${s.errore ? ' data-bozza-precedente' : ''}><p class="kicker">${s.errore ? 'Bozza precedente' : 'Bozza'}</p>${s.errore ? '<p class="meta">Non è il risultato di questo studio: è la bozza di prima.</p>' : ''}${righeRiassunto(s.bozza.riassunto)}<button class="btn pieno" data-azione="studio-continua">${s.errore ? 'Apri la bozza di prima' : 'Continua'}</button></div>` : ''}
     <h2>Salvati</h2>
     <div class="lista">${salvati.length ? salvati.map((v) => `<article class="card">
         <strong>${esc(v.nome)}</strong>

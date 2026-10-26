@@ -163,19 +163,25 @@ jobs:
         with:
           python-version: '3.12'
 
+      - name: Cache strumenti
+        # stessa chiave di stile.yml, laboratorio.yml e del giro «strumenti»: un solo scarico
+        if: steps.check.outputs.cartella != '' && inputs.azione != 'regia' && inputs.azione != 'archivio'
+        uses: actions/cache@v4
+        with:
+          path: ~/opt/regista-strumenti
+          key: regista-strumenti-v2-${{ runner.os }}
+
       - name: Dipendenze
         id: dipendenze
         # la prova della sola regia non tocca video: niente ffmpeg né Remotion
         if: steps.check.outputs.cartella != '' && inputs.azione != 'regia' && inputs.azione != 'archivio'
-        # di solito ~30 s; il 22/10 un mirror di Ubuntu bloccato l'ha tenuto fermo 20 minuti
-        timeout-minutes: 16
+        # con la cache: pochi secondi. Senza: uno scarico da GitHub, non i mirror di Ubuntu
+        # (26/10, run 40337595283: apt fermo 10 minuti e giro fallito)
+        timeout-minutes: 8
         env:
           TELEGRAM: ${{ inputs.telegram }}
         run: |
-          # libegl1 e libgles2: servono a MediaPipe (ritaglio della persona per le scritte dietro, stili su misura).
-          # Server di Ubuntu fermo (25-26/10: 10 minuti appesi): a ogni giro si cambia server ufficiale
-          bash scripts/apt-ubuntu.sh ffmpeg fonts-noto-color-emoji libegl1 libgles2
-          command -v ffmpeg >/dev/null || { echo "::error::ffmpeg non installato (server dei pacchetti di Ubuntu irraggiungibile)"; exit 1; }
+          bash scripts/installa-strumenti.sh
           npm ci || npm install
           # Telethon (MTProto) per scaricare i file grandi mandati al bot; cryptg lo rende molto più veloce
           if [ -n "$TELEGRAM" ] && [ "$TELEGRAM" != "[]" ]; then pip install --quiet telethon cryptg; fi
