@@ -12,7 +12,7 @@ function memoria(): { ops: Ops; db: Map<string, unknown>; telegram: string[] } {
   const telegram: string[] = [];
   const imp: Imp = { versione: 'stabile', ai: 'gemini', modello: 'sonnet', gemini: 'flash', stile: 'Blueprint', prova: 'manuale' };
   const ops: Ops = {
-    chat: () => '8332006597',
+    chat: () => '111111111',
     leggi: async <T,>(_e: Segreti, k: string) => db.get(k) as T | undefined,
     scrivi: async (_e, k, v) => { db.set(k, v); },
     cancella: async (_e, k) => { db.delete(k); },
@@ -49,7 +49,7 @@ function memoria(): { ops: Ops; db: Map<string, unknown>; telegram: string[] } {
 
 function env(extra: Partial<Segreti> = {}): Segreti {
   return {
-    TELEGRAM_BOT_TOKEN: 't', TELEGRAM_SECRET: 's', ALLOWED_CHAT_ID: '8332006597,933961188',
+    TELEGRAM_BOT_TOKEN: 't', TELEGRAM_SECRET: 's', ALLOWED_CHAT_ID: '111111111,222222222',
     GITHUB_TOKEN: 'g', GITHUB_REPO: 'DenLeone/video-regista', NOTIFY_TOKEN: 'n',
     APP_SETUP_CODE: 'SEGRETO-DENIS',
     R2_ACCOUNT_ID: 'a'.repeat(32), R2_ACCESS_KEY_ID: 'AKIATEST', R2_SECRET_ACCESS_KEY: 'secretsecretsecret',
