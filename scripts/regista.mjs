@@ -31,6 +31,7 @@ import { movimento, syncMovimento } from './sync-visivo.mjs';
 import { LOOK_FFMPEG, leggiStile, promptSuMisura } from './stile-su-misura.mjs';
 import { chiaveStileR2, preparaStileApp } from './stile-app.mjs';
 import { bloccoRemoteR2, comandiCancellaR2, comandiCopiaDrive, comandiScaricoR2 } from './rete.mjs';
+import { scegliCartella } from './scegli-cartella.mjs';
 import { AUDIO_EXT, IMAGE_EXT, NOMI_DISPOSITIVO, VIDEO_EXT, dispositivo, prioritaAudio, tagsPiatti } from './sorgenti.mjs';
 
 const REMOTE = process.env.REGISTA_REMOTE || 'gdrive';
@@ -218,10 +219,9 @@ function cartellaNonTrovata(nome, errore) {
 // stessa cartella a meno di spazi e maiuscole: su Drive "Manifestazioni " (spazio in fondo), dal bot
 // "Manifestazioni" (20/10: due montaggi falliti con "non trovo la cartella"). Il nome vero o null
 function cartellaUguale(nome) {
-  const norm = (t) => String(t).toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/\s+/g, ' ').trim();
   try {
-    const uguali = JSON.parse(rclone('lsjson', remote(SRC_DIR), '--dirs-only')).map((x) => x.Name).filter((x) => norm(x) === norm(nome));
-    return uguali.length === 1 ? uguali[0] : null;
+    const nomi = JSON.parse(rclone('lsjson', remote(SRC_DIR), '--dirs-only')).map((x) => x.Name);
+    return scegliCartella(nome, nomi);
   } catch { return null; }
 }
 
@@ -229,13 +229,14 @@ function trovaCartella() {
   if (DA_R2) return { nome: nomeLibero(process.env.CARTELLA), files: [], vai: null };
   if (DA_TELEGRAM) return { nome: nomeLibero(process.env.CARTELLA), files: [], vai: null };
   // avvio da Telegram/manuale con cartella esplicita: VAI non obbligatorio
-  if (process.env.CARTELLA) {
-    let nome = process.env.CARTELLA;
+  const richiesta = String(process.env.CARTELLA || '').trim();
+  if (richiesta) {
+    let nome = richiesta;
     let files;
     try { files = JSON.parse(rclone('lsjson', remote(SRC_DIR, nome), '--files-only')); } catch (e) {
       const vero = cartellaUguale(nome);
-      if (!vero || vero === nome) throw cartellaNonTrovata(nome, e);
-      log(`cartella "${nome}" trovata come "${vero}"`);
+      if (!vero) throw cartellaNonTrovata(nome, e);
+      if (vero !== nome) log(`cartella "${nome}" trovata come "${vero}"`);
       nome = vero;
       files = JSON.parse(rclone('lsjson', remote(SRC_DIR, nome), '--files-only'));
     }
@@ -301,7 +302,9 @@ function misuraPerLook(s, start, dur) {
   return r && pelleSimile && Math.abs(m.medio - r.medio) < 0.05 && Math.abs(m.nero - r.nero) < 0.03 && Math.abs(m.bianco - r.bianco) < 0.08 ? r : m;
 }
 // `lento` (rallentatore): `dur` secondi di sorgente stirati di quel fattore, a `fps` fotogrammi al secondo
-function taglia(s, start, dur, out, conAudio, senzaLook = false, zoom = 1, lento = 1, fps = 30) {
+// Stessi argomenti di prima, con -threads fissi: 4 tagli insieme non saturano la CPU e due giri
+// sullo stesso pezzo restano identici (il preset e il crf del master non cambiano).
+export function comandiTaglio(s, start, dur, out, conAudio, senzaLook = false, zoom = 1, lento = 1, fps = 30) {
   // repertorio orizzontale: ritaglio centrale 9:16, poi lo zoom
   const ritaglio = (s.ritaglia916 ? 'crop=trunc(ih*9/16/2)*2:ih,' : '') + (zoom > 1 ? `crop=trunc(iw/${zoom}/2)*2:trunc(ih/${zoom}/2)*2,` : '');
   const rallenta = lento > 1 ? `setpts=${lento}*PTS,` : '';
@@ -315,11 +318,37 @@ function taglia(s, start, dur, out, conAudio, senzaLook = false, zoom = 1, lento
       : (m.pelle != null && m.pelle < 0.2) || m.medio < 0.25 ? curvaChiara(m, { obiettivo: 0.45, obiettivoPelle: 0.3 }) : null;
     if (m) log(`  ${path.basename(out)}: soggetto ${m.medio.toFixed(2)}${m.pelle != null ? `, volto ${m.pelle.toFixed(2)}` : ''}, neri ${m.nero.toFixed(2)}, bianchi ${m.bianco.toFixed(2)}${curva ? ` → curva ${curva}` : ''}`);
   }
-  run('ffmpeg', ['-y', '-v', 'error', '-ss', start.toFixed(3), '-i', s.originale, '-t', (dur * lento + 0.1).toFixed(3),
+  return ['-y', '-v', 'error', '-ss', start.toFixed(3), '-i', s.originale, '-t', (dur * lento + 0.1).toFixed(3),
     '-vf', `${rallenta}${ritaglio}scale='if(gt(iw,ih),1920,1080)':-2:flags=lanczos,${senzaLook ? filtroTecnico(s.colore) : filtroColore(s.colore, curva)}`,
     ...(lento > 1 ? ['-r', String(fps)] : []),
+    '-threads', '2',
     '-c:v', 'libx264', '-preset', 'veryfast', '-crf', '16', '-pix_fmt', 'yuv420p', ...TAG_709,
-    ...(conAudio && lento === 1 ? ['-c:a', 'aac', '-b:a', '160k'] : ['-an']), '-movflags', '+faststart', out]);
+    ...(conAudio && lento === 1 ? ['-c:a', 'aac', '-b:a', '160k'] : ['-an']), '-movflags', '+faststart', out];
+}
+function eseguiUno(cmd, args) {
+  return new Promise((ok, ko) => {
+    const c = spawn(cmd, args, { stdio: ['ignore', 'inherit', 'inherit'] });
+    c.on('error', ko);
+    c.on('close', (code) => (code === 0 ? ok() : ko(new Error(`${cmd} terminato con codice ${code}`))));
+  });
+}
+async function pool(lavori, lavoratori) {
+  let i = 0;
+  let errore = null;
+  const n = Math.max(1, Math.min(lavoratori, lavori.length || 1));
+  async function lavoratore() {
+    while (!errore) {
+      const k = i++;
+      if (k >= lavori.length) return;
+      try { await lavori[k](); }
+      catch (e) { errore = e; return; }
+    }
+  }
+  await Promise.all(Array.from({ length: Math.min(n, lavori.length) }, lavoratore));
+  if (errore) throw errore;
+}
+export async function eseguiFfmpeg(lista, lavoratori = 4) {
+  await pool(lista.map((args) => () => eseguiUno('ffmpeg', args)), lavoratori);
 }
 
 function troncaPiano(piano, secondi) {
@@ -421,8 +450,10 @@ async function scaricaStock(regia, analisi) {
 }
 
 const ZOOM_PUNCH = 1.18; // come in src/comune.tsx
-function tagliaSegmenti(piano, analisi) {
+const TAGLI_INSIEME = 4;
+async function tagliaSegmenti(piano, analisi) {
   const perFile = new Map(analisi.sorgenti.filter((s) => s.tipo === 'video').map((s) => [s.file, s]));
+  const lavori = [];
   piano.clips.forEach((c, i) => {
     const s = perFile.get(c.file);
     if (!s) throw new Error(`sorgente sconosciuta ${c.file}`);
@@ -432,20 +463,31 @@ function tagliaSegmenti(piano, analisi) {
     const zoom = c.punch && s.orient !== 'h' ? ZOOM_PUNCH : 1;
     // rallentatore: dur è la durata sul video, della sorgente ne serve dur / lento
     const lento = c.lento > 1 ? c.lento : 1;
-    taglia(s, c.start, dur / lento, path.join(MEDIA, seg), !c.audio && !c.muto && s.haAudio, false, zoom, lento, piano.fps || 30);
-    Object.assign(c, { file: seg, start: 0, end: +dur.toFixed(3), sorgente: s.id, daSorgente: c.start });
-    if (zoom > 1) c.punch = false;
-    delete c.lento; // il pezzo è già al rallentatore
+    const start = c.start;
+    // la curva del look si misura adesso, in ordine: due pezzi della stessa ripresa non si pestano i piedi
+    const args = comandiTaglio(s, start, dur / lento, path.join(MEDIA, seg), !c.audio && !c.muto && s.haAudio, false, zoom, lento, piano.fps || 30);
+    lavori.push(async () => {
+      await eseguiUno('ffmpeg', args);
+      Object.assign(c, { file: seg, start: 0, end: +dur.toFixed(3), sorgente: s.id, daSorgente: start });
+      if (zoom > 1) c.punch = false;
+      delete c.lento; // il pezzo è già al rallentatore
+    });
     // inserto video: il suo pezzo, muto e senza look creativo (le schermate restano fedeli)
     if (c.inserto?.tipo === 'video') {
       const si = perFile.get(c.inserto.file);
-      if (!si) { delete c.inserto; return; }
+      if (!si) { lavori.push(async () => { delete c.inserto; }); return; }
       const ins = `ins_${String(i).padStart(3, '0')}.mp4`;
       const d = c.inserto.end - c.inserto.start;
-      taglia(si, c.inserto.start, d, path.join(MEDIA, ins), false, true);
-      Object.assign(c.inserto, { file: ins, start: 0, end: +d.toFixed(3) });
+      const iStart = c.inserto.start;
+      const argsI = comandiTaglio(si, iStart, d, path.join(MEDIA, ins), false, true);
+      lavori.push(async () => {
+        await eseguiUno('ffmpeg', argsI);
+        Object.assign(c.inserto, { file: ins, start: 0, end: +d.toFixed(3) });
+      });
     }
   });
+  log(`taglio di ${lavori.length} pezzi, ${Math.min(TAGLI_INSIEME, lavori.length)} alla volta`);
+  await pool(lavori, TAGLI_INSIEME);
 }
 
 // immagini della cartella (screenshot, foto del prodotto): usabili come inserto. Si convertono in
@@ -774,29 +816,43 @@ async function modelliGemini(headers) {
   return ['gemini-flash-latest', 'gemini-flash-lite-latest'];
 }
 
-// Una chiamata a un modello. Limite del giorno finito → si passa subito al modello dopo
-// (riprovare spreca richieste: ieri i tentativi a vuoto hanno contribuito a finirle);
-// limite al minuto → si aspetta quanto dice Google e si riprova; sovraccarico → 2 tentativi.
-async function chiamaGemini(modello, body, headers) {
+// Una chiamata a un modello. 90 s e un solo retry: un modello fermo non tiene il giro per 15 minuti.
+// Limite del giorno (PerDay) → si ricorda per tutto il run e non si richiama;
+// limite al minuto → si aspetta quanto dice Google e si riprova una volta; sovraccarico → un retry.
+export const GEMINI_TIMEOUT_MS = 90_000;
+export const GEMINI_TENTATIVI = 2;
+const TETTO_REGIA_MS = 8 * 60 * 1000;
+const TETTO_DIDASCALIE_MS = 3 * 60 * 1000;
+export const DIDASCALIE_MODELLI = 2;
+const modelliGiornoFinito = new Set();
+export function azzeraQuoteGiorno() { modelliGiornoFinito.clear(); }
+export function segnaQuotaGiorno(modello) { if (modello) modelliGiornoFinito.add(modello); }
+export function quotaGiornoFinita(modello) { return modelliGiornoFinito.has(modello); }
+export async function chiamaGemini(modello, body, headers, opzioni = {}) {
+  if (quotaGiornoFinita(modello)) return { motivo: 'richieste del giorno finite' };
   const url = `${GEMINI_BASE()}/models/${modello}:generateContent`;
-  for (let tentativo = 1; tentativo <= 3; tentativo++) {
+  const scadenza = opzioni.scadenza || 0;
+  for (let tentativo = 1; tentativo <= GEMINI_TENTATIVI; tentativo++) {
+    if (scadenza && Date.now() + 1000 >= scadenza) return { motivo: 'tempo massimo del giro finito' };
+    const timeout = Math.min(GEMINI_TIMEOUT_MS, scadenza ? scadenza - Date.now() : GEMINI_TIMEOUT_MS);
     let r;
     try {
-      r = await fetch(url, { method: 'POST', headers: { connection: 'close', ...headers }, body, signal: AbortSignal.timeout(5 * 60 * 1000) });
+      r = await fetch(url, { method: 'POST', headers: { connection: 'close', ...headers }, body, signal: AbortSignal.timeout(timeout) });
     } catch (e) {
-      if (tentativo === 3) return { motivo: `non risponde (${e.message})` };
-      await attesa(5000 * tentativo); continue;
+      if (tentativo === GEMINI_TENTATIVI) return { motivo: `non risponde (${e.message})` };
+      await attesa(5000); continue;
     }
     if (r.ok) return { risposta: r };
     const testo = await r.text();
     if (r.status === 429) {
-      if (/PerDay/i.test(testo)) return { motivo: 'richieste del giorno finite' };
+      if (/PerDay/i.test(testo)) { segnaQuotaGiorno(modello); return { motivo: 'richieste del giorno finite' }; }
       const ritardo = Number((/"retryDelay":\s*"(\d+(?:\.\d+)?)s"/.exec(testo) || [])[1] || 20);
-      if (tentativo < 3 && ritardo <= 65) { log(`Gemini ${modello}: limite al minuto, aspetto ${Math.ceil(ritardo)} s`); await attesa(ritardo * 1000 + 500); continue; }
+      const entro = !scadenza || Date.now() + ritardo * 1000 < scadenza;
+      if (tentativo < GEMINI_TENTATIVI && ritardo <= 65 && entro) { log(`Gemini ${modello}: limite al minuto, aspetto ${Math.ceil(ritardo)} s`); await attesa(ritardo * 1000 + 500); continue; }
       return { motivo: 'limite al minuto' };
     }
     if (r.status >= 500) {
-      if (tentativo < 3) { log(`Gemini ${modello}: ${r.status}, riprovo`); await attesa(5000 * 2 ** (tentativo - 1)); continue; }
+      if (tentativo < GEMINI_TENTATIVI) { log(`Gemini ${modello}: ${r.status}, riprovo`); await attesa(5000); continue; }
       return { motivo: `sovraccarico (${r.status})` };
     }
     return { motivo: r.status === 404 ? 'modello non disponibile' : `errore ${r.status}: ${testo.slice(0, 200)}` };
@@ -831,9 +887,16 @@ async function regiaConGemini(prompt, fogli, valida) {
   // difetti del racconto che il controllo automatico trova (ordine rimescolato, frasi staccate,
   // chiusura a metà): Gemini rilegge la sua regia con l'elenco e la riscrive, una volta sola
   const difetti = (r) => (r.avvisi || []).filter((a) => /ordine del discorso|staccata|lasciata a metà|apertura|finisce a metà|finisce senza punto/.test(a));
+  const scadenza = Date.now() + TETTO_REGIA_MS;
   let motivo = 'nessun modello';
   for (const [i, modello] of modelli.entries()) {
-    const esito = await chiamaGemini(modello, JSON.stringify({ contents, generationConfig }), headers);
+    if (Date.now() >= scadenza) { motivo = 'tempo massimo del giro finito'; log('Gemini: tetto del giro raggiunto'); break; }
+    if (quotaGiornoFinita(modello)) {
+      motivo = 'richieste del giorno finite';
+      log(`Gemini ${modello}: richieste del giorno finite, salto`);
+      continue;
+    }
+    const esito = await chiamaGemini(modello, JSON.stringify({ contents, generationConfig }), headers, { scadenza });
     if (esito.risposta) {
       try {
         let { testo, regia } = await leggi(esito.risposta, modello);
@@ -846,7 +909,7 @@ async function regiaConGemini(prompt, fogli, valida) {
           const correzione = [...contents, { role: 'model', parts: [{ text: testo }] }, { role: 'user', parts: [{ text:
             `Il controllo automatico del tuo montaggio ha trovato:\n- ${problemi.join('\n- ')}\n`
             + 'Riscrivi la regia COMPLETA correggendo questi punti: ordine del discorso di Denis, frasi che rimandano a prima messe dopo ciò a cui si riferiscono, frasi lasciate a metà seguite dalla loro continuazione, apertura che si capisce da sola, chiusura su una frase che finisce col punto. Stesse regole, stesso formato JSON.' }] }];
-          const esito2 = await chiamaGemini(modello, JSON.stringify({ contents: correzione, generationConfig }), headers);
+          const esito2 = await chiamaGemini(modello, JSON.stringify({ contents: correzione, generationConfig }), headers, { scadenza });
           if (esito2.risposta) {
             try {
               const nuova = await leggi(esito2.risposta, modello);
@@ -1228,8 +1291,11 @@ async function scriviDidascalie({ titolo, testo, brief, keywords }) {
   const headers = { 'content-type': 'application/json', 'x-goog-api-key': process.env.GEMINI_API_KEY };
   const dati = [`Titolo del video: ${titolo}`, `Testo detto nel video (montato): ${testo}`, `Scritte a schermo: ${keywords.join(' · ') || '—'}`, `Brief: ${brief || '—'}`].join('\n');
   const body = JSON.stringify({ contents: [{ role: 'user', parts: [{ text: `${PROMPT_DIDASCALIE}\n\n${dati}` }] }], generationConfig: { responseMimeType: 'application/json', temperature: 0.7 } });
-  for (const modello of await modelliGemini(headers)) {
-    const esito = await chiamaGemini(modello, body, headers);
+  const scadenza = Date.now() + TETTO_DIDASCALIE_MS;
+  const modelli = (await modelliGemini(headers)).filter((m) => !quotaGiornoFinita(m)).slice(0, DIDASCALIE_MODELLI);
+  for (const modello of modelli) {
+    if (Date.now() >= scadenza) { log('didascalie: tempo massimo'); break; }
+    const esito = await chiamaGemini(modello, body, headers, { scadenza });
     if (!esito.risposta) { log(`didascalie: ${modello} ${esito.motivo}`); continue; }
     try {
       const j = await esito.risposta.json();
@@ -1768,7 +1834,7 @@ async function main() {
     await fase(nome, `🎬 Render: ${durataPiano.toFixed(0)} s, ${piano.clips.length} tagli da ${camereUsate} sorgenti, ${piano.keywords.length} parole chiave`, 'render');
     if (PROVA_SECONDI) { troncaPiano(piano, PROVA_SECONDI); log(`render di prova: primi ${PROVA_SECONDI} s (${piano.clips.length} tagli)`); }
     // solo adesso si ricodificano i pezzi scelti, poi gli originali non servono più
-    tagliaSegmenti(piano, analisi);
+    await tagliaSegmenti(piano, analisi);
     await risaltoPersona(piano);
     await ritagliPersona(piano);
     // prima di cancellarli, gli originali devono essere su Drive; se la copia fallisce il video si consegna lo stesso
@@ -1810,28 +1876,42 @@ async function main() {
     ].filter(Boolean).join('\n');
     fs.writeFileSync(path.join(WORK, 'NOTE.txt'), note);
 
-    rclone('copyto', outFile, remote(DEST, nome, finale));
-    // copertina (non nelle prove): stesso nome del video, su Drive accanto a lui
-    const fileCopertina = PROVA_SECONDI ? null : copertina(piano, regia, analisi, outFile.replace(/\.mp4$/i, ' - COPERTINA.jpg'));
-    if (fileCopertina) rclone('copyto', fileCopertina, remote(DEST, nome, path.basename(fileCopertina)));
-    rclone('copyto', path.join(WORK, 'NOTE.txt'), remote(DEST, nome, 'NOTE.txt'));
-    for (const f of ['regia.json', 'piano.json', 'materiale.json']) rclone('copyto', path.join(WORK, f), remote(DEST, nome, CACHE, f));
-    for (const f of fs.readdirSync(WORK).filter((x) => /^colore-.+\.jpg$/.test(x))) rclone('copyto', path.join(WORK, f), remote(DEST, nome, CACHE, f));
-    if (fotogrammiFinale(outFile, durataN, piano)) rclone('copyto', path.join(WORK, 'fotogrammi.jpg'), remote(DEST, nome, CACHE, 'fotogrammi.jpg'));
+    // Il master va su Drive mentre si preparano didascalie, copertina, anteprima e le note.
+    // Sono processi già partiti: la copertina (Remotion) occupa il processo, gli altri no.
+    log('carico il video su Drive e, insieme, didascalie, copertina, anteprima e note');
+    const uploadVideo = inSottofondo('rclone', ['copyto', outFile, remote(DEST, nome, finale)]);
+    const anteprimaP = process.env.NOTIFY_URL ? codificaAnteprima(outFile, durataN) : Promise.resolve(null);
+    const didascalieP = (async () => {
+      if (PROVA_SECONDI) return null;
+      try {
+        const salvate = path.join(WORK, 'cache', 'didascalie.json');
+        const scritte = RIRENDER && fs.existsSync(salvate) ? JSON.parse(fs.readFileSync(salvate, 'utf8'))
+          : await scriviDidascalie({ titolo: piano.titolo || nome, testo: piano.testo, brief, keywords: piano.keywords.map((k) => k.word) });
+        if (scritte) {
+          fs.writeFileSync(path.join(WORK, 'didascalie.json'), JSON.stringify(scritte, null, 1));
+          rclone('copyto', path.join(WORK, 'didascalie.json'), remote(OUT_DIR, nome, CACHE, 'didascalie.json'));
+        }
+        return scritte;
+      } catch (e) { log('didascalie non scritte', e.message); return null; }
+    })();
+    const noteP = (async () => {
+      const copie = [
+        inSottofondo('rclone', ['copyto', path.join(WORK, 'NOTE.txt'), remote(DEST, nome, 'NOTE.txt')]),
+        ...['regia.json', 'piano.json', 'materiale.json'].map((f) => inSottofondo('rclone', ['copyto', path.join(WORK, f), remote(DEST, nome, CACHE, f)])),
+        ...fs.readdirSync(WORK).filter((x) => /^colore-.+\.jpg$/.test(x)).map((f) => inSottofondo('rclone', ['copyto', path.join(WORK, f), remote(DEST, nome, CACHE, f)])),
+      ];
+      await Promise.all(copie);
+      if (fotogrammiFinale(outFile, durataN, piano)) await inSottofondo('rclone', ['copyto', path.join(WORK, 'fotogrammi.jpg'), remote(DEST, nome, CACHE, 'fotogrammi.jpg')]);
+    })();
+    const copertinaP = (async () => {
+      const file = PROVA_SECONDI ? null : copertina(piano, regia, analisi, outFile.replace(/\.mp4$/i, ' - COPERTINA.jpg'));
+      if (file) await inSottofondo('rclone', ['copyto', file, remote(DEST, nome, path.basename(file))]);
+      return file;
+    })();
+    const [fileCopertina, didascalie, anteprimaMp4] = await Promise.all([copertinaP, didascalieP, anteprimaP, uploadVideo, noteP]);
     if (vai) rclone('moveto', remote(SRC_DIR, nome, vai), remote(SRC_DIR, nome, vaiUsato));
     if (SRC_DIR === IN_DIR && !DA_TELEGRAM && !DA_R2) rclone('moveto', remote(IN_DIR, nome), remote(OUT_DIR, nome));
 
-    // per il tasto 📤 Pubblica: didascalie (con 🎨 Solo render quelle già scritte) e ID del file su Drive
-    let didascalie = null;
-    if (!PROVA_SECONDI) try {
-      const salvate = path.join(WORK, 'cache', 'didascalie.json');
-      didascalie = RIRENDER && fs.existsSync(salvate) ? JSON.parse(fs.readFileSync(salvate, 'utf8'))
-        : await scriviDidascalie({ titolo: piano.titolo || nome, testo: piano.testo, brief, keywords: piano.keywords.map((k) => k.word) });
-      if (didascalie) {
-        fs.writeFileSync(path.join(WORK, 'didascalie.json'), JSON.stringify(didascalie, null, 1));
-        rclone('copyto', path.join(WORK, 'didascalie.json'), remote(OUT_DIR, nome, CACHE, 'didascalie.json'));
-      }
-    } catch (e) { log('didascalie non scritte', e.message); }
     let fileId = null;
     try { fileId = JSON.parse(run('rclone', ['lsjson', remote(OUT_DIR, nome, finale)]))[0]?.ID || null; } catch (e) { log('ID del video su Drive non trovato', e.message); }
     let copertinaId = null;
@@ -1847,7 +1927,7 @@ async function main() {
       ...(fileId && !PROVA_SECONDI ? { pubblica: { fileId, file: finale, didascalia: didascalie?.instagram || '', copertina: Math.round(tempoCopertina(piano, durataN) * 1000), ...(copertinaId ? { copertinaId } : {}), youtube: didascalie ? { titolo: didascalie.youtube_titolo, descrizione: didascalie.youtube_descrizione } : null } } : {}),
     };
     // anteprima: prima provo il video in chat, se non passa mando la foto
-    const inviato = await inviaVideo(outFile, nome, note, durataN, info);
+    const inviato = await inviaVideo(anteprimaMp4, nome, note, durataN, info);
     if (!inviato) await notifica('✅ pronto', nome, note, { ok: true, foto: anteprima(outFile, piano, durataN), info });
     await inviaCopertina(fileCopertina, nome);
   } catch (e) {
@@ -1873,20 +1953,27 @@ async function main() {
 
 // Video di anteprima per Telegram: i bot possono inviare al massimo 50 MB,
 // quindi bitrate calcolato per stare sotto ~45 MB (1080 o 720 secondo quanto resta).
-async function inviaVideo(outFile, nome, testo, durata, info) {
-  if (!process.env.NOTIFY_URL) return false;
-  try {
-    const anteprimaMp4 = path.join(WORK, 'anteprima.mp4');
-    // il bot accetta fino a 50 MB: a piena risoluzione (1080) quando il bitrate lo permette, così in
-    // Telegram si giudica la qualità vera e non un 720p sgranato; sotto i 3,5 Mbps meglio il 720 e
-    // sotto 1 Mbps il 540 (discorsi lunghi, fino a ~15 min: oltre arriva solo il messaggio)
-    const kbpsAudio = durata > 300 ? 96 : 128;
-    const kbps = Math.max(300, Math.min(8000, Math.floor((45 * 8 * 1000) / Math.max(1, durata)) - kbpsAudio - 32));
-    run('ffmpeg', ['-y', '-v', 'error', '-i', outFile, '-vf', `scale=${kbps >= 3500 ? 1080 : kbps >= 1000 ? 720 : 540}:-2:flags=lanczos`, '-c:v', 'libx264', '-preset', 'medium',
-      '-b:v', `${kbps}k`, '-maxrate', `${kbps}k`, '-bufsize', `${kbps * 2}k`, '-pix_fmt', 'yuv420p', ...TAG_709,
-      '-c:a', 'aac', '-b:a', `${kbpsAudio}k`, '-movflags', '+faststart', anteprimaMp4]);
+// veryfast: è una copia per la chat, il master su Drive resta quello del render.
+function codificaAnteprima(outFile, durata) {
+  const anteprimaMp4 = path.join(WORK, 'anteprima.mp4');
+  // il bot accetta fino a 50 MB: 1080 quando il bitrate lo permette, sotto i 3,5 Mbps il 720,
+  // sotto 1 Mbps il 540 (discorsi lunghi: oltre arriva solo il messaggio)
+  const kbpsAudio = durata > 300 ? 96 : 128;
+  const kbps = Math.max(300, Math.min(8000, Math.floor((45 * 8 * 1000) / Math.max(1, durata)) - kbpsAudio - 32));
+  const args = ['-y', '-v', 'error', '-i', outFile, '-vf', `scale=${kbps >= 3500 ? 1080 : kbps >= 1000 ? 720 : 540}:-2:flags=lanczos`, '-c:v', 'libx264', '-preset', 'veryfast',
+    '-b:v', `${kbps}k`, '-maxrate', `${kbps}k`, '-bufsize', `${kbps * 2}k`, '-pix_fmt', 'yuv420p', ...TAG_709,
+    '-c:a', 'aac', '-b:a', `${kbpsAudio}k`, '-movflags', '+faststart', anteprimaMp4];
+  return inSottofondo('ffmpeg', args).then(() => {
     const size = fs.statSync(anteprimaMp4).size;
-    if (size > 49 * 1e6) { log(`anteprima troppo grande (${mb(size)})`); return false; }
+    if (size > 49 * 1e6) { log(`anteprima troppo grande (${mb(size)})`); return null; }
+    log(`anteprima codificata (${mb(size)})`);
+    return anteprimaMp4;
+  }).catch((e) => { log('anteprima video fallita', e.message); return null; });
+}
+async function inviaVideo(anteprimaMp4, nome, testo, durata, info) {
+  if (!process.env.NOTIFY_URL || !anteprimaMp4) return false;
+  try {
+    const size = fs.statSync(anteprimaMp4).size;
     const form = new FormData();
     form.append('nome', nome);
     form.append('testo', testo);

@@ -71,7 +71,8 @@ jobs:
   monta:
     # versione fissa: ubuntu-latest passa a Ubuntu 26 dal 19/10/2026 (ffmpeg, font, dipendenze di Chrome)
     runs-on: ubuntu-24.04
-    timeout-minutes: 240
+    # un giro fermo (mirror, modello che non risponde) non tiene il runner per 4 ore
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@v5
 
@@ -90,6 +91,8 @@ jobs:
         env:
           CARTELLA: ${{ inputs.cartella }}
           AZIONE: ${{ inputs.azione }}
+          ORIGINE: ${{ inputs.origine }}
+          CORREZIONE: ${{ inputs.correzione }}
           TELEGRAM: ${{ inputs.telegram }}
           R2: ${{ inputs.r2 }}
           EVENTO: ${{ github.event_name }}
@@ -108,11 +111,31 @@ jobs:
           done
           # prenoto il VAI subito: un giro successivo non riprende la stessa cartella
           prenota() { rclone moveto "gdrive:$DIR_EDITARE/$1/${vai_di[$1]}" "gdrive:$DIR_EDITARE/$1/_VAI_in_corso_${vai_di[$1]}" && echo "Prenotata: $1"; }
-          trovato="$CARTELLA"
+          # spazio in fondo ("Manifestazioni ") non è un altro nome; "Anime" che non esiste si ferma qui,
+          # prima di apt e npm (26/10: il controllo vero era solo nello script, dopo i mirror)
+          trovato=$(printf '%s' "${CARTELLA:-}" | sed 's/^[[:space:]]*//; s/[[:space:]]*$//')
           # file da Telegram: la cartella la crea lo script (nome libero in 97 e 98)
-          [ -n "$TELEGRAM" ] && [ "$TELEGRAM" != "[]" ] && trovato="${CARTELLA:-Video da Telegram}"
+          [ -n "$TELEGRAM" ] && [ "$TELEGRAM" != "[]" ] && trovato=$(printf '%s' "${CARTELLA:-Video da Telegram}" | sed 's/^[[:space:]]*//; s/[[:space:]]*$//')
           # l'apostrofo non può stare dentro ${var:-...}: bash non chiude la parentesi e lo step non parte
           if [ -n "$R2" ] && [ -z "$trovato" ]; then trovato="Video dall'app"; fi
+          da_telegram=0; [ -n "$TELEGRAM" ] && [ "$TELEGRAM" != "[]" ] && da_telegram=1
+          if [ -n "$trovato" ] && [ "$da_telegram" = 0 ] && [ -z "$R2" ] && [ "$AZIONE" != "elenco" ] && [ "$AZIONE" != "esempi" ] && [ "$AZIONE" != "archivio" ]; then
+            dove=()
+            if [ "$AZIONE" = "regia" ]; then
+              mapfile -t dove < <( { rclone lsf "gdrive:$DIR_EDITARE" --dirs-only; rclone lsf "gdrive:$DIR_FATTI" --dirs-only; } | sed 's:/$::')
+            elif [ "$ORIGINE" = "98" ] || [ -n "$CORREZIONE" ]; then
+              mapfile -t dove < <(rclone lsf "gdrive:$DIR_FATTI" --dirs-only | sed 's:/$::')
+            else
+              dove=("${cartelle[@]}")
+            fi
+            if ! vero=$(node scripts/scegli-cartella.mjs "$trovato" "${dove[@]}"); then
+              echo "::error::non trovo la cartella \"$trovato\""
+              echo "Cartelle viste: ${dove[*]:-nessuna}"
+              exit 1
+            fi
+            if [ "$vero" != "$trovato" ]; then echo "cartella \"$trovato\" trovata come \"$vero\""; fi
+            trovato="$vero"
+          fi
           liberi=("${con_vai[@]}")
           if [ "$AZIONE" != "elenco" ] && [ "$AZIONE" != "regia" ] && [ "$AZIONE" != "esempi" ] && [ -z "$trovato" ] && [ ${#con_vai[@]} -gt 0 ]; then
             trovato="${con_vai[0]}"
@@ -180,12 +203,9 @@ jobs:
         env:
           TELEGRAM: ${{ inputs.telegram }}
         run: |
-          # libegl1 e libgles2: servono a MediaPipe (ritaglio della persona per le scritte dietro, stili su misura).
-          # Server di Ubuntu fermo (25-26/10: 10 minuti appesi): a ogni giro si cambia server ufficiale
-          bash scripts/apt-ubuntu.sh ffmpeg fonts-noto-color-emoji libegl1 libgles2
-          command -v ffmpeg >/dev/null || { echo "::error::ffmpeg non installato (server dei pacchetti di Ubuntu irraggiungibile)"; exit 1; }
-          # build in cache (arnndn, vidstab, libass, libvmaf) davanti a quella di apt; se manca, resta apt
-          bash scripts/installa-strumenti.sh
+          # Prima il ffmpeg in cache (GitHub). Apt solo se quel ffmpeg non parte, e per emoji/libegl
+          # se dpkg non li ha già. Un apt fermo su quei pacchetti non ferma il montaggio.
+          bash scripts/programma-video.sh fonts-noto-color-emoji libegl1 libgles2
           npm ci || npm install
           # Telethon (MTProto) per scaricare i file grandi mandati al bot; cryptg lo rende molto più veloce
           if [ -n "$TELEGRAM" ] && [ "$TELEGRAM" != "[]" ]; then pip install --quiet telethon cryptg; fi

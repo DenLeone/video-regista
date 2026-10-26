@@ -43,8 +43,7 @@ jobs:
       - name: Programmi
         timeout-minutes: 16
         run: |
-          bash scripts/apt-ubuntu.sh ffmpeg
-          bash scripts/installa-strumenti.sh
+          bash scripts/programma-video.sh
           curl -fsSL https://rclone.org/install.sh | sudo bash > /dev/null
 
       - name: Drive (solo per le prove da Drive)
