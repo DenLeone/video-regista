@@ -7,6 +7,13 @@ import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { comandiTaglio, eseguiFfmpeg } from './regista.mjs';
 
+/** Il job che pubblica il bot non ha ffmpeg. Senza libx264 la prova non parte. */
+export function ffmpegDiProva() {
+  const r = spawnSync('ffmpeg', ['-hide_banner', '-encoders'], { encoding: 'utf8' });
+  if (r.error || r.status !== 0) return false;
+  return /\blibx264\b/.test(`${r.stdout || ''}\n${r.stderr || ''}`);
+}
+
 export async function confrontaTagliParalleli() {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'tagli-'));
   const src = path.join(dir, 'src.mp4');

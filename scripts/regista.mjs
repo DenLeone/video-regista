@@ -1216,7 +1216,7 @@ async function invia(payload) {
   } catch (e) { log('notifica fallita', e.message); }
 }
 
-// a ogni fase il bot aggiorna la sua scheda di avanzamento (scarico, prepara, regia, render, carico)
+// a ogni fase il bot aggiorna la sua scheda di avanzamento (scarico, prepara, regia, tagli, render, carico)
 let ultimaFase = '';
 const VERSIONE = 'v2';
 const fase = (nome, testo, step) => {
@@ -1829,11 +1829,9 @@ async function main() {
     // non valgono (12K Quality rifatto sulla regia del Narrativo, 19/10: un pezzo era uscito in b/n)
     if (!stileSuMisura || stileSuMisura.grafica.biancoNero === 'no') for (const c of piano.clips) delete c.bn;
     const nomeStile = stileSuMisura?.nome || stile;
-    const durataPiano = piano.clips.reduce((s, c) => s + (c.end - c.start), 0);
-    const camereUsate = new Set(piano.clips.map((c) => c.file)).size;
-    await fase(nome, `🎬 Render: ${durataPiano.toFixed(0)} s, ${piano.clips.length} tagli da ${camereUsate} sorgenti, ${piano.keywords.length} parole chiave`, 'render');
     if (PROVA_SECONDI) { troncaPiano(piano, PROVA_SECONDI); log(`render di prova: primi ${PROVA_SECONDI} s (${piano.clips.length} tagli)`); }
-    // solo adesso si ricodificano i pezzi scelti, poi gli originali non servono più
+    // i pezzi scelti, prima del render vero: la card dell'app distingue tagli e render
+    await fase(nome, `✂️ Taglio ${piano.clips.length} pezzi`, 'tagli');
     await tagliaSegmenti(piano, analisi);
     await risaltoPersona(piano);
     await ritagliPersona(piano);
@@ -1858,6 +1856,9 @@ async function main() {
     const finale = PROVA_SECONDI ? `${nome} - PROVA ${PROVA_SECONDI}s ${nomeStile}.mp4` : `${nome} - FINALE${versioni ? ` v${versioni + 1}` : ''}.mp4`;
     const outFile = path.join(ROOT, 'out', finale);
     fs.mkdirSync(path.dirname(outFile), { recursive: true });
+    const durataPiano = piano.clips.reduce((s, c) => s + (c.end - c.start), 0);
+    const camereUsate = new Set(piano.clips.map((c) => c.file)).size;
+    await fase(nome, `🎬 Render: ${durataPiano.toFixed(0)} s, ${piano.clips.length} tagli da ${camereUsate} sorgenti, ${piano.keywords.length} parole chiave`, 'render');
     renderizza(outFile, stile);
     await fase(nome, '📤 Carico su Drive', 'carico');
 

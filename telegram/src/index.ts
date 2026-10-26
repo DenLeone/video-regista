@@ -262,13 +262,14 @@ const FASI = [
   { id: 'scarico', nome: 'Download', emoji: '📥' },
   { id: 'prepara', nome: 'Analisi', emoji: '🎞' },
   { id: 'regia', nome: 'Regia AI', emoji: '🧠' },
+  { id: 'tagli', nome: 'Tagli', emoji: '✂️' },
   { id: 'render', nome: 'Render', emoji: '🎬' },
   { id: 'carico', nome: 'Upload', emoji: '📤' },
 ] as const;
 type IdFase = (typeof FASI)[number]['id'];
 type Card = {
   nome: string; fasi: Partial<Record<IdFase, string>>; corrente?: IdFase; minuti: number;
-  msg: Record<string, number>; versione?: string; brief?: string; correzione?: string; fine?: 'ok' | 'ko'; inCoda?: boolean;
+  msg: Record<string, number>; versione?: string; brief?: string; correzione?: string; fine?: 'ok' | 'ko'; errore?: string; inCoda?: boolean;
   prova?: number; soloRender?: boolean;
 };
 // pubblica: dati del video finito (dal workflow) e scelte di Denis per Instagram/YouTube;
@@ -288,6 +289,7 @@ function faseDaTesto(t: string): IdFase | undefined {
   if (t.includes('📥')) return 'scarico';
   if (t.includes('🎞')) return 'prepara';
   if (t.includes('🧠') || t.includes('🔁')) return 'regia';
+  if (t.includes('✂')) return 'tagli';
   if (t.includes('🎬')) return 'render';
   if (t.includes('📤')) return 'carico';
   return undefined;
@@ -1589,6 +1591,10 @@ async function onNotify(env: Env, n: Notify) {
     await mem(env).scrivi(`run:${n.run_id}`, memoFinale(await leggi<RunMemo | string>(env, `run:${n.run_id}`), n.nome, n.origine, n.info, n.azione));
     const c = await cardDelGiro(env, n.run_id, n.nome);
     c.fine = n.ok ? 'ok' : 'ko';
+    if (!n.ok) {
+      const causa = (n.info?.errore || n.testo || '').replace(/^Errore:\s*/i, '').split('\n').map((s) => s.trim()).filter(Boolean)[0] || '';
+      if (causa) c.errore = causa.slice(0, 400);
+    }
     if (n.step) c.corrente = n.step;
     if (n.minuti != null) c.minuti = n.minuti;
     if (n.prova) c.prova = n.prova;

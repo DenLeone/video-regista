@@ -252,6 +252,22 @@ textarea { min-height: 96px; resize: vertical; }
 .fase { flex: 1; height: 6px; border-radius: 99px; background: rgba(255,255,255,.12); }
 .fase.fatta { background: #f4f4f6; }
 .fase.ora { background: linear-gradient(90deg, #f4f4f6, rgba(255,255,255,.2)); }
+.fase.ko { background: #ffb4b4; }
+.nomi-fasi { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
+.nomi-fasi span {
+  font-size: 12px; line-height: 1.2; color: var(--muted);
+  padding: 4px 8px; border-radius: 999px;
+  background: rgba(255,255,255,.05); border: 1px solid transparent;
+}
+.nomi-fasi span.fatta { color: var(--ink); }
+.nomi-fasi span.ora { color: var(--ink); background: rgba(255,255,255,.14); border-color: rgba(255,255,255,.28); }
+.nomi-fasi span.ko { color: #ffb4b4; background: rgba(255,90,90,.12); }
+.manca { margin: 12px 0 0; color: var(--muted); font-size: 15px; }
+.card.errore-giro { border-color: rgba(255,120,120,.45); }
+.card.errore-giro::before {
+  background: linear-gradient(rgba(255, 90, 90, .12), rgba(255, 90, 90, .12)), var(--glass);
+}
+.card.errore-giro .motivo { color: #ffb4b4; margin: 0 0 14px; line-height: 1.35; }
 
 .riga { display: flex; justify-content: space-between; gap: 12px; align-items: center; padding: 8px 0; }
 .barra { height: 10px; border-radius: 99px; background: rgba(255,255,255,.1); overflow: hidden; margin: 8px 0; }
