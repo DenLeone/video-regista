@@ -27,14 +27,21 @@ jobs:
   studia:
     runs-on: ubuntu-24.04
     timeout-minutes: 32
+    defaults:
+      run:
+        shell: bash
+    # Come regista: spenta finché USA_IMMAGINE non è 1. image null = la macchina di oggi.
+    container: ${{ fromJSON(vars.USA_IMMAGINE == '1' && '{"image":"ghcr.io/denleone/video-regista-runner:latest","volumes":["/mnt:/mnt"],"options":"--shm-size=2g"}' || '{"image":null}') }}
     steps:
       - uses: actions/checkout@v5
 
       - uses: actions/setup-node@v5
+        if: vars.USA_IMMAGINE != '1'
         with:
           node-version: 22
 
       - name: Cache strumenti
+        if: vars.USA_IMMAGINE != '1'
         uses: actions/cache@v4
         with:
           path: ~/opt/regista-strumenti
@@ -42,9 +49,15 @@ jobs:
 
       - name: Programmi
         timeout-minutes: 16
+        env:
+          USA_IMMAGINE: ${{ vars.USA_IMMAGINE }}
         run: |
-          bash scripts/programma-video.sh
-          curl -fsSL https://rclone.org/install.sh | sudo bash > /dev/null
+          if [ "$USA_IMMAGINE" = "1" ]; then
+            bash scripts/collega-immagine.sh
+          else
+            bash scripts/programma-video.sh
+            curl -fsSL https://rclone.org/install.sh | sudo bash > /dev/null
+          fi
 
       - name: Drive (solo per le prove da Drive)
         if: inputs.drive != ''

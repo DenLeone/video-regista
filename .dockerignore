@@ -1,0 +1,6 @@
+# Il workflow «immagine» copia solo l'elenco dei pacchetti.
+# Il codice arriva con checkout a ogni giro e non va nell'immagine:
+# dentro non ci sono secret, .env, rclone.conf né la cartella work.
+*
+!package.json
+!package-lock.json

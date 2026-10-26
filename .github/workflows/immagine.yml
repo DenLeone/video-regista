@@ -1,0 +1,79 @@
+name: immagine
+
+# Costruisce l'immagine dei giri e la pubblica su ghcr.io/denleone/video-regista-runner.
+# Parte solo a mano, o quando cambia il Dockerfile, questo workflow o l'elenco dei pacchetti
+# (npm ci è dentro l'immagine: un lockfile nuovo senza rebuild userebbe i pacchetti vecchi).
+# I giri non la scaricano finché la variabile del repository USA_IMMAGINE non è 1.
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - '.github/docker/**'
+      - '.github/workflows/immagine.yml'
+      - '.dockerignore'
+      - 'package.json'
+      - 'package-lock.json'
+
+permissions:
+  contents: read
+  packages: write
+
+env:
+  IMMAGINE: ghcr.io/denleone/video-regista-runner
+
+jobs:
+  pubblica:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: docker/setup-buildx-action@v3
+
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: .github/docker/Dockerfile
+          push: true
+          platforms: linux/amd64
+          tags: |
+            ${{ env.IMMAGINE }}:latest
+            ${{ env.IMMAGINE }}:${{ github.sha }}
+          labels: |
+            org.opencontainers.image.source=https://github.com/DenLeone/video-regista
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Peso
+        run: docker buildx imagetools inspect "${IMMAGINE}:${GITHUB_SHA}"
+
+      # Un repo pubblico non rende da solo pubblico il pacchetto: ci prova il token del giro.
+      # Se risponde 403, il pacchetto resta privato e va segnato Public a mano
+      # (profilo → Packages → video-regista-runner). Senza immagine pubblica, con
+      # USA_IMMAGINE=1 i giri non riuscirebbero a scaricarla.
+      - name: Pacchetto pubblico
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          visibile=0
+          for i in 1 2 3 4 5; do
+            if gh api --method PUT /user/packages/container/video-regista-runner/visibility -f visibility=public \
+              || gh api --method PUT "/users/DenLeone/packages/container/video-regista-runner/visibility" -f visibility=public; then
+              visibile=1
+              break
+            fi
+            echo "pacchetto non ancora visibile, riprovo ($i)"
+            sleep 10
+          done
+          if [ "$visibile" = 1 ]; then
+            echo "pacchetto pubblico"
+          else
+            echo "::warning::non sono riuscito a rendere pubblico il pacchetto. Aprilo da GitHub → Packages → video-regista-runner → Package settings → Public, prima di accendere USA_IMMAGINE."
+          fi

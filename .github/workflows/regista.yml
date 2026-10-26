@@ -47,6 +47,10 @@ on:
         description: 'Render di prova: solo i primi N secondi del montaggio (vuoto = tutto)'
         required: false
         default: ''
+      tentativo:
+        description: 'Interno, non cambiare. 1 = primo giro, 2 = rilancio automatico se il server ha fallito'
+        required: false
+        default: '1'
 
 # cartelle di Drive (rinominate da Denis il 20/10): le legge anche scripts/cartelle.mjs
 env:
@@ -73,14 +77,78 @@ jobs:
     runs-on: ubuntu-24.04
     # un giro fermo (mirror, modello che non risponde) non tiene il runner per 4 ore
     timeout-minutes: 45
+    # bash anche dentro l'immagine: gli step usano mapfile. Sulla macchina è già bash.
+    defaults:
+      run:
+        shell: bash
+    # Spenta di default. image null = il giro resta sulla macchina, come oggi.
+    # Si accende solo con la variabile del repository USA_IMMAGINE=1, quando
+    # ghcr.io/denleone/video-regista-runner:latest è pubblica. /mnt è il disco
+    # grande; shm da 2g evita che Chrome di Remotion muoia nel container.
+    container: ${{ fromJSON(vars.USA_IMMAGINE == '1' && '{"image":"ghcr.io/denleone/video-regista-runner:latest","volumes":["/mnt:/mnt"],"options":"--shm-size=2g"}' || '{"image":null}') }}
     steps:
       - uses: actions/checkout@v5
 
+      # Prima di apt e di Drive: se manca una chiave il giro si ferma subito e Telegram
+      # lo dice ora, senza aspettare il quarto d'ora dell'installazione. Non è un errore
+      # del server: non si rilancia.
+      - name: Chiavi
+        id: chiavi
+        env:
+          RCLONE_CONF: ${{ secrets.RCLONE_CONF }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+          NOTIFY_URL: ${{ secrets.NOTIFY_URL }}
+          NOTIFY_TOKEN: ${{ secrets.NOTIFY_TOKEN }}
+          TG_API_ID: ${{ secrets.TG_API_ID }}
+          TG_API_HASH: ${{ secrets.TG_API_HASH }}
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          R2_ACCOUNT_ID: ${{ secrets.R2_ACCOUNT_ID }}
+          R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          R2_BUCKET: ${{ secrets.R2_BUCKET }}
+          AZIONE: ${{ inputs.azione }}
+          TELEGRAM: ${{ inputs.telegram }}
+          R2: ${{ inputs.r2 }}
+          CARTELLA: ${{ inputs.cartella }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          manca=()
+          [ -n "$RCLONE_CONF" ] || manca+=("RCLONE_CONF (Drive)")
+          if [ "$AZIONE" != "elenco" ] && [ "$AZIONE" != "archivio" ]; then
+            [ -n "$GEMINI_API_KEY" ] || [ -n "$CLAUDE_CODE_OAUTH_TOKEN" ] || manca+=("GEMINI_API_KEY o CLAUDE_CODE_OAUTH_TOKEN")
+            [ -n "$GROQ_API_KEY" ] || manca+=("GROQ_API_KEY")
+          fi
+          if [ -n "$TELEGRAM" ] && [ "$TELEGRAM" != "[]" ]; then
+            [ -n "$TG_API_ID" ] && [ -n "$TG_API_HASH" ] && [ -n "$TELEGRAM_BOT_TOKEN" ] || manca+=("TG_API_ID, TG_API_HASH e TELEGRAM_BOT_TOKEN")
+          fi
+          if [ -n "$R2" ]; then
+            [ -n "$R2_ACCOUNT_ID" ] && [ -n "$R2_ACCESS_KEY_ID" ] && [ -n "$R2_SECRET_ACCESS_KEY" ] && [ -n "$R2_BUCKET" ] || manca+=("R2_ACCOUNT_ID, R2_ACCESS_KEY_ID, R2_SECRET_ACCESS_KEY e R2_BUCKET")
+          fi
+          if [ ${#manca[@]} -eq 0 ]; then
+            echo "chiavi ok"
+            exit 0
+          fi
+          echo "mancano=1" >> "$GITHUB_OUTPUT"
+          testo="Mancano delle chiavi su GitHub Actions: ${manca[*]}. Il giro non parte."
+          echo "::error::$testo"
+          if [ -n "$NOTIFY_URL" ]; then
+            jq -n --arg n "${CARTELLA:-—}" --arg u "$RUN_URL" --arg id "$GITHUB_RUN_ID" --arg t "$testo" \
+              '{tipo:"esito", esito:"⚠️ non montato", nome:$n, ok:false, run_url:$u, run_id:$id, testo:("Errore: "+$t), info:{errore:$t}}' \
+              | curl -s -X POST "$NOTIFY_URL" -H 'content-type: application/json' -H "x-regista-token: $NOTIFY_TOKEN" -d @- > /dev/null || true
+          fi
+          exit 1
+
       - name: Drive (rclone)
+        id: drive
         env:
           RCLONE_CONF: ${{ secrets.RCLONE_CONF }}
         run: |
-          curl -fsSL https://rclone.org/install.sh | sudo bash > /dev/null
+          # nell'immagine c'è già; sulla macchina si installa come prima
+          if ! command -v rclone >/dev/null 2>&1; then
+            curl -fsSL https://rclone.org/install.sh | sudo bash > /dev/null
+          fi
           mkdir -p ~/.config/rclone
           # via env + printf: il token è JSON con virgolette, echo "..." le rovinerebbe
           printf '%s\n' "$RCLONE_CONF" > ~/.config/rclone/rclone.conf
@@ -111,31 +179,13 @@ jobs:
           done
           # prenoto il VAI subito: un giro successivo non riprende la stessa cartella
           prenota() { rclone moveto "gdrive:$DIR_EDITARE/$1/${vai_di[$1]}" "gdrive:$DIR_EDITARE/$1/_VAI_in_corso_${vai_di[$1]}" && echo "Prenotata: $1"; }
-          # spazio in fondo ("Manifestazioni ") non è un altro nome; "Anime" che non esiste si ferma qui,
-          # prima di apt e npm (26/10: il controllo vero era solo nello script, dopo i mirror)
-          trovato=$(printf '%s' "${CARTELLA:-}" | sed 's/^[[:space:]]*//; s/[[:space:]]*$//')
+          # "Manifestazioni " e "Anime" arrivano dal bot senza lo spazio: si confronta dopo, sul nome vero
+          CARTELLA=$(printf '%s' "$CARTELLA" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
+          trovato="$CARTELLA"
           # file da Telegram: la cartella la crea lo script (nome libero in 97 e 98)
-          [ -n "$TELEGRAM" ] && [ "$TELEGRAM" != "[]" ] && trovato=$(printf '%s' "${CARTELLA:-Video da Telegram}" | sed 's/^[[:space:]]*//; s/[[:space:]]*$//')
+          [ -n "$TELEGRAM" ] && [ "$TELEGRAM" != "[]" ] && trovato="${CARTELLA:-Video da Telegram}"
           # l'apostrofo non può stare dentro ${var:-...}: bash non chiude la parentesi e lo step non parte
           if [ -n "$R2" ] && [ -z "$trovato" ]; then trovato="Video dall'app"; fi
-          da_telegram=0; [ -n "$TELEGRAM" ] && [ "$TELEGRAM" != "[]" ] && da_telegram=1
-          if [ -n "$trovato" ] && [ "$da_telegram" = 0 ] && [ -z "$R2" ] && [ "$AZIONE" != "elenco" ] && [ "$AZIONE" != "esempi" ] && [ "$AZIONE" != "archivio" ]; then
-            dove=()
-            if [ "$AZIONE" = "regia" ]; then
-              mapfile -t dove < <( { rclone lsf "gdrive:$DIR_EDITARE" --dirs-only; rclone lsf "gdrive:$DIR_FATTI" --dirs-only; } | sed 's:/$::')
-            elif [ "$ORIGINE" = "98" ] || [ -n "$CORREZIONE" ]; then
-              mapfile -t dove < <(rclone lsf "gdrive:$DIR_FATTI" --dirs-only | sed 's:/$::')
-            else
-              dove=("${cartelle[@]}")
-            fi
-            if ! vero=$(node scripts/scegli-cartella.mjs "$trovato" "${dove[@]}"); then
-              echo "::error::non trovo la cartella \"$trovato\""
-              echo "Cartelle viste: ${dove[*]:-nessuna}"
-              exit 1
-            fi
-            if [ "$vero" != "$trovato" ]; then echo "cartella \"$trovato\" trovata come \"$vero\""; fi
-            trovato="$vero"
-          fi
           liberi=("${con_vai[@]}")
           if [ "$AZIONE" != "elenco" ] && [ "$AZIONE" != "regia" ] && [ "$AZIONE" != "esempi" ] && [ -z "$trovato" ] && [ ${#con_vai[@]} -gt 0 ]; then
             trovato="${con_vai[0]}"
@@ -146,8 +196,60 @@ jobs:
             done
             liberi=()
           fi
-          echo "cartella=$trovato" >> "$GITHUB_OUTPUT"
-          if [ -n "$trovato" ]; then echo "Da montare: $trovato"; else echo "Niente da fare"; fi
+          # nome scritto a mano: deve esistere prima di apt. VAI non serve. Telegram, R2,
+          # elenco, esempi e archivio creano o non cercano la cartella in 01.
+          if [ -n "$CARTELLA" ] && [ "$AZIONE" != "elenco" ] && [ "$AZIONE" != "esempi" ] && [ "$AZIONE" != "archivio" ] \
+             && { [ -z "$TELEGRAM" ] || [ "$TELEGRAM" = "[]" ]; } && [ -z "$R2" ]; then
+            cerca() {
+              local dir="$1" elenco stato
+              elenco=$(rclone lsf "gdrive:$dir" --dirs-only) || return 1
+              printf '%s\n' "$elenco" | python3 scripts/nome-cartella.py "$CARTELLA"
+            }
+            vero=""
+            stato=0
+            if [ "$AZIONE" = "regia" ]; then
+              vero=$(cerca "$DIR_FATTI") || stato=$?
+              # 2 = non c'è in Fatti: si guarda anche in Da editare. Un errore di Drive (1) si rilancia.
+              if [ "$stato" = 2 ]; then
+                stato=0
+                vero=$(cerca "$DIR_EDITARE") || stato=$?
+              fi
+              dove="né in $DIR_FATTI né in $DIR_EDITARE"
+            elif [ "$ORIGINE" = "98" ] || [ -n "$CORREZIONE" ]; then
+              vero=$(cerca "$DIR_FATTI") || stato=$?
+              dove="in $DIR_FATTI"
+            else
+              vero=$(cerca "$DIR_EDITARE") || stato=$?
+              dove="in $DIR_EDITARE"
+            fi
+            ferma=""
+            if [ "$stato" = 0 ] && [ -n "$vero" ]; then
+              trovato="$vero"
+              [ "$trovato" = "$CARTELLA" ] || echo "cartella \"$CARTELLA\" trovata come \"$trovato\""
+            elif [ "$stato" = 2 ] || [ "$stato" = 3 ]; then
+              echo "mancante=1" >> "$GITHUB_OUTPUT"
+              trovato=""
+              ferma=manca
+              if [ "$stato" = 3 ]; then
+                testo_manca="Due cartelle combaciano con \"$CARTELLA\" $dove. Rinomina una delle due: non monto."
+              else
+                testo_manca="Non trovo la cartella \"$CARTELLA\" $dove. Spazi in più e le maiuscole non contano."
+              fi
+              echo "::error::$testo_manca"
+            else
+              echo "::error::non riesco a leggere le cartelle su Drive"
+              exit 1
+            fi
+          fi
+          # lo spazio in fondo del nome vero (Manifestazioni ) non va tagliato
+          {
+            echo "cartella<<REGISTA_CARTELLA_END"
+            printf '%s\n' "$trovato"
+            echo "REGISTA_CARTELLA_END"
+          } >> "$GITHUB_OUTPUT"
+          if [ -n "$trovato" ]; then echo "Da montare: $trovato"
+          elif [ "${ferma:-}" = "manca" ]; then echo "cartella assente: mi fermo prima di apt"
+          else echo "Niente da fare"; fi
           # il bot tiene l'elenco delle cartelle per i tasti di "Nuovo montaggio" e degli stili su Drive
           # (cartelle in Stili, tranne quelle che iniziano con "_" come il modello): nome, cartella e
           # la riga "Quando usarlo" di stile.txt, che il bot mostra come descrizione
@@ -169,6 +271,15 @@ jobs:
               | jq --argjson info "$stili_info" --argjson yt "${YT_PRONTO:-false}" '. + {stili_info:$info, yt:$yt}' \
               | curl -s -X POST "$NOTIFY_URL" -H 'content-type: application/json' -H "x-regista-token: $NOTIFY_TOKEN" -d @- > /dev/null || true
           fi
+          # cartella chiesta e assente: l'elenco dei tasti è già partito, ora l'errore. Niente apt.
+          if [ "${ferma:-}" = "manca" ]; then
+            if [ -n "$NOTIFY_URL" ]; then
+              jq -n --arg n "$CARTELLA" --arg u "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID" --arg id "$GITHUB_RUN_ID" --arg t "$testo_manca" \
+                '{tipo:"esito", esito:"⚠️ non montato", nome:$n, richiesto:$n, ok:false, run_url:$u, run_id:$id, testo:("Errore: "+$t), info:{errore:$t}}' \
+                | curl -s -X POST "$NOTIFY_URL" -H 'content-type: application/json' -H "x-regista-token: $NOTIFY_TOKEN" -d @- > /dev/null || true
+            fi
+            exit 1
+          fi
           # avvio manuale/dal bot senza niente da montare: avvisa, così non sembra un video fatto
           if [ -z "$trovato" ] && [ "$AZIONE" != "elenco" ] && [ "$EVENTO" = "workflow_dispatch" ] && [ -n "$NOTIFY_URL" ]; then
             jq -n --arg t "Nessuna cartella con VAI in $DIR_EDITARE: non ho montato niente." '{tipo: "vuoto", nome: "—", testo: $t}' \
@@ -176,19 +287,19 @@ jobs:
           fi
 
       - uses: actions/setup-node@v5
-        if: steps.check.outputs.cartella != ''
+        if: vars.USA_IMMAGINE != '1' && steps.check.outputs.cartella != ''
         with:
           node-version: 22
           cache: npm
 
       - uses: actions/setup-python@v5
-        if: steps.check.outputs.cartella != '' && inputs.telegram != '' && inputs.telegram != '[]'
+        if: vars.USA_IMMAGINE != '1' && steps.check.outputs.cartella != '' && inputs.telegram != '' && inputs.telegram != '[]'
         with:
           python-version: '3.12'
 
       - name: Cache strumenti
         # stessa chiave di stile.yml, laboratorio.yml e del giro «strumenti»: un solo scarico
-        if: steps.check.outputs.cartella != '' && inputs.azione != 'regia' && inputs.azione != 'archivio'
+        if: vars.USA_IMMAGINE != '1' && steps.check.outputs.cartella != '' && inputs.azione != 'regia' && inputs.azione != 'archivio'
         uses: actions/cache@v4
         with:
           path: ~/opt/regista-strumenti
@@ -202,13 +313,19 @@ jobs:
         timeout-minutes: 16
         env:
           TELEGRAM: ${{ inputs.telegram }}
+          USA_IMMAGINE: ${{ vars.USA_IMMAGINE }}
         run: |
-          # Prima il ffmpeg in cache (GitHub). Apt solo se quel ffmpeg non parte, e per emoji/libegl
-          # se dpkg non li ha già. Un apt fermo su quei pacchetti non ferma il montaggio.
-          bash scripts/programma-video.sh fonts-noto-color-emoji libegl1 libgles2
-          npm ci || npm install
-          # Telethon (MTProto) per scaricare i file grandi mandati al bot; cryptg lo rende molto più veloce
-          if [ -n "$TELEGRAM" ] && [ "$TELEGRAM" != "[]" ]; then pip install --quiet telethon cryptg; fi
+          if [ "$USA_IMMAGINE" = "1" ]; then
+            # pacchetti, ffmpeg e browser sono già nell'immagine
+            bash scripts/collega-immagine.sh
+          else
+            # Prima il ffmpeg in cache (GitHub). Apt solo se quel ffmpeg non parte, e per emoji/libegl
+            # se dpkg non li ha già. Un apt fermo su quei pacchetti non ferma il montaggio.
+            bash scripts/programma-video.sh fonts-noto-color-emoji libegl1 libgles2
+            npm ci || npm install
+            # Telethon (MTProto) per scaricare i file grandi mandati al bot; cryptg lo rende molto più veloce
+            if [ -n "$TELEGRAM" ] && [ "$TELEGRAM" != "[]" ]; then pip install --quiet telethon cryptg; fi
+          fi
           # il girato originale va nel disco grande del runner (/mnt), non in quello di sistema
           sudo mkdir -p /mnt/regista && sudo chown "$USER" /mnt/regista
           df -h / /mnt | sed 's/^/  /'
@@ -254,21 +371,81 @@ jobs:
           sudo mkdir -p /mnt/regista && sudo chown "$USER" /mnt/regista
           node scripts/regista.mjs
 
+      # Chiavi mancanti e cartella inesistente hanno già avvisato e non si rilanciano.
+      # Lo script, se parte e fallisce, avvisa lui. Qui resta il resto: apt, Drive, immagine.
+      # È un errore del server: si rilancia una volta sola, e Telegram parte solo se fallisce anche il secondo.
+      - name: È un errore del server?
+        id: causa
+        if: failure()
+        env:
+          CHIAVI: ${{ steps.chiavi.outcome }}
+          MANCANTE: ${{ steps.check.outputs.mancante }}
+          MONTA: ${{ steps.monta.outcome }}
+        run: |
+          infra=1
+          if [ "$CHIAVI" = "failure" ] || [ "$MANCANTE" = "1" ] || [ "$MONTA" = "failure" ]; then
+            infra=0
+          fi
+          echo "infra=$infra" >> "$GITHUB_OUTPUT"
+          if [ "$infra" = 1 ]; then echo "errore del server"; else echo "errore del contenuto, niente rilancio"; fi
+
+      - name: Rilancio se è un errore del server
+        id: rilancio
+        if: failure() && steps.causa.outputs.infra == '1' && inputs.tentativo != '2'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          CARTELLA: ${{ inputs.cartella }}
+          BRIEF: ${{ inputs.brief }}
+          ORIGINE: ${{ inputs.origine }}
+          CORREZIONE: ${{ inputs.correzione }}
+          AI: ${{ inputs.ai }}
+          MODELLO: ${{ inputs.modello }}
+          MODELLO_GEMINI: ${{ inputs.modello_gemini }}
+          AZIONE: ${{ inputs.azione }}
+          R2: ${{ inputs.r2 }}
+          TELEGRAM: ${{ inputs.telegram }}
+          SECONDI: ${{ inputs.secondi }}
+        run: |
+          if ! command -v gh >/dev/null 2>&1; then
+            echo "ok=0" >> "$GITHUB_OUTPUT"
+            echo "::error::gh non c'è, non posso rilanciare"
+            exit 1
+          fi
+          if jq -n \
+            --arg ref "$GITHUB_REF_NAME" \
+            --arg cartella "$CARTELLA" --arg brief "$BRIEF" --arg origine "$ORIGINE" \
+            --arg correzione "$CORREZIONE" --arg ai "$AI" --arg modello "$MODELLO" \
+            --arg modello_gemini "$MODELLO_GEMINI" --arg azione "$AZIONE" \
+            --arg r2 "$R2" --arg telegram "$TELEGRAM" --arg secondi "$SECONDI" \
+            '{ref:$ref, inputs:{cartella:$cartella, brief:$brief, origine:$origine, correzione:$correzione, ai:$ai, modello:$modello, modello_gemini:$modello_gemini, azione:$azione, r2:$r2, telegram:$telegram, secondi:$secondi, tentativo:"2"}}' \
+            | gh api --method POST "/repos/${GITHUB_REPOSITORY}/actions/workflows/regista.yml/dispatches" --input -; then
+            echo "ok=1" >> "$GITHUB_OUTPUT"
+            echo "rilancio avviato (tentativo 2): Telegram solo se fallisce anche quello"
+          else
+            echo "ok=0" >> "$GITHUB_OUTPUT"
+            echo "::error::rilancio non partito"
+            exit 1
+          fi
+
       # giro fermato prima del montaggio (controllo della cartella, installazione…): lo script non
       # parte e non può avvisare da solo; lo dice il workflow al bot, con 🔁 Riprova, invece di
-      # lasciarlo "in attesa del server" (22-23/10: mirror di Ubuntu fermo, apostrofo nel controllo)
+      # lasciarlo "in attesa del server" (22-23/10: mirror di Ubuntu fermo, apostrofo nel controllo).
+      # Il primo errore del server non scrive: ha già lanciato il secondo giro.
       - name: Avvisa il bot se il giro si è fermato prima di montare
-        if: failure() && steps.monta.outcome != 'success' && steps.monta.outcome != 'failure'
+        if: failure() && steps.monta.outcome != 'success' && steps.monta.outcome != 'failure' && steps.chiavi.outcome != 'failure' && steps.check.outputs.mancante != '1' && (steps.causa.outputs.infra != '1' || inputs.tentativo == '2' || steps.rilancio.outputs.ok == '0')
         env:
           NOTIFY_URL: ${{ secrets.NOTIFY_URL }}
           NOTIFY_TOKEN: ${{ secrets.NOTIFY_TOKEN }}
           CARTELLA: ${{ steps.check.outputs.cartella || inputs.cartella }}
           RICHIESTO: ${{ inputs.cartella }}
           INSTALLAZIONE: ${{ steps.dipendenze.outcome }}
+          USA_IMMAGINE: ${{ vars.USA_IMMAGINE }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: |
           [ -n "$NOTIFY_URL" ] || exit 0
-          if [ "$INSTALLAZIONE" = "failure" ]; then
+          if [ "$INSTALLAZIONE" = "failure" ] && [ "$USA_IMMAGINE" = "1" ]; then
+            causa="l'immagine del runner non è completa o non si collega: in Variables metti USA_IMMAGINE a 0 per tornare all'installazione di sempre"
+          elif [ "$INSTALLAZIONE" = "failure" ]; then
             causa="installazione dei programmi non riuscita (server dei pacchetti di Ubuntu lento o fermo): riprova tra qualche minuto"
           else
             causa="il giro si è fermato prima di cominciare il montaggio (controllo della cartella su Drive): apri il Log per i dettagli"
