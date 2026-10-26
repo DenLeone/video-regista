@@ -20,7 +20,7 @@ const stato = {
 };
 
 function studioVuoto() {
-  return { fase: 'elenco', salvati: [], bozza: null, occupato: '', file: null, nota: '', errore: '', invio: false };
+  return { fase: 'elenco', salvati: [], bozza: null, occupato: '', file: null, nota: '', errore: '', invio: false, bozzaVecchia: false };
 }
 
 function caricaVuota() {
@@ -537,9 +537,25 @@ function righeRiassunto(testo) {
   }).join('');
 }
 
+function testoErroreStile(testo) {
+  return String(testo || '')
+    .replace(/The operation was aborted due to timeout/gi, 'tempo scaduto')
+    .replace(/aborted due to timeout/gi, 'tempo scaduto');
+}
+
 function htmlErroreStile(s) {
   if (!s.errore) return '';
-  return `<div class="card errore-stile" data-errore-stile><p class="kicker">Non è andata</p><p>${esc(s.errore)}</p><small class="meta">Premi di nuovo Studia per riprovare.</small></div>`;
+  return `<div class="card errore-stile" data-errore-stile><p class="kicker">Non è andata</p><p>${esc(testoErroreStile(s.errore))}</p><small class="meta">Premi di nuovo Studia per riprovare.</small></div>`;
+}
+
+function htmlBozzaElenco(s) {
+  if (!s.bozza?.haTesto) return '';
+  const vecchia = !!s.bozzaVecchia;
+  const mentre = !vecchia && !!s.occupato;
+  const nota = vecchia
+    ? '<p class="meta">Non è il risultato di questo studio: è la bozza di prima.</p>'
+    : (mentre ? '<p class="meta">È la bozza di prima: lo studio nuovo non è ancora finito.</p>' : '');
+  return `<div class="card scheda-stile"${vecchia ? ' data-bozza-precedente' : ''}><p class="kicker">${vecchia ? 'Bozza precedente' : 'Bozza'}</p>${nota}${righeRiassunto(s.bozza.riassunto)}<button class="btn pieno" data-azione="studio-continua">${vecchia ? 'Apri la bozza di prima' : 'Continua'}</button></div>`;
 }
 
 function htmlStile() {
@@ -549,6 +565,7 @@ function htmlStile() {
     return `<button class="btn ghost" data-azione="studio-elenco">Elenco</button>
       <div class="intro"><p class="kicker">Stile</p><h1>${esc(b.nome || 'Bozza')}</h1></div>
       ${htmlErroreStile(s)}
+      ${s.bozzaVecchia ? '<p class="nota">Questa scheda è la bozza di prima, non il risultato dello studio appena fallito.</p>' : ''}
       <div class="card scheda-stile">${righeRiassunto(b.riassunto)}</div>
       ${b.voce === false ? '<p class="nota">Senza trascrizione: solo fotogrammi e ritmo.</p>' : ''}
       ${(b.daCreare || []).length ? `<div class="card da-creare"><p class="kicker">Da creare</p><p class="meta">Nel riferimento ci sono effetti che lo stile non sa ancora fare: per ora usa i più vicini. Si possono programmare con Claude.</p><ul>${b.daCreare.map((d) => `<li>${esc(d)}</li>`).join('')}</ul></div>` : ''}
@@ -570,10 +587,10 @@ function htmlStile() {
       <label class="etichetta">Video di riferimento</label>
       <input class="campo" id="file-stile" type="file" accept="video/*">
       <button class="btn primario" data-azione="studia"${s.occupato || s.invio ? ' disabled' : ''}>Studia</button>
-      <p class="nota">Il video va su Cloudflare a pezzi (si riprende se si interrompe), poi l’AI lo guarda tutto, con l’audio, in 2–5 minuti: puoi chiudere l’app, ti avviso su Telegram. Non apre un montaggio e non compare in Oggi.</p>
+      <p class="nota">Il video va su Cloudflare a pezzi (si riprende se si interrompe), poi l’AI lo guarda tutto, con l’audio: di solito qualche minuto, a volte un quarto d’ora. Puoi chiudere l’app, ti avviso su Telegram. Non apre un montaggio e non compare in Oggi.</p>
       <p class="nota" data-upload-stile>${esc(s.nota || '')}</p>
     </div>
-    ${s.bozza?.haTesto ? `<div class="card scheda-stile"><p class="kicker">Bozza</p>${righeRiassunto(s.bozza.riassunto)}<button class="btn pieno" data-azione="studio-continua">Continua</button></div>` : ''}
+    ${htmlBozzaElenco(s)}
     <h2>Salvati</h2>
     <div class="lista">${salvati.length ? salvati.map((v) => `<article class="card">
         <strong>${esc(v.nome)}</strong>
@@ -638,7 +655,7 @@ document.addEventListener('click', async (e) => {
     else if (azione === 'esci') { await api('/api/auth/esci', { method: 'POST', body: {} }); stato.schermo = 'accesso'; disegna(); }
     else if (azione === 'studio-chiudi') vai('altro');
     else if (azione === 'studio-elenco') { stato.studio.fase = 'elenco'; await caricaStudio(); disegna(); }
-    else if (azione === 'studio-continua') { stato.studio.fase = 'studio'; disegna(); }
+    else if (azione === 'studio-continua') { stato.studio.errore = ''; stato.studio.bozzaVecchia = false; stato.studio.fase = 'studio'; disegna(); }
     else if (azione === 'studia') await studiaVideo();
     else if (azione === 'studio-invia') await inviaNotaStile();
     else if (azione === 'studio-salva') await salvaStile();
@@ -1162,7 +1179,11 @@ async function caricaStudio() {
   if (r.bozza) stato.studio.bozza = r.bozza;
   // studio sul video intero ancora in corso (app chiusa e riaperta): si riprende ad aspettarlo
   if (r.analisi && !r.analisi.errore && !stato.studio.occupato) attendiStudioVideo(Number(r.bozza?.quando) || 0);
-  else if (r.analisi?.errore && !stato.studio.errore) stato.studio.errore = `Studio non riuscito: ${r.analisi.errore}`;
+  else if (r.analisi?.errore) {
+    stato.studio.errore = `Studio non riuscito: ${testoErroreStile(r.analisi.errore)}`;
+    stato.studio.bozzaVecchia = !!(r.bozza?.haTesto || stato.studio.bozza?.haTesto);
+    stato.studio.fase = 'elenco';
+  }
 }
 
 function notaUpload(testo) {
@@ -1195,6 +1216,7 @@ async function attendiBozza(prima) {
       stato.studio.bozza = r.bozza;
       stato.studio.fase = 'studio';
       stato.studio.occupato = '';
+      stato.studio.bozzaVecchia = false;
       stato.studio.errore = '';
       if (!eraStudio) stato.studio.nota = 'Carico il file intero…';
       else if (String(stato.studio.nota || '').startsWith('Connessione')) stato.studio.nota = '';
@@ -1217,6 +1239,7 @@ async function studiaVideo() {
   const prima = Number(stato.studio.bozza?.quando) || 0;
   stato.studio.nota = '';
   stato.studio.errore = '';
+  stato.studio.bozzaVecchia = false;
   faseStudio('Carico il video su Cloudflare… 0%');
   let id;
   try {
@@ -1224,6 +1247,8 @@ async function studiaVideo() {
     id = await inviaRiferimento(file, (pct) => faseStudio(`Carico il video su Cloudflare… ${pct}%`));
   } catch (e) {
     stato.studio.occupato = '';
+    stato.studio.bozzaVecchia = !!stato.studio.bozza?.haTesto;
+    stato.studio.fase = 'elenco';
     stato.studio.errore = `Il video non è arrivato su Cloudflare: ${e.message || 'errore'}. Riprova: i pezzi già mandati non ripartono.`;
     disegna();
     return;
@@ -1242,7 +1267,7 @@ async function studiaVideo() {
 
 // aspetta la bozza dello studio sul video intero: di solito 2–5 minuti; si può chiudere l'app
 async function attendiStudioVideo(prima) {
-  faseStudio('L’AI guarda tutto il video, con l’audio… di solito 2–5 minuti. Puoi chiudere l’app: ti avviso su Telegram.');
+  faseStudio('L’AI guarda tutto il video, con l’audio… di solito qualche minuto. Puoi chiudere l’app: ti avviso su Telegram.');
   const fine = Date.now() + 25 * 60000;
   while (Date.now() < fine) {
     await new Promise((r) => setTimeout(r, 8000));
@@ -1253,6 +1278,7 @@ async function attendiStudioVideo(prima) {
       stato.studio.bozza = r.bozza;
       stato.studio.fase = 'studio';
       stato.studio.occupato = '';
+      stato.studio.bozzaVecchia = false;
       stato.studio.errore = '';
       stato.studio.nota = '';
       disegna();
@@ -1260,13 +1286,17 @@ async function attendiStudioVideo(prima) {
     }
     if (r.analisi?.errore) {
       stato.studio.occupato = '';
-      stato.studio.errore = `Studio non riuscito: ${r.analisi.errore}`;
+      stato.studio.fase = 'elenco';
+      stato.studio.bozzaVecchia = !!stato.studio.bozza?.haTesto;
+      stato.studio.errore = `Studio non riuscito: ${testoErroreStile(r.analisi.errore)}`;
       disegna();
       return false;
     }
     if (!r.analisi) break; // né studio in corso né bozza nuova: si è perso
   }
   stato.studio.occupato = '';
+  stato.studio.fase = 'elenco';
+  stato.studio.bozzaVecchia = !!stato.studio.bozza?.haTesto;
   stato.studio.errore = 'Lo studio non ha dato notizie. Se arriva, lo trovi qui e su Telegram; altrimenti premi di nuovo Studia.';
   disegna();
   return false;
@@ -1280,6 +1310,8 @@ async function studiaVeloce(file, prima) {
     campione = await campionaRiferimento(file, faseStudio);
   } catch (e) {
     stato.studio.occupato = '';
+    stato.studio.fase = 'elenco';
+    stato.studio.bozzaVecchia = !!stato.studio.bozza?.haTesto;
     stato.studio.errore = e.message || 'Non riesco a leggere questo video sul telefono.';
     disegna();
     return;
@@ -1293,6 +1325,7 @@ async function studiaVeloce(file, prima) {
     if (!r.bozza?.haTesto) throw new Error('L’AI non ha restituito uno stile. Riprova.');
     stato.studio.bozza = r.bozza;
     stato.studio.fase = 'studio';
+    stato.studio.bozzaVecchia = false;
     stato.studio.errore = '';
     scheda = true;
   } catch (e) {
@@ -1301,7 +1334,11 @@ async function studiaVeloce(file, prima) {
       disegna();
       scheda = await attendiBozza(prima);
     }
-    if (!scheda) stato.studio.errore = `Analisi non riuscita: ${e.message || 'errore sconosciuto'}`;
+    if (!scheda) {
+      stato.studio.fase = 'elenco';
+      stato.studio.bozzaVecchia = !!stato.studio.bozza?.haTesto;
+      stato.studio.errore = `Analisi non riuscita: ${e.message || 'errore sconosciuto'}`;
+    }
   } finally {
     stato.studio.occupato = '';
     disegna();
@@ -1318,6 +1355,7 @@ async function inviaNotaStile() {
     const r = await api('/api/stile/chat', { method: 'POST', ms: 120000, body: { testo: detto } });
     stato.studio.bozza = r.bozza;
     stato.studio.fase = 'studio';
+    stato.studio.bozzaVecchia = false;
     stato.studio.errore = '';
   } catch (e) {
     let ok = false;
@@ -1345,6 +1383,8 @@ async function salvaStile() {
 async function apriStile(id) {
   const r = await api('/api/stile/apri', { method: 'POST', body: { id } });
   stato.studio.bozza = r.bozza;
+  stato.studio.errore = '';
+  stato.studio.bozzaVecchia = false;
   stato.studio.fase = 'studio';
   disegna();
 }
@@ -1623,6 +1663,16 @@ async function parti() {
     await caricaStudio();
     if (DEMO && DEMO_STATO === 'analizza') stato.studio.occupato = 'L’AI analizza lo stile… (fino a un minuto)';
     if (DEMO && DEMO_STATO === 'errore') stato.studio.errore = 'Il telefono non riesce a estrarre i fotogrammi da questo video (spesso succede con HEVC/MOV pesanti). Prova un file più corto o esportato in H.264.';
+    if (DEMO && DEMO_STATO === 'studio-ko') {
+      stato.studio.fase = 'elenco';
+      stato.studio.bozzaVecchia = true;
+      stato.studio.errore = 'Studio non riuscito: nessun modello ha scritto lo stile (gemini-pro-latest: limite di richieste; gemini-flash-latest: tempo scaduto).';
+      stato.studio.bozza = {
+        nome: 'Cinematic Talk', haTesto: true, quando: Date.now() - 86400000,
+        riassunto: 'Quando usarlo: riflessioni personali, consigli di mindset\nRitmo: disteso\nSottotitoli: parola · Montserrat 700 · #FFFFFF · centro\nColori: naturale\nTransizioni: no\nInquadrature: parlato al centro\nMusica: no',
+        messaggi: [],
+      };
+    }
     if (DEMO && DEMO_STATO === 'carico') stato.studio.nota = 'Carico il file intero… 40%';
   }
   vai(vista === 'accesso' ? 'accesso' : vista);

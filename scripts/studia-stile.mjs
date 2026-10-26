@@ -3,7 +3,8 @@
 // generici, lontani da quelli fatti a mano), qui l'AI guarda il video tutto, con l'audio:
 //   1. scarica il riferimento da R2 (inbox/<R2_ID>/), lo porta a 720p H.264 (anche HEVC/MOV)
 //   2. misura i tagli con ffmpeg (cambi di scena) e la durata media delle inquadrature
-//   3. lo carica su Gemini (File API) e chiede lo stile a Gemini Pro (riserva: Flash), con le
+//   3. lo carica su Gemini (File API) e chiede lo stile a Gemini Pro, poi a Flash, 2.5 Flash
+//      e Flash Lite se il precedente è al limite di richieste o scade, con le
 //      opzioni di stile.txt (MODELLO) e due stili fatti a mano come esempi del livello voluto
 //   4. rimanda al bot (POST /stile-esito) lo stile, la risposta per Denis e quello che le
 //      opzioni non sanno fare ("da creare": nuove grafiche da scrivere insieme a Claude)
@@ -21,8 +22,58 @@ const ROOT = path.resolve(path.dirname(new URL(import.meta.url).pathname), '..')
 const WORK = path.join(ROOT, 'work', 'studio-stile');
 const GEMINI = process.env.GEMINI_URL || 'https://generativelanguage.googleapis.com';
 const R2_ID = (process.env.R2_ID || '').trim();
-const MODELLI = (process.env.STILE_MODELLI || 'gemini-pro-latest,gemini-flash-latest').split(',').map((m) => m.trim()).filter(Boolean);
+// Pro spesso risponde 429; Flash sul video intero sta intorno ai 5 minuti e il taglio a 5
+// (26/10, run 40305204598) lo ha fatto abortire. I tempi qui sotto stanno nel job da 25 minuti:
+// il budget è solo per generateContent, dopo download, ffmpeg e File API.
+export const MODELLI_PREDEFINITI = ['gemini-pro-latest', 'gemini-flash-latest', 'gemini-2.5-flash', 'gemini-flash-lite-latest'];
+const MODELLI = (process.env.STILE_MODELLI || '').split(',').map((m) => m.trim()).filter(Boolean);
+const MODELLI_USATI = MODELLI.length ? MODELLI : MODELLI_PREDEFINITI;
+export const BUDGET_STILE_MS = 16 * 60 * 1000;
+export const TEMPI_MODELLO_MS = {
+  'gemini-pro-latest': 7 * 60 * 1000,
+  'gemini-flash-latest': 8 * 60 * 1000,
+  'gemini-2.5-flash': 6 * 60 * 1000,
+  'gemini-flash-lite-latest': 4 * 60 * 1000,
+};
+const TEMPO_BASE_MS = 6 * 60 * 1000;
+const MINIMO_CHIAMATA_MS = 90 * 1000;
 const MAX_SECONDI = 180; // un riferimento più lungo si studia sui primi 3 minuti
+
+export function tempoChiamata(modello, trascorsoMs) {
+  const voluto = TEMPI_MODELLO_MS[modello] || TEMPO_BASE_MS;
+  const rimasto = BUDGET_STILE_MS - Math.max(0, Number(trascorsoMs) || 0);
+  if (rimasto < MINIMO_CHIAMATA_MS) return 0;
+  return Math.min(voluto, rimasto);
+}
+
+export function eTimeout(e) {
+  const nome = String(e?.name || '');
+  const msg = String(e?.message || e || '');
+  return nome === 'TimeoutError' || nome === 'AbortError' || /aborted due to timeout|operation was aborted/i.test(msg);
+}
+
+export function descriviFallimento(modello, e, status) {
+  const nome = String(modello || 'modello');
+  if (status === 429) return `${nome}: limite di richieste`;
+  if (typeof status === 'number' && status >= 500) return `${nome}: Gemini non risponde (HTTP ${status})`;
+  if (e && eTimeout(e)) return `${nome}: tempo scaduto`;
+  const nomeRe = nome.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const pulito = String(e?.message || e || 'errore').replace(new RegExp(`^${nomeRe}:\\s*`), '').replace(/\s+/g, ' ').slice(0, 140);
+  if (/fetch failed|network|ECONNRESET|ENOTFOUND|ETIMEDOUT|socket/i.test(pulito)) return `${nome}: rete verso Gemini interrotta`;
+  return `${nome}: ${pulito || 'errore'}`;
+}
+
+// 429 e 5xx rispondono subito: un secondo tentativo. Tempo scaduto e gli altri errori passano al modello dopo.
+/** @param {{ status?: number, errore?: Error | null, tentativo?: number }} [opts] */
+export function riprovaStessoModello({ status = 0, errore = null, tentativo = 1 } = {}) {
+  if (errore || tentativo >= 2) return false;
+  return status === 429 || (typeof status === 'number' && status >= 500);
+}
+
+export function messaggioStudioFallito(motivi) {
+  const lista = (motivi || []).map((m) => String(m || '').trim()).filter(Boolean);
+  return `nessun modello ha scritto lo stile${lista.length ? ` (${lista.join('; ')})` : ''}`;
+}
 
 const log = (...a) => console.log('[stile]', ...a);
 const run = (cmd, args) => String(execFileSync(cmd, args, { stdio: ['ignore', 'pipe', 'pipe'], maxBuffer: 1 << 26 }) ?? '');
@@ -158,26 +209,47 @@ async function chiediStile(fileGemini, misure, chiave) {
     contents: [{ role: 'user', parts: [{ file_data: { mime_type: 'video/mp4', file_uri: fileGemini.uri } }, { text: prompt(misure) }] }],
     generationConfig: { responseMimeType: 'application/json', temperature: 0.3, maxOutputTokens: 16384 },
   };
-  let ultimo = '';
-  for (const modello of MODELLI) {
+  const motivi = [];
+  const inizio = Date.now();
+  for (const modello of MODELLI_USATI) {
+    const ms = tempoChiamata(modello, Date.now() - inizio);
+    if (!ms) {
+      const voce = `${modello}: tempo del giro esaurito`;
+      motivi.push(voce);
+      log(voce);
+      break;
+    }
+    log(`${modello}: attendo fino a ${Math.round(ms / 1000)} s`);
     for (let tentativo = 1; tentativo <= 2; tentativo++) {
       try {
         const r = await fetch(`${GEMINI}/v1beta/models/${modello}:generateContent`, {
           method: 'POST', headers: { 'x-goog-api-key': chiave, 'content-type': 'application/json' },
-          body: JSON.stringify(corpo), signal: AbortSignal.timeout(5 * 60 * 1000),
+          body: JSON.stringify(corpo), signal: AbortSignal.timeout(ms),
         });
-        if (r.status === 429 || r.status >= 500) { ultimo = `${modello}: HTTP ${r.status}`; log(ultimo, '(riprovo)'); await attesa(15000); continue; }
+        if (r.status === 429 || r.status >= 500) {
+          const voce = descriviFallimento(modello, null, r.status);
+          if (riprovaStessoModello({ status: r.status, tentativo })) { log(voce, '(riprovo)'); await attesa(15000); continue; }
+          motivi.push(voce);
+          log(voce, '(passo al modello successivo)');
+          break;
+        }
         const j = await json(r, modello);
         const testo = (j.candidates?.[0]?.content?.parts || []).map((p) => p.text || '').join('');
         const letto = leggiRisposta(testo);
         if (letto) { log(`stile scritto da ${modello}`); return { ...letto, modello }; }
-        ultimo = `${modello}: risposta illeggibile`;
-        log(ultimo);
-      } catch (e) { ultimo = `${modello}: ${e.message}`; log(ultimo); }
-      break;
+        const voce = `${modello}: risposta illeggibile`;
+        motivi.push(voce);
+        log(voce);
+        break;
+      } catch (e) {
+        const voce = descriviFallimento(modello, e, 0);
+        motivi.push(voce);
+        log(voce, '(passo al modello successivo)');
+        break;
+      }
     }
   }
-  throw new Error(`nessun modello ha scritto lo stile (${ultimo})`);
+  throw new Error(messaggioStudioFallito(motivi).slice(0, 300));
 }
 
 async function rispondi(dati) {
