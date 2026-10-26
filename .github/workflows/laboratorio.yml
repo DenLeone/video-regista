@@ -48,8 +48,10 @@ jobs:
           key: regista-strumenti-v2-${{ runner.os }}
 
       - name: ffmpeg
-        timeout-minutes: 8
-        run: bash scripts/installa-strumenti.sh
+        timeout-minutes: 16
+        run: |
+          bash scripts/apt-ubuntu.sh ffmpeg fonts-dejavu-core
+          bash scripts/installa-strumenti.sh
 
       - uses: actions/setup-node@v5
         with:

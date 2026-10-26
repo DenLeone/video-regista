@@ -41,8 +41,9 @@ jobs:
           key: regista-strumenti-v2-${{ runner.os }}
 
       - name: Programmi
-        timeout-minutes: 8
+        timeout-minutes: 16
         run: |
+          bash scripts/apt-ubuntu.sh ffmpeg
           bash scripts/installa-strumenti.sh
           curl -fsSL https://rclone.org/install.sh | sudo bash > /dev/null
 

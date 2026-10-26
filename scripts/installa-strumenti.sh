@@ -1,11 +1,10 @@
 #!/usr/bin/env bash
-# Strumenti del montaggio, senza restare appesi ai mirror di Ubuntu.
-# Il 26/10 lo step Dipendenze (run 40337595283) è morto dopo 10 minuti: apt non finiva
-# di scaricare ffmpeg da azure.archive.ubuntu.com. Qui ffmpeg è una build GPL statica
-# (BtbN 8.1: arnndn, loudnorm, vidstab, libass, e anche rubberband e libvmaf), i font e
-# i pacchetti pip stanno in ~/opt/regista-strumenti. actions/cache la tiene: al giro
-# dopo non si riscarica niente. Nessun Demucs e niente che chieda una GPU.
-# Il montaggio non viene cambiato: questi programmi devono solo essere nel PATH.
+# Strumenti in più rispetto ad apt (scripts/apt-ubuntu.sh, che resta il fallback).
+# Se questa cache c'è, il suo ffmpeg va davanti a quello di Ubuntu nel PATH: ha arnndn,
+# loudnorm, vidstab, libass e libvmaf. Se lo scarico fallisce non si tocca apt: il
+# montaggio usa il ffmpeg appena installato da apt-ubuntu.sh. In cache anche Montserrat,
+# Source Sans 3, PySceneDetect (opencv headless) e auto-editor. Niente Demucs né GPU.
+# Il montaggio non cambia: questi programmi devono solo essere nel PATH.
 set -euo pipefail
 
 DIR="${STRUMENTI_DIR:-$HOME/opt/regista-strumenti}"
@@ -22,41 +21,64 @@ scarica() {
 
 # righe di `ffmpeg -filters`: il nome del filtro è la seconda colonna
 ha_filtri() {
-  local b="$1" elenco
+  local b="$1" elenco nome
   [ -x "$b" ] || return 1
   elenco="$("$b" -hide_banner -filters 2>/dev/null || true)"
-  grep -Eq '(^|[[:space:]])arnndn([[:space:]]|$)' <<<"$elenco" \
-    && grep -Eq '(^|[[:space:]])vidstabdetect([[:space:]]|$)' <<<"$elenco" \
-    && grep -Eq '(^|[[:space:]])loudnorm([[:space:]]|$)' <<<"$elenco" \
-    && grep -Eq '(^|[[:space:]])ass([[:space:]]|$)' <<<"$elenco"
+  for nome in arnndn vidstabdetect loudnorm ass libvmaf; do
+    grep -Eq "(^|[[:space:]])$nome([[:space:]]|$)" <<<"$elenco" || return 1
+  done
+}
+
+# toglie solo un nostro link, mai il ffmpeg di apt in /usr/bin
+togli_link() {
+  local link dest
+  for link in /usr/local/bin/ffmpeg /usr/local/bin/ffprobe; do
+    [ -L "$link" ] || continue
+    dest=$(readlink -f "$link" || true)
+    case "$dest" in
+      "$DIR"/*) sudo rm -f "$link" ;;
+    esac
+  done
 }
 
 FFBIN="$DIR/ffmpeg/bin/ffmpeg"
+ffmpeg_cache=0
 if ha_filtri "$FFBIN"; then
+  ffmpeg_cache=1
   log "ffmpeg già in cache ($("$FFBIN" -version | head -1))"
 else
-  log "scarico ffmpeg (solo la prima volta)"
+  log "scarico ffmpeg in cache"
   archivio="$DIR/ffmpeg.tar.xz"
-  scarica "$FFMPEG_URL" "$archivio"
-  rm -rf "$DIR/ffmpeg"
-  mkdir -p "$DIR/ffmpeg"
-  tar -xJf "$archivio" -C "$DIR/ffmpeg" --strip-components=1
-  rm -f "$archivio"
-  ha_filtri "$FFBIN" || { echo "::error::la build di ffmpeg non ha arnndn, vidstab, loudnorm o libass"; exit 1; }
-fi
-# via ffplay, manuali e la cache di pip: non servono al montaggio e appesantiscono il giro dopo
-rm -rf "$DIR/ffmpeg/doc" "$DIR/ffmpeg/man" "$DIR/ffmpeg/include" "$DIR/ffmpeg/presets" "$DIR/ffmpeg/bin/ffplay" "$DIR/pip"
-
-sudo ln -sfn "$FFBIN" /usr/local/bin/ffmpeg
-sudo ln -sfn "$DIR/ffmpeg/bin/ffprobe" /usr/local/bin/ffprobe
-if [ -d "$DIR/ffmpeg/lib" ]; then
-  echo "$DIR/ffmpeg/lib" | sudo tee /etc/ld.so.conf.d/regista-ffmpeg.conf >/dev/null
-  sudo ldconfig
-  if [ -n "${GITHUB_ENV:-}" ]; then
-    echo "LD_LIBRARY_PATH=$DIR/ffmpeg/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}" >> "$GITHUB_ENV"
+  if scarica "$FFMPEG_URL" "$archivio"; then
+    rm -rf "$DIR/ffmpeg"
+    mkdir -p "$DIR/ffmpeg"
+    if tar -xJf "$archivio" -C "$DIR/ffmpeg" --strip-components=1 && ha_filtri "$FFBIN"; then
+      ffmpeg_cache=1
+    else
+      log "la build scaricata non ha i filtri attesi"
+    fi
+    rm -f "$archivio"
+  else
+    log "scarico ffmpeg non riuscito"
   fi
 fi
-if [ -n "${GITHUB_PATH:-}" ]; then echo "$DIR/ffmpeg/bin" >> "$GITHUB_PATH"; fi
+if [ "$ffmpeg_cache" = 1 ]; then
+  rm -rf "$DIR/ffmpeg/doc" "$DIR/ffmpeg/man" "$DIR/ffmpeg/include" "$DIR/ffmpeg/presets" "$DIR/ffmpeg/bin/ffplay"
+  sudo ln -sfn "$FFBIN" /usr/local/bin/ffmpeg
+  sudo ln -sfn "$DIR/ffmpeg/bin/ffprobe" /usr/local/bin/ffprobe
+  if [ -d "$DIR/ffmpeg/lib" ]; then
+    echo "$DIR/ffmpeg/lib" | sudo tee /etc/ld.so.conf.d/regista-ffmpeg.conf >/dev/null
+    sudo ldconfig
+    if [ -n "${GITHUB_ENV:-}" ]; then
+      echo "LD_LIBRARY_PATH=$DIR/ffmpeg/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}" >> "$GITHUB_ENV"
+    fi
+  fi
+  if [ -n "${GITHUB_PATH:-}" ]; then echo "$DIR/ffmpeg/bin" >> "$GITHUB_PATH"; fi
+  log "ffmpeg in cache davanti a quello di apt"
+else
+  togli_link
+  log "ffmpeg in cache assente: resta quello di apt"
+fi
 
 # il filtro arnndn c'è nella build; senza un modello non toglie il rumore della voce
 MODELLO="$DIR/ffmpeg/arnndn/std.rnnn"
@@ -120,7 +142,7 @@ else
   log "installo PySceneDetect e auto-editor"
   if [ ! -x "$DIR/venv/bin/python" ]; then
     rm -rf "$DIR/venv"
-    python3 -m venv "$DIR/venv" || { bash "$(dirname "$0")/apt-ubuntu.sh" python3-venv && rm -rf "$DIR/venv" && python3 -m venv "$DIR/venv"; }
+    python3 -m venv "$DIR/venv"
   fi
   "$DIR/venv/bin/pip" install --disable-pip-version-check --cache-dir "$DIR/pip" \
     'scenedetect>=0.6,<0.7' opencv-python-headless 'auto-editor'
@@ -149,19 +171,9 @@ if [ -n "${GITHUB_PATH:-}" ]; then
 fi
 hash -r
 
-# MediaPipe (ritaglio della persona) vuole libEGL. Sul runner di GitHub c'è già con Chrome.
-# Se manca, un tentativo breve: se i mirror sono fermi il montaggio parte lo stesso.
-if ldconfig -p 2>/dev/null | grep -q 'libEGL.so'; then
-  log "libEGL già presente"
-elif [ "${STRUMENTI_SENZA_APT:-}" = "1" ]; then
-  log "libEGL assente, apt saltato"
-else
-  bash "$(dirname "$0")/apt-ubuntu.sh" libegl1 libgles2 \
-    || log "libEGL non installato: il ritaglio della persona può saltare, il montaggio no"
-fi
-
 echo "--- controllo ---"
-ffmpeg -hide_banner -filters | grep -E 'arnndn|vidstab|loudnorm|\bass\b' || true
+echo "ffmpeg: $(command -v ffmpeg)"
+ffmpeg -hide_banner -filters | grep -E 'arnndn|vidstab|loudnorm|libvmaf|\bass\b' || true
 scenedetect --version
 auto-editor --version
 fc-list : family | grep -i -E 'montserrat|liberation|dejavu' | sort -u || true
@@ -171,9 +183,15 @@ for nome in arnndn vidstabdetect vidstabtransform loudnorm; do
   grep -Eq "(^|[[:space:]])$nome([[:space:]]|$)" <<<"$elenco" || { echo "::error::ffmpeg senza $nome"; manca=1; }
 done
 grep -Eq '(^|[[:space:]])ass([[:space:]]|$)' <<<"$elenco" || { echo "::error::ffmpeg senza libass (filtro ass)"; manca=1; }
+if grep -Eq '(^|[[:space:]])libvmaf([[:space:]]|$)' <<<"$elenco"; then
+  log "libvmaf presente"
+elif [ "$ffmpeg_cache" = 1 ]; then
+  echo "::error::ffmpeg in cache senza libvmaf"; manca=1
+else
+  log "libvmaf non c'è nel ffmpeg di apt: la cache non è disponibile"
+fi
 scenedetect --version >/dev/null || manca=1
 auto-editor --version >/dev/null || manca=1
 fc-list : family | grep -qi montserrat || { echo "::error::font Montserrat assente"; manca=1; }
-if grep -Eq '(^|[[:space:]])libvmaf([[:space:]]|$)' <<<"$elenco"; then log "libvmaf presente"; fi
 log "fatti in $(( $(date +%s) - INIZIO )) s"
 exit "$manca"
