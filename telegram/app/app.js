@@ -177,7 +177,7 @@ function demoApi(path, method, body) {
 function demoStili() {
   const base = [
     { nome: 'Blueprint', tasto: '📐 Blueprint', cosa: 'tavola tecnica, parole chiave in box, effetti digitali' },
-    { nome: 'Cinematico', tasto: '🎬 Cinematico', cosa: 'spot di prodotto caldo, sottotitoli parola per parola, titoli grandi' },
+    { nome: 'Cinematico', tasto: '🎬 Cinematico', cosa: 'spot di prodotto, sottotitoli parola per parola, titoli grandi' },
     { nome: 'Narrativo', tasto: 'Narrativo', cosa: 'racconto lungo, poche scritte, dal Drive' },
   ];
   const extra = demoStile.salvati
