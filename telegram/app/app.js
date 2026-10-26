@@ -539,7 +539,10 @@ function righeRiassunto(testo) {
 
 function htmlErroreStile(s) {
   if (!s.errore) return '';
-  return `<div class="card errore-stile" data-errore-stile><p class="kicker">Non è andata</p><p>${esc(s.errore)}</p><small class="meta">Premi di nuovo Studia per riprovare.</small></div>`;
+  // sotto resta lo stile di prima: non è stato toccato (26/10, sembrava che lo studio fallito
+  // avesse sostituito Cinematic Talk)
+  const prima = s.bozza?.nome ? ` «${esc(s.bozza.nome)}» qui sotto è quello di prima: non è stato toccato.` : '';
+  return `<div class="card errore-stile" data-errore-stile><p class="kicker">Non è andata</p><p>${esc(s.errore)}</p><small class="meta">Premi di nuovo Studia per riprovare.${prima}</small></div>`;
 }
 
 function htmlStile() {
