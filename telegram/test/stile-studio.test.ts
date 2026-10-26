@@ -53,7 +53,7 @@ const TOKEN = 'sessione-stile-demo-1';
 function memoria() {
   const db = new Map<string, unknown>();
   const ops = {
-    chat: () => '8332006597',
+    chat: () => '111111111',
     leggi: async <T,>(_e: Segreti, k: string) => db.get(k) as T | undefined,
     scrivi: async (_e: Segreti, k: string, v: unknown) => { db.set(k, v); },
     cancella: async (_e: Segreti, k: string) => { db.delete(k); },
@@ -90,7 +90,7 @@ function memoria() {
 
 function env(extra: Partial<Segreti> = {}): Segreti {
   return {
-    TELEGRAM_BOT_TOKEN: 't', TELEGRAM_SECRET: 's', ALLOWED_CHAT_ID: '8332006597',
+    TELEGRAM_BOT_TOKEN: 't', TELEGRAM_SECRET: 's', ALLOWED_CHAT_ID: '111111111',
     GITHUB_TOKEN: 'g', GITHUB_REPO: 'DenLeone/video-regista', NOTIFY_TOKEN: 'n',
     GEMINI_API_KEY: 'chiave-test',
     ...extra,
