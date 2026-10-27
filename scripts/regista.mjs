@@ -109,6 +109,25 @@ const nomeVaiOriginale = (name) => name.replace(/^_VAI_in_corso_/i, '');
 const isNostro = (name) => isVai(name) || isInCorso(name) || /^_VAI_usato_/i.test(name) || /FINALE| - PROVA \d+s/i.test(name) || /^(NOTE|ERRORE|_ERRORE.*)\.txt$/i.test(name);
 
 // data di ripresa: metadati della camera, altrimenti dal nome (VID_20261018_…, IMG_20261018…)
+// ora esatta della ripresa dai metadati (niente ripiego sul nome del file, che dà solo il giorno)
+function oraRipresa(tags) {
+  for (const k of ['com.apple.quicktime.creationdate', 'creation_time']) {
+    const d = Date.parse(tags?.[k] || '');
+    if (d > Date.UTC(2015, 0, 1)) return d;
+  }
+  return null;
+}
+
+// Due file della stessa camera girati in momenti che non si sovrappongono sono riprese una dopo
+// l'altra, non due inquadrature dello stesso momento: non si sincronizzano. CapCut, 27/10: 4 riprese
+// Insta360 di fila, la quarta "agganciata" alla seconda per un'eco nel parlato (punteggio 0.30) →
+// immagini sbagliate sulla voce e il suo pezzo (la terza app) sparito. 10 s di tolleranza, e vale
+// sia se i metadati segnano l'inizio sia se segnano la fine della ripresa
+export function ripreseDiverse(a, b) {
+  if (a.dispositivo !== b.dispositivo || a.ora == null || b.ora == null) return false;
+  return Math.abs(a.ora - b.ora) > Math.max(a.durata, b.durata) + 10;
+}
+
 function dataRipresa(tags, nome) {
   for (const k of ['com.apple.quicktime.creationdate', 'creation_time', 'date']) {
     const d = Date.parse(tags?.[k] || '');
@@ -889,8 +908,23 @@ async function regiaConGemini(prompt, fogli, valida) {
   const difetti = (r) => (r.avvisi || []).filter((a) => /ordine del discorso|staccata|lasciata a metà|apertura|finisce a metà|finisce senza punto/.test(a));
   const scadenza = Date.now() + TETTO_REGIA_MS;
   let motivo = 'nessun modello';
-  for (const [i, modello] of modelli.entries()) {
+  // Flash Lite sceglie le clip molto peggio (CapCut, 27/10: tutti i Flash in 503, regia fatta dal
+  // Lite, clip sballate). Se i Flash pieni sono solo sovraccarichi, prima del Lite si aspetta un
+  // minuto e si riprova il migliore, una volta sola
+  const coda = [...modelli];
+  let ripreso = false;
+  for (let i = 0; i < coda.length; i++) {
+    const modello = coda[i];
     if (Date.now() >= scadenza) { motivo = 'tempo massimo del giro finito'; log('Gemini: tetto del giro raggiunto'); break; }
+    if (/lite/i.test(modello) && !ripreso && /sovraccarico/.test(motivo) && !/lite/i.test(modelli[0]) && Date.now() + 90000 < scadenza) {
+      ripreso = true;
+      log(`Gemini: Flash sovraccarichi, aspetto 60 s e riprovo ${modelli[0]} prima di ${modello}`);
+      await fase(job.nome, `⏳ Gemini sovraccarico: aspetto un minuto e riprovo ${nomeBreveGemini(modelli[0])} invece del Lite`, 'regia');
+      await attesa(60000);
+      coda.splice(i, 0, modelli[0]);
+      i--;
+      continue;
+    }
     if (quotaGiornoFinita(modello)) {
       motivo = 'richieste del giorno finite';
       log(`Gemini ${modello}: richieste del giorno finite, salto`);
@@ -924,7 +958,7 @@ async function regiaConGemini(prompt, fogli, valida) {
       } catch (e) { esito.motivo = `regia inutilizzabile (${e.message.slice(0, 120)})`; }
     }
     motivo = esito.motivo;
-    const dopo = modelli[i + 1];
+    const dopo = coda[i + 1];
     log(`Gemini ${modello}: ${motivo}${dopo ? ` → provo ${dopo}` : ''}`);
     if (dopo) await fase(job.nome, `⏳ Gemini ${nomeBreveGemini(modello)}: ${motivo}, uso ${nomeBreveGemini(dopo)}`, 'regia');
   }
@@ -1373,7 +1407,7 @@ export async function analizza(nome, brief, cache) {
       // registrazione dello schermo (nome tipico o formato da telefono più stretto di 9:16): ottima come inserto
       const schermo = /screen|registraz|rpreplay|schermo|scherm/i.test(f) || (info.h > info.w && info.w / info.h < 0.5);
       sorgenti.push({ id, file: `${id}.mp4`, originale: src, tipo: 'video', dispositivo: disp, nomeDispositivo: NOMI_DISPOSITIVO[disp],
-        durata: +info.durata.toFixed(2), orient: info.w > info.h ? 'h' : 'v', haAudio: info.audio, colore: info.colore, data: dataRipresa(info.tags, f), fps: info.fps,
+        durata: +info.durata.toFixed(2), orient: info.w > info.h ? 'h' : 'v', haAudio: info.audio, colore: info.colore, data: dataRipresa(info.tags, f), ora: oraRipresa(info.tags), fps: info.fps,
         ...(schermo ? { schermo: true } : {}) });
     } else if (AUDIO_EXT.includes(ext)) {
       const info = probe(src);
@@ -1440,6 +1474,7 @@ export async function analizza(nome, brief, cache) {
   const prova = (s) => {
     for (const p of principali) {
       if (!p.principale) continue; // voce scartata (niente parole): non aggancia più nessuno
+      if (ripreseDiverse(s, p)) { log(`sync ${s.id} ↔ ${p.id}: riprese diverse della stessa camera (${Math.round(Math.abs(s.ora - p.ora) / 1000)} s di distanza), niente sincronizzazione`); continue; }
       const r = sincronizza(db.get(p.id), db.get(s.id));
       log(`sync ${s.id} ↔ ${p.id}: offset ${r.offset} s, punteggio ${r.punteggio}, spicco ${r.spicco}${r.affidabile ? '' : ' (non affidabile)'}`);
       if (r.affidabile) { s.sync = { con: p.id, offset: r.offset, punteggio: r.punteggio }; return true; }
