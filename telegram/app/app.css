@@ -40,14 +40,12 @@
   --s8: 32px;
   --s10: 40px;
   /* Un solo posto per i bordi.
-     In standalone iOS il viewport di layout è più corto dello schermo
-     della status bar (screen.height − innerHeight ≈ 62) e quel buco sta
-     SOTTO, non sopra: offsetTop è 0. Sommare l’inset in fondo a quel buco
-     alza il dock di ~88px. --phantom lo misura il JS e allunga il guscio. */
+     Se il viewport di layout è già più corto dello schermo, il JS mette
+     --dock-bottom a 8px: il buco non si dipinge, e sommare l’inset
+     alzerebbe il dock senza avvicinarlo all’indicatore. */
   --inset-t: env(safe-area-inset-top, 0px);
   --inset-b: env(safe-area-inset-bottom, 0px);
   --edge: 10px;
-  --phantom: 0px;
   --safe-t: calc(var(--inset-t) + var(--edge));
   --dock-bottom: max(8px, calc(var(--inset-b) - 10px));
   --tabbar-h: 64px;
@@ -94,17 +92,6 @@ img { max-width: 100%; display: block; }
 :focus-visible { outline: 2px solid #fff; outline-offset: 3px; }
 input, textarea { caret-color: #fff; }
 ::placeholder { color: var(--ink-3); }
-
-/* Standalone: il viewport di layout mente ed è corto della status bar.
-   100lvh è lo schermo intero; se mente anche lui, il JS mette screen.height. */
-@media (display-mode: standalone) {
-  html, body, #app {
-    bottom: auto;
-    height: -webkit-fill-available;
-    height: 100lvh;
-  }
-  .dock, .composer, .sheet-host, .scrim { position: absolute; }
-}
 
 .app {
   width: var(--dock-w);
@@ -928,8 +915,11 @@ html[data-motion="off"] *, html[data-motion="off"] *::before, html[data-motion="
 }
 .debug-pannello pre {
   margin: 0;
-  font: 500 12px/1.45 ui-monospace, SFMono-Regular, monospace;
+  max-height: 50dvh;
+  overflow: auto;
+  font: 500 13px/1.45 ui-monospace, SFMono-Regular, monospace;
   white-space: pre-wrap;
+  color: #f5f5f7;
 }
 .debug-pannello button {
   margin-top: 8px;

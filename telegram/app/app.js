@@ -1128,25 +1128,30 @@ function agganciaViewport() {
   vv.addEventListener('scroll', aggiorna);
   window.addEventListener('resize', aggiorna);
 }
-/* In standalone il viewport di layout è corto della status bar e il buco
-   sta sotto la pagina. Allunga il guscio fino a screen.height e ancora il
-   dock in fondo a quel guscio, così bottom resta max(8px, inset − 10px)
-   rispetto allo schermo e non rispetto al viewport bugiardo. */
-function phantomMisurato() {
-  const solo = window.matchMedia('(display-mode: standalone)').matches || navigator.standalone === true;
-  if (!solo) return 0;
+/* In standalone iOS il viewport di layout può finire ~62px sopra il bordo
+   fisico (screen.height − innerHeight, offsetTop 0). Quel tratto non si
+   dipinge: non si allunga il guscio. Se il buco c’è, il dock sta a 8px
+   dal fondo del viewport, tutto visibile. Se il viewport riempie lo
+   schermo, si usa max(8px, safe-area-inset-bottom − 10px). */
+function deltaSchermo() {
   const ih = window.innerHeight;
   let sh = window.screen.height;
   let delta = sh - ih;
-  if (!(delta > 0 && delta < 80) && window.devicePixelRatio > 1) {
+  if (!(delta > 0 && delta < 100) && window.devicePixelRatio > 1) {
     const cssH = sh / window.devicePixelRatio;
-    if (cssH - ih > 0 && cssH - ih < 80) {
-      sh = Math.round(cssH);
+    if (cssH - ih > 0 && cssH - ih < 100) {
+      sh = cssH;
       delta = sh - ih;
     }
   }
-  if (!(delta > 0 && delta < 80)) return 0;
-  return { px: Math.round(delta), altezza: Math.round(sh) };
+  return { delta: Math.round(delta), sh: Math.round(sh) };
+}
+function bucoSotto() {
+  const solo = window.matchMedia('(display-mode: standalone)').matches || navigator.standalone === true;
+  if (!solo) return false;
+  const offset = window.visualViewport ? window.visualViewport.offsetTop : 0;
+  const { delta } = deltaSchermo();
+  return offset < 8 && delta > 24 && delta < 100;
 }
 function aggiornaQuadro() {
   const vv = window.visualViewport;
@@ -1154,25 +1159,9 @@ function aggiornaQuadro() {
   document.documentElement.style.setProperty('--kbd', `${Math.round(inset)}px`);
   const tastiera = inset > 80;
   document.documentElement.classList.toggle('tastiera', tastiera);
-  const fissi = ['dock', 'composer', 'sheet-host', 'scrim'];
-  if (tastiera) {
-    for (const id of fissi) {
-      const el = document.getElementById(id);
-      if (el) el.style.position = '';
-    }
-    misuraPad();
-    return;
-  }
-  const phantom = phantomMisurato();
-  document.documentElement.style.setProperty('--phantom', phantom ? `${phantom.px}px` : '0px');
-  for (const el of [document.documentElement, document.body, document.getElementById('app')]) {
-    if (!el) continue;
-    el.style.bottom = phantom ? 'auto' : '';
-    el.style.height = phantom ? `${phantom.altezza}px` : '';
-  }
-  for (const id of fissi) {
-    const el = document.getElementById(id);
-    if (el) el.style.position = phantom ? 'absolute' : '';
+  if (!tastiera) {
+    if (bucoSotto()) document.documentElement.style.setProperty('--dock-bottom', '8px');
+    else document.documentElement.style.removeProperty('--dock-bottom');
   }
   misuraPad();
 }
@@ -1199,24 +1188,24 @@ function testoDiagnostica() {
   };
   const insetB = leggi('env(safe-area-inset-bottom)');
   const insetT = leggi('env(safe-area-inset-top)');
-  const lvh = leggi('100lvh');
-  const dvh = leggi('100dvh');
   sonda.remove();
   const dock = document.getElementById('dock');
   const r = dock?.getBoundingClientRect();
   const vv = window.visualViewport;
   const ih = window.innerHeight;
-  const sh = window.screen.height;
+  const { delta, sh } = deltaSchermo();
   const bottom = dock ? getComputedStyle(dock).bottom : '—';
   const pos = dock ? getComputedStyle(dock).position : '—';
   return [
     `innerHeight ${ih}`,
     `visualViewport ${vv ? Math.round(vv.height) : '—'}  offset ${vv ? Math.round(vv.offsetTop) : '—'}`,
-    `screen.height ${sh}`,
-    `100lvh ${lvh}   100dvh ${dvh}`,
+    `screen.height ${window.screen.height}`,
+    `clientHeight ${document.documentElement.clientHeight}`,
+    `outerHeight ${window.outerHeight}`,
     `env top ${insetT}   bottom ${insetB}`,
-    `phantom ${getComputedStyle(document.documentElement).getPropertyValue('--phantom').trim() || '0px'}`,
-    `dock ${pos}  bottom ${bottom}`,
+    `buco ${bucoSotto() ? `sì ${delta}px` : 'no'}`,
+    `dock ${pos}  css ${bottom}`,
+    `rect.bottom ${r ? Math.round(r.bottom) : '—'}`,
     `gap inner ${r ? Math.round(ih - r.bottom) : '—'}`,
     `gap screen ${r ? Math.round(sh - r.bottom) : '—'}`,
   ].join('\n');
