@@ -28,7 +28,7 @@ function caricaVuota() {
     modalita: 'originali', nome: '', archivio: false, fase: 'scelta',
     selezionati: [], da: 0, a: 90, id: null, file: [],
     byteFatti: 0, byteTotali: 0, eta: null, inVolo: 0, pezziFatti: 0, pezziTotali: 0,
-    errore: '', nota: '', daRiselezionare: false, stop: false, cellulare: reteCellulare(),
+    errore: '', nota: '', daRiselezionare: false, stop: false, pausa: false, cellulare: reteCellulare(),
   };
 }
 
@@ -187,10 +187,10 @@ function demoStili() {
 }
 function demoFatti() {
   return [
-    { runId: '1', nome: 'Panca puff', stile: 'Cinematico', durata: 39.2, quando: Date.now() - 3600e3, link: 'https://drive.google.com/file/d/demo/view' },
-    { runId: '2', nome: 'Multiplay', stile: 'Motion', durata: 28.1, quando: Date.now() - 7200e3 },
-    { runId: '3', nome: 'Beats pokemon', stile: 'Motion', durata: 35.4, quando: Date.now() - 864e5 },
-    { runId: '4', nome: 'Beats pokemon', stile: 'Motion', durata: 35.1, quando: Date.now() - 2 * 864e5 },
+    { runId: '1', nome: 'Panca puff', stile: 'Cinematico', durata: 39.2, quando: Date.now() - 3600e3, link: 'https://drive.google.com/file/d/demo/view', memo: { approvato: false, pubblicato: false } },
+    { runId: '2', nome: 'Multiplay', stile: 'Motion', durata: 28.1, quando: Date.now() - 7200e3, memo: { approvato: true, pubblicato: true } },
+    { runId: '3', nome: 'Beats pokemon', stile: 'Motion', durata: 35.4, quando: Date.now() - 864e5, memo: { approvato: true, pubblicato: false } },
+    { runId: '4', nome: 'Beats pokemon', stile: 'Motion', durata: 35.1, quando: Date.now() - 2 * 864e5, memo: { approvato: false, pubblicato: false } },
   ];
 }
 function barreDemo(corrente, dettaglio) {
@@ -223,7 +223,7 @@ function demoHome() {
   return {
     impostazioni: { versione: 'stabile', ai: 'gemini', modello: 'sonnet', gemini: 'flash', stile: 'Blueprint', prova: 'manuale' },
     stato: corso,
-    video: demoFatti(),
+    video: vista === 'vuoto' ? [] : demoFatti(),
     avvisi: 1, upload: null, push: false, playback: true, r2: true,
   };
 }
@@ -241,392 +241,905 @@ function demoDettaglio() {
   };
 }
 
-function tabbar() {
-  const voci = [['oggi', 'Oggi'], ['nuovo', 'Nuovo'], ['carica', 'Carica'], ['video', 'Video'], ['altro', 'Altro']];
-  const attivo = stato.schermo === 'stile' ? 'altro' : stato.schermo;
-  return `<nav class="tabbar">${voci.map(([id, nome]) => `<button class="tab${attivo === id ? ' attivo' : ''}" data-azione="vai" data-verso="${id}"><b>${nome === 'Carica' ? '↑' : nome === 'Oggi' ? '●' : nome === 'Nuovo' ? '+' : nome === 'Video' ? '▷' : '•••'}</b>${nome}</button>`).join('')}</nav>`;
+try {
+  const qv = new URLSearchParams(location.search);
+  if (qv.get('vetro') === 'solido' || localStorage.getItem('regista-vetro') === 'solido' || localStorage.getItem('regista-vetro-lite') === '1') {
+    document.documentElement.dataset.glass = 'lite';
+  }
+  if (localStorage.getItem('regista-effetti') === '0') document.documentElement.dataset.motion = 'off';
+} catch { /* archivio non disponibile */ }
+
+function reteIniziale() {
+  try {
+    const v = localStorage.getItem('regista-rete');
+    if (v === 'dati' || v === 'wifi') return v;
+  } catch { /* resta il default */ }
+  // Safari non dice se sei in 4G. Il default è Wi-Fi così i pezzi restano quelli di oggi (4).
+  return 'wifi';
+}
+function applicaRete(rete) {
+  stato.rete = rete === 'dati' ? 'dati' : 'wifi';
+  try { localStorage.setItem('regista-rete', stato.rete); } catch { /* ignora */ }
+  if (!stato.carica.modalitaScelta && stato.carica.fase === 'scelta') {
+    stato.carica.modalita = stato.rete === 'dati' ? 'proxy' : 'originali';
+  }
+}
+function paralleloScelto(server) {
+  const base = Number(server) || 4;
+  if (stato.rete === 'wifi') return Math.max(base, 5);
+  return base;
 }
 
-function disegna() {
+const FASE_BREVE = {
+  installazione: 'Installazione', scarico: 'Scarico', prepara: 'Analisi',
+  regia: 'Regia', tagli: 'Tagli', render: 'Monta', carico: 'Carico',
+};
+function etichettaFase(a) { return FASE_BREVE[a?.fase] || a?.faseNome || 'Installazione'; }
+function metaLavoro(a) {
+  const stile = a?.stile || stato.home?.impostazioni?.stile || '';
+  return [a?.nome || 'Montaggio', stile].filter(Boolean).join(' · ');
+}
+function firmaStato(s) {
+  const id = (arr) => (arr || []).map((x) => x.runId || x.nome || '').join(',');
+  return [id(s?.attivi), id(s?.pendenti), id(s?.falliti)].join('|');
+}
+function durataTxt(s) {
+  const n = Number(s);
+  if (!Number.isFinite(n) || n <= 0) return '';
+  const t = Math.round(n);
+  if (t >= 60) return `${Math.floor(t / 60)}:${String(t % 60).padStart(2, '0')}`;
+  return `${t}s`;
+}
+function tinta(nome) {
+  let h = 0;
+  const str = String(nome || '');
+  for (let i = 0; i < str.length; i++) h = (h * 33 + str.charCodeAt(i)) >>> 0;
+  const g = 14 + (h % 16);
+  return `linear-gradient(165deg, hsl(0 0% ${g + 14}%), hsl(0 0% ${Math.max(6, g - 6)}%))`;
+}
+function nomeDaFile(files) {
+  const f = files?.[0];
+  if (!f) return '';
+  return f.name.replace(/\.[^.]+$/, '').replace(/[_]+/g, ' ').trim().slice(0, 80);
+}
+function svg(inner) {
+  return `<svg viewBox="0 0 24 24" aria-hidden="true">${inner}</svg>`;
+}
+const ICO = {
+  film: svg('<rect x="3.5" y="4" width="17" height="16" rx="2"/><path d="M8 4v3.2M12 4v3.2M16 4v3.2M8 16.8V20M12 16.8V20M16 16.8V20"/>'),
+  grid: svg('<rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/>'),
+  sliders: svg('<path d="M4 8h16M4 16h16"/><circle cx="9" cy="8" r="2.2"/><circle cx="15" cy="16" r="2.2"/>'),
+  plus: svg('<path d="M12 5v14M5 12h14"/>'),
+  up: svg('<path d="M12 19V6M6.5 11.5 12 6l5.5 5.5"/>'),
+  close: svg('<path d="M6 6l12 12M18 6 6 18"/>'),
+  back: svg('<path d="M14.5 5.5 8 12l6.5 6.5"/>'),
+  more: svg('<circle cx="6" cy="12" r="1.15" fill="currentColor" stroke="none"/><circle cx="12" cy="12" r="1.15" fill="currentColor" stroke="none"/><circle cx="18" cy="12" r="1.15" fill="currentColor" stroke="none"/>'),
+  chev: svg('<path d="M9 6l6 6-6 6"/>'),
+  check: svg('<path d="M5 12.5 9.2 16.7 19 7"/>'),
+  wifi: svg('<path d="M4.5 12a10 10 0 0 1 15 0"/><path d="M8 15.2a5.5 5.5 0 0 1 8 0"/><circle cx="12" cy="18.2" r="1" fill="currentColor" stroke="none"/>'),
+  dati: svg('<rect x="7" y="2.5" width="10" height="19" rx="2.2"/><path d="M11 18.6h2"/>'),
+  send: svg('<path d="M4 12h14M13 6.5 18.5 12 13 17.5"/>'),
+};
+
+function contaLavori() {
+  const s = stato.home?.stato || {};
+  return (s.attivi?.length || 0) + (s.pendenti?.length || 0) + (s.falliti?.length || 0);
+}
+function aggiornaBadge() {
+  const n = contaLavori();
+  document.querySelectorAll('[data-badge-lavori]').forEach((el) => { el.hidden = !n; });
+  if (navigator.setAppBadge) {
+    const op = n ? navigator.setAppBadge(n) : navigator.clearAppBadge?.();
+    op?.catch?.(() => {});
+  }
+}
+
+function assicuratiGuscio() {
+  if (document.getElementById('view')) return;
+  root.innerHTML = `<div class="app" id="guscio">
+      <main class="view" id="view"></main>
+      <div class="composer glass" id="composer" hidden></div>
+      <div class="dock" id="dock"></div>
+    </div>
+    <div class="scrim" id="scrim" data-azione="chiudi-foglio"></div>
+    <div class="sheet-host" id="sheet-host" hidden>
+      <div class="sheet glass" id="sheet" role="dialog" aria-modal="true" aria-labelledby="sheet-titolo"></div>
+    </div>
+    <div class="toast glass" id="toast" role="status" hidden></div>
+    <div class="sr" id="annunci" aria-live="polite"></div>
+    <input id="file-hero" type="file" accept="video/*,image/*,audio/*" multiple hidden>`;
+  document.getElementById('view').addEventListener('scroll', () => {
+    const view = document.getElementById('view');
+    view.classList.toggle('scorso', view.scrollTop > 24);
+  }, { passive: true });
+  agganciaFoglio();
+  agganciaViewport();
+  agganciaTocco();
+  if (!DEMO) sondaFps();
+}
+
+function disegna(opts = {}) {
+  try { leggiCampiCarica(); } catch { /* il foglio può essere chiuso */ }
+  leggiCampiMonta();
+  assicuratiGuscio();
   const solo = stato.schermo === 'accesso';
+  const guscio = document.getElementById('guscio');
+  guscio.classList.toggle('solo', solo);
+  const dock = document.getElementById('dock');
+  dock.hidden = solo;
+  dock.innerHTML = solo ? '' : htmlDock();
+  const view = document.getElementById('view');
+  const y = opts.tieniScroll ? view.scrollTop : 0;
   const corpo = {
-    accesso: htmlAccesso, oggi: htmlOggi, nuovo: htmlNuovo, carica: htmlCarica, video: htmlVideo, dettaglio: htmlDettaglio, altro: htmlAltro, stile: htmlStile,
+    accesso: htmlAccesso, oggi: htmlOggi, video: htmlVideo, dettaglio: htmlDettaglio, altro: htmlAltro, stile: htmlStile,
   }[stato.schermo] || htmlOggi;
-  root.innerHTML = `<div class="app${solo ? ' solo' : ''}"><div class="view vista-${esc(stato.schermo)}">${corpo()}</div>${solo ? '' : tabbar()}${stato.toast ? `<div class="toast" role="status">${esc(stato.toast)}</div>` : ''}</div>`;
-  const barra = root.querySelector('[data-barra]');
-  if (barra) {
-    const pct = stato.carica.byteTotali ? Math.min(100, 100 * stato.carica.byteFatti / stato.carica.byteTotali) : 0;
-    barra.style.width = `${pct}%`;
-  }
-  adattaLista();
-}
-
-function adattaLista() {
-  const lista = root.querySelector('.ultimi .lista');
-  const view = root.querySelector('.view');
-  if (!lista || !view) return;
-  lista.querySelector('.vedi-tutti')?.remove();
-  const voci = [...lista.querySelectorAll(':scope > .voce')];
-  voci.forEach((v) => { v.hidden = false; });
-  const nota = lista.parentElement.querySelector('.nota.piede');
-  const notaH = nota ? nota.getBoundingClientRect().height + 14 : 0;
-  const spazio = view.getBoundingClientRect().bottom - lista.getBoundingClientRect().top - notaH;
-  const gap = 12;
-  const altezza = (el) => el.getBoundingClientRect().height;
-  let usato = 0;
-  let visibili = 0;
-  for (const v of voci) {
-    const prossimo = usato + (visibili ? gap : 0) + altezza(v);
-    if (prossimo > spazio + 1) break;
-    usato = prossimo;
-    visibili += 1;
-  }
-  if (visibili >= voci.length) return;
-  const btnH = 56;
-  while (visibili > 0 && usato + gap + btnH > spazio + 1) {
-    visibili -= 1;
-    usato -= altezza(voci[visibili]) + (visibili ? gap : 0);
-  }
-  for (let i = visibili; i < voci.length; i++) voci[i].hidden = true;
-  const b = document.createElement('button');
-  b.type = 'button';
-  b.className = 'btn ghost pieno vedi-tutti';
-  b.dataset.azione = 'vai';
-  b.dataset.verso = 'video';
-  b.textContent = 'Vedi tutti';
-  lista.appendChild(b);
+  view.innerHTML = corpo();
+  view.className = `view vista-${stato.schermo}${y > 24 ? ' scorso' : ''}`;
+  view.scrollTop = y;
+  renderComposer();
+  renderFoglio();
+  const toastEl = document.getElementById('toast');
+  if (stato.toast) { toastEl.hidden = false; toastEl.textContent = stato.toast; }
+  else toastEl.hidden = true;
+  aggiornaBadge();
+  codaAnteprime();
+  assicuratiPoll();
 }
 
 function toast(testo) {
   stato.toast = testo;
-  disegna();
+  const el = document.getElementById('toast');
+  if (!el) { disegna(); return; }
+  el.hidden = false;
+  el.textContent = testo;
+  const vivo = document.getElementById('annunci');
+  if (vivo) vivo.textContent = testo;
   clearTimeout(toast._t);
-  toast._t = setTimeout(() => { stato.toast = ''; const t = root.querySelector('.toast'); if (t) t.remove(); }, 4200);
+  toast._t = setTimeout(() => {
+    stato.toast = '';
+    const t = document.getElementById('toast');
+    if (t) t.hidden = true;
+  }, 3500);
 }
 
-function vai(verso) {
-  if (verso === 'nuovo' && !stato.nuovo) preparaNuovo();
-  if (verso === 'carica' && stato.carica.fase === 'scelta' && !stato.carica.nome) stato.carica.cellulare = reteCellulare() || stato.carica.cellulare;
+function hashPer(verso) {
+  if (verso === 'dettaglio' && stato.dettaglio?.id) return `video/${stato.dettaglio.id}`;
+  if (verso === 'oggi' || verso === 'video' || verso === 'altro' || verso === 'stile' || verso === 'accesso') return verso;
+  return '';
+}
+function vai(verso, opts = {}) {
+  if (verso === 'carica') return apriFoglio('carica');
+  if (verso === 'nuovo') { preparaNuovo(); return apriFoglio('monta'); }
   stato.schermo = verso;
-  if (verso === 'oggi' || verso === 'video' || verso === 'altro' || verso === 'dettaglio' || verso === 'stile') location.hash = verso === 'dettaglio' && stato.dettaglio ? `video/${stato.dettaglio.id}` : verso;
-  disegna();
+  if (!opts.tieniFoglio) stato.foglio = null;
+  const h = hashPer(verso);
+  if (h && !opts.daStoria) {
+    const url = `#${h}`;
+    if (location.hash !== url) {
+      if (opts.sostituisci) history.replaceState({ h }, '', url);
+      else history.pushState({ h }, '', url);
+    }
+  }
+  disegna(opts);
+}
+async function applicaHash(daStoria) {
+  const raw = decodeURIComponent((location.hash || '').replace(/^#/, ''));
+  const [a, b] = raw.split('/');
+  if (a === 'video' && b) return apriVideo(b, { daStoria: true });
+  if (a === 'video') {
+    stato.video = (await api('/api/video')).video || stato.video;
+    return vai('video', { daStoria: true });
+  }
+  if (a === 'altro') { await caricaAltro(); return vai('altro', { daStoria: true }); }
+  if (a === 'stile') { await caricaStudio(); stato.studio.fase = 'elenco'; return vai('stile', { daStoria: true }); }
+  if (a === 'carica') { vai('oggi', { daStoria: true }); return apriFoglio('carica'); }
+  if (a === 'nuovo') { preparaNuovo(); vai('oggi', { daStoria: true }); return apriFoglio('monta'); }
+  return vai('oggi', { daStoria: true });
+}
+window.addEventListener('popstate', () => { applicaHash(true).catch((e) => toast(e.message)); });
+
+function htmlDock() {
+  const map = { dettaglio: 'video', stile: 'altro' };
+  const attivo = map[stato.schermo] || stato.schermo;
+  const voci = [['oggi', 'Oggi', ICO.film], ['video', 'Video', ICO.grid], ['altro', 'Altro', ICO.sliders]];
+  const n = contaLavori();
+  return `<nav class="tabbar glass" role="tablist" aria-label="Sezioni">${voci.map(([id, nome, ico]) => `<button type="button" class="tab" role="tab" ${attivo === id ? 'aria-current="page"' : ''} data-azione="vai" data-verso="${id}">${ico}<span>${nome}</span>${id === 'oggi' ? `<i class="badge" data-badge-lavori ${n ? '' : 'hidden'}></i>` : ''}</button>`).join('')}</nav><button type="button" class="orb" data-azione="apri-carica" aria-label="Carica">${ICO.plus}</button>`;
+}
+function htmlChipRete() {
+  const dati = stato.rete === 'dati';
+  return `<button type="button" class="chip-rete" data-azione="gira-rete" aria-label="Connessione ${dati ? 'dati mobili' : 'Wi-Fi'}. Tocca per cambiare.">${dati ? ICO.dati : ICO.wifi}<span>${dati ? 'Dati' : 'Wi-Fi'}</span></button>`;
+}
+function htmlBarra(titolo, extra = {}) {
+  return `<div class="barra-titolo">${extra.indietro ? `<button type="button" class="indietro" data-azione="indietro" aria-label="Indietro">${ICO.back}</button>` : '<span></span>'}<b>${esc(titolo)}</b><div class="slot-destra">${extra.destra || ''}</div></div><h1 class="titolone">${esc(titolo)}</h1>`;
 }
 
 function htmlAccesso() {
   const a = stato.auth || {};
-  return `<header class="top"><div class="marca"><i>▷</i> Regista</div></header>
-    <p class="kicker">Solo Denis</p>
-    <h1>Il montaggio, in tasca.</h1>
-    <p class="sub">Passkey di questo iPhone. Il codice arriva su Telegram, una volta sola.</p>
-    <div class="card">
-      ${a.passkey ? '<button class="btn primario" data-azione="entra">Entra con la passkey</button>' : ''}
-      <p class="etichetta" style="margin-top:14px">Codice</p>
-      <input class="campo" id="codice" inputmode="text" autocapitalize="characters" autocomplete="one-time-code" placeholder="ABCD-1234">
-      <button class="btn primario" data-azione="registra">${a.passkey ? 'Aggiungi questo iPhone' : 'Crea la passkey'}</button>
-      <button class="btn ghost pieno" data-azione="chiedi-codice" style="margin-top:8px">Mandami il codice su Telegram</button>
-      <p class="nota">Dopo il primo iPhone, Telegram da solo non basta più. Per un secondo telefono serve il codice segreto, oppure lo sblocco dall’iPhone già attivo.</p>
-    </div>`;
+  return `<div class="accesso"><div class="marca" aria-hidden="true">${ICO.film}</div>
+    <h1 class="titolone">Regista</h1>
+    <p class="sottotitolo">Passkey di questo iPhone. Il codice arriva su Telegram, una volta sola.</p>
+    ${a.passkey ? '<button type="button" class="btn" data-azione="entra" style="margin-top:18px">Entra con la passkey</button>' : ''}
+    <label class="etichetta" for="codice">Codice Telegram</label>
+    <input class="campo codice" id="codice" inputmode="text" autocapitalize="characters" autocomplete="one-time-code" spellcheck="false" placeholder="ABCD-1234">
+    <button type="button" class="btn ${a.passkey ? 'vetro' : ''}" data-azione="registra">${a.passkey ? 'Aggiungi questo iPhone' : 'Crea la passkey'}</button>
+    <button type="button" class="btn quiet" data-azione="chiedi-codice">Mandami il codice su Telegram</button>
+    <p class="nota">Dopo il primo iPhone, Telegram da solo non basta più. Per un secondo telefono serve il codice, oppure lo sblocco dall’iPhone già attivo.</p></div>`;
 }
 
+function videoRecente() {
+  const v = (stato.home?.video || [])[0];
+  if (!v?.quando) return null;
+  const t = typeof v.quando === 'number' ? v.quando : Date.parse(v.quando);
+  if (!Number.isFinite(t) || Date.now() - t > 6 * 3600e3) return null;
+  return v;
+}
 function htmlOggi() {
-  const h = stato.home || {};
-  const s = h.stato || { attivi: [], pendenti: [], ultimi: [] };
-  const attivi = s.attivi || [];
-  const vivo = attivi.length || (s.pendenti || []).length || (s.falliti || []).length;
-  return `<header class="top"><div class="marca"><i>▷</i> Regista</div><span class="avviso">${h.avvisi ? `${h.avvisi} avviso` : ''}</span></header>
-    <div class="intro"><p class="kicker">Oggi</p><h1>Ciao Denis</h1></div>
-    <div class="vivo" data-vivo>${htmlStato(s)}</div>
-    ${h.upload && !h.upload.avviato ? `<div class="banner attenzione">${h.upload.pronto ? 'Il girato è pronto.' : 'C’è un caricamento aperto.'} <button class="btn mini" data-azione="vai" data-verso="carica">Apri</button></div>` : ''}
-    <section class="ultimi"><h2>Ultimi</h2><div class="lista">${(h.video || []).map((v) => rigaVideo(v)).join('') || '<p class="vuoto">Ancora niente. Carica un girato o avvia una cartella.</p>'}</div>
-    ${vivo ? '' : '<p class="nota piede">Lo stato si aggiorna da solo mentre l’app è aperta.</p>'}</section>`;
+  const s = stato.home?.stato || { attivi: [], pendenti: [], falliti: [] };
+  const vivo = htmlVivo(s);
+  const lavori = !!vivo;
+  const c = stato.carica;
+  const occupato = c.fase === 'invio' || c.fase === 'pausa' || c.fase === 'codifica';
+  const pronto = c.fase === 'pronto';
+  let sotto = '';
+  if (occupato) sotto = htmlUploadCompatta();
+  else if (pronto && !c.archivio) sotto = htmlProntoBox();
+  else if (lavori || (videoRecente() && !(s.falliti || []).length)) sotto = `${videoRecente() && !(s.attivi || []).length && !(s.pendenti || []).length ? htmlRisultato(videoRecente()) : ''}${htmlRigaCarica()}`;
+  else sotto = htmlUploadHero();
+  const video = stato.home?.video || [];
+  const aperto = stato.home?.upload && !stato.home.upload.avviato && !pronto && !occupato;
+  return `${htmlBarra('Oggi', { destra: htmlChipRete() })}
+    <div data-vivo data-firma="${esc(firmaStato(s))}">${vivo}</div>
+    ${sotto}
+    ${aperto ? '<p class="nota">C’è un caricamento aperto. I pezzi già arrivati restano. <button type="button" class="btn quiet" data-azione="apri-carica">Apri</button></p>' : ''}
+    ${video.length ? `<h2 class="sezione">Ultimi montaggi</h2><div class="carosello">${video.map(htmlLocandina).join('')}</div>` : (lavori ? '' : '<p class="vuoto">Nessun montaggio ancora.</p>')}
+    ${lavori ? '' : '<p class="meta-3">Lo stato si aggiorna da solo mentre l’app è aperta. Nessun montaggio parte da solo.</p>'}`;
 }
-
+function htmlVivo(s) {
+  const attivi = s?.attivi || [];
+  const pendenti = (s?.pendenti || []).map((p) => ({
+    ...p,
+    runId: p.runId || `coda-${p.nome || 'attesa'}`,
+    nome: p.nome || 'In coda',
+    fase: p.fase || 'installazione',
+    faseNome: p.faseNome || 'Installazione',
+    dettaglio: p.dettaglio || 'In attesa che il server parta',
+  }));
+  const falliti = s?.falliti || [];
+  if (!attivi.length && !pendenti.length && !falliti.length) return '';
+  return [...attivi.map(htmlCorso), ...pendenti.map(htmlCorso), ...falliti.map(htmlFallito)].join('');
+}
 function htmlCorso(a) {
   const fasi = a.fasi || [];
-  return `<article class="card">
-      <p class="kicker">In corso · ${esc(a.faseNome || 'Installazione')}</p>
-      <h2>${esc(a.nome || 'Montaggio')}</h2>
-      <div class="fasi">${fasi.map((f) => `<i class="fase${f.fatta ? ' fatta' : ''}${f.ora ? ' ora' : ''}${f.ko ? ' ko' : ''}" title="${esc(f.nome)}"></i>`).join('')}</div>
-      <div class="nomi-fasi">${fasi.map((f) => `<span class="${f.fatta ? 'fatta' : ''}${f.ora ? ' ora' : ''}${f.ko ? ' ko' : ''}">${esc(f.nome)}</span>`).join('')}</div>
-      <p class="meta">${esc(a.dettaglio || fasi.find((f) => f.ora)?.dettaglio || '')}</p>
-      ${a.mancanoTesto ? `<p class="manca">${esc(a.mancanoTesto)}</p>` : ''}
-    </article>`;
+  const sub = [a.dettaglio, a.mancanoTesto].filter(Boolean).join(' · ');
+  const rail = (fasi.length ? fasi : Array.from({ length: 7 }, () => ({}))).map((f) => `<i class="${f.fatta ? 'done' : ''} ${f.ora ? 'now' : ''} ${f.ko ? 'ko' : ''}"></i>`).join('');
+  return `<article class="card" data-run="${esc(a.runId || a.nome || '')}" data-fase="${esc(a.fase || '')}">
+    <p class="sr" aria-live="polite" data-annuncio></p>
+    <div class="fase-riga"><i class="live-dot" aria-hidden="true"></i><h2 class="fase-nome" data-bind="fase">${esc(etichettaFase(a))}</h2><span class="numeri" data-bind="minuti">${a.minuti ? `${esc(a.minuti)} min` : ''}</span></div>
+    <p class="meta" data-bind="sub">${esc(sub)}</p>
+    <div class="rail" aria-hidden="true">${rail}</div>
+    <p class="meta-3" data-bind="meta">${esc(metaLavoro(a))}</p>
+    <button type="button" class="btn vetro" data-azione="dettagli-job" data-verso="${esc(a.runId || '')}">Dettagli</button>
+  </article>`;
 }
-
 function htmlFallito(f) {
-  return `<article class="card errore-giro">
-      <p class="kicker">Non riuscito</p>
-      <h2>${esc(f.nome || 'Montaggio')}</h2>
-      <p class="motivo">${esc(f.errore || 'Si è fermato senza un motivo scritto.')}</p>
-      ${f.puoRiprovare ? `<button class="btn primario" data-azione="riprova-giro" data-verso="${esc(f.runId)}">Riprova</button>` : ''}
-    </article>`;
+  return `<article class="card job--err" data-run="${esc(f.runId || '')}" data-fallito>
+    <div class="testa-live"><i class="live-dot err" aria-hidden="true"></i><span>Non riuscito</span></div>
+    <h2 class="fase-nome">${esc(f.nome || 'Montaggio')}</h2>
+    <p class="motivo" data-bind="errore">${esc(f.errore || 'Si è fermato senza un motivo scritto.')}</p>
+    <div class="coppia">
+      ${f.puoRiprovare ? `<button type="button" class="btn" data-azione="riprova-giro" data-verso="${esc(f.runId)}">Riprova</button>` : ''}
+      <button type="button" class="btn vetro" data-azione="dettagli-job" data-verso="${esc(f.runId || '')}">Dettagli</button>
+    </div>
+  </article>`;
 }
-
-function htmlStato(s) {
-  const attivi = s.attivi || [];
-  const pendenti = s.pendenti || [];
-  const falliti = s.falliti || [];
-  if (!attivi.length && !pendenti.length && !falliti.length) return '<div class="card piatta"><p class="vuoto">Nessun montaggio in corso.</p></div>';
-  return [
-    ...attivi.map(htmlCorso),
-    ...pendenti.map((p) => p.fasi
-      ? htmlCorso({ ...p, nome: p.nome || 'In coda', faseNome: p.faseNome || 'Installazione', dettaglio: p.dettaglio || 'In attesa che il server parta' })
-      : `<article class="card piatta"><h2>${esc(p.nome || 'In coda')}</h2><p class="meta">In attesa del server</p></article>`),
-    ...falliti.map(htmlFallito),
-  ].join('');
+function htmlUploadHero() {
+  return `<button type="button" class="card hero" data-azione="scegli-file"><span class="disco">${ICO.up}</span><strong style="font-size:1.3rem;letter-spacing:-.02em">Carica il girato</strong><span class="sottotitolo">Scegli i video dal rullino. Il caricamento parte quando tocchi Carica.</span></button>`;
 }
-
-function rigaVideo(v) {
-  return `<button class="card scelta voce" data-azione="apri-video" data-verso="${esc(v.runId)}"><strong>${esc(v.nome)}</strong><small>${esc(v.stile || '')}${v.durata ? ` · ${v.durata} s` : ''}${v.prova ? ' · prova' : ''}</small></button>`;
+function htmlRigaCarica() {
+  return `<button type="button" class="card riga-compatta" data-azione="scegli-file">${ICO.up}<span><strong>Carica altro girato</strong><span class="meta">Dal rullino, anche con i dati</span></span></button>`;
 }
-
-function preparaNuovo(passo) {
-  const up = stato.home?.upload;
-  stato.nuovo = {
-    passo: passo || (up?.pronto ? 'stile' : 'cartella'),
-    dati: {
-      cartella: up?.pronto ? up.nome : '',
-      stile: stato.home?.impostazioni?.stile || 'Blueprint',
-      sponsor: '', durata: '', tono: '', giudizio: '', tavola: '', note: '', sponsorSi: false,
-    },
-  };
-}
-
-function passiNuovo() {
-  const stile = stato.nuovo?.dati.stile || 'Blueprint';
-  return ['cartella', 'stile', 'sponsor', 'durata', 'tono', 'giudizio', ...(stile === 'Blueprint' ? ['tavola'] : []), 'note', 'riepilogo'];
-}
-
-function htmlNuovo() {
-  if (!stato.nuovo) preparaNuovo();
-  const n = stato.nuovo;
-  const d = n.dati;
-  const stili = stato.stili.length ? stato.stili : (stato.cartelle?.stili || []);
-  let corpo = '';
-  if (n.passo === 'cartella') {
-    const elenco = stato.cartelle?.cartelle?.elenco || [];
-    corpo = `<h1>Quale cartella?</h1><p class="sub">Quelle già su Drive, oppure un nome nuovo se il girato lo carichi da qui.</p>
-      <div class="griglia">${elenco.map((c) => `<button class="btn pieno" data-azione="cartella" data-verso="${esc(c)}">${(stato.cartelle?.cartelle?.vai || []).includes(c) ? '⚡ ' : ''}${esc(c)}</button>`).join('')}</div>
-      <input class="campo" id="nome-cartella" placeholder="Nome nuovo" value="${esc(d.cartella)}">
-      <button class="btn primario" data-azione="cartella-testo">Usa questo nome</button>`;
-  } else if (n.passo === 'stile') {
-    corpo = `<h1>Che stile?</h1><div class="griglia">${stili.map((s) => `<button class="stile${s.nome === d.stile ? ' attivo' : ''}" data-azione="stile" data-verso="${esc(s.nome)}"><strong>${esc(s.tasto || s.nome)}</strong><small>${esc(s.cosa || s.desc || '')}</small></button>`).join('')}</div>`;
-  } else if (n.passo === 'sponsor') {
-    corpo = `<h1>C’è uno sponsor?</h1><div class="coppia"><button class="btn" data-azione="sponsor" data-verso="no">No</button><button class="btn" data-azione="sponsor" data-verso="si">Sì</button></div>`;
-  } else if (n.passo === 'sponsor_testo') {
-    corpo = `<h1>Marca e cosa si testa</h1><input class="campo" id="sponsor" placeholder="es. eSUN PETG, stampa Benchy veloce" value="${esc(d.sponsor)}"><button class="btn primario" data-azione="sponsor-testo">Avanti</button>`;
-  } else if (n.passo === 'durata') {
-    corpo = `<h1>Quanto deve durare?</h1><div class="griglia">${['30 s', '45 s', '60 s', ''].map((v) => `<button class="btn pieno" data-azione="campo" data-campo="durata" data-verso="${esc(v)}">${v || 'Automatica'}</button>`).join('')}</div>`;
-  } else if (n.passo === 'tono') {
-    corpo = `<h1>Che tono?</h1><div class="griglia">${[['diretto', 'Diretto'], ['ironico', 'Ironico'], ['tecnico', 'Tecnico'], ['entusiasta', 'Entusiasta'], ['', 'Automatico']].map(([v, et]) => `<button class="btn pieno" data-azione="campo" data-campo="tono" data-verso="${esc(v)}">${et}</button>`).join('')}</div>`;
-  } else if (n.passo === 'giudizio') {
-    corpo = `<h1>Giudizio finale</h1><p class="sub">Diventa la scritta di chiusura, con le tue parole.</p><div class="griglia">${['PROMOSSO ✓', 'CI STA', 'NON È MALE', 'BOCCIATO ✗', '-', ''].map((v) => `<button class="btn pieno" data-azione="campo" data-campo="giudizio" data-verso="${esc(v)}">${v === '-' ? 'Nessuna scritta' : v || 'Dal video'}</button>`).join('')}</div>`;
-  } else if (n.passo === 'tavola') {
-    corpo = `<h1>Numero tavola</h1><input class="campo" id="tavola" placeholder="TAV. 05" value="${esc(d.tavola)}"><button class="btn primario" data-azione="tavola">Avanti</button><button class="btn ghost pieno" data-azione="campo" data-campo="tavola" data-verso="">Automatica</button>`;
-  } else if (n.passo === 'note') {
-    corpo = `<h1>Indicazioni</h1><textarea id="note" placeholder="Cosa dire, cosa evitare…">${esc(d.note)}</textarea><button class="btn primario" data-azione="note">Avanti</button>`;
-  } else {
-    const righe = [
-      ['Cartella', d.cartella || 'la prima con VAI'],
-      ['Stile', d.stile],
-      d.sponsor ? ['Sponsor', d.sponsor] : null,
-      d.durata ? ['Durata', d.durata] : null,
-      d.tono ? ['Tono', d.tono] : null,
-      d.giudizio ? ['Giudizio', d.giudizio === '-' ? 'nessuna scritta' : d.giudizio] : null,
-      d.tavola && d.stile === 'Blueprint' ? ['Tavola', d.tavola] : null,
-      d.note ? ['Note', d.note] : null,
-    ].filter(Boolean);
-    corpo = `<h1>Pronto</h1><div class="card">${righe.map(([k, v]) => `<div class="riga"><span class="meta">${esc(k)}</span><strong>${esc(v)}</strong></div>`).join('')}</div>
-      <button class="btn primario" data-azione="avvia-montaggio">Avvia montaggio</button>
-      <div class="coppia" style="margin-top:8px"><button class="btn" data-azione="modifica" data-verso="stile">Stile</button><button class="btn" data-azione="modifica" data-verso="note">Note</button></div>`;
-  }
-  return `<div class="intro"><p class="kicker">Nuovo montaggio</p></div>${corpo}<button class="btn ghost" data-azione="indietro-nuovo" style="margin-top:12px">Indietro</button>`;
-}
-
-function htmlProgresso(c) {
-  const pct = c.byteTotali ? Math.round(100 * c.byteFatti / c.byteTotali) : 0;
-  return `<div class="card">
-      <p class="kicker">${c.fase === 'pronto' ? 'Arrivato' : 'In invio'} · 4 pezzi insieme</p>
-      <p class="progresso-num">${pct}%</p>
-      <div class="barra"><i data-barra style="width:${pct}%"></i></div>
-      <div class="riga"><span>${byteTxt(c.byteFatti)} di ${byteTxt(c.byteTotali)}</span><strong>${c.fase === 'pronto' ? 'fatto' : tempoTxt(c.eta)}</strong></div>
-      <p class="meta">${c.pezziFatti} pezzi al sicuro, non si rimandano${c.inVolo ? ` · ${c.inVolo} in viaggio` : ''}</p>
-      ${(c.file || []).map((f) => `<div class="riga"><span>${esc(f.nome)}</span><span class="meta">${byteTxt(f.fatti)} / ${byteTxt(f.size)}</span></div>`).join('')}
-      ${c.fase === 'invio' ? '<button class="btn pericolo pieno" data-azione="annulla-upload">Annulla</button>' : ''}
-      ${c.fase === 'pronto' && !c.archivio ? '<button class="btn primario" data-azione="vai" data-verso="nuovo">Monta questi file</button>' : ''}
-      ${c.fase === 'pronto' && c.archivio ? '<button class="btn primario" data-azione="copia-drive">Copiali su Drive</button>' : ''}
-      ${c.fase === 'pronto' && c.modalita !== 'originali' ? '<p class="nota">Gli originali interi, quando hai il Wi-Fi. Il montaggio già partito non li vede da solo: dopo, dalla scheda del video, Rifai.</p>' : ''}
-    </div>`;
-}
-
-function htmlCarica() {
+function htmlUploadCompatta() {
   const c = stato.carica;
-  const cell = c.cellulare;
-  if (!c.modalitaScelta && cell && c.fase === 'scelta') c.modalita = 'scelti';
-  const modi = [
-    ['originali', 'Originali', 'Qualità della camera. In 4G ci mette di più, ma è il file da pubblicare.'],
-    ['scelti', 'Solo i file scelti', 'Mandi le clip che servono per far partire la regia. Il resto, dopo, dal Wi-Fi.'],
-    ['proxy', 'Copia leggera', 'Circa 720p, sul telefono. Lo schermo resta acceso e ci mette quanto dura il clip. L’audio può mancare. Non è da pubblicare.'],
-  ];
-  return `<div class="intro"><p class="kicker">In giro</p><h1>Carica il girato</h1></div>
-    <p class="sub">Quattro pezzi da 8 MB in parallelo, diretti a Cloudflare. Quelli già arrivati non si rimandano. Drive lo copia il server, dopo.</p>
-    <div class="banner${cell ? ' attenzione' : ''}">${cell ? 'Sei sui dati: meglio mandare meno, e il resto dal Wi-Fi.' : 'iPhone non dice da solo se sei in 4G. Se sei fuori, scegli «Solo i file scelti».'}</div>
-    ${c.daRiselezionare ? '<div class="banner attenzione">iOS ha chiuso i file. Selezionali di nuovo, stesso nome e stessa dimensione: i pezzi già arrivati restano.</div>' : ''}
-    ${c.errore ? `<div class="banner attenzione">${esc(c.errore)}</div>` : ''}
-    ${c.fase === 'invio' || c.fase === 'pronto' ? htmlProgresso(c) : ''}
-    <div class="griglia">${modi.map(([id, t, d]) => `<button class="scelta${c.modalita === id ? ' attivo' : ''}" data-azione="modalita" data-verso="${id}"><strong>${t}</strong><small>${d}</small></button>`).join('')}</div>
-    ${c.fase === 'scelta' || c.fase === 'codifica' ? `<label class="etichetta">Nome del video</label><input class="campo" id="nome-video" value="${esc(c.nome)}" ${c.archivio ? 'readonly' : ''}>
-      ${c.modalita === 'proxy' ? `<div class="coppia"><label>Dal secondo<input class="campo" id="proxy-da" type="number" min="0" value="${c.da}"></label><label>Al secondo<input class="campo" id="proxy-a" type="number" min="1" value="${c.a}"></label></div><p class="nota">La codifica è in tempo reale: 90 secondi di clip sono 90 secondi a schermo acceso. Un pezzo di MP4 tagliato a metà non è un video valido, per questo non mando “un intervallo” del file originale.</p>` : ''}
-      <label class="etichetta">${c.modalita === 'scelti' ? 'Scegli solo le clip che servono' : 'File'}</label>
-      <input class="campo" id="file-girato" type="file" accept="video/*,image/*,audio/*" multiple>
-      <button class="btn primario" data-azione="avvia-upload">${c.archivio ? 'Manda il resto' : c.modalita === 'proxy' ? 'Prepara la copia e carica' : 'Carica'}</button>` : ''}
-    ${c.fase === 'codifica' ? `<div class="card"><p class="kicker">Sul telefono</p><p>${esc(c.nota || 'Codifico… tieni l’app aperta.')}</p></div>` : ''}
-    <p class="nota">Se cambi app o blocchi lo schermo, iOS può fermare l’invio. Non esiste un vero caricamento in background su Safari. Riapri l’app: riparte dai pezzi già fatti. La sveglia dello schermo resta accesa solo mentre la pagina è visibile.</p>`;
+  const pct = c.byteTotali ? Math.min(100, Math.round(100 * c.byteFatti / c.byteTotali)) : 0;
+  const etichetta = c.pausa ? 'In pausa' : c.fase === 'codifica' ? 'Codifica sul telefono' : 'Caricamento';
+  return `<button type="button" class="card" data-azione="apri-carica"><p class="meta">${etichetta}</p><p class="progresso-num" data-bind="pct">${pct}%</p><div class="barra" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${pct}" aria-label="Caricamento"><i data-barra style="width:${pct}%"></i></div><p class="meta numeri" data-bind="byte">${byteTxt(c.byteFatti)} di ${byteTxt(c.byteTotali)}</p></button>`;
+}
+function htmlProntoBox() {
+  return `<article class="card" style="text-align:center"><div class="check-pop">${ICO.check}</div><h2 class="fase-nome">Girato al sicuro</h2><p class="meta">Il montaggio non parte finché non lo chiedi.</p><div class="coppia"><button type="button" class="btn" data-azione="monta-ora">Monta ora</button><button type="button" class="btn vetro" data-azione="piu-tardi">Più tardi</button></div></article>`;
+}
+function htmlRisultato(v) {
+  return `<article class="card"><p class="meta">Pronto</p><h2 class="fase-nome">${esc(v.nome)}</h2><p class="meta">${esc(v.stile || '')}${v.durata ? ` · ${durataTxt(v.durata)}` : ''}</p><div class="coppia"><button type="button" class="btn" data-azione="apri-video" data-verso="${esc(v.runId)}">Guarda</button><button type="button" class="btn vetro" data-azione="correggi-vai" data-verso="${esc(v.runId)}">Correggi</button></div></article>`;
+}
+function htmlLocandina(v) {
+  return `<button type="button" class="locandina" data-azione="apri-video" data-verso="${esc(v.runId)}" aria-label="${esc(v.nome)}">${htmlFaccia(v)}<span class="nome">${esc(v.nome)}</span></button>`;
+}
+function htmlFaccia(v) {
+  const cover = v.memo?.pubblica?.copertinaId;
+  const punto = v.memo?.pubblicato ? 'pub' : v.memo?.approvato ? 'ok' : '';
+  const dur = durataTxt(v.durata);
+  const lettera = esc(String(v.nome || '?').trim().slice(0, 1).toUpperCase());
+  return `<span class="faccia" style="background:${tinta(v.nome)}">${cover ? `<img alt="" src="/api/media/${esc(cover)}" style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover">` : `<span class="lettera">${lettera}</span>`}${dur ? `<span class="durata">${esc(dur)}</span>` : ''}<i class="punto ${punto}"></i></span>`;
 }
 
 function htmlVideo() {
-  return `<div class="intro"><p class="kicker">Video</p><h1>Fatti</h1></div>
-    <div class="lista">${stato.video.length ? stato.video.map(rigaVideo).join('') : '<p class="vuoto">Nessun video ancora.</p>'}</div>
-    <button class="btn ghost pieno" data-azione="ricarica-video">Aggiorna</button>`;
+  const filtri = [['tutti', 'Tutti'], ['approvare', 'Da approvare'], ['pubblicati', 'Pubblicati']];
+  const lista = (stato.video || []).filter(passaFiltro);
+  const vuoto = stato.filtro === 'approvare' ? 'Niente in attesa di approvazione.' : stato.filtro === 'pubblicati' ? 'Nessun video pubblicato da qui.' : 'Nessun video ancora. Quando un montaggio finisce, la locandina arriva qui.';
+  return `${htmlBarra('Video')}<div class="filtri"><div class="segmenti" role="tablist" aria-label="Filtro video">${filtri.map(([id, nome]) => `<button type="button" aria-pressed="${(stato.filtro || 'tutti') === id ? 'true' : 'false'}" data-azione="filtro" data-verso="${id}">${nome}</button>`).join('')}</div></div>${lista.length ? `<div class="griglia-poster">${lista.map(htmlPoster).join('')}</div>` : `<div class="vuoto">${ICO.film}<p>${vuoto}</p></div>`}`;
+}
+function passaFiltro(v) {
+  const f = stato.filtro || 'tutti';
+  const approvato = !!(v.memo?.approvato || v.approvato);
+  const pub = !!(v.memo?.pubblicato || v.pubblicato);
+  if (f === 'approvare') return !approvato && !pub;
+  if (f === 'pubblicati') return pub;
+  return true;
+}
+function htmlPoster(v) {
+  const attivo = (stato.home?.stato?.attivi || []).find((a) => (a.nome || '').toLowerCase() === (v.nome || '').toLowerCase());
+  const rail = attivo ? `<span class="rail sottile" aria-hidden="true">${(attivo.fasi || []).map((f) => `<i class="${f.fatta ? 'done' : ''} ${f.ora ? 'now' : ''}"></i>`).join('')}</span>` : '';
+  return `<button type="button" class="poster" data-azione="apri-video" data-verso="${esc(v.runId)}" aria-label="${esc(v.nome)}, ${esc(v.stile || '')}">${htmlFaccia(v)}${rail}<span class="nome">${esc(v.nome)}</span></button>`;
 }
 
 function htmlDettaglio() {
   const d = stato.dettaglio;
-  if (!d) return '<p>Apro…</p>';
+  if (!d) return `${htmlBarra('Video', { indietro: true })}<p class="meta">Apro…</p>`;
   const v = d.video || {};
   const m = d.memo || {};
   const pub = m.pubblica;
+  const nome = m.nome || v.nome || 'Video';
+  const titolo = pub?.youtube?.titolo || nome;
+  const pubblicato = !!m.pubblicato;
+  const approvato = !!m.approvato;
+  const chip = pubblicato ? 'Pubblicato' : approvato ? 'Approvato' : 'Da approvare';
+  const punto = pubblicato ? 'pub' : approvato ? 'ok' : '';
   const fileId = pub?.fileId;
-  const stili = stato.stili.length ? stato.stili : demoStili();
-  return `<div class="intro"><p class="kicker">${esc(m.stile || v.stile || '')}${v.durata ? ` · ${v.durata} s` : ''}</p><h1>${esc(m.nome || v.nome)}</h1></div>
-    ${d.playback && fileId ? `<video class="player" controls playsinline src="/api/media/${esc(fileId)}"></video>` : `<div class="cornice"><div><strong>${esc(m.nome || v.nome)}</strong><p class="meta">${d.playback ? 'Apro il file…' : 'Per vederlo qui servono le chiavi Drive sul Worker.'}</p></div></div>`}
-    ${v.link ? `<a class="btn pieno" href="${esc(v.link)}" target="_blank" rel="noopener">Apri su Drive</a>` : ''}
-    <div class="azioni" style="margin-top:12px">
-      <button class="btn primario" data-azione="video" data-verso="approva">${m.approvato ? 'Approvato' : 'Approva'}</button>
-      ${pub ? `<textarea id="didascalia">${esc(pub.didascalia || '')}</textarea>
-        <button class="btn pieno" data-azione="salva-didascalia">Salva didascalia</button>
-        <input class="campo" id="titolo-yt" value="${esc(pub.youtube?.titolo || '')}">
-        <button class="btn pieno" data-azione="salva-titolo">Salva titolo YouTube</button>
-        <button class="btn pieno" data-azione="video" data-verso="ig">Instagram ${pub.ig === false ? 'spento' : 'acceso'}</button>
-        <button class="btn pieno" data-azione="video" data-verso="yt">YouTube ${pub.yt === false ? 'spento' : 'acceso'}</button>
-        <button class="btn primario" data-azione="video" data-verso="pubblica">Pubblica</button>` : '<p class="nota">Didascalie non ancora pronte.</p>'}
-      <textarea id="correzione" placeholder="Cosa cambiare"></textarea>
-      <button class="btn pieno" data-azione="correggi">Correggi</button>
-      <label class="etichetta">Cambia stile</label>
-      <select id="stile-video">${stili.map((s) => `<option ${s.nome === (m.stile || v.stile) ? 'selected' : ''}>${esc(s.nome)}</option>`).join('')}</select>
-      <div class="coppia"><button class="btn" data-azione="video" data-verso="prova">Prova ${d.provaSecondi || 10}s</button><button class="btn" data-azione="video" data-verso="intero">Stile intero</button></div>
-      <button class="btn pieno" data-azione="video" data-verso="render">Solo render</button>
-      <button class="btn pieno" data-azione="video" data-verso="rifai">Rifai da zero</button>
-      <button class="btn pieno" data-azione="video" data-verso="riprova">Riprova</button>
-      <button class="btn pieno" data-azione="manda-resto">Manda il resto degli originali</button>
-    </div>`;
+  return `${htmlBarra('Video', { indietro: true, destra: `<button type="button" class="icona-btn" data-azione="apri-azioni" aria-label="Altre azioni">${ICO.more}</button>` })}
+    ${d.playback && fileId ? `<video class="player" controls playsinline ${pub?.copertinaId ? `poster="/api/media/${esc(pub.copertinaId)}"` : ''} src="/api/media/${esc(fileId)}"></video>` : `<div class="cornice" style="background:${tinta(nome)}"><div><strong>${esc(nome)}</strong><p class="meta">${d.playback ? 'Apro il file…' : 'Per vederlo qui servono le chiavi Drive sul Worker.'}</p></div></div>`}
+    <div class="testa-video"><span class="stato-chip"><i class="punto ${punto}"></i>${chip}</span>${v.link ? `<a class="link-quiet" href="${esc(v.link)}" target="_blank" rel="noopener">Apri su Drive</a>` : ''}</div>
+    <h2 class="fase-nome">${esc(nome)}</h2>
+    <div class="coppia">
+      <button type="button" class="btn ${approvato ? 'vetro' : ''}" data-azione="video" data-verso="approva">${approvato ? 'Approvato' : 'Approva'}</button>
+      <button type="button" class="btn ${approvato ? '' : 'vetro'}" data-azione="apri-pubblica" ${pub ? '' : 'disabled'}>Pubblica…</button>
+    </div>
+    ${pub ? `<label class="etichetta" for="titolo-inline">Titolo YouTube</label><input class="titolo-edit" id="titolo-inline" maxlength="100" value="${esc(titolo)}">` : '<p class="nota">Didascalie non ancora pronte.</p>'}`;
 }
 
 function htmlAltro() {
   const imp = stato.home?.impostazioni || {};
-  const stili = stato.stili.length ? stato.stili : [];
+  const stili = stato.stili || [];
   const elenco = stato.cartelle?.cartelle?.elenco || [];
   const col = stato.collegamenti || {};
   const regia = stato.regia?.regia;
-  return `<div class="intro"><p class="kicker">Altro</p><h1>Impostazioni</h1></div>
-    <button class="card scelta voce" data-azione="vai" data-verso="stile"><strong>Studia uno stile</strong><small>Un video di riferimento, poi lo metti a punto con l’AI. Nessun montaggio parte da solo.</small></button>
-    <div class="card">
-      <label class="etichetta">Stile predefinito</label>
-      <select data-imp="stile">${stili.map((s) => `<option ${s.nome === imp.stile ? 'selected' : ''}>${esc(s.nome)}</option>`).join('')}</select>
-      <label class="etichetta">AI</label>
-      <select data-imp="ai"><option ${imp.ai === 'gemini' ? 'selected' : ''}>gemini</option><option ${imp.ai === 'claude' ? 'selected' : ''}>claude</option></select>
-      <label class="etichetta">Gemini</label>
-      <select data-imp="gemini"><option ${imp.gemini === 'flash' ? 'selected' : ''}>flash</option><option ${imp.gemini === 'pro' ? 'selected' : ''}>pro</option></select>
-      <label class="etichetta">Claude</label>
-      <select data-imp="modello">${['haiku', 'sonnet', 'opus'].map((m) => `<option ${imp.modello === m ? 'selected' : ''}>${m}</option>`).join('')}</select>
-      <label class="etichetta">Versione</label>
-      <select data-imp="versione"><option ${imp.versione === 'stabile' ? 'selected' : ''}>stabile</option><option ${imp.versione === 'beta' ? 'selected' : ''}>beta</option></select>
-      <label class="etichetta">Prova prima di montare</label>
-      <select data-imp="prova"><option value="manuale" ${imp.prova === 'manuale' ? 'selected' : ''}>A mano</option><option value="auto" ${imp.prova === 'auto' ? 'selected' : ''}>Sempre, 10 s</option><option value="no" ${imp.prova === 'no' ? 'selected' : ''}>No, monta tutto</option></select>
-    </div>
-    <div class="card">
-      <h2>Più video</h2>
-      ${elenco.map((c) => `<label class="check"><input type="checkbox" value="${esc(c)}" data-lotto> ${esc(c)}</label>`).join('') || '<p class="vuoto">Aggiorna l’elenco cartelle.</p>'}
-      <button class="btn primario" data-azione="lotto">Monta le scelte</button>
-      <button class="btn ghost pieno" data-azione="aggiorna-cartelle">Aggiorna elenco</button>
-    </div>
-    <div class="card">
-      <h2>Prova della regia</h2>
-      <p class="sub">Solo il testo, su una cartella già montata. Non parte da un girato appena caricato.</p>
-      <select id="regia-cartella">${elenco.map((c) => `<option>${esc(c)}</option>`).join('')}</select>
-      <button class="btn pieno" data-azione="prova-regia">Chiedi la regia</button>
-      ${regia ? `<p>${esc(regia.testo || '')}</p>` : ''}
-    </div>
-    <div class="card">
-      <p>Instagram ${col.ig ? 'collegato' : 'non collegato'} · YouTube ${col.yt ? 'collegato' : 'non collegato'}</p>
-      <button class="btn pieno" data-azione="push">Notifiche su questo iPhone</button>
-      <p class="nota">Le notifiche arrivano solo se l’app è sulla Home e sul Worker ci sono le chiavi VAPID. Altrimenti l’avviso resta in Oggi.</p>
-      <button class="btn pieno" data-azione="sblocco">Autorizza un altro iPhone</button>
-      <button class="btn pericolo pieno" data-azione="esci">Esci</button>
-    </div>
-    <p class="nota">Cartelle Drive: 01 · Da editare, 02 · Fatti, 03 · Da pubblicare. Il secondo account Telegram non entra nell’app.</p>`;
-}
-
-function righeRiassunto(testo) {
-  return String(testo || '').split('\n').filter(Boolean).map((r) => {
-    const i = r.indexOf(':');
-    if (i < 0) return `<p>${esc(r)}</p>`;
-    return `<div class="riga"><span class="meta">${esc(r.slice(0, i))}</span><strong>${esc(r.slice(i + 1).trim())}</strong></div>`;
-  }).join('');
-}
-
-function htmlErroreStile(s) {
-  if (!s.errore) return '';
-  // sotto resta lo stile di prima: non è stato toccato (26/10, sembrava che lo studio fallito
-  // avesse sostituito Cinematic Talk)
-  const testo = String(s.errore).replace(/The operation was aborted due to timeout/gi, 'tempo scaduto').replace(/aborted due to timeout/gi, 'tempo scaduto');
-  const prima = s.bozza?.nome ? ` «${esc(s.bozza.nome)}» qui sotto è quello di prima: non è stato toccato.` : '';
-  return `<div class="card errore-stile" data-errore-stile><p class="kicker">Non è andata</p><p>${esc(testo)}</p><small class="meta">Premi di nuovo Studia per riprovare.${prima}</small></div>`;
+  let vetro = 'auto';
+  try { if (localStorage.getItem('regista-vetro') === 'solido') vetro = 'solido'; } catch { /* auto */ }
+  const effettiOff = document.documentElement.dataset.motion === 'off';
+  const opt = (val, cur, et) => `<option value="${esc(val)}" ${cur === val ? 'selected' : ''}>${esc(et || val)}</option>`;
+  return `${htmlBarra('Altro')}
+    <section class="blocco"><h2>Stili</h2><div class="gruppo">
+      <label class="riga-set">Predefinito<select data-imp="stile">${stili.map((s) => `<option ${s.nome === imp.stile ? 'selected' : ''}>${esc(s.nome)}</option>`).join('')}</select></label>
+      ${stili.map((s) => `<div class="riga-set"><span>${esc(s.nome)}<span class="sub">${esc(s.cosa || s.desc || '')}</span></span></div>`).join('')}
+      <button type="button" class="riga-set" data-azione="vai" data-verso="stile">Studia un nuovo stile<span class="chev">${ICO.chev}</span></button>
+    </div></section>
+    <section class="blocco"><h2>Montaggio</h2><div class="gruppo">
+      <label class="riga-set">Prova prima<select data-imp="prova">${opt('manuale', imp.prova, 'A mano')}${opt('auto', imp.prova, 'Sempre, 10 s')}${opt('no', imp.prova, 'No, monta tutto')}</select></label>
+      <div class="riga-set" style="align-items:flex-start;flex-direction:column">${elenco.length ? elenco.map((c) => `<label class="check"><input type="checkbox" value="${esc(c)}" data-lotto> ${esc(c)}</label>`).join('') : '<p class="meta">Nessuna cartella in elenco.</p>'}
+        <button type="button" class="btn" data-azione="lotto" style="margin-top:8px">Monta le scelte</button>
+        <button type="button" class="btn quiet" data-azione="aggiorna-cartelle">Aggiorna elenco</button>
+      </div>
+    </div><p class="nota">Il lotto parte solo quando tocchi Monta le scelte. Una cartella per giro.</p></section>
+    <section class="blocco"><h2>Notifiche</h2><div class="gruppo">
+      <button type="button" class="riga-set" data-azione="push">Notifiche su questo iPhone<span class="chev">${ICO.chev}</span></button>
+      <button type="button" class="riga-set" data-azione="badge-test">Prova il badge<span class="chev">${ICO.chev}</span></button>
+    </div><p class="nota">Le notifiche arrivano se l’app è sulla Home e sul Worker ci sono le chiavi VAPID. Altrimenti l’avviso resta in Oggi.</p></section>
+    <section class="blocco"><h2>Collegamenti</h2><div class="gruppo">
+      <div class="riga-set"><span>Instagram<span class="sub">${col.ig ? 'Collegato' : 'Non collegato'}</span></span></div>
+      <div class="riga-set"><span>YouTube<span class="sub">${col.yt ? 'Collegato' : 'Non collegato'}</span></span></div>
+    </div></section>
+    <section class="blocco"><h2>Sicurezza</h2><div class="gruppo">
+      <button type="button" class="riga-set" data-azione="sblocco">Autorizza un altro iPhone<span class="chev">${ICO.chev}</span></button>
+      <button type="button" class="riga-set" data-azione="esci">Esci<span class="chev">${ICO.chev}</span></button>
+    </div><p class="nota">Cartelle Drive: 01 · Da editare, 02 · Fatti, 03 · Da pubblicare. Il secondo account Telegram non entra nell’app.</p></section>
+    <section class="blocco"><h2>Aspetto</h2><div class="gruppo">
+      <div class="riga-set" style="flex-direction:column;align-items:stretch"><span>Vetro</span><div class="segmenti" style="margin-top:8px"><button type="button" data-azione="vetro" data-verso="auto" aria-pressed="${vetro === 'auto' ? 'true' : 'false'}">Auto</button><button type="button" data-azione="vetro" data-verso="solido" aria-pressed="${vetro === 'solido' ? 'true' : 'false'}">Solido</button></div></div>
+      <button type="button" class="riga-set" data-azione="effetti">${effettiOff ? 'Effetti ridotti: sì' : 'Effetti ridotti: no'}<span class="chev">${ICO.chev}</span></button>
+    </div><p class="nota">Solido toglie lo sfocato e lascia la grafite. Utile se il vetro sfarfalla.</p></section>
+    <details class="blocco"><summary>Avanzate</summary><div class="gruppo">
+      <label class="riga-set">AI<select data-imp="ai">${opt('gemini', imp.ai)}${opt('claude', imp.ai)}</select></label>
+      <label class="riga-set">Gemini<select data-imp="gemini">${opt('flash', imp.gemini)}${opt('pro', imp.gemini)}</select></label>
+      <label class="riga-set">Claude<select data-imp="modello">${['haiku', 'sonnet', 'opus'].map((m) => opt(m, imp.modello)).join('')}</select></label>
+      <label class="riga-set">Versione<select data-imp="versione">${opt('stabile', imp.versione)}${opt('beta', imp.versione)}</select></label>
+      <div class="riga-set" style="flex-direction:column;align-items:stretch">
+        <span>Prova della regia<span class="sub">Solo il testo, su una cartella già montata. Non parte da un girato appena caricato.</span></span>
+        <select id="regia-cartella">${elenco.map((c) => `<option>${esc(c)}</option>`).join('')}</select>
+        <button type="button" class="btn vetro" data-azione="prova-regia">Chiedi la regia</button>
+        ${regia ? `<p class="meta">${esc(regia.testo || '')}</p>` : ''}
+      </div>
+    </div></details>`;
 }
 
 function htmlStile() {
   const s = stato.studio;
   if (s.fase === 'studio' && s.bozza?.haTesto) {
     const b = s.bozza;
-    return `<button class="btn ghost" data-azione="studio-elenco">Elenco</button>
-      <div class="intro"><p class="kicker">${s.errore ? 'Bozza precedente' : 'Stile'}</p><h1>${esc(b.nome || 'Bozza')}</h1></div>
+    return `${htmlBarra(b.nome || 'Bozza', { indietro: true })}
       ${htmlErroreStile(s)}
       <div class="card scheda-stile">${righeRiassunto(b.riassunto)}</div>
       ${b.voce === false ? '<p class="nota">Senza trascrizione: solo fotogrammi e ritmo.</p>' : ''}
-      ${(b.daCreare || []).length ? `<div class="card da-creare"><p class="kicker">Da creare</p><p class="meta">Nel riferimento ci sono effetti che lo stile non sa ancora fare: per ora usa i più vicini. Si possono programmare con Claude.</p><ul>${b.daCreare.map((d) => `<li>${esc(d)}</li>`).join('')}</ul></div>` : ''}
+      ${(b.daCreare || []).length ? `<div class="card da-creare"><p class="meta">Nel riferimento ci sono effetti che lo stile non sa ancora fare: per ora usa i più vicini.</p><ul>${b.daCreare.map((d) => `<li>${esc(d)}</li>`).join('')}</ul></div>` : ''}
       <div class="filo">${(b.messaggi || []).map((m) => `<p class="bolla ${m.ruolo === 'denis' ? 'denis' : 'ai'}">${esc(m.testo)}</p>`).join('')}</div>
-      <textarea class="detto" id="detto-stile" placeholder="Più veloce, sottotitoli gialli, meno zoom"></textarea>
-      <button class="btn primario" data-azione="studio-invia"${s.occupato ? ' disabled' : ''}>${s.occupato ? esc(s.occupato) : 'Invia'}</button>
-      <label class="etichetta">Nome dello stile</label>
+      ${s.occupato ? `<div class="card" data-passo-stile><p class="meta">In corso</p><p data-bind="occupato">${esc(s.occupato)}</p></div>` : ''}
+      <label class="etichetta" for="nome-stile">Nome dello stile</label>
       <input class="campo" id="nome-stile" value="${esc(b.nome || '')}" maxlength="40">
-      <button class="btn pieno" data-azione="studio-salva">Salva stile</button>
-      <p class="nota" data-upload-stile>${esc(s.nota || 'Salvare lo mette in Nuovo montaggio e nel bot. Non parte nessun montaggio.')}</p>`;
+      <button type="button" class="btn vetro" data-azione="studio-salva">Salva stile</button>
+      <p class="nota">Salvare lo mette in Monta e nel bot. Non parte nessun montaggio.</p>`;
   }
   const salvati = s.salvati || [];
-  return `<button class="btn ghost" data-azione="studio-chiudi">Indietro</button>
-    <div class="intro"><p class="kicker">Stile</p><h1>Studia uno stile</h1></div>
-    <p class="sub">Un video breve, tuo o di un creator. L’AI propone ritmo, scritte, colori e zoom. Poi lo correggi a parole.</p>
-    ${s.occupato ? `<div class="card" data-passo-stile><p class="kicker">In corso</p><p>${esc(s.occupato)}</p></div>` : ''}
+  return `${htmlBarra('Studia uno stile', { indietro: true })}
+    <p class="sottotitolo">Un video breve, tuo o di un creator. L’AI propone ritmo, scritte, colori e zoom. Poi lo correggi a parole.</p>
+    ${s.occupato ? `<div class="card" data-passo-stile><p class="meta">In corso</p><p data-bind="occupato">${esc(s.occupato)}</p></div>` : ''}
     ${htmlErroreStile(s)}
     <div class="card">
-      <label class="etichetta">Video di riferimento</label>
+      <label class="etichetta" for="file-stile">Video di riferimento</label>
       <input class="campo" id="file-stile" type="file" accept="video/*">
-      <button class="btn primario" data-azione="studia"${s.occupato || s.invio ? ' disabled' : ''}>Studia</button>
+      <button type="button" class="btn" data-azione="studia" ${s.occupato || s.invio ? 'disabled' : ''}>Studia</button>
       <p class="nota">Il video va su Cloudflare a pezzi (si riprende se si interrompe), poi l’AI lo guarda tutto, con l’audio, in 2–5 minuti: puoi chiudere l’app, ti avviso su Telegram. Non apre un montaggio e non compare in Oggi.</p>
       <p class="nota" data-upload-stile>${esc(s.nota || '')}</p>
     </div>
-    ${s.bozza?.haTesto ? `<div class="card scheda-stile"${s.errore ? ' data-bozza-precedente' : ''}><p class="kicker">${s.errore ? 'Bozza precedente' : 'Bozza'}</p>${s.errore ? '<p class="meta">Non è il risultato di questo studio: è la bozza di prima.</p>' : ''}${righeRiassunto(s.bozza.riassunto)}<button class="btn pieno" data-azione="studio-continua">${s.errore ? 'Apri la bozza di prima' : 'Continua'}</button></div>` : ''}
-    <h2>Salvati</h2>
-    <div class="lista">${salvati.length ? salvati.map((v) => `<article class="card">
-        <strong>${esc(v.nome)}</strong>
-        <small class="meta">${esc(v.desc || '')}</small>
-        <div class="azioni-riga">
-          <button class="btn" data-azione="studio-apri" data-verso="${esc(v.id)}">Apri</button>
-          <button class="btn" data-azione="studio-rinomina" data-verso="${esc(v.id)}">Rinomina</button>
-          <button class="btn" data-azione="studio-duplica" data-verso="${esc(v.id)}">Duplica</button>
-          <button class="btn pericolo" data-azione="studio-elimina" data-verso="${esc(v.id)}">Elimina</button>
-        </div>
-      </article>`).join('') : '<p class="vuoto">Nessuno ancora. Il primo che salvi compare anche in Nuovo montaggio.</p>'}</div>`;
+    ${s.bozza?.haTesto ? `<div class="card scheda-stile"${s.errore ? ' data-bozza-precedente' : ''}><p class="meta">${s.errore ? 'Bozza precedente, non è stata toccata.' : 'Bozza'}</p>${righeRiassunto(s.bozza.riassunto)}<button type="button" class="btn vetro" data-azione="studio-continua">${s.errore ? 'Apri la bozza di prima' : 'Continua'}</button></div>` : ''}
+    <h2 class="sezione">Salvati</h2>
+    <div class="lista">${salvati.length ? salvati.map((v) => `<article class="card"><strong>${esc(v.nome)}</strong><span class="meta">${esc(v.desc || '')}</span><div class="azioni-riga"><button type="button" class="btn vetro" data-azione="studio-apri" data-verso="${esc(v.id)}">Apri</button><button type="button" class="btn vetro" data-azione="studio-rinomina" data-verso="${esc(v.id)}">Rinomina</button><button type="button" class="btn vetro" data-azione="studio-duplica" data-verso="${esc(v.id)}">Duplica</button><button type="button" class="btn pericolo" data-azione="studio-elimina" data-verso="${esc(v.id)}">Elimina</button></div></article>`).join('') : '<p class="vuoto">Nessuno ancora. Il primo che salvi compare anche in Monta.</p>'}</div>`;
+}
+
+function testaFoglio(titolo) {
+  return `<div class="sheet__grab" aria-hidden="true"></div><div class="sheet__testa"><h2 id="sheet-titolo">${esc(titolo)}</h2><button type="button" class="icona-btn" data-azione="chiudi-foglio" aria-label="Chiudi">${ICO.close}</button></div>`;
+}
+function htmlFoglio() {
+  const t = stato.foglio?.tipo;
+  if (t === 'carica') return htmlFoglioCarica();
+  if (t === 'monta') return htmlFoglioMonta();
+  if (t === 'pubblica') return htmlFoglioPubblica();
+  if (t === 'azioni') return htmlFoglioAzioni();
+  if (t === 'fasi') return htmlFoglioFasi();
+  if (t === 'conferma') return htmlFoglioConferma();
+  return '';
+}
+function aiutoModo(id) {
+  if (id === 'scelti') return 'Solo le clip che servono per far partire la regia. Il resto, quando hai il Wi-Fi.';
+  if (id === 'proxy') return 'Circa 720p, sul telefono. Non è da pubblicare. Lo schermo resta acceso per tutta la codifica.';
+  return 'Qualità della camera. È il file da pubblicare.';
+}
+function htmlFoglioCarica() {
+  const c = stato.carica;
+  const dati = stato.rete === 'dati';
+  const modi = [['originali', 'Originali'], ['scelti', 'Solo scelti'], ['proxy', 'Leggera']];
+  const tot = (c.selezionati || []).reduce((t, f) => t + (f.size || 0), 0) || c.byteTotali;
+  const pct = c.byteTotali ? Math.min(100, Math.round(100 * c.byteFatti / c.byteTotali)) : 0;
+  const vivo = c.fase === 'invio' || c.fase === 'pausa' || c.fase === 'codifica';
+  const sorgente = (c.selezionati && c.selezionati.length) ? c.selezionati : (c.file || []).map((f) => ({ name: f.nome, size: f.size, type: '' }));
+  const fileHtml = sorgente.map((f, i) => {
+    const src = anteprime.get(f) || '';
+    const fatto = (c.file || []).find((x) => x.nome === f.name);
+    const p = fatto && fatto.size ? Math.min(100, Math.round(100 * (fatto.fatti || 0) / fatto.size)) : 0;
+    return `<div class="file-riga" data-file="${esc(f.name)}">${src ? `<img alt="" data-thumb="${i}" src="${src}">` : `<span class="ph" data-thumb="${i}"></span>`}<span class="nome"><b>${esc(f.name)}</b><span class="meta numeri">${byteTxt(f.size)}</span>${vivo ? `<span class="mini-bar"><i style="width:${p}%"></i></span>` : ''}</span></div>`;
+  }).join('');
+  let corpo = '';
+  if (c.fase === 'pronto') {
+    corpo = `<div class="check-pop">${ICO.check}</div><h2 class="fase-nome" style="text-align:center">Girato al sicuro</h2><p class="meta" style="text-align:center">I pezzi sono su Cloudflare. Il montaggio parte solo se tocchi Monta ora.</p>${c.modalita !== 'originali' ? '<p class="nota">Gli originali interi, quando hai il Wi-Fi. Il montaggio già partito non li vede da solo: dopo, dalla scheda del video, Rifai.</p>' : ''}`;
+  } else if (vivo) {
+    corpo = `<p class="meta">${c.fase === 'codifica' ? 'Sul telefono' : c.pausa ? 'In pausa' : testoParallelo()}</p>
+      <p class="progresso-num" data-bind="pct">${c.fase === 'codifica' ? '' : `${pct}%`}</p>
+      <div class="barra" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${pct}" aria-label="Caricamento"><i data-barra style="width:${pct}%"></i></div>
+      <p class="numeri" data-bind="byte">${byteTxt(c.byteFatti)} / ${byteTxt(c.byteTotali)} · ${pct}%</p>
+      <p class="meta numeri" data-bind="eta">${c.fase === 'codifica' ? esc(c.nota || 'Codifico… tieni l’app aperta.') : tempoTxt(c.eta)}</p>
+      <p class="meta" data-bind="pezzi">${c.pezziFatti} pezzi al sicuro, non si rimandano${c.inVolo ? ` · ${c.inVolo} in viaggio` : ''}</p>
+      <p class="meta" data-bind="velocita"></p>
+      <p class="meta" data-bind="codifica">${esc(c.nota || '')}</p>
+      <p class="nota">${bloccoSchermo ? 'Schermo tenuto acceso.' : 'Tieni l’app aperta: iOS ferma l’invio se la chiudi.'}</p>
+      ${fileHtml}`;
+  } else {
+    corpo = `<p class="meta">Safari non vede la rete: scegli tu.</p>
+      <div class="segmenti" aria-label="Connessione"><button type="button" data-azione="rete" data-verso="dati" aria-pressed="${dati ? 'true' : 'false'}">Dati</button><button type="button" data-azione="rete" data-verso="wifi" aria-pressed="${dati ? 'false' : 'true'}">Wi-Fi</button></div>
+      <p class="nota">${dati ? 'Sei sui dati. La copia leggera pesa meno; gli originali, quando hai il Wi-Fi.' : 'Wi-Fi. Meglio gli originali: i pezzi viaggiano insieme, quelli già arrivati non si rimandano.'}</p>
+      <div class="segmenti" aria-label="Tipo di file">${modi.map(([id, nome]) => `<button type="button" data-azione="modalita" data-verso="${id}" aria-pressed="${c.modalita === id ? 'true' : 'false'}">${nome}</button>`).join('')}</div>
+      <p class="nota">${aiutoModo(c.modalita)}</p>
+      <label class="etichetta" for="nome-video">Nome del video</label>
+      <input class="campo" id="nome-video" value="${esc(c.nome)}" ${c.archivio ? 'readonly' : ''} autocomplete="off">
+      ${c.modalita === 'proxy' ? `<div class="coppia"><label>Dal secondo<input class="campo" id="proxy-da" type="number" min="0" inputmode="numeric" value="${c.da}"></label><label>Al secondo<input class="campo" id="proxy-a" type="number" min="1" inputmode="numeric" value="${c.a}"></label></div><p class="nota">La codifica è in tempo reale: 90 secondi di clip sono 90 secondi a schermo acceso. Un pezzo di file tagliato a metà non è un video valido.</p>` : ''}
+      <label class="etichetta" for="file-girato">${c.modalita === 'scelti' ? 'Clip che servono' : 'File'}${tot ? ` · ${esc(byteTxt(tot))}` : ''}</label>
+      <input class="campo" id="file-girato" type="file" accept="video/*,image/*,audio/*" multiple>
+      ${fileHtml}
+      ${c.daRiselezionare ? '<div class="banner">iOS ha chiuso i file. Selezionali di nuovo, stesso nome e stessa dimensione: i pezzi già arrivati restano.</div>' : ''}
+      ${c.errore ? `<div class="banner">${esc(c.errore)}</div>` : ''}
+      <p class="nota">Se cambi app, iOS può fermare l’invio. Riapri: riparte dai pezzi già fatti. La sveglia dello schermo resta accesa solo mentre la pagina è visibile.</p>`;
+  }
+  let bar = '';
+  if (c.fase === 'pronto' && !c.archivio) bar = `<div class="sheet__bar"><button type="button" class="btn" data-azione="monta-ora">Monta ora</button><button type="button" class="btn quiet" data-azione="piu-tardi">Più tardi</button></div>`;
+  else if (c.fase === 'pronto' && c.archivio) bar = `<div class="sheet__bar"><button type="button" class="btn" data-azione="copia-drive">Copiali su Drive</button></div>`;
+  else if (c.fase === 'invio' || c.fase === 'pausa') bar = `<div class="sheet__bar"><div class="coppia"><button type="button" class="btn vetro" data-azione="${c.pausa ? 'riprendi-upload' : 'pausa-upload'}">${c.pausa ? 'Riprendi' : 'Pausa'}</button><button type="button" class="btn pericolo" data-azione="annulla-upload">Annulla</button></div><p class="meta-3">${c.pausa ? 'I pezzi già arrivati restano. Riprendi da dove era.' : 'Pausa tiene i pezzi. Annulla butta questo caricamento.'}</p></div>`;
+  else if (!vivo) bar = `<div class="sheet__bar"><button type="button" class="btn" data-azione="avvia-upload">${c.archivio ? 'Manda il resto' : `Carica${tot ? ` ${byteTxt(tot)}` : ''}`}</button>${dati && tot ? `<p class="meta-3">Userà circa ${byteTxt(tot)} di dati.</p>` : ''}</div>`;
+  return `${testaFoglio('Carica')}<div class="sheet__corpo">${corpo}</div>${bar}`;
+}
+function testoParallelo() {
+  const n = paralleloScelto(4);
+  return `${n} pezzi insieme`;
+}
+function preparaNuovo(opts = {}) {
+  const up = stato.home?.upload;
+  const pronto = !!(up?.pronto || stato.carica.fase === 'pronto');
+  const cartellaPronta = pronto ? (up?.nome || stato.carica.nome || '') : '';
+  if (stato.nuovo?.dati && !opts.forza) {
+    if (cartellaPronta) stato.nuovo.dati.cartella = cartellaPronta;
+    return;
+  }
+  stato.nuovo = {
+    passo: 'riepilogo',
+    dati: {
+      cartella: cartellaPronta,
+      stile: stato.home?.impostazioni?.stile || stato.stili[0]?.nome || 'Blueprint',
+      sponsor: '', durata: '', tono: '', giudizio: '', tavola: '', note: '', sponsorSi: false,
+    },
+  };
+}
+function leggiCampiMonta() {
+  const n = stato.nuovo;
+  if (!n?.dati) return;
+  const c = document.getElementById('nome-cartella');
+  if (c) n.dati.cartella = c.value.trim();
+  const s = document.getElementById('sponsor');
+  if (s) n.dati.sponsor = s.value.trim();
+  const note = document.getElementById('note');
+  if (note) n.dati.note = note.value.trim();
+  const t = document.getElementById('tavola');
+  if (t) n.dati.tavola = t.value.trim();
+  const si = document.getElementById('sponsor-si');
+  if (si) n.dati.sponsorSi = si.checked;
+}
+function riepilogoMonta() {
+  const d = stato.nuovo?.dati || {};
+  return [d.cartella || 'Cartella', d.stile || 'Stile', d.durata || 'Auto'].join(' · ');
+}
+function htmlFoglioMonta() {
+  preparaNuovo();
+  const d = stato.nuovo.dati;
+  const stili = stato.stili.length ? stato.stili : (stato.cartelle?.stili || []);
+  const elenco = stato.cartelle?.cartelle?.elenco || [];
+  const durate = [['', 'Auto'], ['30 s', '30 s'], ['45 s', '45 s'], ['60 s', '60 s']];
+  const toni = [['', 'Auto'], ['diretto', 'Diretto'], ['ironico', 'Ironico'], ['tecnico', 'Tecnico'], ['entusiasta', 'Entusiasta']];
+  const giudizi = [['', 'Dal video'], ['PROMOSSO ✓', 'Promosso'], ['CI STA', 'Ci sta'], ['NON È MALE', 'Non è male'], ['BOCCIATO ✗', 'Bocciato'], ['-', 'Nessuna scritta']];
+  return `${testaFoglio('Monta')}<div class="sheet__corpo">
+      <p class="meta">Niente parte finché non tocchi Avvia montaggio.</p>
+      <label class="etichetta" for="nome-cartella">Cartella</label>
+      <input class="campo" id="nome-cartella" value="${esc(d.cartella)}" autocomplete="off" placeholder="Nome della cartella">
+      ${elenco.length ? `<div class="chip-fila">${elenco.map((c) => `<button type="button" class="cartella-chip" data-azione="cartella-rapida" data-verso="${esc(c)}" aria-pressed="${d.cartella === c ? 'true' : 'false'}">${(stato.cartelle?.cartelle?.vai || []).includes(c) ? 'VAI · ' : ''}${esc(c)}</button>`).join('')}</div>` : ''}
+      <p class="etichetta">Stile</p>
+      <div class="chip-fila" role="listbox" aria-label="Stile">${stili.map((s) => `<button type="button" class="chip-stile" role="option" aria-selected="${s.nome === d.stile ? 'true' : 'false'}" data-azione="scegli-stile" data-verso="${esc(s.nome)}"><strong>${esc(s.tasto || s.nome)}</strong><small>${esc(s.cosa || s.desc || '')}</small></button>`).join('')}</div>
+      <button type="button" class="disclosure" data-azione="toggle-dettagli" aria-expanded="false">Dettagli</button>
+      <div id="monta-dettagli" hidden>
+        <p class="etichetta">Durata</p>
+        <div class="segmenti">${durate.map(([v, et]) => `<button type="button" data-azione="imposta" data-campo="durata" data-verso="${esc(v)}" aria-pressed="${d.durata === v ? 'true' : 'false'}">${et}</button>`).join('')}</div>
+        <p class="etichetta">Tono</p>
+        <div class="segmenti">${toni.map(([v, et]) => `<button type="button" data-azione="imposta" data-campo="tono" data-verso="${esc(v)}" aria-pressed="${d.tono === v ? 'true' : 'false'}">${et}</button>`).join('')}</div>
+        <p class="etichetta">Giudizio</p>
+        <div class="segmenti">${giudizi.map(([v, et]) => `<button type="button" data-azione="imposta" data-campo="giudizio" data-verso="${esc(v)}" aria-pressed="${d.giudizio === v ? 'true' : 'false'}">${et}</button>`).join('')}</div>
+        <label class="riga-set" style="border:0;padding-left:0"><span>Sponsor</span><input id="sponsor-si" type="checkbox" ${d.sponsorSi ? 'checked' : ''} style="margin-left:auto"></label>
+        <div id="blocco-sponsor" ${d.sponsorSi ? '' : 'hidden'}><input class="campo" id="sponsor" placeholder="es. eSUN PETG, stampa Benchy veloce" value="${esc(d.sponsor)}"></div>
+        <div id="blocco-tavola" ${d.stile === 'Blueprint' ? '' : 'hidden'}><label class="etichetta" for="tavola">Numero tavola</label><input class="campo" id="tavola" placeholder="TAV. 05" value="${esc(d.tavola)}"></div>
+        <label class="etichetta" for="note">Indicazioni</label>
+        <textarea id="note" placeholder="Cosa dire, cosa evitare…">${esc(d.note)}</textarea>
+      </div>
+    </div>
+    <div class="sheet__bar"><p class="meta numeri" data-bind="riepilogo">${esc(riepilogoMonta())}</p><button type="button" class="btn" data-azione="avvia-montaggio">Avvia montaggio</button></div>`;
+}
+function htmlFoglioPubblica() {
+  const pub = stato.dettaglio?.memo?.pubblica;
+  if (!pub) return `${testaFoglio('Pubblica')}<div class="sheet__corpo"><p class="nota">Didascalie non ancora pronte.</p></div>`;
+  return `${testaFoglio('Pubblica')}<div class="sheet__corpo">
+      <label class="etichetta" for="didascalia">Didascalia</label>
+      <textarea id="didascalia">${esc(pub.didascalia || '')}</textarea>
+      <button type="button" class="btn vetro" data-azione="salva-didascalia">Salva didascalia</button>
+      <label class="etichetta" for="titolo-yt">Titolo YouTube</label>
+      <input class="campo" id="titolo-yt" value="${esc(pub.youtube?.titolo || '')}">
+      <button type="button" class="btn vetro" data-azione="salva-titolo">Salva titolo</button>
+      <div class="coppia"><button type="button" class="btn vetro" data-azione="video" data-verso="ig">Instagram ${pub.ig === false ? 'spento' : 'acceso'}</button><button type="button" class="btn vetro" data-azione="video" data-verso="yt">YouTube ${pub.yt === false ? 'spento' : 'acceso'}</button></div>
+    </div><div class="sheet__bar"><button type="button" class="btn" data-azione="video" data-verso="pubblica">Pubblica</button></div>`;
+}
+function htmlFoglioAzioni() {
+  const d = stato.dettaglio || {};
+  const stili = stato.stili.length ? stato.stili : [];
+  const corrente = d.memo?.stile || d.video?.stile || '';
+  return `${testaFoglio('Azioni')}<div class="sheet__corpo">
+      <label class="etichetta" for="stile-video">Cambia stile</label>
+      <select id="stile-video">${stili.map((s) => `<option ${s.nome === corrente ? 'selected' : ''}>${esc(s.nome)}</option>`).join('')}</select>
+      <button type="button" class="btn vetro" data-azione="video" data-verso="prova">Prova ${d.provaSecondi || 10} s</button>
+      <button type="button" class="btn vetro" data-azione="video" data-verso="intero">Stile intero</button>
+      <button type="button" class="btn vetro" data-azione="video" data-verso="render">Solo render</button>
+      <button type="button" class="btn vetro" data-azione="video" data-verso="riprova">Riprova</button>
+      <button type="button" class="btn vetro" data-azione="manda-resto">Manda il resto degli originali</button>
+      <button type="button" class="btn quiet" data-azione="apri-pubblica">Didascalia e titolo</button>
+      <button type="button" class="btn pericolo" data-azione="chiedi-rifai">Rifai da capo</button>
+    </div>`;
+}
+function htmlFoglioFasi() {
+  const id = stato.foglio?.id || '';
+  const s = stato.home?.stato || {};
+  const job = [...(s.attivi || []), ...(s.pendenti || []), ...(s.falliti || [])].find((x) => String(x.runId || '') === String(id)) || (s.attivi || [])[0] || (s.falliti || [])[0];
+  if (!job) return `${testaFoglio('Dettagli')}<div class="sheet__corpo"><p class="nota">Non c’è un giro aperto.</p></div>`;
+  const fasi = job.fasi || [];
+  return `${testaFoglio(job.nome || 'Montaggio')}<div class="sheet__corpo">
+      <p class="fase-nome" style="font-size:1.6rem;font-weight:700;letter-spacing:-.03em;margin:0 0 8px">${esc(etichettaFase(job))}</p>
+      <p class="meta">${esc([job.dettaglio, job.mancanoTesto, job.minuti ? `${job.minuti} min già passati` : ''].filter(Boolean).join(' · '))}</p>
+      ${job.errore ? `<p class="motivo">${esc(job.errore)}</p>` : ''}
+      <ul class="fase-lista">${fasi.map((f) => `<li class="${f.fatta ? 'done' : ''} ${f.ora ? 'now' : ''} ${f.ko ? 'ko' : ''}"><i class="segno"></i><span><strong>${esc(FASE_BREVE[f.id] || f.nome)}</strong>${f.dettaglio ? `<span class="meta"> ${esc(f.dettaglio)}</span>` : ''}</span></li>`).join('')}</ul>
+      ${job.puoRiprovare ? `<button type="button" class="btn" data-azione="riprova-giro" data-verso="${esc(job.runId)}">Riprova</button>` : ''}
+    </div>`;
+}
+function htmlFoglioConferma() {
+  return `${testaFoglio('Rifaccio da capo?')}<div class="sheet__corpo"><p class="nota">Riparte l’analisi e il montaggio, con gli stessi dati. È il giro più lungo.</p></div><div class="sheet__bar"><button type="button" class="btn pericolo" data-azione="conferma-rifai">Sì, rifai</button><button type="button" class="btn quiet" data-azione="chiudi-foglio">Annulla</button></div>`;
+}
+
+function renderComposer() {
+  const el = document.getElementById('composer');
+  const guscio = document.getElementById('guscio');
+  const dett = stato.schermo === 'dettaglio' && stato.dettaglio && !stato.foglio;
+  const studio = stato.schermo === 'stile' && stato.studio.fase === 'studio' && stato.studio.bozza?.haTesto && !stato.foglio;
+  if (!dett && !studio) { el.hidden = true; guscio.classList.remove('con-compositore'); return; }
+  el.hidden = false;
+  guscio.classList.add('con-compositore');
+  if (dett) {
+    const idee = ['Più corto', 'Taglia l’inizio', 'Cambia musica'];
+    el.innerHTML = `<div class="idee">${idee.map((t) => `<button type="button" class="chip-idea" data-azione="idea" data-verso="${esc(t)}">${esc(t)}</button>`).join('')}</div><form class="composer-riga" id="form-correzione"><label class="sr" for="correzione">Cosa cambio?</label><input id="correzione" placeholder="Cosa cambio?" enterkeyhint="send" autocomplete="off" value="${esc(stato.bozzaCorrezione || '')}"><button class="invia" type="submit" aria-label="Invia correzione">${ICO.send}</button></form>`;
+  } else {
+    el.innerHTML = `<form class="composer-riga" id="form-stile"><label class="sr" for="detto-stile">Nota per lo stile</label><input id="detto-stile" placeholder="Più veloce, sottotitoli gialli, meno zoom" enterkeyhint="send" value="${esc(stato.studio.notaInput || '')}"><button class="invia" type="submit" aria-label="Invia nota" ${stato.studio.occupato ? 'disabled' : ''}>${ICO.send}</button></form>`;
+  }
+}
+function renderFoglio() {
+  const host = document.getElementById('sheet-host');
+  const scrim = document.getElementById('scrim');
+  const sheet = document.getElementById('sheet');
+  if (!stato.foglio) {
+    sheet.classList.remove('is-open');
+    scrim.classList.remove('is-on');
+    sheet.setAttribute('aria-hidden', 'true');
+    clearTimeout(renderFoglio._t);
+    renderFoglio._t = setTimeout(() => { if (!stato.foglio) host.hidden = true; }, 420);
+    return;
+  }
+  host.hidden = false;
+  scrim.classList.add('is-on');
+  sheet.setAttribute('aria-hidden', 'false');
+  sheet.innerHTML = htmlFoglio();
+  requestAnimationFrame(() => sheet.classList.add('is-open'));
+}
+function apriFoglio(tipo, extra = {}) {
+  try { leggiCampiCarica(); } catch { /* chiuso */ }
+  leggiCampiMonta();
+  stato.foglio = { tipo, ...extra };
+  disegna({ tieniScroll: true });
+  const chiudi = document.querySelector('#sheet [data-azione="chiudi-foglio"]');
+  chiudi?.focus();
+}
+function chiudiFoglio() {
+  try { leggiCampiCarica(); } catch { /* chiuso */ }
+  leggiCampiMonta();
+  stato.foglio = null;
+  disegna({ tieniScroll: true });
+}
+
+function patchVivo(s) {
+  const lista = [...(s.attivi || []), ...(s.pendenti || [])];
+  for (const a of lista) {
+    const card = document.querySelector(`[data-run="${String(a.runId || a.nome || '').replace(/"/g, '')}"]`);
+    if (!card || card.hasAttribute('data-fallito')) continue;
+    const nome = etichettaFase(a);
+    const faseEl = card.querySelector('[data-bind="fase"]');
+    if (faseEl && faseEl.textContent !== nome) {
+      faseEl.textContent = nome;
+      const ann = card.querySelector('[data-annuncio]');
+      if (ann) ann.textContent = `Fase: ${nome}`;
+    }
+    const sub = card.querySelector('[data-bind="sub"]');
+    if (sub) sub.textContent = [a.dettaglio, a.mancanoTesto].filter(Boolean).join(' · ');
+    const min = card.querySelector('[data-bind="minuti"]');
+    if (min) min.textContent = a.minuti ? `${a.minuti} min` : '';
+    const meta = card.querySelector('[data-bind="meta"]');
+    if (meta) meta.textContent = metaLavoro(a);
+    const rail = card.querySelector('.rail');
+    (a.fasi || []).forEach((f, i) => {
+      const el = rail?.children[i];
+      if (el) el.className = `${f.fatta ? 'done' : ''} ${f.ora ? 'now' : ''} ${f.ko ? 'ko' : ''}`.trim();
+    });
+  }
+  for (const f of s.falliti || []) {
+    const card = document.querySelector(`[data-run="${String(f.runId || '').replace(/"/g, '')}"]`);
+    const er = card?.querySelector('[data-bind="errore"]');
+    if (er && f.errore) er.textContent = f.errore;
+  }
+}
+
+let pollTimer = 0;
+let pollVisti = null;
+function ritardoPoll() {
+  if (stato._errori) return Math.min(60000, 4000 * 2 ** Math.min(4, stato._errori));
+  const attivo = !!(stato.home?.stato?.attivi?.length || stato.home?.stato?.pendenti?.length || stato.carica.fase === 'invio');
+  return attivo ? 4000 : 20000;
+}
+function pianificaPoll() {
+  clearTimeout(pollTimer);
+  if (DEMO || document.hidden || stato.schermo === 'accesso' || !stato.home) return;
+  pollTimer = setTimeout(cicloPoll, ritardoPoll());
+}
+async function cicloPoll() {
+  if (DEMO || document.hidden || !stato.home) return;
+  try {
+    const s = await api('/api/stato');
+    const prima = pollVisti;
+    const ora = new Set((s.attivi || []).map((a) => String(a.runId)));
+    const falliti = new Map((s.falliti || []).map((f) => [String(f.runId), f]));
+    if (prima && document.hidden && typeof Notification !== 'undefined' && Notification.permission === 'granted') {
+      for (const id of prima) {
+        if (ora.has(id)) continue;
+        const ko = falliti.get(id);
+        const reg = await navigator.serviceWorker?.getRegistration?.();
+        reg?.showNotification(ko ? 'Montaggio fermo' : 'Montaggio pronto', {
+          body: ko ? (ko.errore || 'Apri Regista per riprovare.') : 'Il video è in Regista.',
+          icon: '/icon-192.png',
+          data: { url: '/' },
+        }).catch(() => {});
+      }
+    }
+    pollVisti = ora;
+    stato._errori = 0;
+    stato.home.stato = s;
+    const box = document.querySelector('[data-vivo]');
+    if (box && stato.schermo === 'oggi') {
+      const firma = firmaStato(s);
+      if (box.dataset.firma === firma) patchVivo(s);
+      else { box.dataset.firma = firma; box.innerHTML = htmlVivo(s); }
+    }
+    aggiornaBadge();
+    if (stato.foglio?.tipo === 'fasi') {
+      const sheet = document.getElementById('sheet');
+      if (sheet && !sheet.contains(document.activeElement)) sheet.innerHTML = htmlFoglioFasi();
+      document.getElementById('sheet')?.classList.add('is-open');
+    }
+  } catch { stato._errori = (stato._errori || 0) + 1; }
+  pianificaPoll();
+}
+function assicuratiPoll() {
+  if (assicuratiPoll.acceso || DEMO) return;
+  assicuratiPoll.acceso = true;
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible') cicloPoll();
+    else clearTimeout(pollTimer);
+  });
+  pianificaPoll();
+}
+
+const anteprime = new WeakMap();
+function codaAnteprime() {
+  (stato.carica.selezionati || []).slice(0, 12).forEach((f, i) => {
+    if (!f || anteprime.has(f) || !String(f.type || '').startsWith('video/')) return;
+    anteprime.set(f, '');
+    catturaAnteprima(f, i);
+  });
+}
+async function catturaAnteprima(file, i) {
+  const video = document.createElement('video');
+  video.muted = true;
+  video.playsInline = true;
+  video.preload = 'metadata';
+  video.style.cssText = 'position:fixed;left:0;top:0;width:2px;height:2px;opacity:0;pointer-events:none';
+  const url = URL.createObjectURL(file);
+  video.src = url;
+  document.body.appendChild(video);
+  try {
+    await new Promise((ok, ko) => { video.onloadeddata = ok; video.onerror = ko; setTimeout(ko, 4000); });
+    const p = attendiVideo(video, 'seeked', 800).catch(() => {});
+    video.currentTime = Math.min(0.15, (video.duration || 1) / 8);
+    await p;
+    const cnv = document.createElement('canvas');
+    cnv.width = 40;
+    cnv.height = 40;
+    cnv.getContext('2d').drawImage(video, 0, 0, 40, 40);
+    const data = cnv.toDataURL('image/jpeg', 0.55);
+    anteprime.set(file, data);
+    document.querySelectorAll(`[data-thumb="${i}"]`).forEach((el) => {
+      if (el.tagName === 'IMG') el.src = data;
+      else {
+        const img = document.createElement('img');
+        img.alt = '';
+        img.src = data;
+        img.dataset.thumb = String(i);
+        el.replaceWith(img);
+      }
+    });
+  } catch { /* riquadro vuoto */ }
+  finally { URL.revokeObjectURL(url); video.remove(); }
+}
+
+function agganciaFoglio() {
+  const sheet = document.getElementById('sheet');
+  let startY = 0;
+  let lastY = 0;
+  let startT = 0;
+  let drag = false;
+  sheet.addEventListener('pointerdown', (e) => {
+    if (!e.target.closest('.sheet__grab')) return;
+    drag = true;
+    startY = lastY = e.clientY;
+    startT = performance.now();
+    sheet.setPointerCapture?.(e.pointerId);
+    sheet.style.transition = 'none';
+  });
+  sheet.addEventListener('pointermove', (e) => {
+    if (!drag) return;
+    lastY = e.clientY;
+    const dy = Math.max(0, lastY - startY);
+    sheet.style.transform = `translateY(${dy}px)`;
+  });
+  const fine = () => {
+    if (!drag) return;
+    drag = false;
+    const dy = Math.max(0, lastY - startY);
+    const dt = Math.max(1, performance.now() - startT);
+    const vel = dy / dt;
+    sheet.style.transition = '';
+    sheet.style.transform = '';
+    if (dy > sheet.getBoundingClientRect().height * 0.35 || vel > 0.5) chiudiFoglio();
+    else sheet.classList.add('is-open');
+  };
+  sheet.addEventListener('pointerup', fine);
+  sheet.addEventListener('pointercancel', fine);
+}
+function agganciaViewport() {
+  const vv = window.visualViewport;
+  if (!vv) return;
+  const aggiorna = () => {
+    const inset = Math.max(0, window.innerHeight - vv.height - vv.offsetTop);
+    document.documentElement.style.setProperty('--kbd', `${Math.round(inset)}px`);
+    document.documentElement.classList.toggle('tastiera', inset > 80);
+  };
+  vv.addEventListener('resize', aggiorna);
+  vv.addEventListener('scroll', aggiorna);
+}
+function agganciaTocco() {
+  document.addEventListener('pointerdown', (e) => {
+    const g = e.target.closest?.('.glass');
+    if (!g || document.documentElement.dataset.motion === 'off') return;
+    const r = g.getBoundingClientRect();
+    g.style.setProperty('--px', `${e.clientX - r.left}px`);
+    g.style.setProperty('--py', `${e.clientY - r.top}px`);
+    g.classList.add('is-lit');
+    setTimeout(() => g.classList.remove('is-lit'), 350);
+  });
+  let pullY = 0;
+  const view = document.getElementById('view');
+  view.addEventListener('touchstart', (e) => { pullY = view.scrollTop <= 0 ? e.touches[0].clientY : 0; }, { passive: true });
+  view.addEventListener('touchend', async (e) => {
+    if (stato.schermo !== 'video' || !pullY) return;
+    const dy = e.changedTouches[0].clientY - pullY;
+    pullY = 0;
+    if (dy < 72) return;
+    try {
+      stato.video = (await api('/api/video')).video || stato.video;
+      disegna();
+    } catch (err) { toast(err.message); }
+  }, { passive: true });
+}
+function sondaFps() {
+  if (document.documentElement.dataset.glass === 'lite') return;
+  let n = 0;
+  const t0 = performance.now();
+  const frame = (t) => {
+    n += 1;
+    if (t - t0 < 1000) requestAnimationFrame(frame);
+    else if ((n * 1000) / (t - t0) < 45) {
+      document.documentElement.dataset.glass = 'lite';
+      try { localStorage.setItem('regista-vetro-lite', '1'); } catch { /* ignora */ }
+    }
+  };
+  setTimeout(() => requestAnimationFrame(frame), 1500);
 }
 
 document.addEventListener('click', async (e) => {
@@ -636,36 +1149,79 @@ document.addEventListener('click', async (e) => {
   const verso = el.dataset.verso || '';
   try {
     if (azione === 'vai') {
-      if (verso === 'nuovo') preparaNuovo(DEMO && DEMO_VISTA === 'nuovo' ? 'stile' : undefined);
       if (verso === 'video') stato.video = (await api('/api/video')).video || [];
       if (verso === 'altro') await caricaAltro();
       if (verso === 'stile') { await caricaStudio(); stato.studio.fase = 'elenco'; }
       vai(verso);
-    } else if (azione === 'chiedi-codice') {
+    } else if (azione === 'indietro') {
+      if (stato.schermo === 'stile' && stato.studio.fase === 'studio') {
+        stato.studio.fase = 'elenco';
+        await caricaStudio();
+        disegna();
+        return;
+      }
+      const torna = stato.schermo === 'stile' ? 'altro' : 'video';
+      if (history.length > 1 && location.hash) history.back();
+      else vai(torna, { sostituisci: true });
+    } else if (azione === 'apri-carica') apriFoglio('carica');
+    else if (azione === 'scegli-file') document.getElementById('file-hero')?.click();
+    else if (azione === 'chiudi-foglio') chiudiFoglio();
+    else if (azione === 'gira-rete' || azione === 'rete') { applicaRete(azione === 'rete' ? verso : (stato.rete === 'dati' ? 'wifi' : 'dati')); disegna({ tieniScroll: true }); }
+    else if (azione === 'chiedi-codice') {
       await api('/api/auth/codice', { method: 'POST', body: {} });
       toast('Codice mandato su Telegram. Vale 10 minuti.');
     } else if (azione === 'entra') await entra();
     else if (azione === 'registra') await registra();
-    else if (azione === 'cartella') { stato.nuovo.dati.cartella = verso; avantiNuovo('cartella'); }
-    else if (azione === 'cartella-testo') { stato.nuovo.dati.cartella = root.querySelector('#nome-cartella').value.trim(); avantiNuovo('cartella'); }
-    else if (azione === 'stile') { stato.nuovo.dati.stile = verso; avantiNuovo('stile'); }
-    else if (azione === 'sponsor') {
-      stato.nuovo.dati.sponsorSi = verso === 'si';
-      if (verso !== 'si') stato.nuovo.dati.sponsor = '';
-      stato.nuovo.passo = verso === 'si' ? 'sponsor_testo' : prossimo('sponsor');
-      disegna();
-    } else if (azione === 'sponsor-testo') { stato.nuovo.dati.sponsor = root.querySelector('#sponsor').value.trim(); avantiNuovo('sponsor'); }
-    else if (azione === 'campo') { stato.nuovo.dati[el.dataset.campo] = verso; avantiNuovo(el.dataset.campo); }
-    else if (azione === 'tavola') { stato.nuovo.dati.tavola = root.querySelector('#tavola').value.trim(); avantiNuovo('tavola'); }
-    else if (azione === 'note') { stato.nuovo.dati.note = root.querySelector('#note').value.trim(); avantiNuovo('note'); }
-    else if (azione === 'modifica') { stato.nuovo.passo = verso; disegna(); }
-    else if (azione === 'indietro-nuovo') indietroNuovo();
-    else if (azione === 'avvia-montaggio') await avviaMontaggio();
-    else if (azione === 'modalita') { stato.carica.modalita = verso; stato.carica.modalitaScelta = true; disegna(); }
-    else if (azione === 'avvia-upload') await avviaUpload();
+    else if (azione === 'monta-ora') { preparaNuovo({ forza: true }); apriFoglio('monta'); }
+    else if (azione === 'piu-tardi') { chiudiFoglio(); vai('oggi'); }
+    else if (azione === 'avvia-montaggio') {
+      if (stato._avvio) return;
+      stato._avvio = true;
+      try { await avviaMontaggio(); } finally { stato._avvio = false; }
+    } else if (azione === 'scegli-stile') {
+      if (!stato.nuovo) preparaNuovo();
+      stato.nuovo.dati.stile = verso;
+      document.querySelectorAll('.chip-stile').forEach((b) => b.setAttribute('aria-selected', b.dataset.verso === verso ? 'true' : 'false'));
+      const tav = document.getElementById('blocco-tavola');
+      if (tav) tav.hidden = verso !== 'Blueprint';
+      const r = document.querySelector('[data-bind="riepilogo"]');
+      if (r) r.textContent = riepilogoMonta();
+    } else if (azione === 'cartella-rapida') {
+      if (!stato.nuovo) preparaNuovo();
+      stato.nuovo.dati.cartella = verso;
+      const input = document.getElementById('nome-cartella');
+      if (input) input.value = verso;
+      document.querySelectorAll('.cartella-chip').forEach((b) => b.setAttribute('aria-pressed', b.dataset.verso === verso ? 'true' : 'false'));
+      const r = document.querySelector('[data-bind="riepilogo"]');
+      if (r) r.textContent = riepilogoMonta();
+    } else if (azione === 'imposta') {
+      if (!stato.nuovo) preparaNuovo();
+      stato.nuovo.dati[el.dataset.campo] = verso;
+      el.parentElement?.querySelectorAll('button').forEach((b) => b.setAttribute('aria-pressed', b === el ? 'true' : 'false'));
+      const r = document.querySelector('[data-bind="riepilogo"]');
+      if (r) r.textContent = riepilogoMonta();
+    } else if (azione === 'toggle-dettagli') {
+      const box = document.getElementById('monta-dettagli');
+      if (!box) return;
+      box.hidden = !box.hidden;
+      el.setAttribute('aria-expanded', box.hidden ? 'false' : 'true');
+    } else if (azione === 'modalita') {
+      stato.carica.modalita = verso;
+      stato.carica.modalitaScelta = true;
+      disegna({ tieniScroll: true });
+    } else if (azione === 'avvia-upload') await avviaUpload();
+    else if (azione === 'pausa-upload') {
+      stato.carica.pausa = true;
+      stato.carica.stop = true;
+      disegna({ tieniScroll: true });
+    } else if (azione === 'riprendi-upload') await riprendiUpload();
     else if (azione === 'annulla-upload') await annullaUpload();
     else if (azione === 'copia-drive') await copiaDrive();
     else if (azione === 'apri-video') await apriVideo(verso);
+    else if (azione === 'correggi-vai') {
+      await apriVideo(verso);
+      document.getElementById('correzione')?.focus();
+    } else if (azione === 'filtro') { stato.filtro = verso; disegna(); }
     else if (azione === 'ricarica-video') { stato.video = (await api('/api/video')).video || []; disegna(); }
     else if (azione === 'video') await azioneVideo(verso);
     else if (azione === 'riprova-giro') {
@@ -675,21 +1231,48 @@ document.addEventListener('click', async (e) => {
       toast('Riparto con gli stessi dati.');
       const fresco = await api('/api/stato');
       if (stato.home) stato.home.stato = fresco;
-      disegna();
-    }
-    else if (azione === 'salva-didascalia') await azioneVideo('didascalia', root.querySelector('#didascalia').value);
-    else if (azione === 'salva-titolo') await azioneVideo('titolo', root.querySelector('#titolo-yt').value);
-    else if (azione === 'correggi') await azioneVideo('correggi', root.querySelector('#correzione').value);
-    else if (azione === 'manda-resto') mandaResto();
+      chiudiFoglio();
+      vai('oggi');
+    } else if (azione === 'salva-didascalia') await azioneVideo('didascalia', root.querySelector('#didascalia')?.value || '');
+    else if (azione === 'salva-titolo') await azioneVideo('titolo', root.querySelector('#titolo-yt')?.value || root.querySelector('#titolo-inline')?.value || '');
+    else if (azione === 'apri-pubblica') apriFoglio('pubblica');
+    else if (azione === 'apri-azioni') apriFoglio('azioni');
+    else if (azione === 'dettagli-job') apriFoglio('fasi', { id: verso });
+    else if (azione === 'chiedi-rifai') apriFoglio('conferma');
+    else if (azione === 'conferma-rifai') { stato.foglio = null; await azioneVideo('rifai'); }
+    else if (azione === 'idea') {
+      const input = document.getElementById('correzione');
+      if (input) { input.value = verso; input.focus(); }
+      stato.bozzaCorrezione = verso;
+    } else if (azione === 'manda-resto') mandaResto();
     else if (azione === 'lotto') await lotto();
     else if (azione === 'aggiorna-cartelle') { await api('/api/cartelle/aggiorna', { method: 'POST', body: {} }); toast('Ho chiesto l’elenco a Drive.'); }
     else if (azione === 'prova-regia') await provaRegia();
     else if (azione === 'push') await attivaPush();
     else if (azione === 'sblocco') { await api('/api/auth/sblocco', { method: 'POST', body: {} }); toast('Codice mandato su Telegram. Vale 10 minuti sul telefono nuovo.'); }
-    else if (azione === 'esci') { await api('/api/auth/esci', { method: 'POST', body: {} }); stato.schermo = 'accesso'; disegna(); }
-    else if (azione === 'studio-chiudi') vai('altro');
-    else if (azione === 'studio-elenco') { stato.studio.fase = 'elenco'; await caricaStudio(); disegna(); }
-    else if (azione === 'studio-continua') { stato.studio.fase = 'studio'; disegna(); }
+    else if (azione === 'esci') { await api('/api/auth/esci', { method: 'POST', body: {} }); stato.schermo = 'accesso'; stato.foglio = null; disegna(); }
+    else if (azione === 'badge-test') {
+      if (!navigator.setAppBadge) throw new Error('Questo iPhone non mostra il badge. Serve l’app sulla Home, iOS 16.4 o successivo.');
+      await navigator.setAppBadge(1);
+      toast('Badge acceso. Lo riallineo ai lavori tra un attimo.');
+      setTimeout(() => aggiornaBadge(), 2500);
+    } else if (azione === 'vetro') {
+      const solido = verso === 'solido';
+      try { localStorage.setItem('regista-vetro', solido ? 'solido' : 'auto'); } catch { /* ignora */ }
+      if (solido) document.documentElement.dataset.glass = 'lite';
+      else if (localStorage.getItem('regista-vetro-lite') === '1') document.documentElement.dataset.glass = 'lite';
+      else delete document.documentElement.dataset.glass;
+      disegna({ tieniScroll: true });
+    } else if (azione === 'effetti') {
+      const off = document.documentElement.dataset.motion === 'off';
+      if (off) delete document.documentElement.dataset.motion;
+      else document.documentElement.dataset.motion = 'off';
+      try { localStorage.setItem('regista-effetti', off ? '1' : '0'); } catch { /* ignora */ }
+      disegna({ tieniScroll: true });
+    } else if (azione === 'studio-elenco' || azione === 'studio-chiudi') {
+      if (azione === 'studio-chiudi') vai('altro');
+      else { stato.studio.fase = 'elenco'; await caricaStudio(); disegna(); }
+    } else if (azione === 'studio-continua') { stato.studio.fase = 'studio'; disegna(); }
     else if (azione === 'studia') await studiaVideo();
     else if (azione === 'studio-invia') await inviaNotaStile();
     else if (azione === 'studio-salva') await salvaStile();
@@ -705,37 +1288,106 @@ document.addEventListener('click', async (e) => {
 document.addEventListener('change', async (e) => {
   const imp = e.target.closest('[data-imp]');
   if (imp && root.contains(imp)) {
-    const valore = imp.value;
     try {
-      const r = await api('/api/impostazioni', { method: 'POST', body: { [imp.dataset.imp]: valore } });
-      stato.home.impostazioni = r.impostazioni || stato.home.impostazioni;
+      const r = await api('/api/impostazioni', { method: 'POST', body: { [imp.dataset.imp]: imp.value } });
+      if (stato.home) stato.home.impostazioni = r.impostazioni || stato.home.impostazioni;
       toast('Salvato.');
     } catch (err) { toast(err.message); }
   }
-  if (e.target.id === 'file-girato') stato.carica.selezionati = [...e.target.files];
+  if (e.target.id === 'file-girato' || e.target.id === 'file-hero') {
+    const files = [...e.target.files];
+    stato.carica.selezionati = files;
+    if (!stato.carica.nome) stato.carica.nome = nomeDaFile(files);
+    stato.carica.daRiselezionare = false;
+    if (stato.foglio?.tipo !== 'carica') stato.foglio = { tipo: 'carica' };
+    disegna({ tieniScroll: true });
+  }
   if (e.target.id === 'nome-video') stato.carica.nome = e.target.value;
   if (e.target.id === 'proxy-da') stato.carica.da = Number(e.target.value) || 0;
   if (e.target.id === 'proxy-a') stato.carica.a = Number(e.target.value) || 90;
   if (e.target.id === 'file-stile') stato.studio.file = e.target.files?.[0] || null;
+  if (e.target.id === 'sponsor-si' && stato.nuovo) {
+    stato.nuovo.dati.sponsorSi = e.target.checked;
+    const box = document.getElementById('blocco-sponsor');
+    if (box) box.hidden = !e.target.checked;
+  }
+  if (e.target.id === 'titolo-inline') {
+    try { await azioneVideo('titolo', e.target.value); } catch (err) { toast(err.message); }
+  }
+});
+document.addEventListener('input', (e) => {
+  if (e.target.id === 'correzione') stato.bozzaCorrezione = e.target.value;
+  if (e.target.id === 'detto-stile') stato.studio.notaInput = e.target.value;
+  if (e.target.id === 'nome-cartella' && stato.nuovo) {
+    stato.nuovo.dati.cartella = e.target.value;
+    const r = document.querySelector('[data-bind="riepilogo"]');
+    if (r) r.textContent = riepilogoMonta();
+  }
+});
+document.addEventListener('submit', async (e) => {
+  if (e.target.id === 'form-correzione') {
+    e.preventDefault();
+    const testo = e.target.querySelector('#correzione')?.value || '';
+    stato.bozzaCorrezione = '';
+    try { await azioneVideo('correggi', testo); } catch (err) { stato.bozzaCorrezione = testo; toast(err.message); }
+  }
+  if (e.target.id === 'form-stile') {
+    e.preventDefault();
+    stato.studio.notaInput = e.target.querySelector('#detto-stile')?.value || '';
+    try { await inviaNotaStile(); stato.studio.notaInput = ''; } catch (err) { toast(err.message); }
+  }
+});
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape' && stato.foglio) { e.preventDefault(); chiudiFoglio(); return; }
+  if (e.key !== 'Tab' || !stato.foglio) return;
+  const sheet = document.getElementById('sheet');
+  if (!sheet) return;
+  const f = [...sheet.querySelectorAll('button, input, textarea, select, a')].filter((n) => !n.disabled && n.offsetParent);
+  if (!f.length || !sheet.contains(document.activeElement)) return;
+  const i = f.indexOf(document.activeElement);
+  if (e.shiftKey && i <= 0) { e.preventDefault(); f[f.length - 1].focus(); }
+  else if (!e.shiftKey && i === f.length - 1) { e.preventDefault(); f[0].focus(); }
 });
 
-function prossimo(da) {
-  const v = passiNuovo();
-  const i = v.indexOf(da);
-  return v[Math.min(v.length - 1, i + 1)] || 'riepilogo';
+async function riprendiUpload() {
+  const c = stato.carica;
+  c.pausa = false;
+  c.stop = false;
+  const attesa = Date.now() + 8000;
+  while (c._pompa && Date.now() < attesa) await new Promise((r) => setTimeout(r, 40));
+  const files = c.selezionati || [];
+  if (!files.length || !c.id) {
+    c.daRiselezionare = true;
+    c.fase = 'scelta';
+    disegna({ tieniScroll: true });
+    throw new Error('Seleziona di nuovo gli stessi file: i pezzi già arrivati restano.');
+  }
+  const fresco = await api(`/api/upload/${c.id}`);
+  await pompa({ upload: fresco, url: [], parallelo: paralleloScelto(4) }, files);
 }
-function avantiNuovo(da) {
-  stato.nuovo.passo = prossimo(da);
-  disegna();
+
+stato.rete = reteIniziale();
+stato.filtro = 'tutti';
+stato.foglio = null;
+stato.bozzaCorrezione = '';
+
+function righeRiassunto(testo) {
+  return String(testo || '').split('\n').filter(Boolean).map((r) => {
+    const i = r.indexOf(':');
+    if (i < 0) return `<p>${esc(r)}</p>`;
+    return `<div class="riga"><span class="meta">${esc(r.slice(0, i))}</span><strong>${esc(r.slice(i + 1).trim())}</strong></div>`;
+  }).join('');
 }
-function indietroNuovo() {
-  const v = passiNuovo();
-  const ora = stato.nuovo.passo === 'sponsor_testo' ? 'sponsor' : stato.nuovo.passo;
-  const i = v.indexOf(ora);
-  if (i <= 0) return vai('oggi');
-  stato.nuovo.passo = v[i - 1];
-  disegna();
+
+function htmlErroreStile(s) {
+  if (!s.errore) return '';
+  // sotto resta lo stile di prima: non è stato toccato (26/10, sembrava che lo studio fallito
+  // avesse sostituito Cinematic Talk)
+  const testo = String(s.errore).replace(/The operation was aborted due to timeout/gi, 'tempo scaduto').replace(/aborted due to timeout/gi, 'tempo scaduto');
+  const prima = s.bozza?.nome ? ` «${esc(s.bozza.nome)}» qui sotto è quello di prima: non è stato toccato.` : '';
+  return `<div class="card errore-stile" data-errore-stile><p>${esc(testo)}</p><small class="meta">Premi di nuovo Studia per riprovare.${prima}</small></div>`;
 }
+
 
 async function entra() {
   const opz = await api('/api/auth/accesso/opzioni', { method: 'POST', body: {} });
@@ -771,7 +1423,8 @@ async function dopoAccesso() {
 }
 
 async function avviaMontaggio() {
-  const d = stato.nuovo.dati;
+  leggiCampiMonta();
+  const d = stato.nuovo?.dati || {};
   const up = stato.home?.upload;
   await api('/api/montaggi', { method: 'POST', body: { ...d, ...(up?.pronto ? { r2: up.id } : {}) } });
   toast(up?.pronto ? 'Montaggio avviato dal girato caricato.' : 'Montaggio avviato.');
@@ -780,13 +1433,13 @@ async function avviaMontaggio() {
   vai('oggi');
 }
 
-async function apriVideo(id) {
+async function apriVideo(id, opts = {}) {
   stato.dettaglio = await api(`/api/video/${id}`);
   stato.dettaglio.id = id;
   if (!stato.stili.length) {
     try { stato.stili = (await api('/api/stili')).stili || []; } catch { /* elenco già in memoria */ }
   }
-  vai('dettaglio');
+  vai('dettaglio', opts);
 }
 
 async function azioneVideo(azione, testo) {
@@ -867,14 +1520,27 @@ async function avviaUpload() {
   let files = c.selezionati || [];
   if (!files.length) throw new Error('Scegli almeno un file.');
   c.stop = false;
+  c.pausa = false;
   c.errore = '';
+  if (c.id && c.fase !== 'pronto') {
+    try {
+      const fresco = await api(`/api/upload/${c.id}`);
+      if (fresco && !fresco.pronto && fresco.nome === c.nome) {
+        await pompa({ upload: fresco, url: [], parallelo: paralleloScelto(fresco.parallelo || 4) }, files);
+        return;
+      }
+    } catch { /* sessione chiusa o già completata: se ne apre una nuova */ }
+  }
   if (c.modalita === 'proxy') {
     c.fase = 'codifica';
     disegna();
     const uscita = [];
     for (const f of files) {
       if (!String(f.type || '').startsWith('video/')) { uscita.push(f); continue; }
-      const fatto = await creaProxy(f, c.da, c.a, (testo) => { c.nota = testo; const p = root.querySelector('.card p'); if (stato.schermo === 'carica' && p) p.textContent = testo; });
+      const fatto = await creaProxy(f, c.da, c.a, (testo) => {
+        c.nota = testo;
+        document.querySelectorAll('[data-bind="codifica"], [data-bind="eta"]').forEach((p) => { p.textContent = testo; });
+      });
       uscita.push(fatto.file);
       if (fatto.nota) c.nota = fatto.nota;
     }
@@ -889,8 +1555,10 @@ async function avviaUpload() {
 }
 
 async function pompa(inizio, files) {
-  const upload = inizio.upload;
   const c = stato.carica;
+  c._pompa = true;
+  try {
+  const upload = inizio.upload;
   c.id = upload.id;
   c.fase = 'invio';
   c.byteTotali = upload.totale;
@@ -926,7 +1594,7 @@ async function pompa(inizio, files) {
   const volo = new Map();
   let prossimo = 0;
   let guasto = null;
-  const parallelo = inizio.parallelo || 4;
+  const parallelo = paralleloScelto(inizio.parallelo || 4);
   async function lavoratore() {
     while (prossimo < coda.length && !guasto && !c.stop) {
       const job = coda[prossimo++];
@@ -963,6 +1631,7 @@ async function pompa(inizio, files) {
     if (fine.pronto && stato.home) stato.home.upload = fine;
   }
   c.fase = 'pronto';
+  c.pausa = false;
   c.eta = 0;
   c.inVolo = 0;
   if (stato.home) {
@@ -970,6 +1639,17 @@ async function pompa(inizio, files) {
     stato.home.upload = fresco;
   }
   disegna();
+  if (typeof Notification !== 'undefined' && Notification.permission === 'granted' && document.hidden) {
+    const reg = await navigator.serviceWorker?.getRegistration?.();
+    reg?.showNotification('Girato al sicuro', {
+      body: 'Quando vuoi, apri Regista e tocca Monta ora.',
+      icon: '/icon-192.png',
+      data: { url: '/' },
+    }).catch(() => {});
+  }
+  } finally {
+    c._pompa = false;
+  }
 }
 
 function bytePezzo(meta, n) {
@@ -1018,28 +1698,47 @@ function putXhr(url, blob, onProgress) {
     x.send(blob);
   });
 }
+let _barraPrev = 0;
 function aggiornaBarra(campioni, volo) {
   const c = stato.carica;
   const extra = [...volo.values()].reduce((t, n) => t + n, 0);
   const mostrati = c.byteFatti + extra;
   const ora = performance.now();
   campioni.push({ t: ora, b: mostrati });
-  while (campioni.length && ora - campioni[0].t > 20000) campioni.shift();
+  while (campioni.length && ora - campioni[0].t > 5000) campioni.shift();
   const a = campioni[0];
   const dt = (ora - a.t) / 1000;
-  c.eta = dt > 1 && mostrati > a.b ? (c.byteTotali - mostrati) / ((mostrati - a.b) / dt) : c.eta;
+  const velocita = dt > 0.4 && mostrati > a.b ? (mostrati - a.b) / dt : 0;
+  c.eta = velocita > 0 ? (c.byteTotali - mostrati) / velocita : c.eta;
   c.inVolo = volo.size;
-  const num = root.querySelector('.progresso-num');
-  const barra = root.querySelector('[data-barra]');
-  const meta = root.querySelector('.card .meta');
-  const pct = c.byteTotali ? Math.round(100 * mostrati / c.byteTotali) : 0;
-  if (num) num.textContent = `${pct}%`;
-  if (barra) barra.style.width = `${pct}%`;
-  if (meta) meta.textContent = `${c.pezziFatti} pezzi al sicuro, non si rimandano · ${c.inVolo} in viaggio`;
-  const riga = root.querySelector('.card .riga strong');
-  if (riga) riga.textContent = tempoTxt(c.eta);
-  const sinistra = root.querySelector('.card .riga span');
-  if (sinistra) sinistra.textContent = `${byteTxt(mostrati)} di ${byteTxt(c.byteTotali)}`;
+  if (ora - _barraPrev < 250) return;
+  _barraPrev = ora;
+  const pct = c.byteTotali ? Math.min(100, Math.round(100 * mostrati / c.byteTotali)) : 0;
+  const byte = `${byteTxt(mostrati)} di ${byteTxt(c.byteTotali)}`;
+  document.querySelectorAll('[data-bind="pct"]').forEach((el) => { el.textContent = `${pct}%`; });
+  document.querySelectorAll('[data-barra]').forEach((el) => {
+    el.style.width = `${pct}%`;
+    const bar = el.closest('[role="progressbar"]');
+    if (bar) bar.setAttribute('aria-valuenow', String(pct));
+  });
+  document.querySelectorAll('[data-bind="byte"]').forEach((el) => { el.textContent = `${byte} · ${pct}%`; });
+  if (c.fase !== 'codifica') document.querySelectorAll('[data-bind="eta"]').forEach((el) => { el.textContent = tempoTxt(c.eta); });
+  document.querySelectorAll('[data-bind="pezzi"]').forEach((el) => {
+    el.textContent = `${c.pezziFatti} pezzi al sicuro, non si rimandano${c.inVolo ? ` · ${c.inVolo} in viaggio` : ''}`;
+  });
+  document.querySelectorAll('[data-bind="velocita"]').forEach((el) => {
+    if (!velocita) { el.textContent = ''; return; }
+    const mb = velocita / 1e6;
+    const vtxt = mb >= 10 ? `${Math.round(mb)} MB/s` : `${mb.toFixed(1).replace('.', ',')} MB/s`;
+    el.textContent = `${vtxt} · ${tempoTxt(c.eta)}`;
+  });
+  document.querySelectorAll('[data-file]').forEach((row) => {
+    const nome = row.getAttribute('data-file');
+    const f = (c.file || []).find((x) => x.nome === nome);
+    const bar = row.querySelector('.mini-bar i');
+    if (!bar || !f?.size) return;
+    bar.style.width = `${Math.min(100, Math.round(100 * (f.fatti || 0) / f.size))}%`;
+  });
 }
 
 async function annullaUpload() {
@@ -1170,16 +1869,6 @@ async function caricaHome() {
   try { stato.cartelle = await api('/api/cartelle'); } catch { /* elenco vecchio */ }
 }
 
-setInterval(() => {
-  if (!DEMO && document.visibilityState === 'visible' && stato.schermo === 'oggi' && stato.home) {
-    api('/api/stato').then((s) => {
-      stato.home.stato = s;
-      const box = root.querySelector('[data-vivo]');
-      if (box && stato.schermo === 'oggi') { box.innerHTML = htmlStato(s); adattaLista(); }
-    }).catch(() => {});
-  }
-}, 5000);
-
 function preparaDemoCarica() {
   stato.carica = {
     ...caricaVuota(),
@@ -1226,6 +1915,11 @@ function notaUpload(testo) {
 // intero caricava per minuti, e sembrava che non succedesse niente)
 function faseStudio(testo) {
   stato.studio.occupato = testo;
+  const el = root.querySelector('[data-bind="occupato"]');
+  if (el && root.querySelector('[data-passo-stile]') && stato.schermo === 'stile') {
+    el.textContent = testo;
+    return;
+  }
   disegna();
 }
 
@@ -1390,7 +2084,8 @@ async function salvaStile() {
   stato.studio.salvati = r.salvati || stato.studio.salvati;
   stato.studio.fase = 'elenco';
   try { stato.stili = (await api('/api/stili')).stili || stato.stili; } catch { /* l’elenco si rinfresca alla prossima apertura */ }
-  toast(r.avviso || 'Stile salvato. Lo trovi in Nuovo montaggio e nel bot.');
+  toast(r.avviso || 'Stile salvato. Lo trovi in Monta e nel bot.');
+  disegna();
 }
 
 async function apriStile(id) {
@@ -1407,6 +2102,7 @@ async function rinominaStile(id) {
   const r = await api('/api/stile/rinomina', { method: 'POST', body: { id, nome: nome.trim() } });
   stato.studio.salvati = r.salvati || stato.studio.salvati;
   toast(r.avviso || 'Rinominato.');
+  disegna();
 }
 
 async function duplicaStile(id) {
@@ -1637,7 +2333,7 @@ async function inviaRiferimento(file, avanzamento = (pct) => notaUpload(`Carico 
   let prossimo = 0;
   let inviati = 0;
   let guasto = null;
-  const parallelo = inizio.parallelo || 4;
+  const parallelo = paralleloScelto(inizio.parallelo || 4);
   async function lavoratore() {
     while (prossimo < coda.length && !guasto) {
       const job = coda[prossimo++];
@@ -1664,10 +2360,21 @@ async function parti() {
   stato.auth = await api('/api/auth/stato').catch(() => ({ sessione: false, passkey: false }));
   if (!stato.auth.sessione) { vai('accesso'); return; }
   await caricaHome();
-  const vista = DEMO ? (DEMO_VISTA && DEMO_VISTA !== '1' ? DEMO_VISTA : 'oggi') : (location.hash.replace('#', '').split('/')[0] || 'oggi');
-  if (vista === 'nuovo') preparaNuovo('stile');
+  const raw = decodeURIComponent((location.hash || '').replace(/^#/, ''));
+  const [hashA, hashB] = raw.split('/');
+  const vista = DEMO ? (DEMO_VISTA && DEMO_VISTA !== '1' ? DEMO_VISTA : 'oggi') : (hashA || 'oggi');
+  if (vista === 'nuovo') preparaNuovo();
   if (DEMO && vista === 'carica') preparaDemoCarica();
-  if (vista === 'dettaglio') { await apriVideo(DEMO ? '900' : (location.hash.split('/')[1] || '')); return; }
+  if (vista === 'dettaglio' || (vista === 'video' && hashB)) {
+    const id = hashB || (DEMO ? '900' : '');
+    if (!id) {
+      stato.video = (await api('/api/video')).video || [];
+      vai('video');
+      return;
+    }
+    await apriVideo(id);
+    return;
+  }
   if (vista === 'video') stato.video = (await api('/api/video')).video || [];
   if (vista === 'altro') await caricaAltro();
   if (vista === 'stile') {
@@ -1675,6 +2382,11 @@ async function parti() {
     if (DEMO && DEMO_STATO === 'analizza') stato.studio.occupato = 'L’AI analizza lo stile… (fino a un minuto)';
     if (DEMO && DEMO_STATO === 'errore') stato.studio.errore = 'Il telefono non riesce a estrarre i fotogrammi da questo video (spesso succede con HEVC/MOV pesanti). Prova un file più corto o esportato in H.264.';
     if (DEMO && DEMO_STATO === 'carico') stato.studio.nota = 'Carico il file intero… 40%';
+  }
+  if (vista === 'carica' || vista === 'nuovo') {
+    vai('oggi');
+    vai(vista);
+    return;
   }
   vai(vista === 'accesso' ? 'accesso' : vista);
 }
