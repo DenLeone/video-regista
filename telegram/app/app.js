@@ -669,8 +669,12 @@ function htmlAltro() {
     </div><p class="nota">Cartelle Drive: 01 · Da editare, 02 · Fatti, 03 · Da pubblicare. Il secondo account Telegram non entra nell’app.</p></section>
     <section class="blocco"><h2>Aspetto</h2><div class="gruppo">
       <div class="riga-set" style="flex-direction:column;align-items:stretch"><span>Vetro</span><div class="segmenti" style="margin-top:8px"><button type="button" data-azione="vetro" data-verso="auto" aria-pressed="${vetro === 'auto' ? 'true' : 'false'}">Auto</button><button type="button" data-azione="vetro" data-verso="solido" aria-pressed="${vetro === 'solido' ? 'true' : 'false'}">Solido</button></div></div>
+      <div class="riga-set spazio-riga">
+        <label for="spazio-basso">Spazio basso<span class="sub" id="spazio-basso-val">${etichettaSpazio()}</span></label>
+        <input id="spazio-basso" data-spazio-basso type="range" min="0" max="60" step="1" value="${spazioBasso()}" aria-valuemin="0" aria-valuemax="60" aria-valuenow="${spazioBasso()}">
+      </div>
       <button type="button" class="riga-set" data-azione="effetti">${effettiOff ? 'Effetti ridotti: sì' : 'Effetti ridotti: no'}<span class="chev">${ICO.chev}</span></button>
-    </div><p class="nota">Solido toglie lo sfocato e lascia la grafite. Utile se il vetro sfarfalla.</p></section>
+    </div><p class="nota">Solido toglie lo sfocato e lascia la grafite. Spazio basso alza il dock solo quando sotto il viewport resta una fascia nera: 10 è il punto di partenza.</p></section>
     <details class="blocco"><summary>Avanzate</summary><div class="gruppo">
       <label class="riga-set">AI<select data-imp="ai">${opt('gemini', imp.ai)}${opt('claude', imp.ai)}</select></label>
       <label class="riga-set">Gemini<select data-imp="gemini">${opt('flash', imp.gemini)}${opt('pro', imp.gemini)}</select></label>
@@ -1123,58 +1127,100 @@ function agganciaFoglio() {
 function agganciaViewport() {
   const vv = window.visualViewport;
   const aggiorna = () => aggiornaQuadro();
-  if (!vv) return;
-  vv.addEventListener('resize', aggiorna);
-  vv.addEventListener('scroll', aggiorna);
+  vv?.addEventListener('resize', aggiorna);
+  vv?.addEventListener('scroll', aggiorna);
   window.addEventListener('resize', aggiorna);
 }
-/* In standalone il viewport di layout è corto della status bar e il buco
-   sta sotto la pagina. Allunga il guscio fino a screen.height e ancora il
-   dock in fondo a quel guscio, così bottom resta max(8px, inset − 10px)
-   rispetto allo schermo e non rispetto al viewport bugiardo. */
-function phantomMisurato() {
-  const solo = window.matchMedia('(display-mode: standalone)').matches || navigator.standalone === true;
-  if (!solo) return 0;
+/* In standalone iOS il viewport di layout può finire ~62px sopra il bordo
+   fisico: screen.height − innerHeight, offsetTop 0, e 62 coincide con
+   l’inset in alto. Quel tratto è in fondo e non si dipinge, nemmeno con
+   100lvh. Non si allunga il guscio. Se il buco c’è (40–80px), il dock sta
+   a Spazio basso (default 10px) dal fondo del viewport, senza sommare
+   l’inset. Se il viewport riempie lo schermo, max(8px, inset − 10px). */
+function deltaSchermo() {
   const ih = window.innerHeight;
   let sh = window.screen.height;
   let delta = sh - ih;
-  if (!(delta > 0 && delta < 80) && window.devicePixelRatio > 1) {
+  if (!(delta > 0 && delta < 100) && window.devicePixelRatio > 1) {
     const cssH = sh / window.devicePixelRatio;
-    if (cssH - ih > 0 && cssH - ih < 80) {
-      sh = Math.round(cssH);
+    if (cssH - ih > 0 && cssH - ih < 100) {
+      sh = cssH;
       delta = sh - ih;
     }
   }
-  if (!(delta > 0 && delta < 80)) return 0;
-  return { px: Math.round(delta), altezza: Math.round(sh) };
+  return { delta: Math.round(delta), sh: Math.round(sh) };
+}
+function inStandalone() {
+  return window.matchMedia('(display-mode: standalone)').matches || navigator.standalone === true;
+}
+function bucoSotto() {
+  if (!inStandalone()) return false;
+  const offset = window.visualViewport ? window.visualViewport.offsetTop : 0;
+  const { delta } = deltaSchermo();
+  return offset < 8 && delta >= 40 && delta <= 80;
+}
+function spazioBasso() {
+  try {
+    const raw = localStorage.getItem('regista-spazio-basso');
+    if (raw == null || raw === '') return 10;
+    const n = Number(raw);
+    if (Number.isFinite(n)) return Math.max(0, Math.min(60, Math.round(n)));
+  } catch { /* default */ }
+  return 10;
+}
+function etichettaSpazio(n = spazioBasso()) {
+  return `${n} px dal bordo visibile, se il viewport è corto.`;
+}
+function salvaSpazioBasso(valore) {
+  const n = Math.max(0, Math.min(60, Math.round(Number(valore) || 0)));
+  try { localStorage.setItem('regista-spazio-basso', String(n)); } catch { /* ignora */ }
+  return n;
 }
 function aggiornaQuadro() {
   const vv = window.visualViewport;
   const inset = vv ? Math.max(0, window.innerHeight - vv.height - vv.offsetTop) : 0;
   document.documentElement.style.setProperty('--kbd', `${Math.round(inset)}px`);
+  document.documentElement.style.setProperty('--spazio-basso', `${spazioBasso()}px`);
   const tastiera = inset > 80;
   document.documentElement.classList.toggle('tastiera', tastiera);
-  const fissi = ['dock', 'composer', 'sheet-host', 'scrim'];
-  if (tastiera) {
-    for (const id of fissi) {
-      const el = document.getElementById(id);
-      if (el) el.style.position = '';
-    }
-    misuraPad();
-    return;
-  }
-  const phantom = phantomMisurato();
-  document.documentElement.style.setProperty('--phantom', phantom ? `${phantom.px}px` : '0px');
-  for (const el of [document.documentElement, document.body, document.getElementById('app')]) {
-    if (!el) continue;
-    el.style.bottom = phantom ? 'auto' : '';
-    el.style.height = phantom ? `${phantom.altezza}px` : '';
-  }
-  for (const id of fissi) {
-    const el = document.getElementById(id);
-    if (el) el.style.position = phantom ? 'absolute' : '';
+  if (!tastiera) {
+    if (bucoSotto()) document.documentElement.style.setProperty('--dock-bottom', `${spazioBasso()}px`);
+    else document.documentElement.style.removeProperty('--dock-bottom');
   }
   misuraPad();
+  const pannello = document.getElementById('debug-pannello');
+  if (pannello && !pannello.hidden) {
+    const pre = pannello.querySelector('pre');
+    if (pre) pre.textContent = testoDiagnostica();
+  }
+}
+let nudgeNota = 'non ancora';
+let nudgeToken = 0;
+function scuotiViewport() {
+  const vv = window.visualViewport;
+  const inset = vv ? Math.max(0, window.innerHeight - vv.height - vv.offsetTop) : 0;
+  if (inset > 80) { aggiornaQuadro(); return; }
+  const token = ++nudgeToken;
+  const prima = window.innerHeight;
+  const root = document.documentElement;
+  const prev = root.style.height;
+  root.style.height = 'calc(100% + 1px)';
+  try { window.scrollTo(0, 1); } catch { /* ignora */ }
+  requestAnimationFrame(() => {
+    if (token !== nudgeToken) return;
+    try { window.scrollTo(0, 0); } catch { /* ignora */ }
+    root.style.height = prev;
+    nudgeNota = `${prima} → ${window.innerHeight}`;
+    aggiornaQuadro();
+  });
+}
+function agganciaNudge() {
+  const vai = () => scuotiViewport();
+  window.addEventListener('pageshow', vai);
+  window.addEventListener('orientationchange', vai);
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible') vai();
+  });
 }
 function misuraPad() {
   const dock = document.getElementById('dock');
@@ -1199,26 +1245,33 @@ function testoDiagnostica() {
   };
   const insetB = leggi('env(safe-area-inset-bottom)');
   const insetT = leggi('env(safe-area-inset-top)');
-  const lvh = leggi('100lvh');
   const dvh = leggi('100dvh');
+  const lvh = leggi('100lvh');
   sonda.remove();
   const dock = document.getElementById('dock');
   const r = dock?.getBoundingClientRect();
   const vv = window.visualViewport;
   const ih = window.innerHeight;
-  const sh = window.screen.height;
+  const { delta, sh } = deltaSchermo();
   const bottom = dock ? getComputedStyle(dock).bottom : '—';
   const pos = dock ? getComputedStyle(dock).position : '—';
+  const htmlPos = getComputedStyle(document.documentElement).position;
+  const bodyPos = getComputedStyle(document.body).position;
   return [
     `innerHeight ${ih}`,
     `visualViewport ${vv ? Math.round(vv.height) : '—'}  offset ${vv ? Math.round(vv.offsetTop) : '—'}`,
-    `screen.height ${sh}`,
-    `100lvh ${lvh}   100dvh ${dvh}`,
+    `screen.height ${window.screen.height}`,
+    `clientHeight ${document.documentElement.clientHeight}`,
+    `outerHeight ${window.outerHeight}`,
+    `100dvh ${dvh}   100lvh ${lvh}`,
     `env top ${insetT}   bottom ${insetB}`,
-    `phantom ${getComputedStyle(document.documentElement).getPropertyValue('--phantom').trim() || '0px'}`,
-    `dock ${pos}  bottom ${bottom}`,
+    `html ${htmlPos}   body ${bodyPos}`,
+    `buco ${bucoSotto() ? `sì ${delta}px` : 'no'}   spazio ${spazioBasso()}`,
+    `dock ${pos}  css ${bottom}`,
+    `rect.bottom ${r ? Math.round(r.bottom) : '—'}`,
     `gap inner ${r ? Math.round(ih - r.bottom) : '—'}`,
     `gap screen ${r ? Math.round(sh - r.bottom) : '—'}`,
+    `nudge ${nudgeNota}`,
   ].join('\n');
 }
 function mostraDebug() {
@@ -1433,6 +1486,16 @@ document.addEventListener('click', async (e) => {
   } catch (err) {
     toast(err.message || 'Non ha funzionato.');
   }
+});
+
+document.addEventListener('input', (e) => {
+  const el = e.target.closest?.('[data-spazio-basso]');
+  if (!el) return;
+  const n = salvaSpazioBasso(el.value);
+  el.setAttribute('aria-valuenow', String(n));
+  const sub = document.getElementById('spazio-basso-val');
+  if (sub) sub.textContent = etichettaSpazio(n);
+  aggiornaQuadro();
 });
 
 document.addEventListener('change', async (e) => {
@@ -2552,4 +2615,5 @@ async function parti() {
   vai(vista === 'accesso' ? 'accesso' : vista);
 }
 
+agganciaNudge();
 parti().catch((e) => { stato.toast = e.message; disegna(); });
