@@ -2,6 +2,7 @@ import React from 'react';
 import { AbsoluteFill, Easing, interpolate, interpolateColors, useCurrentFrame } from 'remotion';
 import { ACCENT, DARK, MONO_FONT, TITLE_FONT } from './fonts';
 import { W, H } from '../piano';
+import { dentro, SICURA } from '../testo';
 
 // Parola chiave in box CAD tratteggiato (o pieno per sponsor/verdetto).
 // Porting di BlueprintKeyword da memory/blueprint-code.md (Vyra).
@@ -12,14 +13,17 @@ export const BlueprintKeyword: React.FC<{
   const clamp = { extrapolateLeft: 'clamp', extrapolateRight: 'clamp' } as const;
   const ease = (a: number, b: number) => interpolate(frame, [a, b], [0, 1], { ...clamp, easing: Easing.out(Easing.cubic) });
 
-  const fs = Math.min(fontSize, (W - 220) / Math.max(1, word.length * 0.64));
-  const textW = word.length * fs * 0.64;
   const padX = 44;
   const padY = 22;
-  const boxW = Math.min(W - 120, textW + padX * 2);
+  // il box (bordi compresi) sta nella zona sicura di TikTok: 120 px liberi ai lati (testo.ts)
+  const stima = Math.min(fontSize, (SICURA.larghezza - padX * 2) / Math.max(1, word.length * 0.64));
+  const fs = dentro(word, { famiglia: TITLE_FONT, peso: 700 }, stima, SICURA.larghezza - padX * 2 - 24);
+  const textW = word.length * fs * 0.64;
+  const boxW = Math.min(SICURA.larghezza - 24, textW + padX * 2);
   const boxH = fs * 1.05 + padY * 2;
   const bx = (W - boxW) / 2;
-  const by = top;
+  // il box e la nota sotto restano sopra la descrizione e i pulsanti di TikTok (zona sicura)
+  const by = Math.min(top, SICURA.basso - boxH - 70);
 
   const draw = ease(0, 9);
   const perim = 2 * (boxW + boxH);

@@ -3,6 +3,7 @@ import { AbsoluteFill, Easing, interpolate, Sequence, useCurrentFrame } from 're
 import { loadFont } from '@remotion/google-fonts/Montserrat';
 import { Clips, f, Inserti, Sfx, usaFps, volumeSfx } from './comune';
 import { Keyword, Piano, W } from './piano';
+import { dentro, SICURA } from './testo';
 
 // Stile "Cinematico" (dai 3 esempi di Denis, 18/10): spot di prodotto, immagini calde con
 // vignettatura, sottotitoli bianchi una parola alla volta al centro, titoli Montserrat neri
@@ -65,11 +66,11 @@ const Parola: React.FC<{ testo: string; len: number }> = ({ testo, len }) => {
   const fr = useCurrentFrame();
   const entra = interpolate(fr, [0, 4], [0, 1], { ...clamp, easing: Easing.out(Easing.cubic) });
   const esce = interpolate(fr, [len - 2, len], [1, 0], clamp);
-  const fs = Math.min(70, (W - 160) / Math.max(1, testo.length * 0.6));
+  const fs = dentro(testo, { famiglia: MONTSERRAT, peso: 700 }, Math.min(70, SICURA.larghezza / Math.max(1, testo.length * 0.6)));
   return (
     <AbsoluteFill>
       <div style={{
-        position: 'absolute', top: CENTRO_PAROLE - fs * 0.6, left: 80, right: 80, textAlign: 'center',
+        position: 'absolute', top: CENTRO_PAROLE - fs * 0.6, left: SICURA.lato, right: SICURA.lato, textAlign: 'center',
         fontFamily: MONTSERRAT, fontWeight: 700, fontSize: fs, lineHeight: 1.2, color: '#FFFFFF', letterSpacing: '-0.01em',
         textShadow: OMBRA_PAROLE, opacity: Math.min(entra, esce), transform: `translateY(${(1 - entra) * 12}px) scale(${0.9 + 0.1 * entra})`,
       }}>
@@ -88,7 +89,8 @@ const Titolo: React.FC<{ k: Keyword; len: number }> = ({ k, len }) => {
     const v = interpolate(fr, [da, da + 9], [0, 1], { ...clamp, easing: Easing.out(Easing.cubic) });
     return { opacity: v * esce, filter: `blur(${(1 - v) * 10 + (1 - esce) * 6}px)`, transform: `translateY(${(1 - v) * 26}px)` };
   };
-  const fs = Math.max(72, Math.min(128, (W - 130) / Math.max(1, k.word.length * 0.66)));
+  // letterSpacing -0.045em: la misura del canvas non lo conta, il margine resta dalla parte sicura
+  const fs = dentro(k.word, { famiglia: MONTSERRAT, peso: 900 }, Math.max(72, Math.min(128, SICURA.larghezza / Math.max(1, k.word.length * 0.66))));
   const note = (k.note || '').replace(/^\/\/\s*/, '');
   const top = k.top ?? 380;
   const ombra = interpolate(fr, [0, 9], [0, 1], clamp) * esce;
@@ -96,7 +98,7 @@ const Titolo: React.FC<{ k: Keyword; len: number }> = ({ k, len }) => {
     <AbsoluteFill>
       <AbsoluteFill style={{ opacity: ombra, background: `radial-gradient(ellipse 75% ${fs * 1.6}px at 50% ${top + fs * 0.8}px, rgba(0,0,0,0.38), rgba(0,0,0,0))` }} />
       <div style={{
-        position: 'absolute', top, left: 60, right: 60, display: 'flex', flexDirection: 'column', alignItems: 'center',
+        position: 'absolute', top, left: SICURA.lato, right: SICURA.lato, display: 'flex', flexDirection: 'column', alignItems: 'center',
         textAlign: 'center', fontFamily: MONTSERRAT, color: '#FFFFFF', textShadow: OMBRA,
       }}>
         {k.tag ? <div style={{ fontWeight: 500, fontSize: 40, lineHeight: 1.1, ...pezzo(0) }}>{k.tag}</div> : null}

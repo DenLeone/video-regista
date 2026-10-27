@@ -182,6 +182,10 @@ export function leggiStile(testo, nomeCartella) {
   g.rivela = false;
   g.vignetta = 0;
   if (g.biancoNero === 'sempre') g.biancoNero = 'no';
+  // niente nome Instagram nei video (Denis, 22/10: "non mi servono i miei tag"), anche se uno stile
+  // su Drive lo chiede ancora (12K Quality aveva "Chiusura: @_black_den")
+  g.chiusura = null;
+  g.firma = null;
   return { grafica: g, testoAI: perAI.join('\n'), musica, volumeMusica };
 }
 
