@@ -188,7 +188,7 @@ function demoStili() {
 function demoFatti() {
   return [
     { runId: '1', nome: 'Panca puff', stile: 'Cinematico', durata: 39.2, quando: Date.now() - 3600e3, link: 'https://drive.google.com/file/d/demo/view', memo: { approvato: false, pubblicato: false } },
-    { runId: '2', nome: 'Multiplay', stile: 'Motion', durata: 28.1, quando: Date.now() - 7200e3, memo: { approvato: true, pubblicato: true } },
+    { runId: '2', nome: 'Multiplay', stile: 'Motion', durata: 28.1, quando: Date.now() - 7200e3, memo: { approvato: true, pubblicato: true, pubblica: { copertinaId: 'cover-multiplay' } } },
     { runId: '3', nome: 'Beats pokemon', stile: 'Motion', durata: 35.4, quando: Date.now() - 864e5, memo: { approvato: true, pubblicato: false } },
     { runId: '4', nome: 'Beats pokemon', stile: 'Motion', durata: 35.1, quando: Date.now() - 2 * 864e5, memo: { approvato: false, pubblicato: false } },
   ];
@@ -450,7 +450,9 @@ function htmlChipRete() {
   return `<button type="button" class="chip-rete" data-azione="gira-rete" aria-label="Connessione ${dati ? 'dati mobili' : 'Wi-Fi'}. Tocca per cambiare.">${dati ? ICO.dati : ICO.wifi}<span>${dati ? 'Dati' : 'Wi-Fi'}</span></button>`;
 }
 function htmlBarra(titolo, extra = {}) {
-  return `<div class="barra-titolo">${extra.indietro ? `<button type="button" class="indietro" data-azione="indietro" aria-label="Indietro">${ICO.back}</button>` : '<span></span>'}<b>${esc(titolo)}</b><div class="slot-destra">${extra.destra || ''}</div></div><h1 class="titolone">${esc(titolo)}</h1>`;
+  const grande = !extra.indietro;
+  const back = extra.indietro ? `<button type="button" class="indietro" data-azione="indietro" aria-label="Indietro">${ICO.back}</button>` : '';
+  return `<header class="barra-titolo${grande ? ' grande' : ''}">${back}<h1 class="titolone">${esc(titolo)}</h1><div class="slot-destra">${extra.destra || ''}</div></header>`;
 }
 
 function htmlAccesso() {
@@ -491,7 +493,7 @@ function htmlOggi() {
     <div data-vivo data-firma="${esc(firmaStato(s))}">${vivo}</div>
     ${sotto}
     ${aperto ? '<p class="nota">C’è un caricamento aperto. I pezzi già arrivati restano. <button type="button" class="btn quiet" data-azione="apri-carica">Apri</button></p>' : ''}
-    ${video.length ? `<h2 class="sezione">Ultimi montaggi</h2><div class="carosello">${video.map(htmlLocandina).join('')}</div>` : (lavori ? '' : '<p class="vuoto">Nessun montaggio ancora.</p>')}
+    ${video.length ? `<h2 class="sezione">Ultimi montaggi</h2><div class="carosello">${video.map((v) => htmlLocandina(v, video)).join('')}</div>` : (lavori ? '' : '<p class="vuoto">Nessun montaggio ancora.</p>')}
     ${lavori ? '' : '<p class="meta-3">Lo stato si aggiorna da solo mentre l’app è aperta. Nessun montaggio parte da solo.</p>'}`;
 }
 function htmlVivo(s) {
@@ -550,22 +552,41 @@ function htmlProntoBox() {
 function htmlRisultato(v) {
   return `<article class="card"><p class="meta">Pronto</p><h2 class="fase-nome">${esc(v.nome)}</h2><p class="meta">${esc(v.stile || '')}${v.durata ? ` · ${durataTxt(v.durata)}` : ''}</p><div class="coppia"><button type="button" class="btn" data-azione="apri-video" data-verso="${esc(v.runId)}">Guarda</button><button type="button" class="btn vetro" data-azione="correggi-vai" data-verso="${esc(v.runId)}">Correggi</button></div></article>`;
 }
-function htmlLocandina(v) {
-  return `<button type="button" class="locandina" data-azione="apri-video" data-verso="${esc(v.runId)}" aria-label="${esc(v.nome)}">${htmlFaccia(v)}<span class="nome">${esc(v.nome)}</span></button>`;
+function htmlLocandina(v, tutti) {
+  const sotto = rigaSecondaria(v, tutti);
+  return `<button type="button" class="locandina" data-azione="apri-video" data-verso="${esc(v.runId)}" aria-label="${esc(v.nome)}">${htmlFaccia(v)}<span class="nome">${esc(v.nome)}</span>${sotto ? `<span class="sotto">${esc(sotto)}</span>` : ''}</button>`;
+}
+function copertinaDi(v) {
+  return v?.memo?.pubblica?.copertinaId || v?.pubblica?.copertinaId || v?.copertinaId || '';
+}
+function dataCorta(q) {
+  const n = typeof q === 'number' ? q : Date.parse(String(q || ''));
+  if (!Number.isFinite(n) || n <= 0) return '';
+  try { return new Date(n).toLocaleDateString('it-IT', { day: 'numeric', month: 'short' }); }
+  catch { return ''; }
+}
+function rigaSecondaria(v, tutti) {
+  const data = dataCorta(v?.quando);
+  const dur = durataTxt(v?.durata);
+  const nome = String(v?.nome || '').trim().toLowerCase();
+  const gemelli = nome && (tutti || []).filter((x) => String(x?.nome || '').trim().toLowerCase() === nome).length > 1;
+  if (gemelli && data && dur) return `${data} · ${dur}`;
+  return data || dur;
 }
 function htmlFaccia(v) {
-  const cover = v.memo?.pubblica?.copertinaId;
+  const cover = copertinaDi(v);
   const punto = v.memo?.pubblicato ? 'pub' : v.memo?.approvato ? 'ok' : '';
   const dur = durataTxt(v.durata);
   const lettera = esc(String(v.nome || '?').trim().slice(0, 1).toUpperCase());
-  return `<span class="faccia" style="background:${tinta(v.nome)}">${cover ? `<img alt="" src="/api/media/${esc(cover)}" style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover">` : `<span class="lettera">${lettera}</span>`}${dur ? `<span class="durata">${esc(dur)}</span>` : ''}<i class="punto ${punto}"></i></span>`;
+  const foto = cover ? `<img alt="" src="/api/media/${esc(cover)}" onerror="this.remove()">` : '';
+  return `<span class="faccia" style="background:${tinta(v.nome)}"><span class="lettera">${lettera}</span>${foto}${dur ? `<span class="durata">${esc(dur)}</span>` : ''}<i class="punto ${punto}"></i></span>`;
 }
 
 function htmlVideo() {
   const filtri = [['tutti', 'Tutti'], ['approvare', 'Da approvare'], ['pubblicati', 'Pubblicati']];
   const lista = (stato.video || []).filter(passaFiltro);
   const vuoto = stato.filtro === 'approvare' ? 'Niente in attesa di approvazione.' : stato.filtro === 'pubblicati' ? 'Nessun video pubblicato da qui.' : 'Nessun video ancora. Quando un montaggio finisce, la locandina arriva qui.';
-  return `${htmlBarra('Video')}<div class="filtri"><div class="segmenti" role="tablist" aria-label="Filtro video">${filtri.map(([id, nome]) => `<button type="button" aria-pressed="${(stato.filtro || 'tutti') === id ? 'true' : 'false'}" data-azione="filtro" data-verso="${id}">${nome}</button>`).join('')}</div></div>${lista.length ? `<div class="griglia-poster">${lista.map(htmlPoster).join('')}</div>` : `<div class="vuoto">${ICO.film}<p>${vuoto}</p></div>`}`;
+  return `${htmlBarra('Video')}<div class="filtri"><div class="segmenti" role="tablist" aria-label="Filtro video">${filtri.map(([id, nome]) => `<button type="button" aria-pressed="${(stato.filtro || 'tutti') === id ? 'true' : 'false'}" data-azione="filtro" data-verso="${id}">${nome}</button>`).join('')}</div></div>${lista.length ? `<div class="griglia-poster">${lista.map((v) => htmlPoster(v, lista)).join('')}</div>` : `<div class="vuoto">${ICO.film}<p>${vuoto}</p></div>`}`;
 }
 function passaFiltro(v) {
   const f = stato.filtro || 'tutti';
@@ -575,10 +596,11 @@ function passaFiltro(v) {
   if (f === 'pubblicati') return pub;
   return true;
 }
-function htmlPoster(v) {
+function htmlPoster(v, tutti) {
   const attivo = (stato.home?.stato?.attivi || []).find((a) => (a.nome || '').toLowerCase() === (v.nome || '').toLowerCase());
   const rail = attivo ? `<span class="rail sottile" aria-hidden="true">${(attivo.fasi || []).map((f) => `<i class="${f.fatta ? 'done' : ''} ${f.ora ? 'now' : ''}"></i>`).join('')}</span>` : '';
-  return `<button type="button" class="poster" data-azione="apri-video" data-verso="${esc(v.runId)}" aria-label="${esc(v.nome)}, ${esc(v.stile || '')}">${htmlFaccia(v)}${rail}<span class="nome">${esc(v.nome)}</span></button>`;
+  const sotto = rigaSecondaria(v, tutti);
+  return `<button type="button" class="poster" data-azione="apri-video" data-verso="${esc(v.runId)}" aria-label="${esc(v.nome)}, ${esc(v.stile || '')}">${htmlFaccia(v)}${rail}<span class="nome">${esc(v.nome)}</span>${sotto ? `<span class="sotto">${esc(sotto)}</span>` : ''}</button>`;
 }
 
 function htmlDettaglio() {
@@ -1867,6 +1889,17 @@ async function caricaHome() {
   }
   try { stato.stili = (await api('/api/stili')).stili || []; } catch { /* home basta */ }
   try { stato.cartelle = await api('/api/cartelle'); } catch { /* elenco vecchio */ }
+  try {
+    const elenco = (await api('/api/video')).video || [];
+    const perId = new Map(elenco.map((v) => [String(v.runId), v]));
+    if (Array.isArray(stato.home?.video)) {
+      stato.home.video = stato.home.video.map((v) => {
+        const pieno = perId.get(String(v.runId));
+        if (!pieno) return v;
+        return { ...v, memo: pieno.memo || v.memo, durata: v.durata ?? pieno.durata, quando: v.quando || pieno.quando };
+      });
+    }
+  } catch { /* le locandine restano senza copertina */ }
 }
 
 function preparaDemoCarica() {
