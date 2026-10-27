@@ -233,11 +233,11 @@ A transfer in progress sets the percent at 2.4rem / 700 / tracking -.04em, tabul
 
 ## Layout
 
-The shell is one centered column, `min(100%, 480px)`, full viewport height, with the document itself locked. The scrolling view pads 20px on the sides, the top safe area (at least 54px), and a bottom clearance of the 64px dock, its 12px gap, the bottom safe area (at least 28px), and 48px more. A screen with no dock drops the dock clearance. A screen with the composer open adds room for the field and the keyboard offset.
+The shell is one centered column, `min(100%, 480px)`, fixed to the viewport (`inset: 0`), not sized with `100dvh`. The scrolling view pads 20px on the sides and, at the bottom, the 64px dock plus its offset plus 16px. The top safe area lives on the sticky title row: `env(safe-area-inset-top) + 10px`. The dock offset is `max(10px, env(safe-area-inset-bottom) - 8px)`, so it sits just above the home indicator. A screen with no dock drops the dock clearance. A screen with the composer open adds room for the field and the keyboard offset.
 
 The large title sticks, then yields to a solid black bar once the view has scrolled 24px. Filters under a title stick just below that bar, on black. Settings group labels sit 8px off the group, with more room above the group than inside it. The video catalog is a two-column grid with a 12px gap. Poster strips scroll sideways with snap, inset to the same 20px page margin.
 
-The dock is fixed to the bottom safe area, centered, the same width as the column, and leaves the hit area to the pill and the orb. The sheet is centered, at most 460px wide, 8px off the screen edges. The toast is at most 420px, 8px under the top safe area. The composer is at most 480px, 8px above the dock, and rides the keyboard when it is open; the dock then leaves the screen.
+The dock is fixed just above the home indicator (`max(10px, env(safe-area-inset-bottom) - 8px)`), centered, the same width as the column, and leaves the hit area to the pill and the orb. The large title and the trailing control (the Wi-Fi chip on Oggi) share one row. The sheet is centered, at most 460px wide, the same bottom offset as the dock. The toast sits on the top safe area. The composer is at most 480px, 8px above the dock, and rides the keyboard when it is open; the dock then leaves the screen.
 
 At 900px and above the ground stays black and the column stays 480px. There is no second layout.
 

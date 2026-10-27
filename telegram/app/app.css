@@ -39,10 +39,17 @@
   --s6: 24px;
   --s8: 32px;
   --s10: 40px;
-  --safe-t: max(env(safe-area-inset-top), 54px);
-  --safe-b: max(env(safe-area-inset-bottom), 28px);
+  /* Un solo posto per i bordi. Niente pavimento finto: in standalone iOS
+     100dvh è già più corto dello schermo, e sommarci un inset minimo
+     alzava il dock di un centinaio di px. */
+  --inset-t: env(safe-area-inset-top, 0px);
+  --inset-b: env(safe-area-inset-bottom, 0px);
+  --edge: 10px;
+  --safe-t: calc(var(--inset-t) + var(--edge));
+  --dock-bottom: max(var(--edge), calc(var(--inset-b) - 8px));
   --tabbar-h: 64px;
-  --tabbar-gap: 12px;
+  --dock-h: var(--tabbar-h);
+  --pad-b: calc(var(--dock-h) + var(--dock-bottom) + 16px);
   --dock-w: min(100%, 480px);
   --kbd: 0px;
   --font: -apple-system, BlinkMacSystemFont, "SF Pro Text", "SF Pro Display", system-ui, sans-serif;
@@ -58,9 +65,10 @@
 * { box-sizing: border-box; }
 [hidden] { display: none !important; }
 html { background: var(--bg); -webkit-text-size-adjust: 100%; }
-html, body { margin: 0; height: 100%; overflow: hidden; }
+html, body { margin: 0; height: 100%; background: #000; }
 body {
-  min-height: 100dvh;
+  min-height: 100%;
+  min-height: -webkit-fill-available;
   font: 400 1rem/1.41 var(--font);
   color: var(--ink);
   background:
@@ -79,11 +87,11 @@ img { max-width: 100%; display: block; }
 input, textarea { caret-color: #fff; }
 ::placeholder { color: var(--ink-3); }
 
-#app { height: 100dvh; overflow: hidden; }
+#app { position: fixed; inset: 0; }
 
 .app {
   width: var(--dock-w);
-  height: 100dvh;
+  height: 100%;
   min-height: 0;
   margin-inline: auto;
   display: flex;
@@ -93,48 +101,45 @@ input, textarea { caret-color: #fff; }
   flex: 1 1 auto;
   min-height: 0;
   overflow: auto;
-  padding:
-    var(--safe-t)
-    var(--s5)
-    calc(var(--tabbar-h) + var(--tabbar-gap) * 2 + var(--safe-b) + 48px);
-  scroll-padding-bottom: 24px;
+  padding: 0 var(--s5) var(--pad-b);
+  scroll-padding-bottom: 16px;
   scrollbar-color: rgba(255, 255, 255, .28) transparent;
   scrollbar-width: thin;
 }
-.app.solo .view { padding-bottom: calc(var(--safe-b) + 28px); }
-.app.con-compositore .view { padding-bottom: calc(var(--tabbar-h) + var(--safe-b) + var(--kbd) + 210px); }
+.app.solo .view { padding-bottom: calc(var(--dock-bottom) + 24px); }
+.app.con-compositore .view { padding-bottom: calc(var(--pad-b) + var(--kbd) + 128px); }
 
-/* Titolo grande che scorre via; la barra piccola è nera piena, senza blur. */
+/* Il titolo e il tasto a destra stanno sulla stessa riga, sotto l’inset. */
 .barra-titolo {
   position: sticky;
   top: 0;
   z-index: 4;
-  display: flex;
+  display: grid;
+  grid-template-columns: 44px minmax(0, 1fr) 44px;
   align-items: center;
+  gap: 8px;
   min-height: 44px;
-  margin: 0 0 4px;
-  background: transparent;
+  margin: 0 0 12px;
+  padding-top: var(--safe-t);
+  background: #000;
 }
-.view.scorso .barra-titolo { background: #000; }
-.barra-titolo b {
-  position: absolute;
-  left: 44px;
-  right: 44px;
-  text-align: center;
+.barra-titolo.grande { grid-template-columns: minmax(0, 1fr) auto; }
+.barra-titolo.grande .slot-destra { min-width: 0; }
+.titolone {
   font-size: 17px;
+  line-height: 1.2;
   font-weight: 600;
   letter-spacing: -.01em;
-  opacity: 0;
-  pointer-events: none;
+  margin: 0;
+  text-align: center;
 }
-.view.scorso .barra-titolo b { opacity: 1; }
-.titolone {
+.barra-titolo.grande .titolone {
   font-size: 2rem;
-  line-height: 1.2;
   font-weight: 700;
   letter-spacing: -.022em;
-  margin: 2px 0 18px;
+  text-align: left;
 }
+.view.scorso .barra-titolo.grande .titolone { font-size: 1.15rem; }
 .indietro {
   width: 44px;
   height: 44px;
@@ -147,7 +152,7 @@ input, textarea { caret-color: #fff; }
   place-items: center;
 }
 .indietro svg, .icona-btn svg { width: 22px; height: 22px; stroke: currentColor; fill: none; stroke-width: 1.75; stroke-linecap: round; stroke-linejoin: round; }
-.slot-destra { margin-left: auto; display: flex; align-items: center; gap: 4px; }
+.slot-destra { justify-self: end; display: flex; align-items: center; justify-content: flex-end; gap: 4px; min-width: 44px; }
 
 .chip-rete, .segmenti button, .chip-stile, .chip-idea {
   -webkit-tap-highlight-color: transparent;
@@ -296,7 +301,7 @@ input, textarea { caret-color: #fff; }
   position: fixed;
   z-index: 50;
   left: 50%;
-  bottom: calc(var(--safe-b) + var(--tabbar-gap));
+  bottom: var(--dock-bottom);
   translate: -50% 0;
   width: var(--dock-w);
   display: flex;
@@ -438,12 +443,12 @@ html[data-glass="lite"] .glass::before {
   display: flex;
   justify-content: center;
   pointer-events: none;
-  padding: 0 8px calc(var(--safe-b) + 8px);
+  padding: 0 8px var(--dock-bottom);
 }
 .sheet {
   pointer-events: auto;
   width: min(100%, 460px);
-  max-height: calc(100dvh - var(--safe-t) - 16px);
+  max-height: calc(100dvh - var(--safe-t) - var(--dock-bottom));
   display: flex;
   flex-direction: column;
   border-radius: var(--r-xl);
@@ -464,7 +469,7 @@ html[data-glass="lite"] .glass::before {
 .sheet__corpo { overflow: auto; padding: 4px 20px 12px; -webkit-overflow-scrolling: touch; }
 .sheet__bar {
   flex: none;
-  padding: 10px 16px calc(10px + env(safe-area-inset-bottom) / 4);
+  padding: 10px 16px 12px;
   background: rgba(18, 18, 20, .96);
   box-shadow: 0 -1px 0 var(--hair);
   border-radius: 0 0 var(--r-xl) var(--r-xl);
@@ -571,8 +576,10 @@ textarea { min-height: 96px; resize: vertical; }
 }
 .locandina .faccia { width: 84px; aspect-ratio: 9 / 16; border-radius: 14px; }
 .faccia .lettera { font-size: 28px; font-weight: 700; letter-spacing: -.04em; align-self: center; justify-self: center; color: rgba(255, 255, 255, .88); }
+.faccia img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; z-index: 1; }
 .durata, .punto {
   position: absolute;
+  z-index: 2;
   bottom: 8px;
 }
 .durata {
@@ -588,19 +595,28 @@ textarea { min-height: 96px; resize: vertical; }
 .punto { right: 8px; width: 8px; height: 8px; border-radius: 50%; background: var(--warn); box-shadow: 0 0 0 1px rgba(0, 0, 0, .4); }
 .punto.ok { background: var(--ok); }
 .punto.pub { background: var(--ink); }
-.locandina span.nome, .poster .nome {
+.locandina span.nome, .poster .nome,
+.locandina .sotto, .poster .sotto {
   display: block;
-  margin-top: 6px;
-  font-size: 13px;
-  font-weight: 600;
-  letter-spacing: -.01em;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }
+.locandina span.nome, .poster .nome {
+  margin-top: 6px;
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: -.01em;
+}
+.locandina .sotto, .poster .sotto {
+  margin-top: 1px;
+  font-size: 11px;
+  color: var(--ink-3);
+  font-variant-numeric: tabular-nums;
+}
 .sezione { margin: 22px 0 8px; font-size: 22px; letter-spacing: -.03em; font-weight: 700; }
 
-.filtri { position: sticky; top: 44px; z-index: 3; background: #000; padding: 4px 0 10px; }
+.filtri { position: sticky; top: calc(var(--safe-t) + 46px); z-index: 3; background: #000; padding: 4px 0 10px; }
 .griglia-poster { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
 .poster .faccia { aspect-ratio: 9 / 16; border-radius: 20px; }
 .poster:nth-child(-n+6) { animation: salita var(--d-snappy) var(--spring-snappy) both; }
@@ -613,9 +629,7 @@ textarea { min-height: 96px; resize: vertical; }
 .vuoto { color: var(--ink-2); padding: 28px 8px; text-align: center; line-height: 1.4; }
 .vuoto svg { width: 48px; height: 48px; stroke: var(--ink-2); fill: none; stroke-width: 1.5; margin: 0 auto 12px; }
 
-.vista-dettaglio .titolone { display: none; }
 .vista-dettaglio .barra-titolo { margin-bottom: 8px; }
-.vista-dettaglio .barra-titolo b { opacity: 1; }
 .vista-dettaglio .player,
 .vista-dettaglio .cornice {
   width: min(100%, calc(40dvh * 9 / 16));
@@ -748,7 +762,7 @@ details.blocco > summary::-webkit-details-marker { display: none; }
   width: min(calc(100% - 16px), 480px);
   padding: 10px 12px;
   border-radius: 28px;
-  bottom: calc(var(--tabbar-h) + var(--tabbar-gap) + var(--safe-b) + 8px);
+  bottom: calc(var(--dock-h) + var(--dock-bottom) + 8px);
   --glass-tint: rgba(22, 22, 24, .78);
   --glass-blur: 22px;
 }
@@ -794,18 +808,26 @@ html.tastiera .composer { bottom: calc(var(--kbd) + 8px); }
   z-index: 90;
   left: 50%;
   translate: -50% 0;
-  top: calc(var(--safe-t) + 8px);
+  top: var(--safe-t);
   width: min(calc(100% - 32px), 420px);
   border-radius: var(--r-pill);
   padding: 12px 16px;
   text-align: center;
 }
+.view.vista-accesso { display: flex; flex-direction: column; }
+.accesso .titolone {
+  font-size: 2rem;
+  font-weight: 700;
+  letter-spacing: -.022em;
+  text-align: left;
+}
 .accesso {
-  min-height: calc(100dvh - var(--safe-t) - var(--safe-b));
+  flex: 1;
   display: flex;
   flex-direction: column;
   justify-content: center;
   gap: 8px;
+  padding-top: var(--safe-t);
 }
 .marca {
   width: 64px;
