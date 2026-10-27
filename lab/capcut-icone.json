@@ -1,0 +1,40 @@
+{
+  "uscita": "02 · Fatti/CapCut/_screenshot App Store/ritagli",
+  "fotogrammi": [
+    {
+      "file": "02 · Fatti/CapCut/IMG_9458.PNG",
+      "tempi": [
+        0
+      ]
+    },
+    {
+      "file": "02 · Fatti/CapCut/IMG_9459.PNG",
+      "tempi": [
+        0
+      ]
+    },
+    {
+      "file": "02 · Fatti/CapCut/IMG_9460.PNG",
+      "tempi": [
+        0
+      ]
+    }
+  ],
+  "varianti": [
+    {
+      "id": "inshot",
+      "filtro": "crop=200:200:56:42,scale=512:512",
+      "crudo": true
+    },
+    {
+      "id": "vn",
+      "filtro": "crop=200:200:56:26,scale=512:512",
+      "crudo": true
+    },
+    {
+      "id": "edits",
+      "filtro": "crop=380:380:52:430,scale=512:512",
+      "crudo": true
+    }
+  ]
+}
