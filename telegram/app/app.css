@@ -319,7 +319,7 @@ input, textarea { caret-color: #fff; }
   z-index: 50;
   left: 0;
   right: 0;
-  bottom: max(8px, calc(env(safe-area-inset-bottom) - 10px));
+  bottom: var(--dock-bottom);
   width: var(--dock-w);
   margin-inline: auto;
   display: flex;
