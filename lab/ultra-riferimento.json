@@ -1,0 +1,13 @@
+{
+  "uscita": "12 · Risorse/Stili/Ultra/_laboratorio",
+  "sequenze": [
+    { "file": "12 · Risorse/Stili/Ultra/0f65ec1b709b4e74a80c57ec16fe8af5.mp4", "quanti": 60, "inizio": 6,
+      "tratti": [ { "da": 0, "a": 4, "fps": 8, "larghezza": 360 }, { "da": 10, "a": 14, "fps": 8, "larghezza": 360 } ] },
+    { "file": "12 · Risorse/Stili/Ultra/1712f0299a66440db3811f0dbbe96f1b.mp4", "quanti": 60, "inizio": 6,
+      "tratti": [ { "da": 0, "a": 4, "fps": 8, "larghezza": 360 }, { "da": 10, "a": 14, "fps": 8, "larghezza": 360 } ] },
+    { "file": "12 · Risorse/Stili/Ultra/3484acdbcef941fbaf02831f99f35ca9.mp4", "quanti": 60, "inizio": 6,
+      "tratti": [ { "da": 0, "a": 4, "fps": 8, "larghezza": 360 }, { "da": 10, "a": 14, "fps": 8, "larghezza": 360 } ] },
+    { "file": "12 · Risorse/Stili/Ultra/406af45cffa042f38af13574d7e50706.mp4", "quanti": 60, "inizio": 6,
+      "tratti": [ { "da": 0, "a": 4, "fps": 8, "larghezza": 360 }, { "da": 10, "a": 14, "fps": 8, "larghezza": 360 } ] }
+  ]
+}
