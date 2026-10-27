@@ -47,6 +47,10 @@ on:
         description: 'Render di prova: solo i primi N secondi del montaggio (vuoto = tutto)'
         required: false
         default: ''
+      dove:
+        description: 'pc = sul PC di Denis (runner "regista-pc", docs/pc-locale.md), vuoto = server di GitHub. Lo sceglie il bot se il PC è acceso'
+        required: false
+        default: ''
       tentativo:
         description: 'Interno, non cambiare. 1 = primo giro, 2 = rilancio automatico se il server ha fallito'
         required: false
@@ -73,8 +77,9 @@ permissions:
 
 jobs:
   monta:
-    # versione fissa: ubuntu-latest passa a Ubuntu 26 dal 19/10/2026 (ffmpeg, font, dipendenze di Chrome)
-    runs-on: ubuntu-24.04
+    # versione fissa: ubuntu-latest passa a Ubuntu 26 dal 19/10/2026 (ffmpeg, font, dipendenze di Chrome).
+    # Con dove=pc il giro va sul PC di Denis (WSL Ubuntu 24.04, docs/pc-locale.md)
+    runs-on: ${{ inputs.dove == 'pc' && fromJSON('["self-hosted", "regista-pc"]') || 'ubuntu-24.04' }}
     # un giro fermo (mirror, modello che non risponde) non tiene il runner per 4 ore
     timeout-minutes: 45
     # bash anche dentro l'immagine: gli step usano mapfile. Sulla macchina è già bash.
@@ -327,7 +332,7 @@ jobs:
             if [ -n "$TELEGRAM" ] && [ "$TELEGRAM" != "[]" ]; then pip install --quiet telethon cryptg; fi
           fi
           # il girato originale va nel disco grande del runner (/mnt), non in quello di sistema
-          sudo mkdir -p /mnt/regista && sudo chown "$USER" /mnt/regista
+          [ -w /mnt/regista ] || { sudo mkdir -p /mnt/regista && sudo chown "$USER" /mnt/regista; }
           df -h / /mnt | sed 's/^/  /'
           # Claude Code si installa da solo solo se serve (Gemini è l'AI principale)
 
@@ -378,7 +383,7 @@ jobs:
           PROVA_SECONDI: ${{ inputs.secondi }}
         run: |
           # l'archivio non installa i pacchetti: la cartella sul disco grande va creata lo stesso
-          sudo mkdir -p /mnt/regista && sudo chown "$USER" /mnt/regista
+          [ -w /mnt/regista ] || { sudo mkdir -p /mnt/regista && sudo chown "$USER" /mnt/regista; }
           node scripts/regista.mjs
 
       # Chiavi mancanti e cartella inesistente hanno già avvisato e non si rilanciano.

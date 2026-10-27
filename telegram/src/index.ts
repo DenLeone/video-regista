@@ -232,8 +232,17 @@ type Inputs = { cartella?: string; brief?: string; origine?: '97' | '98'; correz
 const dispatch = (env: Env, ref: string, inputs: Record<string, string>) =>
   gh(env, `/actions/workflows/${WORKFLOW}/dispatches`, { method: 'POST', body: JSON.stringify({ ref, inputs }) });
 
+// PC di Denis (runner di GitHub in WSL, docs/pc-locale.md): manda un segnale ogni minuto a /pc-vivo.
+// Se l'ultimo è recente il montaggio va sul PC (più veloce), altrimenti sui server di GitHub come prima
+const PC_VIVO = 'pc_vivo';
+async function pcAcceso(env: Env): Promise<boolean> {
+  const t = Number(await leggi<number>(env, PC_VIVO)) || 0;
+  return Date.now() - t < 3 * 60000;
+}
+
 async function avvia(env: Env, i: Inputs, imp: Imp): Promise<string | null> {
   const base: Record<string, string> = { cartella: i.cartella || '', brief: i.brief || '', origine: i.origine || '97', correzione: i.correzione || '' };
+  if (await pcAcceso(env)) base.dove = 'pc';
   if (i.telegram) base.telegram = i.telegram; // indispensabile: se il workflow non lo conosce, meglio fallire che montare altro
   if (i.azione) base.azione = i.azione;
   if (i.secondi) base.secondi = String(i.secondi); // idem: senza, partirebbe il render intero
@@ -243,6 +252,12 @@ async function avvia(env: Env, i: Inputs, imp: Imp): Promise<string | null> {
   if (r.status === 422) {
     const t = await r.text();
     if (!/unexpected inputs/i.test(t)) return `GitHub 422: ${t}`;
+    // ramo senza il montaggio sul PC: si va sui server di GitHub
+    if (base.dove && /\bdove\b/.test(t)) {
+      delete base.dove;
+      r = await dispatch(env, RAMO[imp.versione], { ...base, ai: imp.ai, modello: imp.modello, modello_gemini: imp.gemini });
+      if (r.status !== 422) return r.status === 204 ? null : `GitHub ${r.status}: ${await r.text()}`;
+    }
     if (i.r2 && /\br2\b/.test(t)) return 'Il workflow non conosce ancora il caricamento dall\'app (input r2). Aggiorna il ramo Stabile.';
     if (i.secondi && /secondi/.test(t)) return 'La versione Beta non ha ancora il render di prova: passa a Stabile da ⚙️ Impostazioni → 🔧 Avanzate.';
     r = await dispatch(env, RAMO[imp.versione], base);
@@ -1894,9 +1909,10 @@ export default {
       });
     }
 
-    if (req.method === 'POST' && (url.pathname === '/notify' || url.pathname === '/video' || url.pathname === '/foto-profilo' || url.pathname === '/copertina' || url.pathname === '/stile-esito' || url.pathname === '/stile-correggi')) {
+    if (req.method === 'POST' && (url.pathname === '/notify' || url.pathname === '/video' || url.pathname === '/foto-profilo' || url.pathname === '/copertina' || url.pathname === '/stile-esito' || url.pathname === '/stile-correggi' || url.pathname === '/pc-vivo')) {
       if (req.headers.get('x-regista-token') !== env.NOTIFY_TOKEN) return new Response('no', { status: 401 });
       if (url.pathname === '/notify') { await onNotify(env, (await req.json()) as Notify); return new Response('ok'); }
+      if (url.pathname === '/pc-vivo') { await mem(env).scrivi(PC_VIVO, Date.now()); return new Response('ok'); }
       if (url.pathname === '/foto-profilo') return new Response(await onFotoProfilo(env, await req.formData()));
       if (url.pathname === '/copertina') return new Response(await onCopertina(env, await req.formData()));
       // esito dello studio di uno stile (workflow stile.yml): bozza nell'app e avviso su Telegram
