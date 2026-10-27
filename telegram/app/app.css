@@ -40,13 +40,15 @@
   --s8: 32px;
   --s10: 40px;
   /* Un solo posto per i bordi.
-     Se il viewport di layout è già più corto dello schermo, il JS mette
-     --dock-bottom a 8px: il buco non si dipinge, e sommare l’inset
-     alzerebbe il dock senza avvicinarlo all’indicatore. */
+     Il fondo del dock è il viewport di layout (innerHeight), mai lvh.
+     Se quel viewport è già più corto dello schermo, il JS sostituisce
+     questo valore con Spazio basso (default 10px) e non somma l’inset:
+     la fascia sotto non si dipinge. */
   --inset-t: env(safe-area-inset-top, 0px);
   --inset-b: env(safe-area-inset-bottom, 0px);
   --edge: 10px;
   --safe-t: calc(var(--inset-t) + var(--edge));
+  --spazio-basso: 10px;
   --dock-bottom: max(8px, calc(var(--inset-b) - 10px));
   --tabbar-h: 64px;
   --dock-h: var(--tabbar-h);
@@ -65,22 +67,23 @@
 
 * { box-sizing: border-box; }
 [hidden] { display: none !important; }
-html { background: var(--bg); -webkit-text-size-adjust: 100%; }
-html, body, #app {
+html { background: #000; -webkit-text-size-adjust: 100%; }
+/* html e body restano nel flusso: height 100%, niente position:fixed,
+   niente overflow:hidden. Su standalone iOS una root fixed può lasciare
+   il viewport corto quanto la status bar, e quella fascia non si dipinge. */
+html, body {
   margin: 0;
   padding: 0;
   height: 100%;
-  position: fixed;
-  inset: 0;
+  background: #000;
 }
-html, body { background: #000; }
 body {
   font: 400 1rem/1.41 var(--font);
   color: var(--ink);
   background:
     radial-gradient(90% 42% at 0% -8%, rgba(255, 255, 255, .05), transparent 46%),
     radial-gradient(70% 36% at 110% 110%, rgba(255, 255, 255, .03), transparent 42%),
-    var(--bg);
+    #000;
   -webkit-font-smoothing: antialiased;
   overscroll-behavior: none;
 }
@@ -93,22 +96,24 @@ img { max-width: 100%; display: block; }
 input, textarea { caret-color: #fff; }
 ::placeholder { color: var(--ink-3); }
 
-.app {
-  width: var(--dock-w);
-  height: 100%;
-  min-height: 0;
-  margin-inline: auto;
-  display: flex;
-  flex-direction: column;
-}
+.app { width: var(--dock-w); margin-inline: auto; }
+/* L’unico riquadro fisso è lo scroll: top/bottom 0 seguono il viewport
+   di layout (innerHeight), non 100lvh né screen.height. */
 .view {
-  flex: 1 1 auto;
-  min-height: 0;
+  position: fixed;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  width: var(--dock-w);
+  margin-inline: auto;
   overflow: auto;
   padding: 0 var(--s5) var(--pad-b);
   scroll-padding-bottom: 16px;
   scrollbar-color: rgba(255, 255, 255, .28) transparent;
   scrollbar-width: thin;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior: none;
 }
 .app.solo .view { padding-bottom: calc(var(--dock-bottom) + 24px); }
 .app.con-compositore .view { padding-bottom: calc(var(--pad-b) + var(--kbd) + 128px); }
@@ -741,6 +746,14 @@ details.blocco > summary::-webkit-details-marker { display: none; }
   padding: 8px 0;
 }
 .riga-set .sub { display: block; color: var(--ink-3); font-size: 13px; font-weight: 400; }
+.spazio-riga { flex-direction: column; align-items: stretch; gap: 2px; }
+.spazio-riga label { display: block; font-size: 17px; }
+.spazio-riga input[type="range"] {
+  width: 100%;
+  height: 44px;
+  margin: 0;
+  accent-color: #fff;
+}
 .check { display: flex; gap: 10px; align-items: center; min-height: 44px; padding: 4px 0; }
 .check input { width: 22px; height: 22px; accent-color: #fff; }
 
