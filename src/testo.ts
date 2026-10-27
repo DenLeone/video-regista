@@ -13,6 +13,17 @@ export function larghezzaTesto(testo: string, ft: FontStile, fs: number): number
   tela.font = `${ft.corsivo ? 'italic ' : ''}${ft.peso} ${fs}px ${famiglia(ft)}`;
   return tela.measureText(testo).width;
 }
+// Zone sicure di TikTok/Reels su 1080×1920 (modello ufficiale TikTok per i video in feed): niente scritte
+// nei 120 px ai lati né nei 240 in alto; in basso descrizione, nome e pulsanti coprono ~560 px nei
+// post normali (660 con il bottone delle inserzioni). Denis 27/10: in Motion le parole uscivano dai bordi
+export const SICURA = { lato: 120, alto: 240, basso: 1920 - 560, larghezza: 1080 - 2 * 120 };
+// dimensione che fa stare la riga nella larghezza sicura, misurata nel font vero (riserva = margine
+// in più, es. per le lettere a caso dello scramble, che possono essere più larghe di quelle finali)
+export function dentro(testo: string, ft: FontStile, fs: number, max = SICURA.larghezza, riserva = 1): number {
+  const l = larghezzaTesto(testo, ft, fs);
+  if (l === null || l * riserva <= max) return fs;
+  return Math.floor((fs * max) / (l * riserva));
+}
 export const pulisci = (w: string) => w.replace(/^[«"“(]+|[»"”).,;:…]+$/g, '');
 export const norm = (w: string) => pulisci(w).toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
 

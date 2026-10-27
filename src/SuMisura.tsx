@@ -3,7 +3,7 @@ import { AbsoluteFill, Audio, continueRender, delayRender, Easing, interpolate, 
 import { Clips, f, Inserti, Ritagli, Sfx, usaFps, volumeSfx } from './comune';
 import { gruppiParole } from './Cinematico';
 import { durataTotale, FontStile, GraficaStile, Keyword, Piano, Posizione, W } from './piano';
-import { clamp, norm, OMBRA, pulisci, RACCORDO, stileFont, larghezzaTesto } from './testo';
+import { clamp, dentro, norm, OMBRA, pulisci, RACCORDO, SICURA, stileFont, larghezzaTesto } from './testo';
 import { BlocchiMotion, blocchiParlato, Cartello, Firma, Fumi, tagliFumo } from './Motion';
 
 // Stile "su misura": tutta la grafica arriva da Drive (Stili/<nome>/stile.txt, letto da
@@ -26,7 +26,8 @@ const LOOK: Record<GraficaStile['look'], string | undefined> = {
   teal: undefined, // LUT teal e arancio già applicata in ffmpeg
   'chiaro caldo': undefined, // in ffmpeg: volto ben esposto e luce calda (regista.mjs)
 };
-const Y: Record<Posizione, number> = { alto: 420, centro: 1060, basso: 1440 };
+// basso: sopra la descrizione e i pulsanti di TikTok (zona sicura, testo.ts)
+const Y: Record<Posizione, number> = { alto: 420, centro: 1060, basso: 1320 };
 // sottotitoli: contorno scuro stretto in più, leggibili anche sui B-roll chiari (tasti lilla, cielo)
 const OMBRA_SOTTO = '0 0 2px rgba(0,0,0,0.75), 0 2px 8px rgba(0,0,0,0.55), 0 3px 16px rgba(0,0,0,0.45)';
 
@@ -97,11 +98,11 @@ const Sottotitolo: React.FC<{ testo: string; len: number; g: GraficaStile }> = (
   const entra = interpolate(fr, [0, 4], [0, 1], { ...clamp, easing: Easing.out(Easing.cubic) });
   const esce = interpolate(fr, [len - 2, len], [1, 0], clamp);
   const t = caratteri(testo, g);
-  const fs = Math.min(g.dimensione, (W - 140) / Math.max(1, t.length * 0.52));
+  const fs = dentro(t, g.fontSottotitoli, Math.min(g.dimensione, SICURA.larghezza / Math.max(1, t.length * 0.52)));
   return (
     <AbsoluteFill>
       <div style={{
-        position: 'absolute', top: Y[g.posizione] - fs * 0.6, left: 70, right: 70, textAlign: 'center',
+        position: 'absolute', top: Y[g.posizione] - fs * 0.6, left: SICURA.lato, right: SICURA.lato, textAlign: 'center',
         ...stileFont(g.fontSottotitoli), fontSize: fs, lineHeight: 1.2,
         color: g.coloreSottotitoli, textShadow: OMBRA_SOTTO, opacity: Math.min(entra, esce), transform: `translateY(${(1 - entra) * 10}px)`,
       }}>
@@ -167,7 +168,7 @@ const ScrittaDueLivelli: React.FC<{ righe: Riga[]; len: number; g: GraficaStile;
   const esce = interpolate(fr, [len - 5, len], [0, 1], clamp);
   const lungaGrande = Math.max(1, ...righe.filter((r) => r.tipo === 'grande').map((r) => r.parole.map((x) => x.w).join(' ').length));
   // stima a 0,5 em a lettera, poi la misura vera nel font: "SOUNDCORE" in Oswald 700 usciva dai
-  // bordi (Space One, 25/10). Le righe grandi stanno sempre in W - 140
+  // bordi (Space One, 25/10). Le righe grandi stanno sempre nella larghezza sicura di TikTok
   const stima = Math.max(110, Math.min(250, 940 / (lungaGrande * 0.5)));
   const misure = righe.filter((r) => r.tipo === 'grande').map((r) => {
     const testo = r.parole.map((x) => x.w.toUpperCase()).join(' ');
@@ -175,14 +176,14 @@ const ScrittaDueLivelli: React.FC<{ righe: Riga[]; len: number; g: GraficaStile;
     return l === null ? null : l + stima * 0.18 * r.parole.length;
   });
   const piu = Math.max(0, ...misure.map((l) => l ?? 0));
-  const fsGrande = piu > W - 140 ? Math.floor(stima * (W - 140) / piu) : stima;
+  const fsGrande = piu > SICURA.larghezza ? Math.floor(stima * SICURA.larghezza / piu) : stima;
   const vistaGrande = righe.findIndex((r) => r.tipo === 'grande');
   return (
     <AbsoluteFill style={{ opacity: 1 - esce, filter: `blur(${esce * 10}px)` }}>
       {/* il blocco è largo quanto le parole grandi: il corsivo parte dal loro bordo sinistro
           (o finisce sul destro, sotto), non dal bordo dello schermo (Giacca autunnale, 19/10) */}
       <div style={{ position: 'absolute', top, left: 0, right: 0, display: 'flex', justifyContent: 'center' }}>
-      <div style={{ display: 'inline-flex', flexDirection: 'column', maxWidth: W - 140, color: g.coloreApertura, textShadow: '0 6px 30px rgba(0,0,0,0.3)' }}>
+      <div style={{ display: 'inline-flex', flexDirection: 'column', maxWidth: SICURA.larghezza, color: g.coloreApertura, textShadow: '0 6px 30px rgba(0,0,0,0.3)' }}>
         {righe.map((r, i) => (
           <div key={i} style={r.tipo === 'grande'
             ? { ...stileFont(g.fontApertura), fontSize: fsGrande, lineHeight: 0.92, letterSpacing: '-0.01em', textAlign: 'center', textTransform: 'uppercase' }
@@ -221,11 +222,11 @@ const Titolo: React.FC<{ k: Keyword; len: number; g: GraficaStile }> = ({ k, len
     const v = interpolate(fr, [da, da + 9], [0, 1], { ...clamp, easing: Easing.out(Easing.cubic) });
     return { opacity: v * esce, filter: `blur(${(1 - v) * 10 + (1 - esce) * 6}px)`, transform: `translateY(${(1 - v) * 26}px)` };
   };
-  const fs = Math.max(72, Math.min(124, (W - 130) / Math.max(1, k.word.length * 0.66)));
+  const fs = dentro(k.word, g.fontTitoli, Math.max(72, Math.min(124, SICURA.larghezza / Math.max(1, k.word.length * 0.66))));
   const top = k.top ?? (g.posTitoli === 'alto' ? 380 : g.posTitoli === 'centro' ? 820 : 1250);
   return (
     <AbsoluteFill>
-      <div style={{ position: 'absolute', top, left: 60, right: 60, display: 'flex', flexDirection: 'column', alignItems: 'center', textAlign: 'center', color: g.coloreTitoli, textShadow: OMBRA }}>
+      <div style={{ position: 'absolute', top, left: SICURA.lato, right: SICURA.lato, display: 'flex', flexDirection: 'column', alignItems: 'center', textAlign: 'center', color: g.coloreTitoli, textShadow: OMBRA }}>
         {k.tag ? <div style={{ ...stileFont(g.fontSottotitoli), fontWeight: 500, fontSize: 40, ...pezzo(0) }}>{k.tag}</div> : null}
         <div style={{ ...stileFont(g.fontTitoli), fontSize: fs, lineHeight: 0.98, letterSpacing: '-0.04em', ...pezzo(2) }}>{k.word}</div>
         {k.note ? <div style={{ ...stileFont(g.fontSottotitoli), fontWeight: 600, fontSize: 48, color: g.accento, marginTop: 4, ...pezzo(5) }}>{k.note.replace(/^\/\/\s*/, '')}</div> : null}
@@ -255,11 +256,12 @@ const ParolaGrande: React.FC<{ testo: string; len: number; ultima: boolean; g: G
   const esce = ultima ? interpolate(fr, [len - 3, len], [1, 0], clamp) : 1;
   const righe = righeEtichetta(caratteri(testo, g));
   // ~0,62 em a lettera nel Montserrat ExtraBold minuscolo: la riga non esce mai dai bordi
-  const fs = Math.min(150, (W - 120) / Math.max(1, Math.max(...righe.map((r) => r.length)) * 0.62));
+  const stimaFs = Math.min(150, SICURA.larghezza / Math.max(1, Math.max(...righe.map((r) => r.length)) * 0.62));
+  const fs = Math.min(...righe.map((r) => dentro(r, g.fontTitoli, stimaFs)));
   return (
     <AbsoluteFill>
       <div style={{
-        position: 'absolute', top: Y_GRANDE[g.posTitoli] - fs * (0.6 + 0.5 * (righe.length - 1)), left: 50, right: 50, textAlign: 'center',
+        position: 'absolute', top: Y_GRANDE[g.posTitoli] - fs * (0.6 + 0.5 * (righe.length - 1)), left: SICURA.lato, right: SICURA.lato, textAlign: 'center',
         ...stileFont(g.fontTitoli), fontSize: fs, lineHeight: 1.0, letterSpacing: '-0.02em', color: g.coloreTitoli,
         textShadow: '0 6px 24px rgba(0,0,0,0.42), 0 2px 5px rgba(0,0,0,0.35)',
         opacity: Math.min(1, entra * 1.6) * esce, transform: `scale(${0.82 + 0.18 * entra})`,

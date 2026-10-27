@@ -2,7 +2,7 @@ import React from 'react';
 import { AbsoluteFill, Easing, interpolate, random, Sequence, useCurrentFrame } from 'remotion';
 import { f } from './comune';
 import { durataClip, GraficaStile, Keyword, Piano } from './piano';
-import { clamp, norm, pulisci, RACCORDO, stileFont } from './testo';
+import { clamp, dentro, norm, pulisci, RACCORDO, SICURA, stileFont } from './testo';
 
 // Stile Motion (esempi in Stili/Motion, studiati fotogramma per fotogramma il 20/10), in verticale:
 // - tutto il parlato a blocchi davanti al petto: righe piccole in corsivo bianco che compaiono
@@ -146,15 +146,20 @@ const BloccoView: React.FC<{ b: BloccoM; len: number; g: GraficaStile; seme: str
   const fr = useCurrentFrame();
   const esce = interpolate(fr, [len - 5, len], [0, 1], clamp);
   const lungaGrande = Math.max(1, ...b.righe.filter((r) => r.tipo === 'grande').map((r) => r.parole.map((x) => x.w).join(' ').length));
-  const fsGrande = Math.max(96, Math.min(170, 900 / (lungaGrande * 0.62)));
+  // stima dalle lettere, poi misura vera di ogni riga grande (con lo scramble passano lettere più larghe)
+  const stima = Math.max(96, Math.min(170, 900 / (lungaGrande * 0.62)));
+  const fsGrande = Math.min(stima, ...b.righe.filter((r) => r.tipo === 'grande')
+    .map((r) => dentro(r.parole.map((x) => x.w.toUpperCase()).join(' '), g.fontApertura, stima, SICURA.larghezza, g.entrata !== 'sfocata' ? 1.08 : 1.02)));
+  const fsPiccola = Math.min(58, ...b.righe.filter((r) => r.tipo === 'piccolo')
+    .map((r) => dentro(r.parole.map((x) => x.w).join(' '), g.fontCorsivo, 58, SICURA.larghezza - 60)));
   const conGrande = b.righe.some((r) => r.tipo === 'grande');
   const scramble = g.entrata !== 'sfocata';
   const riempi = riempimento(g.coloreApertura);
   return (
     // il blocco poggia su una linea all'altezza del petto (y ≈ 1400): le righe crescono verso l'alto
     <AbsoluteFill style={{ opacity: 1 - esce, filter: esce > 0 ? `blur(${esce * 8}px)` : undefined }}>
-      <div style={{ position: 'absolute', left: 0, right: 0, bottom: 1920 - 1400, display: 'flex', justifyContent: 'center' }}>
-        <div style={{ display: 'inline-flex', flexDirection: 'column', alignItems: conGrande ? 'flex-start' : 'center', maxWidth: 1080 - 120 }}>
+      <div style={{ position: 'absolute', left: SICURA.lato, right: SICURA.lato, bottom: 1920 - Math.min(1400, SICURA.basso), display: 'flex', justifyContent: 'center' }}>
+        <div style={{ display: 'inline-flex', flexDirection: 'column', alignItems: conGrande ? 'flex-start' : 'center', maxWidth: SICURA.larghezza }}>
           {b.righe.map((r, i) => r.tipo === 'grande' ? (
             <div key={i} style={{ ...stileFont(g.fontApertura), fontSize: fsGrande, lineHeight: 0.95, textTransform: 'uppercase', whiteSpace: 'nowrap',
               alignSelf: 'center', letterSpacing: '0.01em', filter: 'drop-shadow(0 4px 10px rgba(0,0,0,0.55)) drop-shadow(0 1px 2px rgba(0,0,0,0.6))' }}>
@@ -169,7 +174,7 @@ const BloccoView: React.FC<{ b: BloccoM; len: number; g: GraficaStile; seme: str
               </span>
             </div>
           ) : (
-            <div key={i} style={{ ...stileFont(g.fontCorsivo), fontSize: 58, lineHeight: 1.08, color: g.coloreSottotitoli, whiteSpace: 'nowrap',
+            <div key={i} style={{ ...stileFont(g.fontCorsivo), fontSize: fsPiccola, lineHeight: 1.08, color: g.coloreSottotitoli, whiteSpace: 'nowrap',
               marginLeft: conGrande ? '0.5em' : 0, textShadow: '0 2px 10px rgba(0,0,0,0.6), 0 1px 2px rgba(0,0,0,0.6)' }}>
               {r.parole.map((p, j) => {
                 const da = f(p.da);
@@ -272,11 +277,14 @@ export const Cartello: React.FC<{ k: Keyword; len: number; g: GraficaStile }> = 
   const due = (k.note || '').replace(/^\/\/\s*/, '').toUpperCase();
   const passo = 1.1; // fotogrammi per lettera
   const battute = (testo: string, da: number) => testo.slice(0, Math.max(0, Math.floor((fr - da) / passo)));
-  const fs = Math.max(70, Math.min(118, 940 / (Math.max(uno.length, due.length, 1) * 0.5)));
+  const stimaFs = Math.max(70, Math.min(118, 940 / (Math.max(uno.length, due.length, 1) * 0.5)));
+  // il cartello va a capo da solo: basta che la parola più lunga stia nella larghezza sicura
+  const parolaLunga = [...uno.split(/\s+/), ...due.split(/\s+/)].reduce((m, w) => (w.length > m.length ? w : m), '');
+  const fs = dentro(parolaLunga, g.fontTitoli, stimaFs);
   return (
     <AbsoluteFill style={{ backgroundColor: `rgba(6,6,8,${(0.62 * scuro).toFixed(3)})`, justifyContent: 'center', alignItems: 'center' }}>
       <div style={{ ...stileFont(g.fontTitoli), fontSize: fs, lineHeight: 1.08, color: g.coloreTitoli, textAlign: 'center', textTransform: 'uppercase',
-        letterSpacing: '0.01em', padding: '0 60px', opacity: esce, textShadow: '0 4px 24px rgba(0,0,0,0.6)' }}>
+        letterSpacing: '0.01em', padding: `0 ${SICURA.lato}px`, opacity: esce, textShadow: '0 4px 24px rgba(0,0,0,0.6)' }}>
         {/* la riga intera c'è sempre, invisibile: le lettere battute non spostano niente */}
         <div style={{ position: 'relative' }}><span style={{ visibility: 'hidden' }}>{uno}</span>
           <span style={{ position: 'absolute', left: 0, right: 0, top: 0 }}>{battute(uno, 3)}</span></div>
