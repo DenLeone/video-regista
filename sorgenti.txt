@@ -1,0 +1,4 @@
+12 · Risorse/Stili/Ultra/0f65ec1b709b4e74a80c57ec16fe8af5.mp4 · altro · 720x1280 · 25.26 fps · yuv420p bt709 · 79.9 s · crudo: saturazione 13.0, luminosità 131
+12 · Risorse/Stili/Ultra/1712f0299a66440db3811f0dbbe96f1b.mp4 · altro · 720x1280 · 30 fps · yuv420p bt709 · 30.6 s · crudo: saturazione 15.1, luminosità 120
+12 · Risorse/Stili/Ultra/3484acdbcef941fbaf02831f99f35ca9.mp4 · altro · 720x1280 · 30 fps · yuv420p bt709 · 40.7 s · crudo: saturazione 12.4, luminosità 97
+12 · Risorse/Stili/Ultra/406af45cffa042f38af13574d7e50706.mp4 · altro · 720x1280 · 30 fps · yuv420p bt709 · 39.6 s · crudo: saturazione 16.1, luminosità 101
