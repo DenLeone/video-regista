@@ -1,0 +1,572 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-10-27T11:38:17Z",
+  "title": "Design System: Regista",
+  "extensions": {
+    "colorMeta": {
+      "ink": {
+        "role": "primary",
+        "displayName": "Label White",
+        "canonical": "oklch(97.1% 0.003 286.4)",
+        "tonalRamp": [
+          "oklch(15% 0.003 286.4)",
+          "oklch(26% 0.003 286.4)",
+          "oklch(38% 0.003 286.4)",
+          "oklch(49% 0.003 286.4)",
+          "oklch(61% 0.003 286.4)",
+          "oklch(72% 0.003 286.4)",
+          "oklch(84% 0.003 286.4)",
+          "oklch(95% 0.003 286.4)"
+        ]
+      },
+      "white": {
+        "role": "primary",
+        "displayName": "Signal White",
+        "canonical": "oklch(100% 0 0)",
+        "tonalRamp": [
+          "oklch(15% 0 0)",
+          "oklch(26% 0 0)",
+          "oklch(38% 0 0)",
+          "oklch(49% 0 0)",
+          "oklch(61% 0 0)",
+          "oklch(72% 0 0)",
+          "oklch(84% 0 0)",
+          "oklch(95% 0 0)"
+        ]
+      },
+      "ground": {
+        "role": "neutral",
+        "displayName": "Black",
+        "canonical": "oklch(0% 0 0)",
+        "tonalRamp": [
+          "oklch(15% 0 0)",
+          "oklch(26% 0 0)",
+          "oklch(38% 0 0)",
+          "oklch(49% 0 0)",
+          "oklch(61% 0 0)",
+          "oklch(72% 0 0)",
+          "oklch(84% 0 0)",
+          "oklch(95% 0 0)"
+        ]
+      },
+      "graphite": {
+        "role": "neutral",
+        "displayName": "Graphite",
+        "canonical": "oklch(19.2% 0.004 286)",
+        "tonalRamp": [
+          "oklch(15% 0.004 286)",
+          "oklch(26% 0.004 286)",
+          "oklch(38% 0.004 286)",
+          "oklch(49% 0.004 286)",
+          "oklch(61% 0.004 286)",
+          "oklch(72% 0.004 286)",
+          "oklch(84% 0.004 286)",
+          "oklch(95% 0.004 286)"
+        ]
+      },
+      "graphite-raised": {
+        "role": "neutral",
+        "displayName": "Raised Graphite",
+        "canonical": "oklch(22.7% 0.004 286.1)",
+        "tonalRamp": [
+          "oklch(15% 0.004 286.1)",
+          "oklch(26% 0.004 286.1)",
+          "oklch(38% 0.004 286.1)",
+          "oklch(49% 0.004 286.1)",
+          "oklch(61% 0.004 286.1)",
+          "oklch(72% 0.004 286.1)",
+          "oklch(84% 0.004 286.1)",
+          "oklch(95% 0.004 286.1)"
+        ]
+      },
+      "graphite-high": {
+        "role": "neutral",
+        "displayName": "High Graphite",
+        "canonical": "oklch(28.6% 0.005 286.1)",
+        "tonalRamp": [
+          "oklch(15% 0.005 286.1)",
+          "oklch(26% 0.005 286.1)",
+          "oklch(38% 0.005 286.1)",
+          "oklch(49% 0.005 286.1)",
+          "oklch(61% 0.005 286.1)",
+          "oklch(72% 0.005 286.1)",
+          "oklch(84% 0.005 286.1)",
+          "oklch(95% 0.005 286.1)"
+        ]
+      },
+      "ink-secondary": {
+        "role": "neutral",
+        "displayName": "Secondary Label",
+        "canonical": "oklch(94.3% 0.013 286.1 / 0.72)",
+        "tonalRamp": [
+          "oklch(15% 0.013 286.1)",
+          "oklch(26% 0.013 286.1)",
+          "oklch(38% 0.013 286.1)",
+          "oklch(49% 0.013 286.1)",
+          "oklch(61% 0.013 286.1)",
+          "oklch(72% 0.013 286.1)",
+          "oklch(84% 0.013 286.1)",
+          "oklch(95% 0.013 286.1)"
+        ]
+      },
+      "ink-tertiary": {
+        "role": "neutral",
+        "displayName": "Tertiary Label",
+        "canonical": "oklch(94.3% 0.013 286.1 / 0.48)",
+        "tonalRamp": [
+          "oklch(15% 0.013 286.1)",
+          "oklch(26% 0.013 286.1)",
+          "oklch(38% 0.013 286.1)",
+          "oklch(49% 0.013 286.1)",
+          "oklch(61% 0.013 286.1)",
+          "oklch(72% 0.013 286.1)",
+          "oklch(84% 0.013 286.1)",
+          "oklch(95% 0.013 286.1)"
+        ]
+      },
+      "hairline": {
+        "role": "neutral",
+        "displayName": "Hairline",
+        "canonical": "oklch(100% 0 0 / 0.10)",
+        "tonalRamp": [
+          "oklch(15% 0 0)",
+          "oklch(26% 0 0)",
+          "oklch(38% 0 0)",
+          "oklch(49% 0 0)",
+          "oklch(61% 0 0)",
+          "oklch(72% 0 0)",
+          "oklch(84% 0 0)",
+          "oklch(95% 0 0)"
+        ]
+      },
+      "hairline-strong": {
+        "role": "neutral",
+        "displayName": "Strong Hairline",
+        "canonical": "oklch(100% 0 0 / 0.18)",
+        "tonalRamp": [
+          "oklch(15% 0 0)",
+          "oklch(26% 0 0)",
+          "oklch(38% 0 0)",
+          "oklch(49% 0 0)",
+          "oklch(61% 0 0)",
+          "oklch(72% 0 0)",
+          "oklch(84% 0 0)",
+          "oklch(95% 0 0)"
+        ]
+      },
+      "live": {
+        "role": "status",
+        "displayName": "Live Green",
+        "canonical": "oklch(75.6% 0.208 147)",
+        "tonalRamp": [
+          "oklch(15% 0.208 147)",
+          "oklch(26% 0.208 147)",
+          "oklch(38% 0.208 147)",
+          "oklch(49% 0.208 147)",
+          "oklch(61% 0.208 147)",
+          "oklch(72% 0.208 147)",
+          "oklch(84% 0.208 147)",
+          "oklch(95% 0.208 147)"
+        ]
+      },
+      "amber": {
+        "role": "status",
+        "displayName": "Amber",
+        "canonical": "oklch(82% 0.152 73.2)",
+        "tonalRamp": [
+          "oklch(15% 0.152 73.2)",
+          "oklch(26% 0.152 73.2)",
+          "oklch(38% 0.152 73.2)",
+          "oklch(49% 0.152 73.2)",
+          "oklch(61% 0.152 73.2)",
+          "oklch(72% 0.152 73.2)",
+          "oklch(84% 0.152 73.2)",
+          "oklch(95% 0.152 73.2)"
+        ]
+      },
+      "fault": {
+        "role": "status",
+        "displayName": "Fault Red",
+        "canonical": "oklch(71.2% 0.181 22.8)",
+        "tonalRamp": [
+          "oklch(15% 0.181 22.8)",
+          "oklch(26% 0.181 22.8)",
+          "oklch(38% 0.181 22.8)",
+          "oklch(49% 0.181 22.8)",
+          "oklch(61% 0.181 22.8)",
+          "oklch(72% 0.181 22.8)",
+          "oklch(84% 0.181 22.8)",
+          "oklch(95% 0.181 22.8)"
+        ]
+      },
+      "glass-tint": {
+        "role": "material",
+        "displayName": "Dock Tint",
+        "canonical": "oklch(22.7% 0.004 286.1 / 0.46)",
+        "tonalRamp": [
+          "oklch(15% 0.004 286.1)",
+          "oklch(26% 0.004 286.1)",
+          "oklch(38% 0.004 286.1)",
+          "oklch(49% 0.004 286.1)",
+          "oklch(61% 0.004 286.1)",
+          "oklch(72% 0.004 286.1)",
+          "oklch(84% 0.004 286.1)",
+          "oklch(95% 0.004 286.1)"
+        ]
+      },
+      "glass-sheet": {
+        "role": "material",
+        "displayName": "Sheet Tint",
+        "canonical": "oklch(21% 0.004 286.1 / 0.72)",
+        "tonalRamp": [
+          "oklch(15% 0.004 286.1)",
+          "oklch(26% 0.004 286.1)",
+          "oklch(38% 0.004 286.1)",
+          "oklch(49% 0.004 286.1)",
+          "oklch(61% 0.004 286.1)",
+          "oklch(72% 0.004 286.1)",
+          "oklch(84% 0.004 286.1)",
+          "oklch(95% 0.004 286.1)"
+        ]
+      },
+      "glass-composer": {
+        "role": "material",
+        "displayName": "Composer Tint",
+        "canonical": "oklch(20.1% 0.004 286 / 0.78)",
+        "tonalRamp": [
+          "oklch(15% 0.004 286)",
+          "oklch(26% 0.004 286)",
+          "oklch(38% 0.004 286)",
+          "oklch(49% 0.004 286)",
+          "oklch(61% 0.004 286)",
+          "oklch(72% 0.004 286)",
+          "oklch(84% 0.004 286)",
+          "oklch(95% 0.004 286)"
+        ]
+      },
+      "glass-solid": {
+        "role": "material",
+        "displayName": "Solid Glass",
+        "canonical": "oklch(22.7% 0.004 286.1 / 0.94)",
+        "tonalRamp": [
+          "oklch(15% 0.004 286.1)",
+          "oklch(26% 0.004 286.1)",
+          "oklch(38% 0.004 286.1)",
+          "oklch(49% 0.004 286.1)",
+          "oklch(61% 0.004 286.1)",
+          "oklch(72% 0.004 286.1)",
+          "oklch(84% 0.004 286.1)",
+          "oklch(95% 0.004 286.1)"
+        ]
+      },
+      "spec-hi": {
+        "role": "material",
+        "displayName": "Specular High",
+        "canonical": "oklch(100% 0 0 / 0.34)",
+        "tonalRamp": [
+          "oklch(15% 0 0)",
+          "oklch(26% 0 0)",
+          "oklch(38% 0 0)",
+          "oklch(49% 0 0)",
+          "oklch(61% 0 0)",
+          "oklch(72% 0 0)",
+          "oklch(84% 0 0)",
+          "oklch(95% 0 0)"
+        ]
+      },
+      "spec-lo": {
+        "role": "material",
+        "displayName": "Specular Low",
+        "canonical": "oklch(100% 0 0 / 0.08)",
+        "tonalRamp": [
+          "oklch(15% 0 0)",
+          "oklch(26% 0 0)",
+          "oklch(38% 0 0)",
+          "oklch(49% 0 0)",
+          "oklch(61% 0 0)",
+          "oklch(72% 0 0)",
+          "oklch(84% 0 0)",
+          "oklch(95% 0 0)"
+        ]
+      },
+      "scrim": {
+        "role": "neutral",
+        "displayName": "Scrim",
+        "canonical": "oklch(0% 0 0 / 0.5)",
+        "tonalRamp": [
+          "oklch(15% 0 0)",
+          "oklch(26% 0 0)",
+          "oklch(38% 0 0)",
+          "oklch(49% 0 0)",
+          "oklch(61% 0 0)",
+          "oklch(72% 0 0)",
+          "oklch(84% 0 0)",
+          "oklch(95% 0 0)"
+        ]
+      }
+    },
+    "typographyMeta": {
+      "display": {
+        "displayName": "Display",
+        "purpose": "The large screen title. It collapses to 17px / 600 in the solid bar."
+      },
+      "headline": {
+        "displayName": "Headline",
+        "purpose": "The phase name and the card title."
+      },
+      "title": {
+        "displayName": "Title",
+        "purpose": "The in-page section heading."
+      },
+      "body": {
+        "displayName": "Body",
+        "purpose": "Running text and settings rows. Root size is 17px."
+      },
+      "label": {
+        "displayName": "Label",
+        "purpose": "Field labels, chips, group labels, and the quiet third line under a job."
+      }
+    },
+    "shadows": [
+      {
+        "name": "hairline",
+        "value": "0 0 0 1px rgba(255, 255, 255, .10) inset, 0 1px 0 rgba(255, 255, 255, .06) inset",
+        "purpose": "Cards, groups, the player, and the poster frame."
+      },
+      {
+        "name": "hairline-strong",
+        "value": "0 0 0 1px rgba(255, 255, 255, .18) inset",
+        "purpose": "Translucent buttons, the current tab, the upload disc."
+      },
+      {
+        "name": "float",
+        "value": "0 10px 30px rgba(0, 0, 0, .45), 0 1px 0 rgba(255, 255, 255, .04) inset",
+        "purpose": "Dock pill, sheet, toast, and composer."
+      },
+      {
+        "name": "orb",
+        "value": "0 8px 24px rgba(0, 0, 0, .5), 0 1px 0 rgba(255, 255, 255, .7) inset",
+        "purpose": "The Carica orb only."
+      },
+      {
+        "name": "fault-ring",
+        "value": "0 0 0 1px rgba(255, 107, 107, .55) inset",
+        "purpose": "A job card that has failed."
+      }
+    ],
+    "motion": [
+      {
+        "name": "spring-snappy",
+        "value": "0.39s linear(0, .039, .13, .246, .369, .488, .595, .688, .765, .829, .878, .917, .946, .967, .982, .992, .999, 1.003, 1.005, 1.006, 1.006, 1.006, 1.005, 1.005, 1.004, 1.003, 1.002, 1)",
+        "purpose": "Buttons, and the poster grid's own entrance."
+      },
+      {
+        "name": "spring-sheet",
+        "value": "0.61s linear(0, .04, .132, .245, .36, .468, .564, .647, .718, .775, .823, .861, .891, .916, .935, .949, .961, .97, .977, .983, .987, .99, .992, .994, .996, .997, .997, 1)",
+        "purpose": "The sheet."
+      },
+      {
+        "name": "spring-pop",
+        "value": "0.59s linear(0, .033, .116, .227, .351, .476, .593, .699, .789, .864, .923, .968, 1.001, 1.023, 1.037, 1.044, 1.046, 1.045, 1.041, 1.036, 1.03, 1.024, 1.019, 1.014, 1.01, 1.006, 1.004, 1)",
+        "purpose": "The Carica orb and the success disc."
+      },
+      {
+        "name": "pulse",
+        "value": "1.8s ease-out infinite",
+        "purpose": "The live dot on a job that is actually running. Warn and error dots do not pulse."
+      },
+      {
+        "name": "sweep",
+        "value": "1.6s linear infinite",
+        "purpose": "The light sweep on the current segment of the seven-segment rail."
+      },
+      {
+        "name": "scrim",
+        "value": "opacity .3s",
+        "purpose": "The sheet veil fading in."
+      },
+      {
+        "name": "press",
+        "value": "transform .1s ease-out",
+        "purpose": "Button press to scale .97. The orb presses to .92 over .12s."
+      },
+      {
+        "name": "reduced",
+        "value": "0.01ms",
+        "purpose": "Reduced motion and the effects-off setting stop the pulse, the sweep, and the springs."
+      }
+    ],
+    "breakpoints": [
+      {
+        "name": "wide",
+        "value": "900px"
+      }
+    ]
+  },
+  "components": [
+    {
+      "name": "Primary Button",
+      "kind": "button",
+      "refersTo": "button-primary",
+      "description": "The one white action. Ink fill, black label, pill, 52px.",
+      "html": "<div class=\"ds-stage\"><button class=\"ds-btn-primary\" type=\"button\">Avvia montaggio</button></div>",
+      "css": ".ds-stage { background: #000; color: #f5f5f7; padding: 28px; font-family: -apple-system, BlinkMacSystemFont, \"SF Pro Text\", \"SF Pro Display\", system-ui, sans-serif; }\n.ds-btn-primary {\n  appearance: none;\n  width: 100%;\n  min-height: 52px;\n  padding: 0 22px;\n  border: 0;\n  border-radius: 999px;\n  background: #f5f5f7;\n  color: #000;\n  font-family: -apple-system, BlinkMacSystemFont, \"SF Pro Text\", \"SF Pro Display\", system-ui, sans-serif;\n  font-weight: 600;\n  font-size: 1rem;\n  line-height: 1;\n  display: inline-flex;\n  align-items: center;\n  justify-content: center;\n  gap: 8px;\n  cursor: pointer;\n  transition: transform .39s linear(0, .039, .13, .246, .369, .488, .595, .688, .765, .829, .878, .917, .946, .967, .982, .992, .999, 1.003, 1.005, 1.006, 1.006, 1.006, 1.005, 1.005, 1.004, 1.003, 1.002, 1);\n}\n.ds-btn-primary:hover { filter: brightness(.97); }\n.ds-btn-primary:active { transform: scale(.97); transition-duration: .1s; transition-timing-function: ease-out; }\n.ds-btn-primary:disabled { opacity: .4; }\n.ds-btn-primary:focus-visible { outline: 2px solid #fff; outline-offset: 3px; }"
+    },
+    {
+      "name": "Translucent Button",
+      "kind": "button",
+      "refersTo": "button-translucent",
+      "description": "The second action. A 10% white wash and a strong hairline. It does not blur.",
+      "html": "<div class=\"ds-stage\"><button class=\"ds-btn-wash\" type=\"button\">Dettagli</button></div>",
+      "css": ".ds-stage { background: #000; color: #f5f5f7; padding: 28px; font-family: -apple-system, BlinkMacSystemFont, \"SF Pro Text\", \"SF Pro Display\", system-ui, sans-serif; }\n.ds-btn-wash {\n  appearance: none;\n  width: 100%;\n  min-height: 52px;\n  padding: 0 22px;\n  border: 0;\n  border-radius: 999px;\n  background: rgba(255, 255, 255, .10);\n  color: #f5f5f7;\n  box-shadow: 0 0 0 1px rgba(255, 255, 255, .18) inset;\n  font-family: -apple-system, BlinkMacSystemFont, \"SF Pro Text\", \"SF Pro Display\", system-ui, sans-serif;\n  font-weight: 600;\n  font-size: 1rem;\n  line-height: 1;\n  display: inline-flex;\n  align-items: center;\n  justify-content: center;\n  cursor: pointer;\n  transition: transform .39s linear(0, .039, .13, .246, .369, .488, .595, .688, .765, .829, .878, .917, .946, .967, .982, .992, .999, 1.003, 1.005, 1.006, 1.006, 1.006, 1.005, 1.005, 1.004, 1.003, 1.002, 1);\n}\n.ds-btn-wash:hover { filter: brightness(.97); }\n.ds-btn-wash:active { transform: scale(.97); transition-duration: .1s; transition-timing-function: ease-out; }\n.ds-btn-wash:disabled { opacity: .4; }\n.ds-btn-wash:focus-visible { outline: 2px solid #fff; outline-offset: 3px; }"
+    },
+    {
+      "name": "Running Job",
+      "kind": "card",
+      "refersTo": "card",
+      "description": "Opaque graphite card for a job that is running: live dot, phase name, seven-segment rail.",
+      "html": "<div class=\"ds-stage\"><article class=\"ds-job\">\n  <div class=\"ds-job-row\"><i class=\"ds-live\" aria-hidden=\"true\"></i><h2>Monta</h2><span class=\"ds-min\">18 min</span></div>\n  <p class=\"ds-sub\">In attesa del render</p>\n  <div class=\"ds-rail\" aria-hidden=\"true\"><i class=\"done\"></i><i class=\"done\"></i><i class=\"done\"></i><i class=\"done\"></i><i class=\"done\"></i><i class=\"now\"></i><i></i></div>\n  <p class=\"ds-meta\">Montaggio · Cinematico</p>\n</article></div>",
+      "css": ".ds-stage { background: #000; color: #f5f5f7; padding: 28px; font-family: -apple-system, BlinkMacSystemFont, \"SF Pro Text\", \"SF Pro Display\", system-ui, sans-serif; }\n.ds-job {\n  position: relative;\n  display: block;\n  width: 100%;\n  border-radius: 28px;\n  padding: 20px;\n  text-align: left;\n  background: linear-gradient(180deg, rgba(255, 255, 255, .055), rgba(255, 255, 255, .02)), #141416;\n  box-shadow: 0 0 0 1px rgba(255, 255, 255, .10) inset, 0 1px 0 rgba(255, 255, 255, .06) inset;\n  font-family: -apple-system, BlinkMacSystemFont, \"SF Pro Text\", \"SF Pro Display\", system-ui, sans-serif;\n  color: #f5f5f7;\n}\n.ds-job-row { display: flex; align-items: center; gap: 10px; }\n.ds-job h2 { margin: 0; flex: 1; font-size: 1.65rem; line-height: 1.2; letter-spacing: -.03em; font-weight: 700; }\n.ds-min { margin-left: auto; color: rgba(235, 235, 245, .48); font-size: 13px; font-variant-numeric: tabular-nums; }\n.ds-sub { color: rgba(235, 235, 245, .72); font-size: .88rem; line-height: 1.35; margin: 4px 0 0; }\n.ds-meta { color: rgba(235, 235, 245, .48); font-size: 13px; line-height: 1.35; margin: 0; }\n.ds-live {\n  width: 8px; height: 8px; border-radius: 50%; background: #30d158; flex: 0 0 auto;\n  box-shadow: 0 0 0 0 rgba(48, 209, 88, .55);\n  animation: ds-pulse 1.8s ease-out infinite;\n}\n.ds-rail { display: grid; grid-template-columns: repeat(7, 1fr); gap: 4px; height: 6px; margin: 14px 0 10px; }\n.ds-rail i { border-radius: 3px; background: rgba(255, 255, 255, .14); position: relative; overflow: hidden; }\n.ds-rail i.done { background: #f5f5f7; }\n.ds-rail i.now::after {\n  content: \"\";\n  position: absolute;\n  inset: 0;\n  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, .95), transparent);\n  transform: translateX(-100%);\n  animation: ds-sweep 1.6s linear infinite;\n}\n@keyframes ds-pulse {\n  70% { box-shadow: 0 0 0 8px rgba(48, 209, 88, 0); }\n  100% { box-shadow: 0 0 0 0 rgba(48, 209, 88, 0); }\n}\n@keyframes ds-sweep { to { transform: translateX(100%); } }\n@media (prefers-reduced-motion: reduce) {\n  .ds-live, .ds-rail i.now::after { animation: none; }\n}"
+    },
+    {
+      "name": "Field",
+      "kind": "input",
+      "refersTo": "field",
+      "description": "16px type on a dark field with a strong hairline, so the phone does not zoom.",
+      "html": "<div class=\"ds-stage\"><label class=\"ds-label\" for=\"ds-cartella\">Cartella</label><input class=\"ds-field\" id=\"ds-cartella\" placeholder=\"Nome cartella\"></div>",
+      "css": ".ds-stage { background: #000; color: #f5f5f7; padding: 28px; font-family: -apple-system, BlinkMacSystemFont, \"SF Pro Text\", \"SF Pro Display\", system-ui, sans-serif; }\n.ds-label { display: block; color: rgba(235, 235, 245, .72); font-size: 13px; font-weight: 600; margin: 0 0 6px; font-family: -apple-system, BlinkMacSystemFont, \"SF Pro Text\", \"SF Pro Display\", system-ui, sans-serif; }\n.ds-field {\n  width: 100%;\n  border-radius: 16px;\n  border: 1px solid rgba(255, 255, 255, .18);\n  background: rgba(0, 0, 0, .35);\n  color: #f5f5f7;\n  caret-color: #fff;\n  padding: 14px 16px;\n  font-family: -apple-system, BlinkMacSystemFont, \"SF Pro Text\", \"SF Pro Display\", system-ui, sans-serif;\n  font-size: 16px;\n  font-weight: 400;\n}\n.ds-field::placeholder { color: rgba(235, 235, 245, .48); }\n.ds-field:hover { filter: brightness(1.06); }\n.ds-field:focus-visible { outline: 2px solid #fff; outline-offset: 3px; }"
+    },
+    {
+      "name": "Network Chip",
+      "kind": "chip",
+      "refersTo": "chip-network",
+      "description": "Graphite pill for the connection, Dati or Wi-Fi, at a 44px target.",
+      "html": "<div class=\"ds-stage\"><button class=\"ds-chip\" type=\"button\"><svg viewBox=\"0 0 24 24\" width=\"16\" height=\"16\" aria-hidden=\"true\"><path d=\"M4.5 12a10 10 0 0 1 15 0\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.75\" stroke-linecap=\"round\" stroke-linejoin=\"round\"/><path d=\"M8 15.2a5.5 5.5 0 0 1 8 0\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.75\" stroke-linecap=\"round\" stroke-linejoin=\"round\"/><circle cx=\"12\" cy=\"18.2\" r=\"1\" fill=\"currentColor\" stroke=\"none\"/></svg><span>Wi-Fi</span></button></div>",
+      "css": ".ds-stage { background: #000; color: #f5f5f7; padding: 28px; font-family: -apple-system, BlinkMacSystemFont, \"SF Pro Text\", \"SF Pro Display\", system-ui, sans-serif; }\n.ds-chip {\n  min-height: 44px;\n  padding: 0 12px;\n  border-radius: 999px;\n  border: 1px solid rgba(255, 255, 255, .18);\n  background: #141416;\n  color: #f5f5f7;\n  display: inline-flex;\n  align-items: center;\n  gap: 6px;\n  font-family: -apple-system, BlinkMacSystemFont, \"SF Pro Text\", \"SF Pro Display\", system-ui, sans-serif;\n  font-size: 13px;\n  font-weight: 600;\n  cursor: pointer;\n}\n.ds-chip:hover { filter: brightness(1.08); }\n.ds-chip:active { transform: scale(.97); }\n.ds-chip:focus-visible { outline: 2px solid #fff; outline-offset: 3px; }"
+    },
+    {
+      "name": "Dock",
+      "kind": "nav",
+      "refersTo": "tab-current",
+      "description": "The floating glass pill. The current section is a white wash; the orb sits outside it.",
+      "html": "<div class=\"ds-stage\"><nav class=\"ds-dock\" aria-label=\"Sezioni\"><button class=\"ds-tab is-current\" type=\"button\"><svg viewBox=\"0 0 24 24\" width=\"24\" height=\"24\" aria-hidden=\"true\"><rect x=\"3.5\" y=\"4\" width=\"17\" height=\"16\" rx=\"2\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.75\" stroke-linecap=\"round\" stroke-linejoin=\"round\"/><path d=\"M8 4v3.2M12 4v3.2M16 4v3.2M8 16.8V20M12 16.8V20M16 16.8V20\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.75\" stroke-linecap=\"round\" stroke-linejoin=\"round\"/></svg><span>Oggi</span></button><button class=\"ds-tab\" type=\"button\"><svg viewBox=\"0 0 24 24\" width=\"24\" height=\"24\" aria-hidden=\"true\"><rect x=\"3\" y=\"3\" width=\"7\" height=\"7\" rx=\"1.5\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.75\" stroke-linecap=\"round\" stroke-linejoin=\"round\"/><rect x=\"14\" y=\"3\" width=\"7\" height=\"7\" rx=\"1.5\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.75\" stroke-linecap=\"round\" stroke-linejoin=\"round\"/><rect x=\"3\" y=\"14\" width=\"7\" height=\"7\" rx=\"1.5\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.75\" stroke-linecap=\"round\" stroke-linejoin=\"round\"/><rect x=\"14\" y=\"14\" width=\"7\" height=\"7\" rx=\"1.5\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.75\" stroke-linecap=\"round\" stroke-linejoin=\"round\"/></svg><span>Video</span></button><button class=\"ds-tab\" type=\"button\"><svg viewBox=\"0 0 24 24\" width=\"24\" height=\"24\" aria-hidden=\"true\"><path d=\"M4 8h16M4 16h16\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.75\" stroke-linecap=\"round\" stroke-linejoin=\"round\"/><circle cx=\"9\" cy=\"8\" r=\"2.2\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.75\" stroke-linecap=\"round\" stroke-linejoin=\"round\"/><circle cx=\"15\" cy=\"16\" r=\"2.2\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.75\" stroke-linecap=\"round\" stroke-linejoin=\"round\"/></svg><span>Altro</span></button></nav></div>",
+      "css": ".ds-stage { background: #000; color: #f5f5f7; padding: 28px; font-family: -apple-system, BlinkMacSystemFont, \"SF Pro Text\", \"SF Pro Display\", system-ui, sans-serif; }\n.ds-stage { display: flex; justify-content: center; }\n.ds-dock {\n  position: relative;\n  isolation: isolate;\n  background: transparent;\n  color: #f5f5f7;\n  font-family: -apple-system, BlinkMacSystemFont, \"SF Pro Text\", \"SF Pro Display\", system-ui, sans-serif;\n  box-shadow: 0 10px 30px rgba(0, 0, 0, .45), 0 1px 0 rgba(255, 255, 255, .04) inset;\n}\n.ds-dock::before {\n  content: \"\";\n  position: absolute;\n  inset: 0;\n  z-index: -2;\n  border-radius: inherit;\n  pointer-events: none;\n  background: linear-gradient(180deg, rgba(255, 255, 255, .07), rgba(255, 255, 255, .02)), rgba(28, 28, 30, .46);\n  -webkit-backdrop-filter: blur(18px) saturate(170%) brightness(1.06);\n  backdrop-filter: blur(18px) saturate(170%) brightness(1.06);\n}\n.ds-dock::after {\n  content: \"\";\n  position: absolute;\n  inset: 0;\n  z-index: -1;\n  border-radius: inherit;\n  pointer-events: none;\n  padding: 1px;\n  background: linear-gradient(140deg, rgba(255, 255, 255, .34), transparent 28%, transparent 68%, rgba(255, 255, 255, .08));\n  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);\n  -webkit-mask-composite: xor;\n  mask: linear-gradient(#000 0 0) content-box exclude, linear-gradient(#000 0 0);\n}\n@supports not ((-webkit-backdrop-filter: blur(1px)) or (backdrop-filter: blur(1px))) {\n  .ds-dock::before { -webkit-backdrop-filter: none; backdrop-filter: none; background: rgba(28, 28, 30, .94); }\n}\n.ds-dock {\n  display: flex;\n  gap: 2px;\n  height: 64px;\n  padding: 6px;\n  border-radius: 999px;\n  width: min(100%, 300px);\n}\n.ds-tab {\n  position: relative;\n  flex: 1;\n  min-width: 44px;\n  min-height: 44px;\n  display: grid;\n  place-items: center;\n  align-content: center;\n  gap: 1px;\n  border: 0;\n  background: transparent;\n  color: rgba(235, 235, 245, .72);\n  border-radius: 999px;\n  font-family: -apple-system, BlinkMacSystemFont, \"SF Pro Text\", \"SF Pro Display\", system-ui, sans-serif;\n  font-weight: 600;\n  font-size: 10.5px;\n  line-height: 1;\n  letter-spacing: .01em;\n  cursor: pointer;\n}\n.ds-tab svg { width: 24px; height: 24px; }\n.ds-tab:hover { color: rgba(235, 235, 245, .92); }\n.ds-tab.is-current { color: #f5f5f7; background: rgba(255, 255, 255, .12); box-shadow: 0 0 0 1px rgba(255, 255, 255, .18) inset; }\n.ds-tab:focus-visible { outline: 2px solid #fff; outline-offset: 3px; }"
+    },
+    {
+      "name": "Carica Orb",
+      "kind": "button",
+      "refersTo": "orb",
+      "description": "The white upload orb beside the dock. Ink fill, black plus, soft shadow.",
+      "html": "<div class=\"ds-stage\"><button class=\"ds-orb\" type=\"button\" aria-label=\"Carica\"><svg viewBox=\"0 0 24 24\" width=\"28\" height=\"28\" aria-hidden=\"true\"><path d=\"M12 5v14M5 12h14\" fill=\"none\" stroke=\"#000\" stroke-width=\"2.2\" stroke-linecap=\"round\"/></svg></button></div>",
+      "css": ".ds-stage { background: #000; color: #f5f5f7; padding: 28px; font-family: -apple-system, BlinkMacSystemFont, \"SF Pro Text\", \"SF Pro Display\", system-ui, sans-serif; }\n.ds-orb {\n  width: 64px;\n  height: 64px;\n  border-radius: 50%;\n  border: 0;\n  display: grid;\n  place-items: center;\n  color: #000;\n  background: #f5f5f7;\n  box-shadow: 0 8px 24px rgba(0, 0, 0, .5), 0 1px 0 rgba(255, 255, 255, .7) inset;\n  cursor: pointer;\n  transition: transform .59s linear(0, .033, .116, .227, .351, .476, .593, .699, .789, .864, .923, .968, 1.001, 1.023, 1.037, 1.044, 1.046, 1.045, 1.041, 1.036, 1.03, 1.024, 1.019, 1.014, 1.01, 1.006, 1.004, 1);\n}\n.ds-orb:hover { filter: brightness(.97); }\n.ds-orb:active { transform: scale(.92); transition-duration: .12s; transition-timing-function: ease-out; }\n.ds-orb:focus-visible { outline: 2px solid #fff; outline-offset: 3px; }"
+    },
+    {
+      "name": "Sheet",
+      "kind": "custom",
+      "refersTo": "sheet",
+      "description": "Glass sheet at 36px. The action bar is opaque so the primary stays readable.",
+      "html": "<div class=\"ds-stage\"><div class=\"ds-sheet\" role=\"dialog\" aria-label=\"Montaggio\"><div class=\"ds-grab\"></div><div class=\"ds-sheet-head\"><h2>Montaggio</h2><button class=\"ds-icon\" type=\"button\" aria-label=\"Chiudi\"><svg viewBox=\"0 0 24 24\" width=\"22\" height=\"22\" aria-hidden=\"true\"><path d=\"M6 6l12 12M18 6 6 18\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.75\" stroke-linecap=\"round\" stroke-linejoin=\"round\"/></svg></button></div><div class=\"ds-sheet-body\"><p>Niente parte finché non tocchi Avvia montaggio.</p></div><div class=\"ds-sheet-bar\"><button class=\"ds-btn-primary\" type=\"button\">Avvia montaggio</button></div></div></div>",
+      "css": ".ds-stage { background: #000; color: #f5f5f7; padding: 28px; font-family: -apple-system, BlinkMacSystemFont, \"SF Pro Text\", \"SF Pro Display\", system-ui, sans-serif; }\n.ds-sheet {\n  position: relative;\n  isolation: isolate;\n  background: transparent;\n  color: #f5f5f7;\n  font-family: -apple-system, BlinkMacSystemFont, \"SF Pro Text\", \"SF Pro Display\", system-ui, sans-serif;\n  box-shadow: 0 10px 30px rgba(0, 0, 0, .45), 0 1px 0 rgba(255, 255, 255, .04) inset;\n}\n.ds-sheet::before {\n  content: \"\";\n  position: absolute;\n  inset: 0;\n  z-index: -2;\n  border-radius: inherit;\n  pointer-events: none;\n  background: linear-gradient(180deg, rgba(255, 255, 255, .07), rgba(255, 255, 255, .02)), rgba(24, 24, 26, .72);\n  -webkit-backdrop-filter: blur(28px) saturate(170%) brightness(1.06);\n  backdrop-filter: blur(28px) saturate(170%) brightness(1.06);\n}\n.ds-sheet::after {\n  content: \"\";\n  position: absolute;\n  inset: 0;\n  z-index: -1;\n  border-radius: inherit;\n  pointer-events: none;\n  padding: 1px;\n  background: linear-gradient(140deg, rgba(255, 255, 255, .34), transparent 28%, transparent 68%, rgba(255, 255, 255, .08));\n  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);\n  -webkit-mask-composite: xor;\n  mask: linear-gradient(#000 0 0) content-box exclude, linear-gradient(#000 0 0);\n}\n@supports not ((-webkit-backdrop-filter: blur(1px)) or (backdrop-filter: blur(1px))) {\n  .ds-sheet::before { -webkit-backdrop-filter: none; backdrop-filter: none; background: rgba(28, 28, 30, .94); }\n}\n.ds-sheet { width: min(100%, 460px); border-radius: 36px; display: flex; flex-direction: column; margin: 0 auto; }\n.ds-grab { width: 36px; height: 5px; border-radius: 3px; background: rgba(255, 255, 255, .28); margin: 8px auto 4px; }\n.ds-sheet-head { display: flex; align-items: center; min-height: 44px; padding: 0 8px 0 20px; }\n.ds-sheet-head h2 { font-size: 1.3rem; letter-spacing: -.02em; margin: 0; font-weight: 700; }\n.ds-icon { width: 44px; height: 44px; margin-left: auto; border: 0; border-radius: 50%; background: transparent; color: #f5f5f7; display: grid; place-items: center; cursor: pointer; }\n.ds-sheet-body { padding: 4px 20px 12px; color: rgba(235, 235, 245, .72); font-size: 13px; line-height: 1.4; }\n.ds-sheet-body p { margin: 0; }\n.ds-sheet-bar { padding: 10px 16px; background: rgba(18, 18, 20, .96); box-shadow: 0 -1px 0 rgba(255, 255, 255, .10); border-radius: 0 0 36px 36px; }\n.ds-btn-primary { appearance: none; width: 100%; min-height: 52px; padding: 0 22px; border: 0; border-radius: 999px; background: #f5f5f7; color: #000; font-family: -apple-system, BlinkMacSystemFont, \"SF Pro Text\", \"SF Pro Display\", system-ui, sans-serif; font-weight: 600; font-size: 1rem; cursor: pointer; }\n.ds-btn-primary:hover { filter: brightness(.97); }\n.ds-btn-primary:active { transform: scale(.97); }\n.ds-btn-primary:focus-visible { outline: 2px solid #fff; outline-offset: 3px; }\n.ds-icon:focus-visible { outline: 2px solid #fff; outline-offset: 3px; }"
+    },
+    {
+      "name": "Composer",
+      "kind": "custom",
+      "refersTo": "composer",
+      "description": "Glass correction composer. The field inside it is opaque.",
+      "html": "<div class=\"ds-stage\"><form class=\"ds-composer\"><div class=\"ds-ideas\"><button type=\"button\" class=\"ds-idea\">Più corto</button><button type=\"button\" class=\"ds-idea\">Taglia l’inizio</button></div><div class=\"ds-composer-row\"><input aria-label=\"Cosa cambio?\" placeholder=\"Cosa cambio?\"><button class=\"ds-send\" type=\"submit\" aria-label=\"Invia correzione\"><svg viewBox=\"0 0 24 24\" width=\"20\" height=\"20\" aria-hidden=\"true\"><path d=\"M4 12h14M13 6.5 18.5 12 13 17.5\" fill=\"none\" stroke=\"#000\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\"/></svg></button></div></form></div>",
+      "css": ".ds-stage { background: #000; color: #f5f5f7; padding: 28px; font-family: -apple-system, BlinkMacSystemFont, \"SF Pro Text\", \"SF Pro Display\", system-ui, sans-serif; }\n.ds-composer {\n  position: relative;\n  isolation: isolate;\n  background: transparent;\n  color: #f5f5f7;\n  font-family: -apple-system, BlinkMacSystemFont, \"SF Pro Text\", \"SF Pro Display\", system-ui, sans-serif;\n  box-shadow: 0 10px 30px rgba(0, 0, 0, .45), 0 1px 0 rgba(255, 255, 255, .04) inset;\n}\n.ds-composer::before {\n  content: \"\";\n  position: absolute;\n  inset: 0;\n  z-index: -2;\n  border-radius: inherit;\n  pointer-events: none;\n  background: linear-gradient(180deg, rgba(255, 255, 255, .07), rgba(255, 255, 255, .02)), rgba(22, 22, 24, .78);\n  -webkit-backdrop-filter: blur(22px) saturate(170%) brightness(1.06);\n  backdrop-filter: blur(22px) saturate(170%) brightness(1.06);\n}\n.ds-composer::after {\n  content: \"\";\n  position: absolute;\n  inset: 0;\n  z-index: -1;\n  border-radius: inherit;\n  pointer-events: none;\n  padding: 1px;\n  background: linear-gradient(140deg, rgba(255, 255, 255, .34), transparent 28%, transparent 68%, rgba(255, 255, 255, .08));\n  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);\n  -webkit-mask-composite: xor;\n  mask: linear-gradient(#000 0 0) content-box exclude, linear-gradient(#000 0 0);\n}\n@supports not ((-webkit-backdrop-filter: blur(1px)) or (backdrop-filter: blur(1px))) {\n  .ds-composer::before { -webkit-backdrop-filter: none; backdrop-filter: none; background: rgba(28, 28, 30, .94); }\n}\n.ds-composer { border-radius: 28px; padding: 10px 12px; width: min(100%, 480px); margin: 0 auto; }\n.ds-ideas { display: flex; gap: 8px; margin-bottom: 8px; }\n.ds-idea { flex: none; min-height: 44px; padding: 0 14px; border-radius: 999px; border: 1px solid rgba(255, 255, 255, .18); background: rgba(20, 20, 22, .9); color: #f5f5f7; font-family: -apple-system, BlinkMacSystemFont, \"SF Pro Text\", \"SF Pro Display\", system-ui, sans-serif; font-size: 13px; font-weight: 600; cursor: pointer; }\n.ds-idea:hover { filter: brightness(1.08); }\n.ds-composer-row { display: flex; gap: 8px; align-items: flex-end; }\n.ds-composer-row input { flex: 1; margin: 0; min-height: 48px; border-radius: 999px; background: rgba(28, 28, 30, .94); box-shadow: 0 0 0 1px rgba(255, 255, 255, .18) inset, 0 10px 30px rgba(0, 0, 0, .35); border: 0; padding: 12px 16px; color: #f5f5f7; caret-color: #fff; font-family: -apple-system, BlinkMacSystemFont, \"SF Pro Text\", \"SF Pro Display\", system-ui, sans-serif; font-size: 16px; }\n.ds-composer-row input::placeholder { color: rgba(235, 235, 245, .48); }\n.ds-composer-row input:focus-visible { outline: 2px solid #fff; outline-offset: 3px; }\n.ds-send { width: 48px; height: 48px; flex: none; border: 0; border-radius: 50%; background: #f5f5f7; color: #000; display: grid; place-items: center; cursor: pointer; }\n.ds-send:hover { filter: brightness(.97); }\n.ds-send:active { transform: scale(.97); }\n.ds-send:focus-visible { outline: 2px solid #fff; outline-offset: 3px; }\n.ds-idea:focus-visible { outline: 2px solid #fff; outline-offset: 3px; }"
+    },
+    {
+      "name": "Toast",
+      "kind": "custom",
+      "refersTo": "toast",
+      "description": "A glass pill under the top safe area.",
+      "html": "<div class=\"ds-stage\"><div class=\"ds-toast\" role=\"status\">Avviato. Lo vedi in Oggi.</div></div>",
+      "css": ".ds-stage { background: #000; color: #f5f5f7; padding: 28px; font-family: -apple-system, BlinkMacSystemFont, \"SF Pro Text\", \"SF Pro Display\", system-ui, sans-serif; }\n.ds-stage { display: flex; justify-content: center; }\n.ds-toast {\n  position: relative;\n  isolation: isolate;\n  background: transparent;\n  color: #f5f5f7;\n  font-family: -apple-system, BlinkMacSystemFont, \"SF Pro Text\", \"SF Pro Display\", system-ui, sans-serif;\n  box-shadow: 0 10px 30px rgba(0, 0, 0, .45), 0 1px 0 rgba(255, 255, 255, .04) inset;\n}\n.ds-toast::before {\n  content: \"\";\n  position: absolute;\n  inset: 0;\n  z-index: -2;\n  border-radius: inherit;\n  pointer-events: none;\n  background: linear-gradient(180deg, rgba(255, 255, 255, .07), rgba(255, 255, 255, .02)), rgba(28, 28, 30, .46);\n  -webkit-backdrop-filter: blur(18px) saturate(170%) brightness(1.06);\n  backdrop-filter: blur(18px) saturate(170%) brightness(1.06);\n}\n.ds-toast::after {\n  content: \"\";\n  position: absolute;\n  inset: 0;\n  z-index: -1;\n  border-radius: inherit;\n  pointer-events: none;\n  padding: 1px;\n  background: linear-gradient(140deg, rgba(255, 255, 255, .34), transparent 28%, transparent 68%, rgba(255, 255, 255, .08));\n  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);\n  -webkit-mask-composite: xor;\n  mask: linear-gradient(#000 0 0) content-box exclude, linear-gradient(#000 0 0);\n}\n@supports not ((-webkit-backdrop-filter: blur(1px)) or (backdrop-filter: blur(1px))) {\n  .ds-toast::before { -webkit-backdrop-filter: none; backdrop-filter: none; background: rgba(28, 28, 30, .94); }\n}\n.ds-toast { border-radius: 999px; padding: 12px 16px; text-align: center; width: min(100%, 420px); font-size: 1rem; line-height: 1.41; }"
+    }
+  ],
+  "narrative": {
+    "northStar": "Vetro Nero",
+    "overview": "Vetro Nero is the remote on a black phone. One job occupies the screen, one white action advances it, and the content under that action stays opaque graphite. The shell is iOS navigation: a large title that collapses into a solid bar, a floating section pill, a sheet, and a white primary. The world supplies the palette, the density, the system face, and the film rail.\n\nInk white is the only action color. It fills the primary button, the Carica orb, a selected segment, and every rail segment that is already done. Live green, amber, and fault red report state. A job that is actually running is marked by two signatures together: an 8px green live dot that pulses outward, and a light sweep across the current segment of a seven-segment rail. Done segments are solid ink. Warn and error dots stay still. Those two motions belong to a running job.\n\nGlass is a material with four addresses: the dock pill, the sheet, the toast, and the correction composer. Each one is a graphite tint, a blur, and a 1px specular rim. Cards, rows, posters, and the collapsed title bar are opaque. When blur is missing, reduced, or switched off, glass becomes solid graphite. The root type size is 17px. Copy is Italian and sentence case, in the system face.",
+    "keyCharacteristics": [
+      "Black ground, graphite cards, ink white as the only action fill",
+      "Glass only on the dock pill, the sheet, the toast, and the composer, going solid when blur fails",
+      "System face, from a 2rem title to a 13px label",
+      "Seven-segment film rail and a pulsing live dot only while a job runs",
+      "One phone column, pill controls, 44px targets, hairline depth on content"
+    ],
+    "rules": [
+      {
+        "name": "The White Action Rule",
+        "body": "Ink white is the only action fill. Live green, amber, and fault red report state. They do not fill a primary button.",
+        "section": "colors"
+      },
+      {
+        "name": "The Opaque Card Rule",
+        "body": "A card is an opaque graphite fill, a faint top wash, and a hairline. Backdrop-filter stays on the floating glass.",
+        "section": "colors"
+      },
+      {
+        "name": "The System Face Rule",
+        "body": "Every role uses the system stack. Titles are sentence case and tracked tight.",
+        "section": "typography"
+      },
+      {
+        "name": "The Tabular Measure Rule",
+        "body": "Percents, bytes, minutes, durations, part counts, and the code field use tabular numerals.",
+        "section": "typography"
+      },
+      {
+        "name": "The Phone Column Rule",
+        "body": "One centered column, at most 480px, at every width. The dock matches it. Sheets stop at 460px.",
+        "section": "layout"
+      },
+      {
+        "name": "The Clearance Rule",
+        "body": "The scrolling view clears the status safe area and the floating dock. Content does not sit under the orb.",
+        "section": "layout"
+      },
+      {
+        "name": "The Floating Glass Rule",
+        "body": "Glass is the dock pill, the sheet, the toast, and the correction composer. Dock blur is 18px, sheet blur is 28px, composer blur is 22px, with saturation 170% and brightness 1.06. If backdrop-filter is missing, transparency is reduced, or glass is set to lite, the surface becomes solid graphite. Increased contrast uses opaque Raised Graphite and drops the blur. The collapsed title bar is solid black.",
+        "section": "elevation"
+      },
+      {
+        "name": "The Hairline Rule",
+        "body": "Content depth is an inset hairline. Soft shadows belong to the orb and the floating glass.",
+        "section": "elevation"
+      },
+      {
+        "name": "The Pill Control Rule",
+        "body": "Action controls are pills. Cards are 28px and sheets are 36px. Fields sit between, at 16px.",
+        "section": "shapes"
+      },
+      {
+        "name": "The Running Job Rule",
+        "body": "A job that is running shows the pulsing green live dot and the sweep on the current segment of the seven-segment rail. Done segments are solid ink. Warn and error dots stay still. Reduced motion and effects-off stop the pulse and the sweep.",
+        "section": "components"
+      },
+      {
+        "name": "The Second Action Rule",
+        "body": "The second button is a 10% white wash with a strong hairline. It does not blur. Danger is fault-red text. Quiet is secondary-label text at 44px.",
+        "section": "components"
+      }
+    ],
+    "dos": [
+      "Do fill a primary action with Label White, a black label, a pill, and a 52px height.",
+      "Do keep cards, rows, posters, and the collapsed title on opaque graphite or black, with a 1px hairline.",
+      "Do limit glass to the dock pill, the sheet, the toast, and the composer, and fall back to solid graphite when blur is unavailable, reduced, or set to lite.",
+      "Do mark a running job with the pulsing live dot and the seven-segment rail, done segments in Label White, the current segment sweeping.",
+      "Do keep targets at least 44px, fields at 16px, and counts, bytes, minutes, and durations in tabular numerals.",
+      "Do set every role in the system stack, titles tracked tight and in sentence case."
+    ],
+    "donts": [
+      "Don't put backdrop-filter on a card, a row, a poster, or anything else inside the scrolling view.",
+      "Don't fill a primary button with live green, amber, or fault red. Those hues report state.",
+      "Don't load a display webfont. Titles stay in the system stack, sentence case, tracked tight.",
+      "Don't use a zero-blur offset shadow. Content depth is the hairline. The orb and the floating glass are the surfaces that cast a soft shadow.",
+      "Don't pulse a poster pip, sweep an idle rail, or play the success disc on a screen where nothing has just finished.",
+      "Don't stand in icons with emoji. Icons are stroked SVGs at 1.75px, round caps; the orb and the success check are 2.2px."
+    ]
+  }
+}
