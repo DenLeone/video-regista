@@ -139,6 +139,7 @@ export function risolviRegia(regia, analisi) {
   }
 
   const clips = [];
+  const iconeDaInserto = []; // icone che l'AI ha messo come inserto: diventano icone su quella frase
   const inizioVoce = []; // per ogni elemento della sequenza: dove inizia sulla timeline finale
   const testo = [];
   const parole = []; // parole del montaggio sulla timeline finale (sottotitoli parola per parola)
@@ -226,7 +227,8 @@ export function risolviRegia(regia, analisi) {
       const img = (analisi.immagini || []).find((x) => baseNome(x.id) === baseNome(nomeIns) || baseNome(x.file) === baseNome(nomeIns));
       const durClip = clip.end - clip.start;
       const b = img ? null : trovaSorgente(nomeIns);
-      if (img) clip.inserto = { file: img.file, tipo: 'immagine', orient: img.orient };
+      if (img?.icona) iconeDaInserto.push({ icona: img.id, frase: it.frase });
+      else if (img) clip.inserto = { file: img.file, tipo: 'immagine', orient: img.orient };
       else if (b && b.tipo === 'video' && b.durata >= durClip) {
         let da = Math.max(0, Number(it.inserto_da) || 0);
         if (da + durClip > b.durata) da = Math.max(0, b.durata - durClip - 0.05);
@@ -320,6 +322,34 @@ export function risolviRegia(regia, analisi) {
   }
   keywords = keywords.filter((k, i) => i === 0 || k.at > keywords[i - 1].at);
 
+  // icone: entrano con bagliore sulla parola in cui Denis nomina l'app o la marca (comune.tsx, Icone).
+  // Tutte quelle caricate vanno usate: se l'AI ne salta una, la cerco io nel parlato dal nome del
+  // file ("VN.png" → "VN"); se non la trovo la metto comunque, in mezzo alle altre, con un avviso
+  const elencoIcone = (analisi.immagini || []).filter((im) => im.icona);
+  const icone = [];
+  const metti = (im, at, dur = 1.8) => { if (!icone.some((x) => x.file === im.file)) icone.push({ file: im.file, at: q(at), dur: q(dur) }); };
+  for (const ic of [...(regia.icone || []), ...iconeDaInserto]) {
+    const im = elencoIcone.find((x) => baseNome(x.id) === baseNome(String(ic.icona || '')) || baseNome(x.file) === baseNome(String(ic.icona || '')));
+    if (!im) { avvisi.push(`icona ${ic.icona}: non c'è tra le immagini, tolta`); continue; }
+    const base = ic.frase ? inizioFrase(ic.frase) : null;
+    if (base == null) { avvisi.push(`icona ${im.id}: frase ${ic.frase || '?'} non usata nel montaggio, la rimetto io`); continue; }
+    const dette = ic.dette ? trovaDette(String(ic.dette), parole, base) : null;
+    metti(im, dette ? Math.max(0, dette.at - 0.15) : base + 0.1);
+  }
+  const mancanti = elencoIcone.filter((im) => !icone.some((x) => x.file === im.file));
+  mancanti.forEach((im, k) => {
+    const nome = paroleDi(im.id.replace(/[_-]+/g, ' ')).filter((w) => w.length >= 2 && !/^(img|icona|icon|logo|\d+)$/.test(w));
+    const detta = nome.length ? parole.find((w) => nome.includes(paroleDi(w.w)[0])) : null;
+    if (detta) { metti(im, Math.max(0, detta.at - 0.15)); return; }
+    avvisi.push(`icona ${im.id}: non ho capito quando la nomini, l'ho messa a metà video (chiamala come l'app, es. "VN.png")`);
+    metti(im, Math.min(totale - 2, (totale * (k + 1)) / (mancanti.length + 1)));
+  });
+  icone.sort((a, b) => a.at - b.at);
+  for (let i = 1; i < icone.length; i++) {
+    const p = icone[i - 1];
+    if (p.at + p.dur > icone[i].at - 0.1) p.dur = q(Math.max(0.8, icone[i].at - p.at - 0.1));
+  }
+
   const flickers = [];
   for (const fl of regia.flickers || []) {
     const i = Number(fl.prima_di) - 1;
@@ -336,6 +366,7 @@ export function risolviRegia(regia, analisi) {
       tavola: regia.tavola || 'TAV. NUOVA',
       soggetto: regia.soggetto || String(analisi.cartella).toUpperCase(),
       clips, keywords, flickers,
+      ...(icone.length ? { icone } : {}),
       sponsor: regia.sponsor || null,
       sponsorAt,
       note: [regia.note, ...avvisi.map((a) => `⚠️ ${a}`)].filter(Boolean).join(' · '),
@@ -541,7 +572,9 @@ export function materialePerAI(analisi) {
     if (s.fogli?.length) parti.push(`fogli: ${s.fogli.join(', ')} (un riquadro ogni ${s.passoFogli} s; tempi ${s.sync || s.principale ? 'nel tempo della voce' : 'della clip, da usare in "da"'})`);
     r.push(parti.join(' · '));
   }
-  for (const im of analisi.immagini || []) r.push(`- **${im.id}** · immagine ${im.orient === 'v' ? 'verticale' : 'orizzontale'} · solo come "inserto"${analisi.foglioImmagini ? ` · foglio: ${analisi.foglioImmagini}` : ''}`);
+  for (const im of analisi.immagini || []) r.push(im.icona
+    ? `- **${im.id}** · ICONA (logo di un'app, di una marca o di un prodotto) · va in \`icone\` sulla parola in cui Denis la nomina, MAI come inserto${analisi.foglioImmagini ? ` · foglio: ${analisi.foglioImmagini}` : ''}`
+    : `- **${im.id}** · immagine ${im.orient === 'v' ? 'verticale' : 'orizzontale'} · solo come "inserto"${analisi.foglioImmagini ? ` · foglio: ${analisi.foglioImmagini}` : ''}`);
   for (const p of analisi.sorgenti.filter((s) => s.principale)) {
     const fr = frasiDi(p.id);
     if (!fr.length) continue;
@@ -575,7 +608,7 @@ export function usaTuttoIlMateriale(regia, analisi) {
   if (!analisi || !Array.isArray(regia?.sequenza)) return regia;
   const propri = [
     ...analisi.sorgenti.filter((s) => s.tipo === 'video' && !s.principale && !s.sync && !s.stock),
-    ...(analisi.immagini || []).map((im) => ({ ...im, immagine: true })),
+    ...(analisi.immagini || []).filter((im) => !im.icona).map((im) => ({ ...im, immagine: true })),
   ];
   if (!propri.length) return regia;
   const sequenza = regia.sequenza.map((it) => ({ ...it }));

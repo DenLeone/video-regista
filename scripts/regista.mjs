@@ -509,8 +509,22 @@ async function tagliaSegmenti(piano, analisi) {
   await pool(lavori, TAGLI_INSIEME);
 }
 
+// icona (logo di un'app o di una marca): PNG con trasparenza, oppure quadrata e piccola. Le icone
+// entrano con bagliore quando Denis le nomina, non come scheda (CapCut, 27/10: "quando carico
+// icone vanno messe sempre", con un glow e un effetto in entrata). Screenshot e foto restano inserti
+function eIcona(file) {
+  try {
+    const j = JSON.parse(run('ffprobe', ['-v', 'error', '-select_streams', 'v:0', '-show_entries', 'stream=width,height,pix_fmt', '-of', 'json', file]));
+    const { width: w, height: h, pix_fmt: pix = '' } = j.streams?.[0] || {};
+    const alfa = /^(rgba|bgra|argb|abgr|ya8|ya16|rgba64|yuva)/.test(pix);
+    const quadrata = w && h && w / h > 0.85 && w / h < 1.18;
+    return (alfa && /\.png$/i.test(file) && quadrata) || (quadrata && Math.max(w, h) <= 1300);
+  } catch { return false; }
+}
+
 // immagini della cartella (screenshot, foto del prodotto): usabili come inserto. Si convertono in
-// JPG in public/media e si fa un foglio provino con il nome di ognuna, da far vedere all'AI
+// JPG in public/media e si fa un foglio provino con il nome di ognuna, da far vedere all'AI.
+// Le icone restano PNG trasparenti (img_<id>.png, 512 px)
 function preparaImmagini(foto) {
   const out = [];
   const dir = path.join(WORK, 'fogli', '_immagini');
@@ -518,12 +532,15 @@ function preparaImmagini(foto) {
   const etichetta = (t) => (FONT ? `,drawtext=fontfile='${FONT.replace(/:/g, '\\:')}':text='${t.replace(/[':\\]/g, ' ')}':x=6:y=6:fontsize=22:fontcolor=white:box=1:boxcolor=black@0.65:boxborderw=4` : '');
   for (const f of foto) {
     const id = path.parse(f).name;
-    const file = `img_${id.replace(/[^\w-]+/g, '_')}.jpg`;
+    const icona = eIcona(path.join(SCARICO, f));
+    const file = `img_${id.replace(/[^\w-]+/g, '_')}.${icona ? 'png' : 'jpg'}`;
     try {
-      run('ffmpeg', ['-y', '-v', 'error', '-i', path.join(SCARICO, f), '-frames:v', '1', '-vf', "scale='min(1600,iw)':-2", '-q:v', '3', path.join(MEDIA, file)]);
+      if (icona) run('ffmpeg', ['-y', '-v', 'error', '-i', path.join(SCARICO, f), '-frames:v', '1', '-vf', 'scale=512:512:force_original_aspect_ratio=decrease', path.join(MEDIA, file)]);
+      else run('ffmpeg', ['-y', '-v', 'error', '-i', path.join(SCARICO, f), '-frames:v', '1', '-vf', "scale='min(1600,iw)':-2", '-q:v', '3', path.join(MEDIA, file)]);
       const info = probe(path.join(MEDIA, file));
-      run('ffmpeg', ['-y', '-v', 'error', '-i', path.join(MEDIA, file), '-vf', `scale=240:426:force_original_aspect_ratio=decrease,pad=240:426:(ow-iw)/2:(oh-ih)/2:black${etichetta(id)}`, '-q:v', '4', path.join(dir, `${String(out.length).padStart(3, '0')}.jpg`)]);
-      out.push({ id, file, orient: info.w > info.h ? 'h' : 'v' });
+      run('ffmpeg', ['-y', '-v', 'error', '-i', path.join(MEDIA, file), '-vf', `scale=240:426:force_original_aspect_ratio=decrease,pad=240:426:(ow-iw)/2:(oh-ih)/2:black${etichetta(icona ? `ICONA ${id}` : id)}`, '-q:v', '4', path.join(dir, `${String(out.length).padStart(3, '0')}.jpg`)]);
+      out.push({ id, file, orient: info.w > info.h ? 'h' : 'v', ...(icona ? { icona: true } : {}) });
+      if (icona) log(`${id}: icona (entra con bagliore quando la nomino)`);
     } catch (e) { log(`immagine ${f} non leggibile (HEIC?): saltata`, e.message.split('\n')[0]); }
   }
   if (!out.length) return { immagini: out, foglio: null };

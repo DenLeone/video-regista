@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { AbsoluteFill, Audio, continueRender, delayRender, Easing, interpolate, Sequence, staticFile, useCurrentFrame } from 'remotion';
-import { Clips, f, Inserti, Ritagli, Sfx, usaFps, volumeSfx } from './comune';
+import { Clips, f, Inserti, Ritagli, Sfx, usaFps, volumeSfx, Icone } from './comune';
 import { gruppiParole } from './Cinematico';
 import { durataTotale, FontStile, GraficaStile, Keyword, Piano, Posizione, W } from './piano';
 import { clamp, dentro, norm, OMBRA, pulisci, RACCORDO, SICURA, stileFont, larghezzaTesto } from './testo';
@@ -408,6 +408,8 @@ export const SuMisura: React.FC<Piano> = (piano) => {
           <ParolaGrande testo={p.testo} len={len(p.at, p.fine)} ultima={p.ultima} g={g} />
         </Sequence>
       ))}
+
+      <Icone piano={piano} sfx={sfx} />
 
       {g.chiusura && totale > CHIUSURA * 2 ? (
         <Sequence from={totale - CHIUSURA} durationInFrames={CHIUSURA}><Chiusura nome={g.chiusura} g={g} /></Sequence>

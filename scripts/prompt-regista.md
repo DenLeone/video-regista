@@ -28,7 +28,7 @@ Prima delle inquadrature costruisci il TESTO. Chi guarda deve capire di cosa par
 - Cambia inquadratura spesso: in media ogni 1–2 frasi; non lasciare più di ~6 s di fila sulla stessa inquadratura (frasi consecutive sulla stessa camera), salvo che lo stile chieda inquadrature lunghe. Se ci sono più camere, alternale (volto ↔ mani/prodotto); quando una frase parla di qualcosa che si vede in un B-roll (il case, l'app, un dettaglio), usa quel B-roll. Con B-roll disponibili, almeno un quarto delle frasi dovrebbe averne uno.
 - **Il volto è l'inquadratura base.** Se una sorgente mostra il volto di Denis ed è usabile come `camera` (voce principale o sincronizzata), almeno metà delle frasi vanno sul volto, compresi l'hook e la chiusura; mani, prodotto e B-roll servono ad alternare e a mostrare la cosa di cui sta parlando in quel momento. Mai più di 2 frasi di fila sulle sole mani. Se il volto c'è ma non è sincronizzato (solo B-roll), scrivilo nella `note`.
 - Non riusare lo stesso momento di B-roll due volte.
-- **Tutti i video e le immagini di Denis vanno usati**, ognuno almeno una volta (B-roll, inserto o stacco): li ha messi nella cartella apposta.
+- **Tutti i video e le immagini di Denis vanno usati**, ognuno almeno una volta (B-roll, inserto o stacco; le icone in `icone`): li ha messi nella cartella apposta.
 - Mai come B-roll sopra la voce un momento in cui si vede qualcuno parlare in camera (bocca che si muove): il labiale non tornerebbe con l'audio. Il volto che parla va solo come `camera`, e solo dove il materiale dice che è sincronizzato; altrimenti scegli momenti in cui la bocca è ferma o non si vede.
 - Inizia con l'inquadratura più forte (volto in camera o prodotto ben visibile) e chiudi sull'inquadratura più "eroica" del prodotto.
 - `punch` (zoom 1,18x) puoi ometterlo: sui jump cut della stessa camera lo script lo alterna da solo.
@@ -39,6 +39,10 @@ Prima delle inquadrature costruisci il TESTO. Chi guarda deve capire di cosa par
 - Sull'elemento della frase: `"inserto": "<id>"` e, per i video, `"inserto_da": <secondi>` letti dal foglio provino; il video deve durare almeno quanto la frase. Le IMMAGINI si usano solo così.
 - Le REGISTRAZIONI DELLO SCHERMO vanno sempre come inserto, mai a tutto schermo.
 - Una scheda per volta: 1–5 inserti in un video, ognuno su 1–3 frasi di fila (stesso file con `inserto_da` consecutivi = la scheda resta e il video prosegue). Mai insieme a una scritta grande o a un titolo.
+
+## Icone (loghi di app, marche, prodotti)
+- Le immagini segnate ICONA nel materiale sono loghi: entrano sopra il video con un bagliore nel momento esatto in cui Denis nomina quella cosa. Vanno usate TUTTE, ognuna una volta, mai come inserto.
+- Guarda il foglio delle immagini per capire di cosa è ognuna (il nome del file spesso non lo dice) e mettila sulla frase in cui Denis la nomina: `{ "icona": "<id>", "frase": "F007", "dette": "Edits" }`, con `dette` = la parola (o le 2–3 parole) ESATTE con cui la nomina, copiate dalla trascrizione.
 
 ## Senza parlato (solo B-roll)
 - Di solito Denis registra la voce dopo, sopra al video finito: l'audio delle clip lo toglie lo script (tienilo solo se il brief lo chiede, con `"audio": "ambiente"` sull'elemento).
@@ -79,6 +83,7 @@ Prima delle inquadrature costruisci il TESTO. Chi guarda deve capire di cosa par
   "keywords": [
     { "frase": "F014", "ritardo": 0.2, "dur": 2.4, "word": "ANC A 35€", "note": "// sì, davvero", "tag": "A-01", "filled": false, "top": 1330 }
   ],
+  "icone": [ { "icona": "IMG_9458", "frase": "F021", "dette": "app Anker" } ],
   "flickers": [ { "prima_di": 3, "seed": 3, "tear": false } ],
   "sponsor": null,
   "sponsorFrase": null,

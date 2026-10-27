@@ -48,6 +48,8 @@ export type Piano = {
   clips: Clip[];
   keywords: Keyword[];
   flickers: Flicker[];
+  // loghi di app e marche (PNG trasparenti in public/media) che entrano con bagliore quando Denis li nomina
+  icone?: { file: string; at: number; dur: number }[];
   sponsor?: { material: string; test: string } | null;
   sponsorAt?: number;       // da quando mostrare il cartiglio
   note?: string;            // dubbi/scelte di Claude, finiscono in NOTE.txt

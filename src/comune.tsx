@@ -227,3 +227,51 @@ export const Ritagli: React.FC<{ piano: Piano; filtro?: string }> = ({ piano, fi
     </>
   );
 };
+
+// ---------- icone ----------
+// loghi di app e marche (CapCut, 27/10: "vanno usate con un glow e un effetto in entrata quando la
+// nomino"): l'icona entra a scatto (scala con rimbalzo, sfocatura che si scioglie, mezzo giro),
+// un anello di luce si allarga, poi resta ferma con un bagliore che pulsa piano ed esce sfumando.
+// Nel terzo alto, sopra la testa, dentro la zona sicura di TikTok
+const IconaView: React.FC<{ file: string; len: number }> = ({ file, len }) => {
+  const fr = useCurrentFrame();
+  const entra = interpolate(fr, [0, 12], [0, 1], { extrapolateLeft: 'clamp', extrapolateRight: 'clamp', easing: Easing.out(Easing.back(1.8)) });
+  const v = interpolate(fr, [0, 7], [0, 1], { extrapolateLeft: 'clamp', extrapolateRight: 'clamp' });
+  const esce = interpolate(fr, [len - 6, len], [0, 1], { extrapolateLeft: 'clamp', extrapolateRight: 'clamp' });
+  const anello = interpolate(fr, [2, 18], [0, 1], { extrapolateLeft: 'clamp', extrapolateRight: 'clamp', easing: Easing.out(Easing.cubic) });
+  const pulsa = 0.6 + 0.2 * Math.sin(fr / 6);
+  // sopra la testa: nei talking head gli occhi stanno a ~35–40% dell'altezza (670–770 px)
+  const lato = 260;
+  const cy = 440;
+  const scala = (0.3 + 0.7 * entra) * (1 - 0.15 * esce);
+  return (
+    <AbsoluteFill style={{ opacity: v * (1 - esce) }}>
+      {/* alone dietro l'icona */}
+      <div style={{ position: 'absolute', left: 540 - lato, top: cy - lato, width: lato * 2, height: lato * 2, borderRadius: '50%',
+        background: `radial-gradient(circle, rgba(255,255,255,${(0.8 * pulsa).toFixed(3)}) 0%, rgba(255,255,255,0.22) 40%, rgba(255,255,255,0) 68%)`,
+        transform: `scale(${scala})` }} />
+      {/* anello di luce all'entrata */}
+      <div style={{ position: 'absolute', left: 540 - lato / 2, top: cy - lato / 2, width: lato, height: lato, borderRadius: '50%',
+        border: '6px solid rgba(255,255,255,0.9)', boxShadow: '0 0 30px rgba(255,255,255,0.8)',
+        opacity: (1 - anello) * 0.9, transform: `scale(${0.8 + anello * 1.1})` }} />
+      <Img src={staticFile(`media/${file}`)} style={{ position: 'absolute', left: 540 - lato / 2, top: cy - lato / 2 + Math.sin(fr / 14) * 6, width: lato, height: lato,
+        objectFit: 'contain', borderRadius: '22%',
+        filter: `blur(${((1 - entra) * 14 + esce * 8).toFixed(2)}px) drop-shadow(0 0 ${Math.round(30 + 24 * pulsa)}px rgba(255,255,255,${(0.95 * pulsa).toFixed(3)})) drop-shadow(0 10px 24px rgba(0,0,0,0.45))`,
+        transform: `scale(${scala}) rotate(${(-12 * (1 - entra)).toFixed(2)}deg)` }} />
+    </AbsoluteFill>
+  );
+};
+
+export const Icone: React.FC<{ piano: Piano; sfx?: number }> = ({ piano, sfx = 0 }) => (
+  <>
+    {(piano.icone || []).map((ic, i) => {
+      const len = Math.max(8, f(ic.dur));
+      return (
+        <Sequence key={`ic${i}`} from={f(ic.at)} durationInFrames={len}>
+          <IconaView file={ic.file} len={len} />
+          {sfx > 0 ? <Sfx nome="ui_in" da={0} volume={0.5 * sfx} /> : null}
+        </Sequence>
+      );
+    })}
+  </>
+);
