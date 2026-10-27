@@ -5,6 +5,7 @@ import { gruppiParole } from './Cinematico';
 import { durataTotale, FontStile, GraficaStile, Keyword, Piano, Posizione, W } from './piano';
 import { clamp, dentro, norm, OMBRA, pulisci, RACCORDO, SICURA, stileFont, larghezzaTesto } from './testo';
 import { BlocchiMotion, blocchiParlato, Cartello, Firma, Fumi, tagliFumo } from './Motion';
+import { BlocchiUltra, Sfocature } from './Ultra';
 
 // Stile "su misura": tutta la grafica arriva da Drive (Stili/<nome>/stile.txt, letto da
 // scripts/stile-su-misura.mjs) dentro piano.grafica. Nessun codice per uno stile nuovo.
@@ -356,11 +357,12 @@ export const SuMisura: React.FC<Piano> = (piano) => {
   const forti = g.titoli && g.tipoTitoli === 'parole' ? scritte : [];
   const cartelli = g.titoli && g.tipoTitoli === 'cartelli' ? scritte : [];
   // Motion: tutto il parlato a blocchi (le parole chiave dell'AI enormi), tranne dove c'è un cartello
-  const blocchi = g.sottotitoli === 'blocchi' ? blocchiParlato(piano.parole, piano.enfasi, cartelli) : [];
+  const strati = g.sottotitoli === 'strati';
+  const blocchi = g.sottotitoli === 'blocchi' || strati ? blocchiParlato(piano.parole, piano.enfasi, cartelli, strati) : [];
   const grandi = paroleGrandi(piano.parole, forti);
   const dopoApertura = (piano.parole || []).filter((p) => p.at >= fineApertura - 0.01);
   const occupato = [...titoli, ...frasi, ...forti];
-  const pezzi = g.sottotitoli === 'nessuno' || g.sottotitoli === 'blocchi' ? []
+  const pezzi = g.sottotitoli === 'nessuno' || g.sottotitoli === 'blocchi' || strati ? []
     : g.sottotitoli === 'parola' ? gruppiParole(dopoApertura, occupato, Boolean(g.minuscolo))
     : frasiBrevi(dopoApertura).filter((p) => !occupato.some((t) => p.at >= t.at - 0.05 && p.at < t.at + t.dur));
   const m = g.musica;
@@ -384,8 +386,9 @@ export const SuMisura: React.FC<Piano> = (piano) => {
       ))}
       {g.dietro ? <Ritagli piano={piano} filtro={LOOK[g.look]} /> : null}
       <Inserti piano={piano} sfx={sfx} cornice={g.cornice} />
-      {g.fumo ? <Fumi piano={piano} /> : null}
-      <BlocchiMotion blocchi={blocchi} g={g} />
+      {g.fumo && g.transizione !== 'sfocata' ? <Fumi piano={piano} /> : null}
+      {g.fumo && g.transizione === 'sfocata' ? <Sfocature piano={piano} /> : null}
+      {strati ? <BlocchiUltra blocchi={blocchi} g={g} /> : <BlocchiMotion blocchi={blocchi} g={g} />}
       {cartelli.map((k, i) => (
         <Sequence key={`ca${i}`} from={f(k.at)} durationInFrames={Math.max(8, f(k.dur))}>
           <Cartello k={k} len={Math.max(8, f(k.dur))} g={g} />
@@ -424,8 +427,8 @@ export const SuMisura: React.FC<Piano> = (piano) => {
           {frasi.map((k, i) => <Sfx key={`pf${i}`} nome="colpo" da={f(k.at + 0.15)} volume={0.5 * sfx} />)}
           {titoli.map((k, i) => <Sfx key={`st${i}`} nome="whoosh" da={f(k.at) - 6} volume={0.55 * sfx} />)}
           {forti.map((k, i) => <Sfx key={`sg${i}`} nome="whoosh" da={f(k.at) - 5} volume={0.3 * sfx} />)}
-          {blocchi.flatMap((b, i) => b.colpo.map((da, j) => <Sfx key={`mb${i}-${j}`} nome="glitch" da={f(b.at + da)} volume={0.22 * sfx} />))}
-          {g.fumo ? tagliFumo(piano).map((at, i) => <Sfx key={`fu${i}`} nome="whoosh" da={at - 10} volume={0.5 * sfx} />) : null}
+          {blocchi.flatMap((b, i) => b.colpo.map((da, j) => <Sfx key={`mb${i}-${j}`} nome={strati ? 'whoosh' : 'glitch'} da={f(b.at + da) - (strati ? 3 : 0)} volume={(strati ? 0.16 : 0.22) * sfx} />))}
+          {g.fumo ? tagliFumo(piano).map((at, i) => <Sfx key={`fu${i}`} nome="whoosh" da={at - (g.transizione === 'sfocata' ? 6 : 10)} volume={0.5 * sfx} />) : null}
           {cartelli.map((k, i) => <Sfx key={`sc${i}`} nome="whoosh" da={f(k.at) - 4} volume={0.35 * sfx} />)}
           {g.rivela ? <Sfx nome="whoosh" da={RIVELA.inizio - 4} volume={0.4 * sfx} /> : null}
           {g.chiusura && totale > CHIUSURA * 2 ? <Sfx nome="whoosh" da={totale - CHIUSURA - 4} volume={0.35 * sfx} /> : null}

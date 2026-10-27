@@ -75,7 +75,8 @@ export type GraficaStile = {
   fontApertura: FontStile; coloreApertura: string;
   // blocchi = tutto il parlato a blocchi: righe piccole in corsivo parola per parola e le parole
   // chiave enormi davanti al petto (stile Motion)
-  sottotitoli: 'parola' | 'frase' | 'blocchi' | 'nessuno';
+  // strati = come i blocchi ma parole sottili e grandi grassissime in minuscolo, a strati e colori a giro (Ultra)
+  sottotitoli: 'parola' | 'frase' | 'blocchi' | 'strati' | 'nessuno';
   // minuscolo: tutto in minuscolo, punteggiatura compresa (reel tech americani, stile Esplicativo)
   fontSottotitoli: FontStile; coloreSottotitoli: string; maiuscolo: boolean; minuscolo?: boolean; posizione: Posizione; dimensione: number;
   titoli: boolean; fontTitoli: FontStile; coloreTitoli: string; accento: string; posTitoli: Posizione;
@@ -86,6 +87,8 @@ export type GraficaStile = {
   tipoTitoli: 'titoli' | 'frasi' | 'parole' | 'cartelli';
   entrata?: 'sfocata' | 'scramble';          // come entrano le parole grandi: scramble = lettere a caso che si fissano
   fumo?: boolean;                            // transizioni a nuvola di fumo sui cambi di scena scelti dall'AI
+  transizione?: 'fumo' | 'sfocata';          // sfocata = scia sfocata veloce sul taglio (Ultra); senza, fumo
+  palette?: string[];                        // colori a giro delle parole grandi (sottotitoli a strati)
   firma?: string;                            // logo Instagram e nome (es. @_black_den) fissi in basso a sinistra
   cornice?: 'scheda' | 'tv';                 // inserti: scheda arrotondata o televisore anni '70
   stock?: boolean;                           // l'AI può chiedere B-roll di repertorio (Pixabay o Pexels, se c'è la chiave)

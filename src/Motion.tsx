@@ -53,7 +53,9 @@ function segnaGrandi(parole: { w: string; at: number }[], enfasi: string[]): boo
 // il parlato a blocchi: si va a capo su pause e punteggiatura, dopo le parole grandi (chiudono il
 // blocco, come "Dopo questa estate si è / DIMESSO") o quando le righe piccole sarebbero più di due.
 // `salta`: i momenti coperti dai cartelli
-export function blocchiParlato(parole: Piano['parole'] = [], enfasi: string[] = [], salta: { at: number; dur: number }[] = []): BloccoM[] {
+// `strati` (Ultra): il blocco continua anche dopo una parola grande ("You / KNOW / that agent"),
+// fino a 4 righe, come negli esempi; si chiude su pause e punteggiatura
+export function blocchiParlato(parole: Piano['parole'] = [], enfasi: string[] = [], salta: { at: number; dur: number }[] = [], strati = false): BloccoM[] {
   const usate = parole.filter((p) => !salta.some((s) => p.at >= s.at - 0.05 && p.at < s.at + s.dur));
   const grande = segnaGrandi(usate, enfasi);
   const blocchi: (BloccoM & { ultimo: number })[] = [];
@@ -67,10 +69,12 @@ export function blocchiParlato(parole: Piano['parole'] = [], enfasi: string[] = 
     const lungo = (r?: RigaM) => (r ? r.parole.map((x) => x.w).join(' ').length : 0);
     const nuovo = !cur || !prima
       || p.at - (prima.at + prima.dur) > 0.35 || /[.,;:!?…]$/.test(prima.w)
-      || (riga?.tipo === 'grande' && tipo === 'piccolo')
+      || (strati && riga?.tipo !== tipo && cur.righe.length >= 4)
+      || (strati && cur.righe.filter((r) => r.tipo === 'grande').length >= 2 && tipo === 'grande' && riga?.tipo !== 'grande')
+      || (!strati && riga?.tipo === 'grande' && tipo === 'piccolo')
       || (riga?.tipo === 'grande' && tipo === 'grande' && lungo(riga) + w.length + 1 > MAX_GRANDE)
       || (tipo === 'piccolo' && riga?.tipo === 'piccolo' && lungo(riga) + w.length + 1 > MAX_PICCOLA && cur.righe.length >= 2)
-      || cur.righe.some((r) => r.tipo === 'grande') && tipo === 'grande' && riga?.tipo !== 'grande';
+      || (!strati && cur.righe.some((r) => r.tipo === 'grande') && tipo === 'grande' && riga?.tipo !== 'grande');
     if (nuovo) {
       blocchi.push({ at: p.at, fine: p.at + p.dur, righe: [{ tipo, parole: [{ w, da: 0 }] }], colpo: tipo === 'grande' ? [0] : [], ultimo: p.at + p.dur });
       return;

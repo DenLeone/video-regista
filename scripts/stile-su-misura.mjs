@@ -20,7 +20,7 @@ Tono: (es. intimo, ironico, tecnico)
 Apertura: normale             # normale | grande (prima frase a lettere enormi, parola per parola)
 Font apertura: Inter Tight 800
 Colore apertura: #FFD86B
-Sottotitoli: frase            # frase (2–5 parole) | parola (una alla volta) | blocchi (tutto il parlato a blocchi davanti al petto: corsivo piccolo parola per parola e parole chiave enormi, come il Motion) | nessuno
+Sottotitoli: frase            # frase (2–5 parole) | parola (una alla volta) | blocchi (tutto il parlato a blocchi davanti al petto: corsivo piccolo parola per parola e parole chiave enormi, come il Motion) | strati (come i blocchi, ma parole sottili e parole chiave grassissime in minuscolo, una sopra l'altra, colori a giro: Ultra) | nessuno
 Font sottotitoli: Montserrat 700
 Colore sottotitoli: #FFFFFF
 Maiuscolo sottotitoli: no     # sì | no | minuscole (tutto minuscolo con la punteggiatura, come i reel tech americani)
@@ -33,6 +33,7 @@ Font corsivo: Playfair Display Italic 400   # la frase piccola delle scritte a d
 Scritte dietro di me: no      # sì = le scritte grandi passano dietro alla persona (ritaglio automatico)
 Colore titoli: #FFFFFF
 Colore accento: #FFE62E       # sottotitolo dei titoli
+Colori parole grandi: #F4E41C, #F2231B, #C6E01F, #E4E4E4   # con Sottotitoli: strati, le parole chiave prendono questi colori a giro
 Posizione titoli: alto        # alto | centro | basso
 
 # --- IMMAGINE ---
@@ -45,7 +46,7 @@ Inizio: normale               # sempre normale ("prima e dopo" disattivato: colo
 Tagli dentro le frasi: no     # sì = ritmo veloce: l'inquadratura può cambiare a metà frase, sulla parola che nomina la cosa
 Chiusura: no                  # no | il tuo nome Instagram (es. @_black_den): finale scurito con logo e nome
 Firma: no                     # no | il tuo nome Instagram: logo e nome fissi in basso a sinistra per tutto il video
-Transizioni: no               # no | fumo (nuvola che copre il taglio nei cambi di scena scelti dall'AI)
+Transizioni: no               # no | fumo (nuvola che copre il taglio nei cambi di scena scelti dall'AI) | sfocata (scia sfocata veloce sul taglio)
 Inserti: scheda               # scheda (arrotondata, tipo telefono) | tv (televisore anni '70 con barre colorate all'accensione)
 B-roll stock: no              # sì = l'AI può coprire alcune frasi con video di repertorio da Pexels (serve il secret PIXABAY_API_KEY)
 
@@ -103,7 +104,7 @@ const GRAFICA = ['nome', 'apertura', 'font apertura', 'colore apertura', 'sottot
   'maiuscolo sottotitoli', 'posizione sottotitoli', 'dimensione sottotitoli', 'titoli', 'font titoli', 'colore titoli',
   'colore accento', 'posizione titoli', 'look', 'bianco e nero', 'vignettatura', 'effetti sonori', 'musica', 'volume musica',
   'font corsivo', 'scritte dietro di me', 'soggetto in risalto', 'sfondo sfocato', 'inizio', 'chiusura', 'tagli dentro le frasi',
-  'entrata parole grandi', 'firma', 'transizioni', 'inserti', 'b-roll stock'];
+  'entrata parole grandi', 'firma', 'transizioni', 'inserti', 'b-roll stock', 'colori parole grandi'];
 
 /** stile.txt → { grafica, testoAI, musica, campi } */
 export function leggiStile(testo, nomeCartella) {
@@ -119,7 +120,7 @@ export function leggiStile(testo, nomeCartella) {
       continue;
     }
     const chiave = norm(m[1]);
-    const valore = m[2].replace(/\s+#.*$/, '').replace(/\s*\([^)]*\)\s*$/, '').trim();
+    const valore = m[2].replace(/\s+#(?![0-9a-f]{6}\b).*$/i, '').replace(/\s*\([^)]*\)\s*$/, '').trim();
     continua = false;
     if (GRAFICA.includes(chiave)) campi[chiave] = valore;
     else if (valore && !/^per usarlo$/.test(chiave)) { perAI.push(`${m[1].trim()}: ${valore}`); continua = true; }
@@ -129,7 +130,7 @@ export function leggiStile(testo, nomeCartella) {
   if (campi.apertura) g.apertura = /grand/.test(norm(campi.apertura)) ? 'grande' : 'normale';
   g.fontApertura = font(campi['font apertura'], g.fontApertura);
   g.coloreApertura = colore(campi['colore apertura'], g.coloreApertura);
-  if (campi.sottotitoli) g.sottotitoli = /blocc|motion/.test(norm(campi.sottotitoli)) ? 'blocchi' : /parol/.test(norm(campi.sottotitoli)) ? 'parola' : /^(no|nessun)/.test(norm(campi.sottotitoli)) ? 'nessuno' : 'frase';
+  if (campi.sottotitoli) g.sottotitoli = /strat|ultra/.test(norm(campi.sottotitoli)) ? 'strati' : /blocc|motion/.test(norm(campi.sottotitoli)) ? 'blocchi' : /parol/.test(norm(campi.sottotitoli)) ? 'parola' : /^(no|nessun)/.test(norm(campi.sottotitoli)) ? 'nessuno' : 'frase';
   g.fontSottotitoli = font(campi['font sottotitoli'], g.fontSottotitoli);
   g.coloreSottotitoli = colore(campi['colore sottotitoli'], g.coloreSottotitoli);
   if (campi['maiuscolo sottotitoli']) {
@@ -160,12 +161,18 @@ export function leggiStile(testo, nomeCartella) {
   const firma = (/@[\w.]+/.exec(campi.firma || '') || [])[0];
   if (firma) g.firma = firma;
   if (campi['entrata parole grandi']) g.entrata = /scramb|lettere|decod/.test(norm(campi['entrata parole grandi'])) ? 'scramble' : 'sfocata';
-  if (campi.transizioni) g.fumo = /fum/.test(norm(campi.transizioni));
+  if (campi.transizioni) {
+    const t = norm(campi.transizioni);
+    g.fumo = /fum|sfoc|scia|blur/.test(t);
+    if (/sfoc|scia|blur/.test(t)) g.transizione = 'sfocata';
+  }
+  const palette = (campi['colori parole grandi'] || '').match(/#?[0-9a-f]{6}\b/gi);
+  if (palette?.length) g.palette = palette.map((c) => colore(c, '#FFFFFF'));
   if (campi.inserti) g.cornice = /tv|telev/.test(norm(campi.inserti)) ? 'tv' : 'scheda';
   if (campi['b-roll stock']) g.stock = si(campi['b-roll stock']);
   // i blocchi fanno già le parole chiave enormi: "parole grandi" o "frasi" in più si sovrapporrebbero
   // (stile studiato dall'AI sul Motion, 25/10); restano i cartelli a tutto schermo
-  if (g.sottotitoli === 'blocchi' && (g.tipoTitoli === 'parole' || g.tipoTitoli === 'frasi')) g.tipoTitoli = 'cartelli';
+  if ((g.sottotitoli === 'blocchi' || g.sottotitoli === 'strati') && (g.tipoTitoli === 'parole' || g.tipoTitoli === 'frasi')) g.tipoTitoli = 'cartelli';
   const bn = norm(campi['bianco e nero']);
   if (bn) g.biancoNero = /sempre|tutto/.test(bn) ? 'sempre' : /^no/.test(bn) ? 'no' : 'momenti';
   if (g.biancoNero === 'sempre') g.look = 'bianco e nero';
@@ -198,8 +205,10 @@ export function promptSuMisura(g, testoAI, disponibili = {}) {
     righe.push('- **Apertura a lettere enormi**: la prima frase del montaggio (le prime 1–2 frasi, al massimo ~5 s) diventa una scritta a due livelli, parola per parola: le parole chiave enormi, le altre piccole in corsivo. Scegli come apertura un aggancio forte e breve, che si capisce da solo, con Denis in camera.',
       '- `enfasi` (campo in cima alla regia, accanto a `titolo`): 2–4 parole dell\'apertura da fare enormi, esattamente come le dice (es. `["STANCO", "MEZZ\'ORA"]`): i concetti, non articoli o verbi di servizio.');
   }
-  if (g.sottotitoli === 'blocchi') {
-    righe.push('- **Tutto il parlato a blocchi**: lo script mostra ogni parola detta, in piccolo corsivo, e fa ENORMI (colorate, con le lettere che si compongono) le parole chiave che scegli tu.',
+  if (g.sottotitoli === 'blocchi' || g.sottotitoli === 'strati') {
+    righe.push(g.sottotitoli === 'strati'
+      ? '- **Tutto il parlato a strati**: lo script mostra ogni parola detta, sottile e bianca, e fa ENORMI e grassissime (colorate a giro) le parole chiave che scegli tu, una sopra l\'altra.'
+      : '- **Tutto il parlato a blocchi**: lo script mostra ogni parola detta, in piccolo corsivo, e fa ENORMI (colorate, con le lettere che si compongono) le parole chiave che scegli tu.',
       '- `enfasi` (campo in cima alla regia, accanto a `titolo`): le parole chiave di TUTTO il video, nell\'ordine in cui le dice: una ogni ~2–3 s di parlato (circa 20–25 al minuto). Ognuna 1–3 parole dette di fila (al massimo ~13 caratteri), copiate esattamente come le dice (es. `["DIMESSO", "I SUOI RUOLI", "CENSURATO", "45 EURO"]`): i concetti che pesano (nomi, numeri, verbi e aggettivi forti), mai articoli, preposizioni o verbi di servizio. Una parola ripetuta più volte va scritta tante volte quante deve uscire grande.');
   }
   if (g.dietro) righe.push('- Le scritte grandi passano dietro a Denis (ritaglio automatico): mettile su inquadrature dove lui è in campo, a figura intera o mezzo busto.');
@@ -226,7 +235,7 @@ export function promptSuMisura(g, testoAI, disponibili = {}) {
       '  - Stacca sulla parola che nomina la cosa, per mostrarla in quell\'istante (es. frase sul volto "…e poi c\'è lo schermettino" → `"stacco": {"dopo": "schermettino", "broll": "<dettaglio dello schermo>", "da": 12.0}`). Il ritmo (quanto durano le inquadrature) lo dicono le indicazioni di Denis per questo stile qui sotto.',
       '  - **Raffica di dettagli**: `stacco` può essere una lista (fino a 6), in ordine di parola: quando Denis elenca cose che si vedono ("ha il display, il knob, le luci"), un dettaglio per ognuna, 0,5–1 s l\'uno (es. `"stacco": [{"dopo": "display", "broll": "C0928", "da": 3.0}, {"dopo": "knob", "broll": "C0930", "da": 8.5}]`). Ogni pezzo almeno ~0,5 s; nei B-roll a 50/60 fps puoi aggiungere `"lento": true` al singolo stacco.');
   }
-  if (g.fumo) righe.push('- **Transizioni a fumo**: `"fumo": true` sull\'elemento della sequenza dove la scena cambia davvero (dal volto a un B-roll o al repertorio e ritorno, o quando cambia argomento): una nuvola copre il taglio. 2–5 in un video di un minuto, almeno 8 s una dall\'altra, mai sul primo elemento.');
+  if (g.fumo) righe.push(`- **Transizioni ${g.transizione === 'sfocata' ? 'sfocate' : 'a fumo'}**: \`"fumo": true\` sull'elemento della sequenza dove la scena cambia davvero (dal volto a un B-roll o al repertorio e ritorno, o quando cambia argomento): ${g.transizione === 'sfocata' ? 'l\'immagine si sfoca con una scia veloce sul taglio' : 'una nuvola copre il taglio'}. 2–5 in un video di un minuto, almeno 8 s una dall'altra, mai sul primo elemento.`);
   if (g.stock && disponibili.stock) {
     righe.push('- **B-roll di repertorio**: su un elemento con `frase` puoi mettere `"stock": "<ricerca in inglese, 2–4 parole>"` al posto di `camera`/`broll`: lo script cerca un video di repertorio e lo mostra a tutto schermo mentre Denis parla. La ricerca descrive una cosa concreta che si vede e illustra quello che dice in quel momento (es. "server room lights", "crowd protest street", "old tv static", "money counting hands"), niente nomi di persone o marchi.',
       '  - Circa uno ogni 10–15 s, su frasi da 1,5 a 6 s; mai l\'aggancio né la chiusura (lì il volto), mai due di fila; stessa ricerca su due frasi = stesso video, pezzi diversi. Se non trova niente resta l\'inquadratura normale.');
