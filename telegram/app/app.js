@@ -339,7 +339,6 @@ function assicuratiGuscio() {
   root.innerHTML = `<div class="app" id="guscio">
       <main class="view" id="view"></main>
       <div class="composer glass" id="composer" hidden></div>
-      <div class="dock" id="dock"></div>
     </div>
     <div class="scrim" id="scrim" data-azione="chiudi-foglio"></div>
     <div class="sheet-host" id="sheet-host" hidden>
@@ -348,6 +347,10 @@ function assicuratiGuscio() {
     <div class="toast glass" id="toast" role="status" hidden></div>
     <div class="sr" id="annunci" aria-live="polite"></div>
     <input id="file-hero" type="file" accept="video/*,image/*,audio/*" multiple hidden>`;
+  for (const id of ['composer', 'scrim', 'sheet-host', 'toast']) {
+    const el = document.getElementById(id);
+    if (el && el.parentElement !== document.body) document.body.appendChild(el);
+  }
   document.getElementById('view').addEventListener('scroll', () => {
     const view = document.getElementById('view');
     view.classList.toggle('scorso', view.scrollTop > 24);
@@ -355,6 +358,7 @@ function assicuratiGuscio() {
   agganciaFoglio();
   agganciaViewport();
   agganciaTocco();
+  agganciaDebug();
   if (!DEMO) sondaFps();
 }
 
@@ -384,6 +388,7 @@ function disegna(opts = {}) {
   aggiornaBadge();
   codaAnteprime();
   assicuratiPoll();
+  aggiornaQuadro();
 }
 
 function toast(testo) {
@@ -677,7 +682,8 @@ function htmlAltro() {
         <button type="button" class="btn vetro" data-azione="prova-regia">Chiedi la regia</button>
         ${regia ? `<p class="meta">${esc(regia.testo || '')}</p>` : ''}
       </div>
-    </div></details>`;
+    </div></details>
+    <p class="versione-app" data-debug>Regista</p>`;
 }
 
 function htmlStile() {
@@ -1116,14 +1122,136 @@ function agganciaFoglio() {
 }
 function agganciaViewport() {
   const vv = window.visualViewport;
+  const aggiorna = () => aggiornaQuadro();
   if (!vv) return;
-  const aggiorna = () => {
-    const inset = Math.max(0, window.innerHeight - vv.height - vv.offsetTop);
-    document.documentElement.style.setProperty('--kbd', `${Math.round(inset)}px`);
-    document.documentElement.classList.toggle('tastiera', inset > 80);
-  };
   vv.addEventListener('resize', aggiorna);
   vv.addEventListener('scroll', aggiorna);
+  window.addEventListener('resize', aggiorna);
+}
+/* In standalone il viewport di layout è corto della status bar e il buco
+   sta sotto la pagina. Allunga il guscio fino a screen.height e ancora il
+   dock in fondo a quel guscio, così bottom resta max(8px, inset − 10px)
+   rispetto allo schermo e non rispetto al viewport bugiardo. */
+function phantomMisurato() {
+  const solo = window.matchMedia('(display-mode: standalone)').matches || navigator.standalone === true;
+  if (!solo) return 0;
+  const ih = window.innerHeight;
+  let sh = window.screen.height;
+  let delta = sh - ih;
+  if (!(delta > 0 && delta < 80) && window.devicePixelRatio > 1) {
+    const cssH = sh / window.devicePixelRatio;
+    if (cssH - ih > 0 && cssH - ih < 80) {
+      sh = Math.round(cssH);
+      delta = sh - ih;
+    }
+  }
+  if (!(delta > 0 && delta < 80)) return 0;
+  return { px: Math.round(delta), altezza: Math.round(sh) };
+}
+function aggiornaQuadro() {
+  const vv = window.visualViewport;
+  const inset = vv ? Math.max(0, window.innerHeight - vv.height - vv.offsetTop) : 0;
+  document.documentElement.style.setProperty('--kbd', `${Math.round(inset)}px`);
+  const tastiera = inset > 80;
+  document.documentElement.classList.toggle('tastiera', tastiera);
+  const fissi = ['dock', 'composer', 'sheet-host', 'scrim'];
+  if (tastiera) {
+    for (const id of fissi) {
+      const el = document.getElementById(id);
+      if (el) el.style.position = '';
+    }
+    misuraPad();
+    return;
+  }
+  const phantom = phantomMisurato();
+  document.documentElement.style.setProperty('--phantom', phantom ? `${phantom.px}px` : '0px');
+  for (const el of [document.documentElement, document.body, document.getElementById('app')]) {
+    if (!el) continue;
+    el.style.bottom = phantom ? 'auto' : '';
+    el.style.height = phantom ? `${phantom.altezza}px` : '';
+  }
+  for (const id of fissi) {
+    const el = document.getElementById(id);
+    if (el) el.style.position = phantom ? 'absolute' : '';
+  }
+  misuraPad();
+}
+function misuraPad() {
+  const dock = document.getElementById('dock');
+  const view = document.getElementById('view');
+  if (!view) return;
+  if (!dock || dock.hidden) {
+    document.documentElement.style.removeProperty('--pad-b');
+    return;
+  }
+  const dr = dock.getBoundingClientRect();
+  const vr = view.getBoundingClientRect();
+  const pad = Math.max(16, Math.ceil(vr.bottom - dr.top + 16));
+  document.documentElement.style.setProperty('--pad-b', `${pad}px`);
+}
+function testoDiagnostica() {
+  const sonda = document.createElement('div');
+  sonda.style.cssText = 'position:fixed;left:0;bottom:0;width:0;visibility:hidden;pointer-events:none;';
+  document.body.appendChild(sonda);
+  const leggi = (h) => {
+    sonda.style.height = h;
+    return Math.round(sonda.getBoundingClientRect().height);
+  };
+  const insetB = leggi('env(safe-area-inset-bottom)');
+  const insetT = leggi('env(safe-area-inset-top)');
+  const lvh = leggi('100lvh');
+  const dvh = leggi('100dvh');
+  sonda.remove();
+  const dock = document.getElementById('dock');
+  const r = dock?.getBoundingClientRect();
+  const vv = window.visualViewport;
+  const ih = window.innerHeight;
+  const sh = window.screen.height;
+  const bottom = dock ? getComputedStyle(dock).bottom : '—';
+  const pos = dock ? getComputedStyle(dock).position : '—';
+  return [
+    `innerHeight ${ih}`,
+    `visualViewport ${vv ? Math.round(vv.height) : '—'}  offset ${vv ? Math.round(vv.offsetTop) : '—'}`,
+    `screen.height ${sh}`,
+    `100lvh ${lvh}   100dvh ${dvh}`,
+    `env top ${insetT}   bottom ${insetB}`,
+    `phantom ${getComputedStyle(document.documentElement).getPropertyValue('--phantom').trim() || '0px'}`,
+    `dock ${pos}  bottom ${bottom}`,
+    `gap inner ${r ? Math.round(ih - r.bottom) : '—'}`,
+    `gap screen ${r ? Math.round(sh - r.bottom) : '—'}`,
+  ].join('\n');
+}
+function mostraDebug() {
+  aggiornaQuadro();
+  let el = document.getElementById('debug-pannello');
+  if (!el) {
+    el = document.createElement('div');
+    el.id = 'debug-pannello';
+    el.className = 'debug-pannello';
+    el.innerHTML = '<pre></pre><button type="button" data-chiudi-debug>Chiudi</button>';
+    document.body.appendChild(el);
+    el.querySelector('[data-chiudi-debug]').addEventListener('click', () => { el.hidden = true; });
+  }
+  el.hidden = false;
+  el.querySelector('pre').textContent = testoDiagnostica();
+}
+function agganciaDebug() {
+  let timer = 0;
+  document.addEventListener('pointerdown', (e) => {
+    if (!e.target.closest?.('[data-debug]')) return;
+    clearTimeout(timer);
+    timer = setTimeout(() => mostraDebug(), 500);
+  });
+  const stop = () => clearTimeout(timer);
+  document.addEventListener('pointerup', stop);
+  document.addEventListener('pointercancel', stop);
+  document.addEventListener('contextmenu', (e) => {
+    if (!e.target.closest?.('[data-debug]')) return;
+    e.preventDefault();
+    clearTimeout(timer);
+    mostraDebug();
+  });
+  if (new URLSearchParams(location.search).get('debug') === '1') requestAnimationFrame(() => mostraDebug());
 }
 function agganciaTocco() {
   document.addEventListener('pointerdown', (e) => {

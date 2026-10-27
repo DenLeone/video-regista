@@ -39,14 +39,17 @@
   --s6: 24px;
   --s8: 32px;
   --s10: 40px;
-  /* Un solo posto per i bordi. Niente pavimento finto: in standalone iOS
-     100dvh è già più corto dello schermo, e sommarci un inset minimo
-     alzava il dock di un centinaio di px. */
+  /* Un solo posto per i bordi.
+     In standalone iOS il viewport di layout è più corto dello schermo
+     della status bar (screen.height − innerHeight ≈ 62) e quel buco sta
+     SOTTO, non sopra: offsetTop è 0. Sommare l’inset in fondo a quel buco
+     alza il dock di ~88px. --phantom lo misura il JS e allunga il guscio. */
   --inset-t: env(safe-area-inset-top, 0px);
   --inset-b: env(safe-area-inset-bottom, 0px);
   --edge: 10px;
+  --phantom: 0px;
   --safe-t: calc(var(--inset-t) + var(--edge));
-  --dock-bottom: max(var(--edge), calc(var(--inset-b) - 8px));
+  --dock-bottom: max(8px, calc(var(--inset-b) - 10px));
   --tabbar-h: 64px;
   --dock-h: var(--tabbar-h);
   --pad-b: calc(var(--dock-h) + var(--dock-bottom) + 16px);
@@ -65,10 +68,15 @@
 * { box-sizing: border-box; }
 [hidden] { display: none !important; }
 html { background: var(--bg); -webkit-text-size-adjust: 100%; }
-html, body { margin: 0; height: 100%; background: #000; }
+html, body, #app {
+  margin: 0;
+  padding: 0;
+  height: 100%;
+  position: fixed;
+  inset: 0;
+}
+html, body { background: #000; }
 body {
-  min-height: 100%;
-  min-height: -webkit-fill-available;
   font: 400 1rem/1.41 var(--font);
   color: var(--ink);
   background:
@@ -87,7 +95,16 @@ img { max-width: 100%; display: block; }
 input, textarea { caret-color: #fff; }
 ::placeholder { color: var(--ink-3); }
 
-#app { position: fixed; inset: 0; }
+/* Standalone: il viewport di layout mente ed è corto della status bar.
+   100lvh è lo schermo intero; se mente anche lui, il JS mette screen.height. */
+@media (display-mode: standalone) {
+  html, body, #app {
+    bottom: auto;
+    height: -webkit-fill-available;
+    height: 100lvh;
+  }
+  .dock, .composer, .sheet-host, .scrim { position: absolute; }
+}
 
 .app {
   width: var(--dock-w);
@@ -300,19 +317,22 @@ input, textarea { caret-color: #fff; }
 .dock {
   position: fixed;
   z-index: 50;
-  left: 50%;
-  bottom: var(--dock-bottom);
-  translate: -50% 0;
+  left: 0;
+  right: 0;
+  bottom: max(8px, calc(env(safe-area-inset-bottom) - 10px));
   width: var(--dock-w);
+  margin-inline: auto;
   display: flex;
   gap: 10px;
   justify-content: center;
   align-items: center;
   padding: 0 16px;
   pointer-events: none;
+  translate: none;
+  transform: none;
 }
 .dock > * { pointer-events: auto; }
-html.tastiera .dock { translate: -50% 140%; }
+html.tastiera .dock { visibility: hidden; }
 .tabbar {
   display: flex;
   gap: 2px;
@@ -757,8 +777,10 @@ details.blocco > summary::-webkit-details-marker { display: none; }
 .composer {
   position: fixed;
   z-index: 55;
-  left: 50%;
-  translate: -50% 0;
+  left: 0;
+  right: 0;
+  margin-inline: auto;
+  translate: none;
   width: min(calc(100% - 16px), 480px);
   padding: 10px 12px;
   border-radius: 28px;
@@ -806,8 +828,10 @@ html.tastiera .composer { bottom: calc(var(--kbd) + 8px); }
 .toast {
   position: fixed;
   z-index: 90;
-  left: 50%;
-  translate: -50% 0;
+  left: 0;
+  right: 0;
+  margin-inline: auto;
+  translate: none;
   top: var(--safe-t);
   width: min(calc(100% - 32px), 420px);
   border-radius: var(--r-pill);
@@ -878,6 +902,44 @@ html.tastiera .composer { bottom: calc(var(--kbd) + 8px); }
 html[data-motion="off"] *, html[data-motion="off"] *::before, html[data-motion="off"] *::after {
   animation: none !important;
   transition: none !important;
+}
+
+.versione-app {
+  margin: 22px 0 0;
+  text-align: center;
+  font-size: 12px;
+  color: var(--ink-3);
+  user-select: none;
+  -webkit-user-select: none;
+}
+.debug-pannello {
+  position: fixed;
+  z-index: 120;
+  left: 16px;
+  right: 16px;
+  top: var(--safe-t);
+  margin-inline: auto;
+  width: min(calc(100% - 32px), 420px);
+  padding: 14px 14px 10px;
+  border-radius: 18px;
+  background: #1c1c1e;
+  box-shadow: 0 0 0 1px var(--hair-2) inset;
+  color: var(--ink);
+}
+.debug-pannello pre {
+  margin: 0;
+  font: 500 12px/1.45 ui-monospace, SFMono-Regular, monospace;
+  white-space: pre-wrap;
+}
+.debug-pannello button {
+  margin-top: 8px;
+  min-height: 44px;
+  width: 100%;
+  border: 0;
+  border-radius: var(--r-pill);
+  background: var(--ink);
+  color: #000;
+  font-weight: 600;
 }
 
 @media (min-width: 900px) {
