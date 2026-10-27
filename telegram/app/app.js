@@ -1294,7 +1294,7 @@ function sondaFps() {
 
 document.addEventListener('click', async (e) => {
   const el = e.target.closest('[data-azione]');
-  if (!el || !root.contains(el)) return;
+  if (!el || !document.body.contains(el)) return;
   const azione = el.dataset.azione;
   const verso = el.dataset.verso || '';
   try {
