@@ -513,6 +513,8 @@ async function tagliaSegmenti(piano, analisi) {
 // entrano con bagliore quando Denis le nomina, non come scheda (CapCut, 27/10: "quando carico
 // icone vanno messe sempre", con un glow e un effetto in entrata). Screenshot e foto restano inserti
 function eIcona(file) {
+  // chiamata "icona …" o "logo …" (anche icon/logo in inglese): è un'icona, comunque sia fatta
+  if (/(^|[\s_-])(icona|icone|icon|logo)([\s_.-]|$)/i.test(path.basename(file))) return true;
   try {
     const j = JSON.parse(run('ffprobe', ['-v', 'error', '-select_streams', 'v:0', '-show_entries', 'stream=width,height,pix_fmt', '-of', 'json', file]));
     const { width: w, height: h, pix_fmt: pix = '' } = j.streams?.[0] || {};
