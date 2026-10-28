@@ -1,7 +1,7 @@
 # video-regista — PROGRESSO
 
 > File di passaggio tra sessioni (ufficio / casa / in giro). Aggiornato da Claude a ogni passo.
-> Ultimo aggiornamento: **2026-10-28** — social manager nel bot: /social (numeri IG + TikTok e piano del giorno con l’AI), ogni mattina dal cron; /tiktok per collegare TikTok.
+> Ultimo aggiornamento: **2026-10-28 sera** — social manager: TikTok collegato (sandbox), /social gira nell’allarme del DO. **Manca IG_TOKEN** (vedi "28/10: social manager" → Stato).
 
 ### 28/10: social manager (/social, /tiktok)
 Obiettivo di Denis: il bot gli dice ogni giorno cosa fare, come un social media manager. `telegram/src/social.ts`:
@@ -11,7 +11,9 @@ Obiettivo di Denis: il bot gli dice ogni giorno cosa fare, come un social media 
 - **Piano**: numeri calcolati nel codice (crescita da ieri, top 3), poi Gemini Flash (riserva Flash Lite, poi Claude Haiku se c'è la chiave) scrive "Cosa dicono i numeri / Oggi / Idea video". Ricorda gli ultimi piani per non ripetersi.
 - **Cron**: `17 6 * * *` (UTC, ~7:17 d'inverno): piano a tutte le chat autorizzate; il lunedì anche il rinnovo della chiave Instagram (un solo cron: limite del piano gratuito Cloudflare).
 - Make "IG Analytics → Sheet" (scenario 8226635) resta per il foglio "Black Den - Social Analytics", ogni 2 giorni; il bot non dipende da Make.
-- **Da fare (Denis)**: app su developers.tiktok.com, i due secret, poi /tiktok nel bot.
+- **Stato 28/10 sera**: TikTok fatto (account Enterprise, org BlackDen, app `blackden-stats` in Sandbox, .blackden target user, URL prefix verificato con `telegram/app/tiktok…txt`: non toglierlo; secret caricati; collegato). /social restava su "⏳" (limite ~30 s di waitUntil): ora gira nell'allarme del Durable Object (`Memoria.socialDopo` → `alarm()`), commit f506337. Primo giro: Gemini Flash in timeout a 60 s, ha risposto Flash Lite.
+- **Da fare (Denis)**: il bot **non ha la chiave Instagram** (né secret `IG_TOKEN` né `ig_token` in memoria). Meta for Developers → app Business → Instagram → API setup with Instagram login → Generate token per _black_den con `instagram_business_manage_insights` → `npx wrangler secret put IG_TOKEN` (da `telegram/`, PowerShell 5 senza `&&`). Poi /social.
+- Idee: `user.info.stats` (follower, like totali) nel piano; timeout di Gemini Flash più corto.
 
 ### 24/10: studio dello stile nell'app
 Denis carica un video di riferimento (multipart R2 già presente, con `riferimento` così non compare in Oggi e non parte un montaggio). Il telefono misura il ritmo, manda fino a 6 fotogrammi e, se il file è sotto i 25 MB, anche 20 s di voce. L'analisi gira nel Worker: Gemini Flash con ragionamento corto, poi Flash Lite se è lento; Claude HTTP solo se c'è `ANTHROPIC_API_KEY`. Niente workflow nuovo. Poi una chat a turni aggiorna la scheda. «Salva stile» scrive `app:stili` nella memoria del bot e `stili/<nome>/stile.txt` su R2. Il nome entra nell'elenco di Nuovo montaggio e del bot. Se Drive non ha la cartella, `scripts/regista.mjs` legge quel file (senza font né musica: non ci sono asset).
