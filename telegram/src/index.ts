@@ -24,6 +24,7 @@ import { avvisoUtente } from './push';
 import STILI_BASE from '../../scripts/stili-base.json';
 import type { Ops, Segreti } from './ops';
 import { unisciNomi } from './stile-studio';
+import { PAGINA_PRIVACY, PAGINA_TERMINI, completaLoginTikTok, linkLoginTikTok, pianoDelGiorno, statoTikTok, type DepsSocial } from './social';
 
 export interface Env {
   TELEGRAM_BOT_TOKEN: string;
@@ -47,6 +48,8 @@ export interface Env {
   GEMINI_API_KEY?: string;
   GROQ_API_KEY?: string;
   ANTHROPIC_API_KEY?: string;
+  TIKTOK_CLIENT_KEY?: string;     // app TikTok for Developers (Login Kit + Display API), per /social
+  TIKTOK_CLIENT_SECRET?: string;
   ASSETS?: { fetch(req: Request): Promise<Response> };
   MEMORIA: DurableObjectNamespace<Memoria>;
 }
@@ -98,7 +101,7 @@ const URL_98 = 'https://drive.google.com/drive/folders/1icN7ww-f6CrClZ5nhxi9eiX3
 const URL_STILI = 'https://drive.google.com/drive/folders/1HD6Qv-KO3tmAQORJXuvsSnCALpK85e8w';
 const cartellaDrive = (id: string) => `https://drive.google.com/drive/folders/${id}`;
 const PROVA_S = 10; // render di prova di uno stile: i primi N secondi del video
-const VERSIONE_COMANDI = 5; // cambia → il bot ri-registra da solo il menu comandi
+const VERSIONE_COMANDI = 6; // cambia → il bot ri-registra da solo il menu comandi
 let ORIGINE_BOT = ''; // https://regista-telegram…workers.dev (dalla richiesta in corso)
 const ANTEPRIMA_URL = () => (ORIGINE_BOT ? `${ORIGINE_BOT}/stili.jpg?v=1` : undefined);
 const LINEA = '━━━━━━━━━━━━━━━━━━';
@@ -1031,6 +1034,8 @@ async function onMessage(env: Env, msg: Msg) {
     if (nome === 'stili') return invia(env, chat, await schermoStili(env));
     if (nome === 'impostazioni') return invia(env, chat, await schermoImpostazioni(env));
     if (nome === 'aiuto' || nome === 'guida') return invia(env, chat, GUIDA);
+    if (nome === 'social') return social(env, chat);
+    if (nome === 'tiktok') return invia(env, chat, await schermoTikTok(env));
     if (nome === 'nuovo') return vaiAPasso(env, chat, { tipo: 'nuovo', passo: 'cartella', dati: {} });
     if (nome === 'monta') {
       const [cartella = '', brief = ''] = resto.split('|').map((s) => s.trim());
@@ -1075,6 +1080,7 @@ async function onCallback(env: Env, cb: Callback) {
   if (!ok(env, chat)) return avviso();
 
   if (data === 'menu') { await avviso(); return mostra(env, chat, await pannello(env), msgId); }
+  if (data === 'social') { await avviso(); return social(env, chat); }
   if (data === 'stato') { await avviso(); return mostra(env, chat, await schermoStato(env), msgId); }
   if (data === 'imp') { await avviso(); return mostra(env, chat, await schermoImpostazioni(env), msgId); }
   if (data === 'guida') { await avviso(); return mostra(env, chat, GUIDA, msgId); }
@@ -1749,11 +1755,57 @@ async function onVideo(env: Env, form: FormData) {
 }
 
 // ---------- menu comandi ----------
+// ---------- social manager (social.ts) ----------
+const depsSocial = async (env: Env): Promise<DepsSocial> => ({
+  fetch: (i, o) => fetch(i, o),
+  leggi: <T>(k: string) => leggi<T>(env, k),
+  scrivi: (k, v) => mem(env).scrivi(k, v),
+  cancella: (k) => mem(env).cancella(k),
+  igToken: await chiaveInstagram(env),
+  ttKey: env.TIKTOK_CLIENT_KEY,
+  ttSecret: env.TIKTOK_CLIENT_SECRET,
+  geminiKey: env.GEMINI_API_KEY,
+  anthropicKey: env.ANTHROPIC_API_KEY,
+});
+const ORIGINE_FISSA = 'https://regista-telegram.denisnusinovic.workers.dev'; // dal cron non c'è una richiesta da cui leggerla
+const origineBot = () => ORIGINE_BOT || ORIGINE_FISSA;
+
+async function social(env: Env, chat: string) {
+  const msg = await invia(env, chat, { testo: '⏳ Leggo Instagram e TikTok e preparo il piano…' }, true);
+  const testo = await pianoDelGiorno(await depsSocial(env));
+  await mostra(env, chat, { testo, tasti: [[tasto('🔄 Aggiorna', 'social'), MENU_TASTO]] }, msg);
+}
+// ogni mattina dal cron, a tutte le chat autorizzate
+async function socialMattina(env: Env) {
+  const testo = await pianoDelGiorno(await depsSocial(env));
+  for (const chat of autorizzati(env)) await invia(env, chat, { testo, tasti: [[tasto('🔄 Aggiorna', 'social'), MENU_TASTO]] });
+}
+async function schermoTikTok(env: Env): Promise<Schermo> {
+  const d = await depsSocial(env);
+  const s = await statoTikTok(d);
+  if (!s.app) {
+    return {
+      testo: '🎵 <b>TikTok</b>\nManca l’app TikTok for Developers. Su Cloudflare → <code>regista-telegram</code> → Variables and Secrets: <code>TIKTOK_CLIENT_KEY</code> e <code>TIKTOK_CLIENT_SECRET</code>.\n'
+        + `Redirect URI nell’app: <code>${esc(origineBot())}/tiktok/callback</code>`,
+      tasti: [[MENU_TASTO]],
+    };
+  }
+  const scade = s.scade ? new Date(s.scade).toLocaleDateString('it-IT', { timeZone: 'Europe/Rome' }) : '';
+  return {
+    testo: s.collegato
+      ? `🎵 <b>TikTok collegato</b>\nIl bot rinnova l’accesso da solo fino al ${esc(scade)}. Ricollega solo se /social dà errore.`
+      : '🎵 <b>TikTok non collegato</b>\nApri il link, accedi con .blackden e autorizza. Il link vale 15 minuti.',
+    tasti: [[link(s.collegato ? '🔗 Ricollega' : '🔗 Collega TikTok', await linkLoginTikTok(d, origineBot()))], [MENU_TASTO]],
+  };
+}
+
 const COMANDI = [
   { command: 'menu', description: 'Pannello di controllo' },
   { command: 'nuovo', description: 'Nuovo montaggio: cartella, stile, via' },
   { command: 'video', description: 'Ultimi video: pubblica, cambia stile, correggi' },
   { command: 'stato', description: 'Montaggi in corso e ultimi risultati' },
+  { command: 'social', description: 'Numeri di Instagram e TikTok e piano di oggi' },
+  { command: 'tiktok', description: 'Collega TikTok per le statistiche' },
   { command: 'stili', description: 'Stili disponibili e predefinito' },
   { command: 'impostazioni', description: 'Stile predefinito, AI, Instagram e YouTube' },
   { command: 'aiuto', description: 'Come funziona' },
@@ -1913,6 +1965,23 @@ export default {
       return Response.json({ token: (await chiaveInstagram(env)) || null });
     }
 
+    if (req.method === 'GET' && (url.pathname === '/privacy' || url.pathname === '/termini')) {
+      return new Response(url.pathname === '/privacy' ? PAGINA_PRIVACY : PAGINA_TERMINI, { headers: { 'content-type': 'text/html; charset=utf-8' } });
+    }
+    // ritorno dal login TikTok (link creato da /tiktok, con stato monouso)
+    if (req.method === 'GET' && url.pathname === '/tiktok/callback') {
+      const code = url.searchParams.get('code') || '', state = url.searchParams.get('state') || '';
+      let esito = '✅ TikTok collegato. Torna su Telegram.';
+      try {
+        if (!code) throw new Error(url.searchParams.get('error_description') || 'TikTok non ha dato l’autorizzazione.');
+        await completaLoginTikTok(await depsSocial(env), url.origin, code, state);
+        ctx.waitUntil(Promise.all(autorizzati(env).map((c) => invia(env, c, { testo: '✅ <b>TikTok collegato</b>\nDa domattina i suoi numeri entrano nel piano. Subito: /social', tasti: [[MENU_TASTO]] }))));
+      } catch (e) {
+        esito = `❌ ${String((e as Error)?.message || e).slice(0, 300)}`;
+      }
+      return new Response(`<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><body style="font:18px system-ui;padding:40px 16px">${esc(esito)}</body>`, { headers: { 'content-type': 'text/html; charset=utf-8' } });
+    }
+
     if (url.pathname === '/setup' && url.searchParams.get('k') === env.TELEGRAM_SECRET) {
       const r = await tg(env, 'setWebhook', { url: `${url.origin}/tg`, secret_token: env.TELEGRAM_SECRET, allowed_updates: ['message', 'callback_query'] });
       await aggiornaComandi(env, true);
@@ -1940,8 +2009,13 @@ export default {
     return new Response('regista bot', { status: 200 });
   },
 
-  // cron di wrangler.toml: rinnovo settimanale della chiave Instagram
-  async scheduled(_evento: unknown, env: Env, ctx: { waitUntil(p: Promise<unknown>): void }) {
-    ctx.waitUntil(rinnovaChiaveInstagram(env).catch((e) => console.error(e)));
+  // cron di wrangler.toml, ogni mattina: piano social; il lunedì anche il rinnovo della chiave Instagram
+  // (un solo cron: il piano gratuito di Cloudflare ne ha pochi per account)
+  async scheduled(evento: { scheduledTime?: number }, env: Env, ctx: { waitUntil(p: Promise<unknown>): void }) {
+    const lunedi = new Date(evento?.scheduledTime || Date.now()).getUTCDay() === 1;
+    ctx.waitUntil((async () => {
+      if (lunedi) await rinnovaChiaveInstagram(env).catch((e) => console.error(e));
+      await socialMattina(env).catch((e) => console.error(e));
+    })());
   },
 };

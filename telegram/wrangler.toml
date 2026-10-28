@@ -14,9 +14,9 @@ class_name = "Memoria"
 tag = "v1"
 new_sqlite_classes = ["Memoria"]
 
-# rinnovo settimanale della chiave Instagram (lunedì mattina, UTC)
+# ogni mattina (UTC): piano social (/social); il lunedì anche il rinnovo della chiave Instagram
 [triggers]
-crons = ["17 6 * * 1"]
+crons = ["17 6 * * *"]
 
 # L'app (PWA) sta in ./app. Il worker risponde prima: le route del bot e /api restano sue.
 [assets]
@@ -41,6 +41,8 @@ run_worker_first = true
 #   DRIVE_REFRESH_TOKEN
 #   GEMINI_API_KEY            studio stile nell'app. Senza, l'analisi lo dice e non parte
 #   GROQ_API_KEY              trascrizione breve del riferimento, solo se il file è corto
+#   TIKTOK_CLIENT_KEY         app TikTok for Developers (Login Kit + Display API): /tiktok e /social
+#   TIKTOK_CLIENT_SECRET
 #   ANTHROPIC_API_KEY         riserva HTTP se Gemini non risponde (la CLI di Claude del runner non gira qui)
 # Sul repo GitHub (Actions), gli stessi quattro valori R2:
 #   R2_ACCOUNT_ID, R2_ACCESS_KEY_ID, R2_SECRET_ACCESS_KEY, R2_BUCKET
