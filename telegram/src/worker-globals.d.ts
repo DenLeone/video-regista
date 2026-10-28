@@ -5,8 +5,10 @@ declare module 'cloudflare:workers' {
         get(k: string): Promise<unknown>;
         put(k: string, v: unknown): Promise<void>;
         delete(k: string): Promise<void>;
+        setAlarm(quando: number): Promise<void>;
       };
     };
+    env: unknown;
     constructor(ctx: unknown, env: unknown);
   }
 }

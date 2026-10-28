@@ -56,6 +56,19 @@ export interface Env {
 
 // ---------- memoria (una sola istanza, chiave/valore) ----------
 export class Memoria extends DurableObject {
+  // /social: dopo la risposta a Telegram il Worker ha ~30 s, il piano (Instagram, TikTok, AI) ne
+  // chiede di più. L'allarme dell'oggetto ha 15 minuti: il lavoro si sposta qui
+  async socialDopo(chat: string, msg?: number) {
+    await this.ctx.storage.put('social:richiesta', { chat, msg });
+    await this.ctx.storage.setAlarm(Date.now());
+  }
+  async alarm() {
+    const r = (await this.ctx.storage.get('social:richiesta')) as { chat: string; msg?: number } | undefined;
+    await this.ctx.storage.delete('social:richiesta');
+    if (!r) return;
+    const env = this.env as Env;
+    try { await completaSocial(env, r.chat, r.msg); } catch (e) { await segnalaErrore(env, r.chat, e); }
+  }
   async leggi(k: string): Promise<unknown> { return this.ctx.storage.get(k); }
   async scrivi(k: string, v: unknown) { await this.ctx.storage.put(k, v); }
   async cancella(k: string) { await this.ctx.storage.delete(k); }
@@ -1771,9 +1784,15 @@ const ORIGINE_FISSA = 'https://regista-telegram.denisnusinovic.workers.dev'; // 
 const origineBot = () => ORIGINE_BOT || ORIGINE_FISSA;
 
 async function social(env: Env, chat: string) {
-  const msg = await invia(env, chat, { testo: '⏳ Leggo Instagram e TikTok e preparo il piano…' }, true);
+  const msg = await invia(env, chat, { testo: '⏳ Leggo Instagram e TikTok e preparo il piano… (circa un minuto)' }, true);
+  await mem(env).socialDopo(chat, msg);
+}
+async function completaSocial(env: Env, chat: string, msg?: number) {
   const testo = await pianoDelGiorno(await depsSocial(env));
-  await mostra(env, chat, { testo, tasti: [[tasto('🔄 Aggiorna', 'social'), MENU_TASTO]] }, msg);
+  const tasti = [[tasto('🔄 Aggiorna', 'social'), MENU_TASTO]];
+  if (await mostra(env, chat, { testo, tasti }, msg)) return;
+  // Telegram ha rifiutato l'HTML: lo stesso testo senza formattazione, piuttosto che niente
+  await invia(env, chat, { testo: testo.replace(/<[^>]+>/g, ''), tasti });
 }
 // ogni mattina dal cron, a tutte le chat autorizzate
 async function socialMattina(env: Env) {
