@@ -1,0 +1,6 @@
+12 · Risorse/Stili/Beat/v26044gc0000dab9fp7og65lissjr6i0.mp4 · 15.7 s · 103 BPM (battuta 0.583 s)
+tagli: 2 · sul colpo (±70 ms): 2 (100%)
+durata delle inquadrature (s): 2.37 4.63
+in battute: 4.07 7.95
+tagli (s): 2.37 7.00
+colpi forti (s): 0.04 1.79 2.08 2.37 2.46 2.66 3.54 3.83 3.92 4.12 4.21 4.70 4.79 5.21 5.45 5.87 5.96 6.45 6.54 7.03 7.19 7.62 7.75 8.20 8.29 8.78 8.87 9.36 10.53 11.67 11.87 11.99 12.11 12.24

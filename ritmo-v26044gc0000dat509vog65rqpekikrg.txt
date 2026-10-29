@@ -1,0 +1,6 @@
+12 · Risorse/Stili/Beat/v26044gc0000dat509vog65rqpekikrg.mp4 · 12.0 s · 100 BPM (battuta 0.603 s)
+tagli: 1 · sul colpo (±70 ms): 1 (100%)
+durata delle inquadrature (s): 10.83
+in battute: 17.96
+tagli (s): 10.83
+colpi forti (s): 0.92 2.43 2.55 3.03 3.64 4.24 4.44 4.83 4.98 5.44 5.78 6.04 6.40 6.64 6.83 7.24 7.36 7.84 8.17 8.45 8.76 9.05 9.64 10.25 10.85 11.21 11.45 11.64

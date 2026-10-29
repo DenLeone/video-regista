@@ -1,0 +1,6 @@
+12 · Risorse/Stili/Beat/export_1793283318641.mov · iphone · 720x1280 · 30 fps · yuv420p bt709 · 14.8 s · crudo: saturazione 13.9, luminosità 142 · audio sì · 6 tagli: 5.30 5.90 7.07 10.00 10.60 11.77
+12 · Risorse/Stili/Beat/v26044gc0000dah3adnog65oat7vj47g.mp4 · altro · 576x1024 · 30 fps · yuv420p  · 19.4 s · crudo: saturazione 11.0, luminosità 69 · audio sì · 1 tagli: 13.90
+12 · Risorse/Stili/Beat/v26044gc0000dab9fp7og65lissjr6i0.mp4 · altro · 576x1024 · 30 fps · yuv420p  · 15.7 s · crudo: saturazione 8.6, luminosità 72 · audio sì · 1 tagli: 2.37
+12 · Risorse/Stili/Beat/v24025gl0000d8khthfog65mgd0jnth0.mp4 · altro · 576x1024 · 30 fps · yuv420p  · 18.9 s · crudo: saturazione 9.0, luminosità 66 · audio sì · 3 tagli: 10.53 11.13 12.40
+12 · Risorse/Stili/Beat/v26044gc0000dat509vog65rqpekikrg.mp4 · altro · 576x1024 · 30 fps · yuv420p  · 12.0 s · crudo: saturazione 5.2, luminosità 73 · audio sì · 1 tagli: 10.83
+12 · Risorse/Stili/Beat/v24025gl0000d9144snog65ggnn44700.mp4 · altro · 576x1024 · 30 fps · yuv420p  · 18.0 s · crudo: saturazione 5.8, luminosità 107 · audio sì · 5 tagli: 7.60 8.20 8.77 9.37 14.03
