@@ -868,8 +868,8 @@ async function modelliGemini(headers) {
 export const GEMINI_TIMEOUT_MS = 90_000;
 export const GEMINI_TENTATIVI = 2;
 const TETTO_REGIA_MS = 8 * 60 * 1000;
-const TETTO_DIDASCALIE_MS = 3 * 60 * 1000;
-export const DIDASCALIE_MODELLI = 2;
+const TETTO_DIDASCALIE_MS = 4 * 60 * 1000;
+export const DIDASCALIE_MODELLI = 4;
 const modelliGiornoFinito = new Set();
 export function azzeraQuoteGiorno() { modelliGiornoFinito.clear(); }
 export function segnaQuotaGiorno(modello) { if (modello) modelliGiornoFinito.add(modello); }
@@ -1364,32 +1364,77 @@ Regole:
 - youtube_titolo: massimo 70 caratteri, chiaro e cercabile (prodotto + cosa succede), senza hashtag.
 - youtube_descrizione: 2–3 righe, poi 3 hashtag tra cui #shorts.`;
 
+// testo dell'AI → { descrizione, hashtag (5), instagram, youtube_titolo, youtube_descrizione }
+function pulisciDidascalie(d) {
+  const testoDi = (x, max) => String(x || '').trim().slice(0, max);
+  // 5 hashtag puliti (Denis, 29/10: con ogni video descrizione e 5 hashtag): # davanti, niente spazi né doppioni
+  const hashtag = [...new Map((Array.isArray(d.hashtag) ? d.hashtag : String(d.hashtag || '').split(/[\s,]+/))
+    .map((h) => `#${String(h).replace(/^#+/, '').replace(/[^\p{L}\p{N}_]/gu, '')}`).filter((h) => h.length > 2)
+    .map((h) => [h.toLowerCase(), h])).values()].slice(0, 5);
+  const descrizione = testoDi(d.descrizione || String(d.instagram || '').replace(/(\s*#[\p{L}\p{N}_]+)+\s*$/u, ''), 2000);
+  if (!descrizione) return null;
+  return { descrizione, hashtag, instagram: testoDi(`${descrizione}${hashtag.length ? `\n\n${hashtag.join(' ')}` : ''}`, 2200),
+    youtube_titolo: testoDi(d.youtube_titolo, 100), youtube_descrizione: testoDi(d.youtube_descrizione, 4000) };
+}
+
+// ultima riserva, senza AI: le parole di Denis (prima frase) e hashtag dalle parole chiave e dal titolo
+function didascalieSemplici({ titolo, testo, keywords }) {
+  const frase = (String(testo || '').match(/^.{20,180}?[.!?](\s|$)/) || [String(testo || '').slice(0, 160)])[0].trim();
+  const parole = [...keywords, ...String(titolo || '').split(/\s+/)].map((w) => String(w).replace(/[^\p{L}\p{N}]/gu, ''))
+    .filter((w) => w.length > 3 && !/^(questo|questa|sono|della|delle|perch|anche|come)/i.test(w));
+  return pulisciDidascalie({ descrizione: [titolo, frase].filter(Boolean).join('\n'), hashtag: parole, youtube_titolo: titolo, youtube_descrizione: frase });
+}
+
+// Claude Code (abbonamento) come riserva quando Gemini è sovraccarico: senza strumenti, solo testo
+function didascalieConClaude(testoPrompt) {
+  return new Promise((ok) => {
+    if (!process.env.CLAUDE_CODE_OAUTH_TOKEN) return ok(null);
+    const c = spawnSync('claude', ['--version'], { encoding: 'utf8' });
+    if (c.error || c.status !== 0) {
+      try { run('npm', ['install', '-g', '@anthropic-ai/claude-code'], { stdio: 'ignore' }); } catch { return ok(null); }
+    }
+    const p = spawn('claude', ['-p', 'Rispondi solo con il JSON richiesto nel testo ricevuto.', '--model', process.env.REGISTA_MODEL || 'sonnet', '--output-format', 'json'],
+      { cwd: ROOT, stdio: ['pipe', 'pipe', 'pipe'] });
+    let out = '';
+    const timer = setTimeout(() => p.kill('SIGKILL'), 3 * 60 * 1000);
+    p.on('error', () => { clearTimeout(timer); ok(null); });
+    p.stdout.on('data', (x) => { out += x; });
+    p.on('close', () => {
+      clearTimeout(timer);
+      try {
+        const j = JSON.parse(out);
+        const testo = String(j.result || '');
+        ok(pulisciDidascalie(JSON.parse(testo.slice(testo.indexOf('{'), testo.lastIndexOf('}') + 1))));
+      } catch { ok(null); }
+    });
+    p.stdin.end(testoPrompt);
+  });
+}
+
 async function scriviDidascalie({ titolo, testo, brief, keywords }) {
-  if (!process.env.GEMINI_API_KEY || !testo) return null;
-  const headers = { 'content-type': 'application/json', 'x-goog-api-key': process.env.GEMINI_API_KEY };
+  if (!testo) return null;
   const dati = [`Titolo del video: ${titolo}`, `Testo detto nel video (montato): ${testo}`, `Scritte a schermo: ${keywords.join(' · ') || '—'}`, `Brief: ${brief || '—'}`].join('\n');
-  const body = JSON.stringify({ contents: [{ role: 'user', parts: [{ text: `${PROMPT_DIDASCALIE}\n\n${dati}` }] }], generationConfig: { responseMimeType: 'application/json', temperature: 0.7 } });
-  const scadenza = Date.now() + TETTO_DIDASCALIE_MS;
-  const modelli = (await modelliGemini(headers)).filter((m) => !quotaGiornoFinita(m)).slice(0, DIDASCALIE_MODELLI);
-  for (const modello of modelli) {
-    if (Date.now() >= scadenza) { log('didascalie: tempo massimo'); break; }
-    const esito = await chiamaGemini(modello, body, headers, { scadenza });
-    if (!esito.risposta) { log(`didascalie: ${modello} ${esito.motivo}`); continue; }
-    try {
-      const j = await esito.risposta.json();
-      const d = JSON.parse((j.candidates?.[0]?.content?.parts || []).map((x) => x.text || '').join('').replace(/^```(?:json)?\s*|\s*```$/g, ''));
-      const testoDi = (x, max) => String(x || '').trim().slice(0, max);
-      // 5 hashtag puliti (Denis, 29/10: con ogni video descrizione e 5 hashtag): # davanti, niente spazi né doppioni
-      const hashtag = [...new Map((Array.isArray(d.hashtag) ? d.hashtag : String(d.hashtag || '').split(/[\s,]+/))
-        .map((h) => `#${String(h).replace(/^#+/, '').replace(/[^\p{L}\p{N}_]/gu, '')}`).filter((h) => h.length > 2)
-        .map((h) => [h.toLowerCase(), h])).values()].slice(0, 5);
-      const descrizione = testoDi(d.descrizione || String(d.instagram || '').replace(/(\s*#[\p{L}\p{N}_]+)+\s*$/u, ''), 2000);
-      const out = { descrizione, hashtag, instagram: testoDi(`${descrizione}${hashtag.length ? `\n\n${hashtag.join(' ')}` : ''}`, 2200),
-        youtube_titolo: testoDi(d.youtube_titolo, 100), youtube_descrizione: testoDi(d.youtube_descrizione, 4000) };
-      if (out.instagram) return out;
-    } catch (e) { log(`didascalie: risposta di ${modello} non usabile`, e.message); }
+  if (process.env.GEMINI_API_KEY) {
+    const headers = { 'content-type': 'application/json', 'x-goog-api-key': process.env.GEMINI_API_KEY };
+    const body = JSON.stringify({ contents: [{ role: 'user', parts: [{ text: `${PROMPT_DIDASCALIE}\n\n${dati}` }] }], generationConfig: { responseMimeType: 'application/json', temperature: 0.7 } });
+    const scadenza = Date.now() + TETTO_DIDASCALIE_MS;
+    const modelli = (await modelliGemini(headers)).filter((m) => !quotaGiornoFinita(m)).slice(0, DIDASCALIE_MODELLI);
+    for (const modello of modelli) {
+      if (Date.now() >= scadenza) { log('didascalie: tempo massimo'); break; }
+      const esito = await chiamaGemini(modello, body, headers, { scadenza });
+      if (!esito.risposta) { log(`didascalie: ${modello} ${esito.motivo}`); continue; }
+      try {
+        const j = await esito.risposta.json();
+        const out = pulisciDidascalie(JSON.parse((j.candidates?.[0]?.content?.parts || []).map((x) => x.text || '').join('').replace(/^```(?:json)?\s*|\s*```$/g, '')));
+        if (out) return out;
+      } catch (e) { log(`didascalie: risposta di ${modello} non usabile`, e.message); }
+    }
   }
-  return null;
+  // MacBook, 29/10: Gemini sovraccarico (503) e niente descrizione. Prima Claude, poi le parole di Denis
+  const daClaude = await didascalieConClaude(`${PROMPT_DIDASCALIE}\n\n${dati}`);
+  if (daClaude) { log('didascalie: scritte da Claude'); return daClaude; }
+  log('didascalie: nessuna AI ha risposto, descrizione semplice dalle parole del video');
+  return didascalieSemplici({ titolo, testo, keywords });
 }
 
 // comando lungo in parallelo al resto (es. copia degli originali su Drive)
@@ -1646,6 +1691,34 @@ let job = {};
 // (_regista/materiale.json del montaggio precedente), chiede la regia e manda il testo che
 // verrebbe montato, su Telegram e in _regista/prova-regia.txt. Niente download del girato e
 // niente render: 1–2 minuti invece di 10–20. Serve a mettere a punto il racconto.
+// azione "descrizione": per un video già montato (02 · Fatti) riscrive descrizione e 5 hashtag dal
+// montaggio salvato e li manda al bot con la copertina, senza rifare niente (MacBook, 29/10)
+async function soloDescrizione() {
+  const nome = process.env.CARTELLA;
+  job = { nome };
+  if (!nome) throw new Error('manca la cartella');
+  fs.rmSync(WORK, { recursive: true, force: true });
+  fs.mkdirSync(path.join(WORK, 'cache'), { recursive: true });
+  rclone('copy', remote(OUT_DIR, nome, CACHE), path.join(WORK, 'cache'), '--include', '{piano.json,materiale.json}');
+  const fp = path.join(WORK, 'cache', 'piano.json');
+  if (!fs.existsSync(fp)) throw new Error(`non trovo il montaggio salvato di ${nome} in ${OUT_DIR}`);
+  const piano = JSON.parse(fs.readFileSync(fp, 'utf8'));
+  let brief = '';
+  try { brief = JSON.parse(fs.readFileSync(path.join(WORK, 'cache', 'materiale.json'), 'utf8')).brief || ''; } catch { /* senza brief */ }
+  const scritte = await scriviDidascalie({ titolo: piano.titolo || nome, testo: piano.testo, brief, keywords: (piano.keywords || []).map((k) => k.word) });
+  if (!scritte) throw new Error('il montaggio salvato non ha testo parlato');
+  fs.writeFileSync(path.join(WORK, 'didascalie.json'), JSON.stringify(scritte, null, 1));
+  rclone('copyto', path.join(WORK, 'didascalie.json'), remote(OUT_DIR, nome, CACHE, 'didascalie.json'));
+  // la copertina già fatta, se c'è (la più recente)
+  let copertina = null;
+  try {
+    const elenco = JSON.parse(rclone('lsjson', remote(OUT_DIR, nome), '--include', '*COPERTINA.jpg')).sort((a, b) => String(b.ModTime).localeCompare(String(a.ModTime)));
+    if (elenco[0]) { copertina = path.join(WORK, 'copertina.jpg'); rclone('copyto', remote(OUT_DIR, nome, elenco[0].Path), copertina); }
+  } catch (e) { log('copertina non trovata', e.message); }
+  await inviaCopertina(copertina, nome, scritte);
+  log(`descrizione mandata: ${scritte.descrizione.slice(0, 80)}… ${scritte.hashtag.join(' ')}`);
+}
+
 async function provaRegia() {
   const nome = process.env.CARTELLA;
   job = { nome };
@@ -1780,6 +1853,13 @@ async function main() {
     return provaRegia().catch(async (e) => {
       log(e.stack || e.message);
       await notifica('⚠️ prova regia', process.env.CARTELLA || '—', `Errore: ${e.message}`);
+      process.exitCode = 1;
+    });
+  }
+  if (process.env.AZIONE === 'descrizione') {
+    return soloDescrizione().catch(async (e) => {
+      log(e.stack || e.message);
+      await notifica('⚠️ descrizione', process.env.CARTELLA || '—', `Errore: ${e.message}`);
       process.exitCode = 1;
     });
   }

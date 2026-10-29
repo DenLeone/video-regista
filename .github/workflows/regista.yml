@@ -32,7 +32,7 @@ on:
         required: false
         default: ''
       azione:
-        description: 'monta (default) | elenco = manda solo al bot le cartelle di 01 · Da editare | regia = prova veloce della sola regia (testo, niente render) su una cartella già montata | render = rifà solo il render con la regia salvata (origine 98) | esempi = fogli di fotogrammi degli esempi di uno stile (cartella = nome dello stile) | archivio = copia su Drive i file caricati dall''app, senza montare'
+        description: 'monta (default) | elenco = manda solo al bot le cartelle di 01 · Da editare | regia = prova veloce della sola regia (testo, niente render) su una cartella già montata | render = rifà solo il render con la regia salvata (origine 98) | esempi = fogli di fotogrammi degli esempi di uno stile (cartella = nome dello stile) | archivio = copia su Drive i file caricati dall''app, senza montare | descrizione = riscrive descrizione e 5 hashtag di un video già montato (origine 98) e li manda al bot'
         required: false
         default: 'monta'
       r2:
