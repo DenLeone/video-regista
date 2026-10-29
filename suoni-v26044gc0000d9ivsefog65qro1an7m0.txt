@@ -1,0 +1,31 @@
+/mnt/lab/0-v26044gc0000d9ivsefog65qro1an7m0.mp4: 39 suoni, 29 diversi
+
+suono_01.wav  0.08 s  usato 7 volte: 0:20.07, 1:16.51, 1:21.98, 1:43.14, 2:52.75, 3:20.14, 4:02.27
+suono_02.wav  0.57 s  usato 2 volte: 0:14.32, 1:06.74
+suono_03.wav  1.23 s  usato 2 volte: 0:39.72, 1:24.72
+suono_04.wav  0.84 s  usato 2 volte: 0:41.44, 0:42.60
+suono_05.wav  2.54 s  usato 2 volte: 2:22.43, 2:54.15
+suono_06.wav  0.41 s  usato 1 volte: 0:01.99
+suono_07.wav  0.20 s  usato 1 volte: 0:03.15
+suono_08.wav  0.07 s  usato 1 volte: 0:06.57
+suono_09.wav  0.33 s  usato 1 volte: 0:19.19
+suono_10.wav  0.09 s  usato 1 volte: 0:33.90
+suono_11.wav  0.15 s  usato 1 volte: 0:40.32
+suono_12.wav  0.06 s  usato 1 volte: 0:41.02
+suono_13.wav  0.15 s  usato 1 volte: 0:46.77
+suono_14.wav  0.13 s  usato 1 volte: 0:47.91
+suono_15.wav  0.13 s  usato 1 volte: 0:51.79
+suono_16.wav  0.48 s  usato 1 volte: 1:03.17
+suono_17.wav  0.81 s  usato 1 volte: 1:53.76
+suono_18.wav  1.20 s  usato 1 volte: 1:55.61
+suono_19.wav  2.67 s  usato 1 volte: 2:05.23
+suono_20.wav  2.54 s  usato 1 volte: 2:14.13
+suono_21.wav  0.17 s  usato 1 volte: 3:14.19
+suono_22.wav  0.21 s  usato 1 volte: 3:23.66
+suono_23.wav  0.48 s  usato 1 volte: 3:23.67
+suono_24.wav  0.46 s  usato 1 volte: 3:41.21
+suono_25.wav  1.21 s  usato 1 volte: 3:47.00
+suono_26.wav  0.94 s  usato 1 volte: 4:03.46
+suono_27.wav  2.66 s  usato 1 volte: 4:08.58
+suono_28.wav  1.31 s  usato 1 volte: 4:25.59
+suono_29.wav  0.05 s  usato 1 volte: 4:33.95
