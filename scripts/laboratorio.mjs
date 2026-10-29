@@ -260,6 +260,23 @@ async function trascrizioni(ric) {
   }
 }
 
+// effetti sonori: quali suoni di un pack (cartella su Drive) ci sono in un video montato e quando
+// (scripts/trova-sfx.py, correlazione sull'audio). { "sfx": { "pack": "<cartella>", "video": "<file>" } }
+function trovaSfx(ric) {
+  const s = sorgente(ric.sfx.video);
+  const pack = path.join(SCARICO, 'pack-sfx');
+  run('rclone', ['copy', `${REMOTE}:${ric.sfx.pack}`, pack, '--include', '*.{wav,WAV,mp3,MP3,aif,aiff,m4a,ogg,flac}']);
+  const venv = path.join(SCARICO, 'venv-sfx');
+  if (!fs.existsSync(venv)) {
+    run('python3', ['-m', 'venv', venv]);
+    run(path.join(venv, 'bin', 'pip'), ['install', '-q', 'numpy', 'scipy']);
+  }
+  const o = path.join(OUT, `sfx-${pulito(path.parse(ric.sfx.video).name)}.txt`);
+  run(path.join(venv, 'bin', 'python'), [path.join(ROOT, 'scripts', 'trova-sfx.py'), s.u, pack, o], { stdio: 'inherit', timeout: 60 * 60 * 1000 });
+  fs.mkdirSync(GIT, { recursive: true });
+  fs.copyFileSync(o, path.join(GIT, path.basename(o)));
+}
+
 async function main() {
   const file = process.env.RICETTA || 'lab/ricetta.json';
   const ric = JSON.parse(fs.readFileSync(path.join(ROOT, file), 'utf8'));
@@ -270,6 +287,7 @@ async function main() {
   uscitaDrive = ric.uscita;
   fs.mkdirSync(SCARICO, { recursive: true });
   if (ric.trascrivi) await trascrizioni(ric);
+  if (ric.sfx) trovaSfx(ric);
   if (ric.sequenze) { sequenze(ric); carica(); }
   if (ric.fotogrammi) { fotogrammiEVarianti(ric); carica(); }
   if (ric.clip) { clip(ric); carica(); }
