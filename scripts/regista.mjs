@@ -190,8 +190,8 @@ function preparaDiscorso(analisi) {
 // la sequenza del discorso vince su quella dell'AI (tiene solo le sue aggiunte di stile: "bn", e nel
 // Motion "fumo", "stock" e gli inserti); `discorso: true` dice a risolviRegia di alternare lo zoom solo
 // dove c'è un salto. Anche per correzioni e "Solo render" di un discorso (DISCORSO senza la sequenza nuova)
-const AGGIUNTE_DISCORSO = ['bn', 'fumo', 'stock', 'inserto', 'inserto_da', 'broll', 'da', 'lento'];
-const aggiunteDi = (x) => Object.fromEntries(AGGIUNTE_DISCORSO.filter((k) => (k === 'bn' || k === 'fumo' || k === 'lento' ? x[k] === true : x[k] != null && x[k] !== '')).map((k) => [k, x[k]]));
+const AGGIUNTE_DISCORSO = ['bn', 'fumo', 'stock', 'inserto', 'inserto_da', 'broll', 'da', 'lento', 'zoom', 'telefono'];
+const aggiunteDi = (x) => Object.fromEntries(AGGIUNTE_DISCORSO.filter((k) => (k === 'bn' || k === 'fumo' || k === 'lento' || k === 'zoom' || k === 'telefono' ? x[k] === true : x[k] != null && x[k] !== '')).map((k) => [k, x[k]]));
 const conSequenza = (r) => (discorso ? { ...r, sequenza: discorso.sequenza.map((it) => {
   const x = (r.sequenza || []).find((y) => normFrase(y.frase) === it.frase);
   return { ...it, ...(x ? aggiunteDi(x) : {}) };
@@ -534,14 +534,16 @@ function preparaImmagini(foto) {
   const etichetta = (t) => (FONT ? `,drawtext=fontfile='${FONT.replace(/:/g, '\\:')}':text='${t.replace(/[':\\]/g, ' ')}':x=6:y=6:fontsize=22:fontcolor=white:box=1:boxcolor=black@0.65:boxborderw=4` : '');
   for (const f of foto) {
     const id = path.parse(f).name;
-    const icona = eIcona(path.join(SCARICO, f));
+    // "copertina …": la copertina del post a cui si risponde (stile reazione), all'apertura
+    const copertina = /^copertina\b/i.test(id);
+    const icona = !copertina && eIcona(path.join(SCARICO, f));
     const file = `img_${id.replace(/[^\w-]+/g, '_')}.${icona ? 'png' : 'jpg'}`;
     try {
       if (icona) run('ffmpeg', ['-y', '-v', 'error', '-i', path.join(SCARICO, f), '-frames:v', '1', '-vf', 'scale=512:512:force_original_aspect_ratio=decrease', path.join(MEDIA, file)]);
       else run('ffmpeg', ['-y', '-v', 'error', '-i', path.join(SCARICO, f), '-frames:v', '1', '-vf', "scale='min(1600,iw)':-2", '-q:v', '3', path.join(MEDIA, file)]);
       const info = probe(path.join(MEDIA, file));
       run('ffmpeg', ['-y', '-v', 'error', '-i', path.join(MEDIA, file), '-vf', `scale=240:426:force_original_aspect_ratio=decrease,pad=240:426:(ow-iw)/2:(oh-ih)/2:black${etichetta(icona ? `ICONA ${id}` : id)}`, '-q:v', '4', path.join(dir, `${String(out.length).padStart(3, '0')}.jpg`)]);
-      out.push({ id, file, orient: info.w > info.h ? 'h' : 'v', ...(icona ? { icona: true } : {}) });
+      out.push({ id, file, orient: info.w > info.h ? 'h' : 'v', ...(icona ? { icona: true } : {}), ...(copertina ? { copertina: true } : {}) });
       if (icona) log(`${id}: icona (entra con bagliore quando la nomino)`);
     } catch (e) { log(`immagine ${f} non leggibile (HEIC?): saltata`, e.message.split('\n')[0]); }
   }
@@ -599,8 +601,14 @@ async function risaltoPersona(piano) {
 // MediaPipe in scripts/ritaglio.py; se qualcosa non va le scritte restano davanti, il video esce lo stesso
 async function ritagliPersona(piano) {
   const g = piano.grafica;
-  if (!g?.dietro) return;
+  const reazione = g?.cornice === 'reazione';
+  if (!g?.dietro && !reazione) return;
   const intervalli = [];
+  // stile reazione: Denis davanti alle schede delle clip, per tutta la loro durata
+  if (reazione) {
+    let t0 = 0;
+    for (const c of piano.clips) { const d = c.end - c.start; if (c.inserto && !c.inserto.telefono) intervalli.push([t0, t0 + d]); t0 += d; }
+  }
   if (g.apertura === 'grande' && piano.parole?.length) {
     // stessa regola di fineApertura in src/SuMisura.tsx
     const parole = piano.parole, fineFrase = parole.find((p) => /[.!?]$/.test(p.w));
@@ -617,7 +625,7 @@ async function ritagliPersona(piano) {
     for (const [i, c] of piano.clips.entries()) {
       const dur = c.end - c.start;
       const sovrapposti = intervalli.map(([a, b]) => [Math.max(a, t), Math.min(b, t + dur)]).filter(([a, b]) => b - a > 0.1);
-      if (sovrapposti.length && c.orient !== 'h' && !c.inserto) {
+      if (sovrapposti.length && c.orient !== 'h' && (!c.inserto || reazione)) {
         const da = Math.min(...sovrapposti.map(([a]) => a)) - t, a = Math.max(...sovrapposti.map(([, b]) => b)) - t;
         const out = `rit_${String(i).padStart(3, '0')}.webm`;
         run(py, [path.join(ROOT, 'scripts', 'ritaglio.py'), path.join(MEDIA, c.file), path.join(MEDIA, out), modello, (a - da).toFixed(3), da.toFixed(3)], { stdio: ['ignore', 'pipe', 'inherit'] });
@@ -753,7 +761,7 @@ function promptRegia({ modo, testoMateriale, regiaPrecedente }) {
       ? `Il video dura circa ${Math.round(durata)} s: distribuisci ${cartelli ? 'al massimo' : 'circa'} ${quante} ${cartelli ? 'cartelli' : 'scritte grandi'} su tutta la durata (${cartelli ? 'uno ogni ~45 s' : 'una ogni ~20 s'}), sulle frasi più forti; questo vale più del numero indicato nella sezione Grafica.`
       : 'Questo stile non ha scritte grandi: `keywords` vuoto.';
     const { conBroll } = discorso;
-    p += `\n\n## MODALITÀ DISCORSO (regola di Denis: nella cartella c'è un solo video parlato)\nÈ un discorso di Denis da montare così com'è: NIENTE regia. Non togliere frasi per accorciare, non riordinare, non scegliere cosa tenere: la sequenza l'ha già decisa lo script (tutte le frasi in ordine, tolte solo pause, false partenze e ripetizioni) e nella regia va copiata identica:\n\`\`\`json\n"sequenza": ${JSON.stringify(discorso.sequenza)}\n\`\`\`\nIl tuo lavoro è SOLO la grafica dello stile (sezione Grafica): \`titolo\`, \`soggetto\`, \`copertina\`, \`enfasi\` se lo stile ha l'apertura a lettere enormi (sulle prime parole del discorso), le \`keywords\` con le regole dello stile e, se lo stile ha il bianco e nero nei momenti, \`"bn": true\` su qualche elemento della sequenza${stileSuMisura?.grafica.fumo || stileSuMisura?.grafica.stock ? '; se la sezione Grafica li prevede, puoi aggiungere agli elementi anche `fumo`, `stock` e `inserto` (sempre con la stessa `frase`)' : ''}. ${scritte} ${conBroll ? 'Nella cartella ci sono anche dei B-roll di Denis (vedi Sorgenti e fogli provino): mettili sopra la voce aggiungendo all\'elemento `"broll": "<id>", "da": <secondi>` (stessa `frase`), dove mostrano quello che dice in quel momento, circa uno ogni 8–12 s, mai sull\'aggancio né sulla chiusura: usali TUTTI almeno una volta (anche le registrazioni dello schermo e le immagini, come `inserto`). Le regole sui B-roll valgono (niente bocca che parla, non riusare lo stesso momento); ignora quelle su durata, scaletta e scelta delle frasi.' : 'Ignora le regole su durata, scaletta, inquadrature e B-roll.'} \`scaletta\` = i 3–6 temi del discorso, \`testo_montato\` vuoto.`;
+    p += `\n\n## MODALITÀ DISCORSO (regola di Denis: nella cartella c'è un solo video parlato)\nÈ un discorso di Denis da montare così com'è: NIENTE regia. Non togliere frasi per accorciare, non riordinare, non scegliere cosa tenere: la sequenza l'ha già decisa lo script (tutte le frasi in ordine, tolte solo pause, false partenze e ripetizioni) e nella regia va copiata identica:\n\`\`\`json\n"sequenza": ${JSON.stringify(discorso.sequenza)}\n\`\`\`\nIl tuo lavoro è SOLO la grafica dello stile (sezione Grafica): \`titolo\`, \`soggetto\`, \`copertina\`, \`enfasi\` se lo stile ha l'apertura a lettere enormi (sulle prime parole del discorso), le \`keywords\` con le regole dello stile e, se lo stile ha il bianco e nero nei momenti, \`"bn": true\` su qualche elemento della sequenza${stileSuMisura?.grafica.fumo || stileSuMisura?.grafica.stock ? '; se la sezione Grafica li prevede, puoi aggiungere agli elementi anche `fumo`, `stock` e `inserto` (sempre con la stessa `frase`)' : ''}. ${scritte} ${stileSuMisura?.grafica.cornice === 'reazione' && analisiCorrente?.sorgenti?.some((s) => s.reazione) ? 'Nella cartella ci sono le clip dell\'altro creator a cui Denis risponde (vedi Sorgenti, con cosa dicono e quando): mettile come `"inserto": "<id>", "inserto_da": <secondi>` sulle frasi in cui Denis ne parla, le cita o le commenta, come dice la sezione Grafica; anche le immagini (screenshot, copertina) come `inserto`. Usale TUTTE almeno una volta. Ignora le regole su durata, scaletta e scelta delle frasi.' : conBroll ? 'Nella cartella ci sono anche dei B-roll di Denis (vedi Sorgenti e fogli provino): mettili sopra la voce aggiungendo all\'elemento `"broll": "<id>", "da": <secondi>` (stessa `frase`), dove mostrano quello che dice in quel momento, circa uno ogni 8–12 s, mai sull\'aggancio né sulla chiusura: usali TUTTI almeno una volta (anche le registrazioni dello schermo e le immagini, come `inserto`). Le regole sui B-roll valgono (niente bocca che parla, non riusare lo stesso momento); ignora quelle su durata, scaletta e scelta delle frasi.' : 'Ignora le regole su durata, scaletta, inquadrature e B-roll.'} \`scaletta\` = i 3–6 temi del discorso, \`testo_montato\` vuoto.`;
   }
   // discorso: fogli provino solo dei B-roll, se ci sono
   const fogliDaLeggere = !discorso || discorso.conBroll;
@@ -1116,7 +1124,7 @@ function caricaStile(nome) {
     }
   }
   // musica: un brano a caso tra quelli in asset/, o quello indicato
-  const brani = tutti.filter((p) => /\.(mp3|m4a|aac|wav|ogg)$/i.test(p));
+  const brani = tutti.filter((p) => /\.(mp3|m4a|aac|wav|ogg)$/i.test(p) && !/\/suoni\//i.test(p.replace(/\\/g, '/')));
   if (musica) {
     const scelto = musica === '*' ? brani[Math.floor(Math.random() * brani.length)] : brani.find((p) => normNome(path.basename(p)).includes(normNome(musica)));
     if (scelto) {
@@ -1125,6 +1133,19 @@ function caricaStile(nome) {
       grafica.musica = { file: `stili/corrente/${dest}`, volume: volumeMusica };
       log(`stile ${nome}: musica ${path.basename(scelto)}`);
     } else avvisi.push(`stile ${nome}: musica richiesta ma nessun brano in asset/`);
+  }
+  // effetti sonori dello stile (asset/suoni, es. quelli estratti dall'edit di Blackden): per nome del file
+  // ("entrata scheda.wav" → "entrata scheda"), usati dalle grafiche che li cercano (src/Reazione.tsx)
+  const suoni = tutti.filter((p) => /\/suoni\//i.test(p.replace(/\\/g, '/')) && /\.(wav|mp3|m4a|aif|aiff|ogg)$/i.test(p));
+  if (suoni.length) {
+    fs.mkdirSync(path.join(pub, 'suoni'), { recursive: true });
+    grafica.suoni = {};
+    suoni.forEach((p, i) => {
+      const dest = `suoni/s${String(i).padStart(2, '0')}.wav`;
+      run('ffmpeg', ['-y', '-v', 'error', '-i', p, '-ar', '48000', '-ac', '2', path.join(pub, dest)]);
+      grafica.suoni[normNome(path.parse(p).name)] = `stili/corrente/${dest}`;
+    });
+    log(`stile ${nome}: ${suoni.length} effetti sonori propri (${Object.keys(grafica.suoni).join(', ')})`);
   }
   // LUT: quella in asset/ dello stile; con "Look: teal e arancio" il look 12K del repo (lut/12k.cube,
   // scripts/look/lut12k.py) con l'esposizione adattata a ogni pezzo
@@ -1449,7 +1470,15 @@ export async function analizza(nome, brief, cache) {
   // registrazione dello schermo, diventata seconda voce: niente discorso e B-roll scelti a caso
   const altriVideo = sorgenti.filter((x) => x.tipo === 'video' && !x.schermo).length > 0;
   for (const s of sorgenti.filter((x) => x.tipo === 'video')) {
-    const perche = s.schermo && altriVideo ? 'registrazione dello schermo'
+    // stile reazione (Blackden, 29/10): "clip …" = video di un altro, nella scheda e muto; "audio …" =
+    // video di un altro di cui si sente anche la voce (più bassa di quella di Denis). Mai voce di Denis
+    const nomeFile = path.parse(s.originale).name;
+    if (/^(clip|audio)\b/i.test(nomeFile) || /^v\d{5}g[a-z0-9]{16,}$/i.test(s.id)) {
+      s.reazione = true;
+      if (/^audio\b/i.test(nomeFile)) s.audioClip = true;
+    }
+    const perche = s.reazione ? (s.audioClip ? 'clip di un altro, con la sua voce' : 'clip di un altro')
+      : s.schermo && altriVideo ? 'registrazione dello schermo'
       : /^v\d{5}g[a-z0-9]{16,}$/i.test(s.id) ? 'video scaricato da TikTok'
       : /tik ?tok|reel|export|montat|hq.?grade/i.test(s.id) ? 'video già montato'
       : recente && s.data && recente - s.data > 3 * 86400e3 ? `girato il ${new Date(s.data).toLocaleDateString('it-IT')}, non con il resto` : null;
@@ -1462,7 +1491,7 @@ export async function analizza(nome, brief, cache) {
     for (const s of sorgenti) {
       const c = cache.sorgenti?.find((x) => x.id === s.id);
       if (!c) continue;
-      Object.assign(s, { principale: c.principale, sync: c.sync, parlato: c.parlato, parole: c.parole, livello: c.livello });
+      Object.assign(s, { principale: c.principale, sync: c.sync, parlato: c.parlato, parole: c.parole, livello: c.livello, ...(c.testoClip ? { testoClip: c.testoClip } : {}) });
       if (c.principale) { s.voce = c.voce; if (!fs.existsSync(path.join(MEDIA, s.voce))) estraiVoce(s.originale, path.join(MEDIA, s.voce)); }
     }
     for (const s of sorgenti.filter((x) => x.tipo === 'video')) {
@@ -1532,6 +1561,20 @@ export async function analizza(nome, brief, cache) {
       continue;
     }
     for (const f of frasi(p.parole, db.get(p.id), p.durata, DISCORSO ? { pausaMax: 0.5 } : {})) tutteFrasi.push({ ...f, principale: p.id });
+  }
+  // clip "audio …" (stile reazione): cosa dice l'altro e quando, per scegliere il pezzo giusto da far sentire
+  for (const s of sorgenti.filter((x) => x.audioClip && !x.testoClip)) {
+    if (!process.env.GROQ_API_KEY) break;
+    try {
+      const w = await trascrivi(s.originale, null);
+      consumi.groqSec += s.durata;
+      const righe = [];
+      let cur = null;
+      for (const x of w) {
+        if (!cur || x.s - cur.e > 0.6 || /[.!?]$/.test(cur.t)) { cur = { s: x.s, e: x.e, t: x.w.trim() }; righe.push(cur); } else { cur.t += ` ${x.w.trim()}`; cur.e = x.e; }
+      }
+      s.testoClip = righe.map((r) => `${r.s.toFixed(1)}–${r.e.toFixed(1)} ${r.t}`).join('\n');
+    } catch (e) { log(`${s.id}: trascrizione della clip non riuscita`, e.message.split('\n')[0]); }
   }
   tutteFrasi.forEach((f, i) => { f.id = `F${String(i + 1).padStart(3, '0')}`; });
 

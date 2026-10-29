@@ -14,7 +14,10 @@ export type Clip = {
   bn?: boolean;     // in bianco e nero (stili su misura con "Bianco e nero: momenti")
   // scheda arrotondata sopra l'inquadratura (registrazione dello schermo, screenshot, foto, B-roll
   // del prodotto) mentre Denis ne parla; video: start/end nella sorgente
-  inserto?: { file: string; tipo: 'video' | 'immagine'; orient?: 'v' | 'h'; start?: number; end?: number; continua?: boolean };
+  // audio: si sente la voce della clip (più bassa di Denis); zoom: ingrandita sulla faccia; telefono:
+  // dentro un telefono; copertina: la copertina del post a cui si risponde (stile reazione, Blackden)
+  inserto?: { file: string; tipo: 'video' | 'immagine'; orient?: 'v' | 'h'; start?: number; end?: number; continua?: boolean;
+    audio?: boolean; zoom?: boolean; telefono?: boolean; copertina?: boolean };
   // la persona ritagliata (video con trasparenza) per far passare le scritte grandi dietro di lei;
   // da = secondi dall'inizio della clip
   ritaglio?: { file: string; da: number; dur: number };
@@ -50,6 +53,8 @@ export type Piano = {
   flickers: Flicker[];
   // loghi di app e marche (PNG trasparenti in public/media) che entrano con bagliore quando Denis li nomina
   icone?: { file: string; at: number; dur: number }[];
+  // schede informative di vetro (stile reazione): scritte dall'AI su quello che Denis spiega
+  schede?: { at: number; dur: number; titolo: string; colore: string; sezioni: { titolo: string; testo: string }[]; sintesi?: string }[];
   sponsor?: { material: string; test: string } | null;
   sponsorAt?: number;       // da quando mostrare il cartiglio
   note?: string;            // dubbi/scelte di Claude, finiscono in NOTE.txt
@@ -90,7 +95,8 @@ export type GraficaStile = {
   transizione?: 'fumo' | 'sfocata';          // sfocata = scia sfocata veloce sul taglio (Ultra); senza, fumo
   palette?: string[];                        // colori a giro delle parole grandi (sottotitoli a strati)
   firma?: string;                            // logo Instagram e nome (es. @_black_den) fissi in basso a sinistra
-  cornice?: 'scheda' | 'tv';                 // inserti: scheda arrotondata o televisore anni '70
+  cornice?: 'scheda' | 'tv' | 'reazione';    // inserti: scheda arrotondata, televisore anni '70 o scheda in prospettiva dietro a Denis
+  suoni?: Record<string, string>;            // effetti sonori dello stile (asset/suoni): nome → file in public
   stock?: boolean;                           // l'AI può chiedere B-roll di repertorio (Pixabay o Pexels, se c'è la chiave)
   fontCorsivo: FontStile;                    // la frase piccola delle scritte a due livelli
   dietro: boolean;                           // le scritte grandi passano dietro alla persona

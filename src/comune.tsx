@@ -75,7 +75,7 @@ export const volumeSfx = (piano: Piano) => (piano.sfx === false ? 0 : Math.max(0
 // un effetto sonoro (public/sfx, generati da scripts/genera-sfx.mjs) a partire dal fotogramma `da`
 export const Sfx: React.FC<{ nome: string; da: number; volume: number }> = ({ nome, da, volume }) => (
   <Sequence from={Math.max(0, da)} durationInFrames={f(2)} layout="none">
-    <Audio src={staticFile(`sfx/${nome}.wav`)} volume={volume} />
+    <Audio src={staticFile(nome.includes('/') ? nome : `sfx/${nome}.wav`)} volume={volume} />
   </Sequence>
 );
 
@@ -83,21 +83,28 @@ export const Sfx: React.FC<{ nome: string; da: number; volume: number }> = ({ no
 // Mentre Denis parla di qualcosa che c'è in un file (registrazione dello schermo, screenshot, foto,
 // B-roll del prodotto) la scheda entra dal basso, resta sospesa sopra l'inquadratura ed esce verso
 // l'alto. Più clip di fila con lo stesso inserto = una sola scheda, senza rientrare.
-type PezzoInserto = { from: number; len: number; ins: NonNullable<Clip['inserto']> };
-type Scheda = { from: number; len: number; pezzi: PezzoInserto[] };
+export type PezzoInserto = { from: number; len: number; ins: NonNullable<Clip['inserto']> };
+export type Scheda = { from: number; len: number; pezzi: PezzoInserto[] };
 
-function schedeInserti(piano: Piano): Scheda[] {
+// `unisci` (stile reazione): clip diverse una dopo l'altra restano nella stessa scheda, cambia solo il
+// contenuto (come nell'edit di Blackden); telefono e copertina restano schede a sé
+export function schedeInserti(piano: Piano, unisci = false): Scheda[] {
   const schede: Scheda[] = [];
   let t = 0;
+  const aSe = (i: NonNullable<Clip['inserto']>) => Boolean(i.telefono || i.copertina || i.tipo === 'immagine');
   for (const c of piano.clips) {
     const len = f(durataClip(c));
     if (c.inserto) {
       const prec = schede[schede.length - 1];
-      const pezzo = { from: t, len, ins: c.inserto };
-      if (prec && prec.from + prec.len === t && (c.inserto.continua || prec.pezzi[prec.pezzi.length - 1].ins.file === c.inserto.file)) {
+      // una clip più corta della frase (reazione) chiude la scheda quando finisce
+      const lenIns = c.inserto.tipo === 'video' && c.inserto.end != null ? Math.max(2, Math.min(len, f(c.inserto.end - (c.inserto.start || 0)))) : len;
+      const pezzo = { from: t, len: lenIns, ins: c.inserto };
+      const ultimo = prec?.pezzi[prec.pezzi.length - 1].ins;
+      if (prec && ultimo && prec.from + prec.len === t
+        && (c.inserto.continua || ultimo.file === c.inserto.file || (unisci && !aSe(ultimo) && !aSe(c.inserto)))) {
         prec.pezzi.push(pezzo);
-        prec.len += len;
-      } else schede.push({ from: t, len, pezzi: [pezzo] });
+        prec.len += lenIns;
+      } else schede.push({ from: t, len: lenIns, pezzi: [pezzo] });
     }
     t += len;
   }
@@ -157,7 +164,7 @@ const TvView: React.FC<{ s: Scheda; contenuto: React.ReactNode }> = ({ s, conten
   );
 };
 
-const SchedaView: React.FC<{ s: Scheda; cornice?: 'scheda' | 'tv' }> = ({ s, cornice }) => {
+const SchedaView: React.FC<{ s: Scheda; cornice?: 'scheda' | 'tv' | 'reazione' }> = ({ s, cornice }) => {
   const fr = useCurrentFrame();
   const entra = interpolate(fr, [0, 12], [0, 1], { extrapolateLeft: 'clamp', extrapolateRight: 'clamp', easing: Easing.out(Easing.back(1.4)) });
   const esce = interpolate(fr, [s.len - 9, s.len], [0, 1], { extrapolateLeft: 'clamp', extrapolateRight: 'clamp', easing: Easing.in(Easing.cubic) });
@@ -189,7 +196,7 @@ const SchedaView: React.FC<{ s: Scheda; cornice?: 'scheda' | 'tv' }> = ({ s, cor
   );
 };
 
-export const Inserti: React.FC<{ piano: Piano; sfx?: number; cornice?: 'scheda' | 'tv' }> = ({ piano, sfx = 0, cornice }) => (
+export const Inserti: React.FC<{ piano: Piano; sfx?: number; cornice?: 'scheda' | 'tv' | 'reazione' }> = ({ piano, sfx = 0, cornice }) => (
   <>
     {schedeInserti(piano).map((s, i) => (
       <Sequence key={`in${i}`} from={s.from} durationInFrames={Math.max(2, s.len)}>

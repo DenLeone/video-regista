@@ -228,13 +228,15 @@ export function risolviRegia(regia, analisi) {
       const durClip = clip.end - clip.start;
       const b = img ? null : trovaSorgente(nomeIns);
       if (img?.icona) iconeDaInserto.push({ icona: img.id, frase: it.frase });
-      else if (img) clip.inserto = { file: img.file, tipo: 'immagine', orient: img.orient };
-      else if (b && b.tipo === 'video' && b.durata >= durClip) {
+      else if (img) clip.inserto = { file: img.file, tipo: 'immagine', orient: img.orient, ...(it.telefono === true ? { telefono: true } : {}), ...(img.copertina ? { copertina: true } : {}) };
+      // le clip di un altro (stile reazione) possono essere più corte della frase: la scheda esce prima
+      else if (b && b.tipo === 'video' && (b.durata >= durClip || (b.reazione && b.durata >= 1.2))) {
         let da = Math.max(0, Number(it.inserto_da) || 0);
-        if (da + durClip > b.durata) da = Math.max(0, b.durata - durClip - 0.05);
+        if (da + Math.min(durClip, b.durata) > b.durata) da = Math.max(0, b.durata - Math.min(durClip, b.durata) - 0.05);
         // almeno 1,6 s di video: se la frase è corta la scheda prosegue sopra la clip dopo
         const durIns = Math.min(b.durata - da, Math.max(durClip, 1.6));
-        clip.inserto = { file: b.file, tipo: 'video', orient: b.orient, start: +da.toFixed(3), end: +(da + durIns).toFixed(3) };
+        clip.inserto = { file: b.file, tipo: 'video', orient: b.orient, start: +da.toFixed(3), end: +(da + durIns).toFixed(3),
+          ...(b.audioClip ? { audio: true } : {}), ...(it.zoom === true ? { zoom: true } : {}) };
         // stesso video di seguito: la scheda resta e il video prosegue
         const precIns = clips[clips.length - 1]?.inserto;
         if (precIns && precIns.file === b.file && precIns.tipo === 'video' && Math.abs(precIns.end - da) < 0.3) clip.inserto.continua = true;
@@ -322,6 +324,21 @@ export function risolviRegia(regia, analisi) {
   }
   keywords = keywords.filter((k, i) => i === 0 || k.at > keywords[i - 1].at);
 
+  // schede informative (stile reazione, Blackden 29/10): riquadri di vetro scuro scritti dall'AI con
+  // quello che Denis spiega (leggi, dati, contesto), ancorati alla frase in cui ne parla
+  const COLORI_SCHEDA = { rosso: '#FF4D4D', blu: '#4DA3FF', verde: '#3DDC84', giallo: '#FFC83D', viola: '#B57BFF' };
+  const schede = [];
+  for (const k of Array.isArray(regia.schede) ? regia.schede : []) {
+    const at = k.frase ? inizioFrase(k.frase) : null;
+    if (at == null || !k.titolo) { avvisi.push(`scheda "${String(k.titolo || '').slice(0, 30)}": ${k.frase ? `frase ${k.frase} non usata` : 'senza frase'}, tolta`); continue; }
+    const sezioni = (Array.isArray(k.sezioni) ? k.sezioni : []).slice(0, 4)
+      .map((x) => ({ titolo: String(x?.titolo || '').slice(0, 60), testo: String(x?.testo || '').slice(0, 260) })).filter((x) => x.titolo || x.testo);
+    schede.push({ at: q(at + Math.max(0, Number(k.ritardo) || 0)), dur: q(Math.min(9, Math.max(3, Number(k.dur) || 5))), titolo: String(k.titolo).slice(0, 40),
+      colore: COLORI_SCHEDA[String(k.colore || '').toLowerCase()] || COLORI_SCHEDA.blu, sezioni, ...(k.sintesi ? { sintesi: String(k.sintesi).slice(0, 200) } : {}) });
+  }
+  schede.sort((a, b) => a.at - b.at);
+  for (let i = 1; i < schede.length; i++) if (schede[i - 1].at + schede[i - 1].dur > schede[i].at - 0.3) schede[i - 1].dur = q(Math.max(2, schede[i].at - schede[i - 1].at - 0.3));
+
   // icone: entrano con bagliore sulla parola in cui Denis nomina l'app o la marca (comune.tsx, Icone).
   // Tutte quelle caricate vanno usate: se l'AI ne salta una, la cerco io nel parlato dal nome del
   // file ("VN.png" → "VN"); se non la trovo la metto comunque, in mezzo alle altre, con un avviso
@@ -367,6 +384,7 @@ export function risolviRegia(regia, analisi) {
       soggetto: regia.soggetto || String(analisi.cartella).toUpperCase(),
       clips, keywords, flickers,
       ...(icone.length ? { icone } : {}),
+      ...(schede.length ? { schede } : {}),
       sponsor: regia.sponsor || null,
       sponsorAt,
       note: [regia.note, ...avvisi.map((a) => `⚠️ ${a}`)].filter(Boolean).join(' · '),
@@ -563,6 +581,11 @@ export function materialePerAI(analisi) {
       parti.push(coperte.length
         ? `inquadratura sincronizzata con la voce di ${s.sync.con}: usabile come "camera" su ${intervalli(coperte.map((f) => f.id))}`
         : `sincronizzata con ${s.sync.con} ma non copre nessuna frase intera: usala come B-roll`);
+    } else if (s.reazione) {
+      parti.push(s.audioClip
+        ? 'CLIP DI UN ALTRO CON LA SUA VOCE: solo come "inserto" (con "inserto_da" = il secondo da cui parte il pezzo che vuoi far sentire); la sua voce si sente sotto quella di Denis'
+        : 'CLIP DI UN ALTRO: solo come "inserto" (con "inserto_da"), muta; mai "broll" né "camera"');
+      if (s.testoClip) parti.push(`cosa dice (secondi nella clip):\n${s.testoClip.split('\n').map((r) => `    ${r}`).join('\n')}`);
     } else if (s.schermo) parti.push('REGISTRAZIONE DELLO SCHERMO: usala come "inserto" (scheda sopra l\'inquadratura) mentre Denis parla di quello che mostra');
     else if (s.soloImmagini) parti.push(`SOLO IMMAGINI (${s.soloImmagini}): usala solo come B-roll muto, la sua voce non entra mai nel montaggio`);
     else if (s.tipo === 'video') parti.push(s.parlato ? 'ha parlato non sincronizzabile: usala solo come B-roll'
@@ -572,7 +595,9 @@ export function materialePerAI(analisi) {
     if (s.fogli?.length) parti.push(`fogli: ${s.fogli.join(', ')} (un riquadro ogni ${s.passoFogli} s; tempi ${s.sync || s.principale ? 'nel tempo della voce' : 'della clip, da usare in "da"'})`);
     r.push(parti.join(' · '));
   }
-  for (const im of analisi.immagini || []) r.push(im.icona
+  for (const im of analisi.immagini || []) r.push(im.copertina
+    ? `- **${im.id}** · COPERTINA del post a cui Denis risponde · va come "inserto" sulla prima frase (l'aggancio)${analisi.foglioImmagini ? ` · foglio: ${analisi.foglioImmagini}` : ''}`
+    : im.icona
     ? `- **${im.id}** · ICONA (logo di un'app, di una marca o di un prodotto) · va in \`icone\` sulla parola in cui Denis la nomina, MAI come inserto${analisi.foglioImmagini ? ` · foglio: ${analisi.foglioImmagini}` : ''}`
     : `- **${im.id}** · immagine ${im.orient === 'v' ? 'verticale' : 'orizzontale'} · solo come "inserto"${analisi.foglioImmagini ? ` · foglio: ${analisi.foglioImmagini}` : ''}`);
   for (const p of analisi.sorgenti.filter((s) => s.principale)) {
@@ -627,7 +652,7 @@ export function usaTuttoIlMateriale(regia, analisi) {
     const adatti = sequenza.map((it, i) => i).filter((i) => libero(sequenza[i], i) && (s.immagine || durata(sequenza[i]) <= s.durata - 0.1));
     if (!adatti.length) return;
     const i = adatti.reduce((a, b) => (Math.abs(b - obiettivo) < Math.abs(a - obiettivo) ? b : a));
-    const comeInserto = s.immagine || s.schermo || s.orient === 'h';
+    const comeInserto = s.immagine || s.schermo || s.reazione || s.orient === 'h';
     if (comeInserto) Object.assign(sequenza[i], { inserto: s.id, ...(s.immagine ? {} : { inserto_da: 0 }) });
     else Object.assign(sequenza[i], { broll: s.id, da: +Math.max(0, Math.min(0.5, s.durata - durata(sequenza[i]) - 0.1)).toFixed(2) });
     delete sequenza[i].camera;

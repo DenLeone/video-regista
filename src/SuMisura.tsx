@@ -6,6 +6,7 @@ import { durataTotale, FontStile, GraficaStile, Keyword, Piano, Posizione, W } f
 import { clamp, dentro, norm, OMBRA, pulisci, RACCORDO, SICURA, stileFont, larghezzaTesto } from './testo';
 import { BlocchiMotion, blocchiParlato, Cartello, Firma, Fumi, tagliFumo } from './Motion';
 import { BlocchiUltra, Sfocature } from './Ultra';
+import { InsertiReazione, SchedeInfo } from './Reazione';
 
 // Stile "su misura": tutta la grafica arriva da Drive (Stili/<nome>/stile.txt, letto da
 // scripts/stile-su-misura.mjs) dentro piano.grafica. Nessun codice per uno stile nuovo.
@@ -358,6 +359,7 @@ export const SuMisura: React.FC<Piano> = (piano) => {
   const cartelli = g.titoli && g.tipoTitoli === 'cartelli' ? scritte : [];
   // Motion: tutto il parlato a blocchi (le parole chiave dell'AI enormi), tranne dove c'è un cartello
   const strati = g.sottotitoli === 'strati';
+  const reazione = g.cornice === 'reazione';
   const blocchi = g.sottotitoli === 'blocchi' || strati ? blocchiParlato(piano.parole, piano.enfasi, cartelli, strati) : [];
   const grandi = paroleGrandi(piano.parole, forti);
   const dopoApertura = (piano.parole || []).filter((p) => p.at >= fineApertura - 0.01);
@@ -384,8 +386,10 @@ export const SuMisura: React.FC<Piano> = (piano) => {
           <ScrittaDueLivelli righe={righeFrase(k)} len={Math.max(2, f(k.dur))} g={g} top={k.top} />
         </Sequence>
       ))}
-      {g.dietro ? <Ritagli piano={piano} filtro={LOOK[g.look]} /> : null}
-      <Inserti piano={piano} sfx={sfx} cornice={g.cornice} />
+      {/* stile reazione: le clip dell'altro dietro a Denis (la persona ritagliata va sopra) */}
+      {reazione ? <InsertiReazione piano={piano} g={g} sfx={sfx} /> : null}
+      {g.dietro || reazione ? <Ritagli piano={piano} filtro={LOOK[g.look]} /> : null}
+      {reazione ? <SchedeInfo piano={piano} g={g} sfx={sfx} /> : <Inserti piano={piano} sfx={sfx} cornice={g.cornice} />}
       {g.fumo && g.transizione !== 'sfocata' ? <Fumi piano={piano} /> : null}
       {g.fumo && g.transizione === 'sfocata' ? <Sfocature piano={piano} /> : null}
       {strati ? <BlocchiUltra blocchi={blocchi} g={g} /> : <BlocchiMotion blocchi={blocchi} g={g} />}

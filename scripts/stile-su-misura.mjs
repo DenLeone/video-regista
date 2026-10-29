@@ -47,7 +47,7 @@ Tagli dentro le frasi: no     # sì = ritmo veloce: l'inquadratura può cambiare
 Chiusura: no                  # no | il tuo nome Instagram (es. @_black_den): finale scurito con logo e nome
 Firma: no                     # no | il tuo nome Instagram: logo e nome fissi in basso a sinistra per tutto il video
 Transizioni: no               # no | fumo (nuvola che copre il taglio nei cambi di scena scelti dall'AI) | sfocata (scia sfocata veloce sul taglio)
-Inserti: scheda               # scheda (arrotondata, tipo telefono) | tv (televisore anni '70 con barre colorate all'accensione)
+Inserti: scheda               # scheda (arrotondata, tipo telefono) | tv (televisore anni '70 con barre colorate all'accensione) | reazione (le clip di un altro in una scheda in prospettiva dietro di te, con la sua voce più bassa; schede informative di vetro scritte dall'AI: Blackden)
 B-roll stock: no              # sì = l'AI può coprire alcune frasi con video di repertorio da Pexels (serve il secret PIXABAY_API_KEY)
 
 # --- AUDIO ---
@@ -168,7 +168,7 @@ export function leggiStile(testo, nomeCartella) {
   }
   const palette = (campi['colori parole grandi'] || '').match(/#?[0-9a-f]{6}\b/gi);
   if (palette?.length) g.palette = palette.map((c) => colore(c, '#FFFFFF'));
-  if (campi.inserti) g.cornice = /tv|telev/.test(norm(campi.inserti)) ? 'tv' : 'scheda';
+  if (campi.inserti) g.cornice = /tv|telev/.test(norm(campi.inserti)) ? 'tv' : /reaz|rispost|blackden/.test(norm(campi.inserti)) ? 'reazione' : 'scheda';
   if (campi['b-roll stock']) g.stock = si(campi['b-roll stock']);
   // i blocchi fanno già le parole chiave enormi: "parole grandi" o "frasi" in più si sovrapporrebbero
   // (stile studiato dall'AI sul Motion, 25/10); restano i cartelli a tutto schermo
@@ -239,6 +239,17 @@ export function promptSuMisura(g, testoAI, disponibili = {}) {
   if (g.stock && disponibili.stock) {
     righe.push('- **B-roll di repertorio**: su un elemento con `frase` puoi mettere `"stock": "<ricerca in inglese, 2–4 parole>"` al posto di `camera`/`broll`: lo script cerca un video di repertorio e lo mostra a tutto schermo mentre Denis parla. La ricerca descrive una cosa concreta che si vede e illustra quello che dice in quel momento (es. "server room lights", "crowd protest street", "old tv static", "money counting hands"), niente nomi di persone o marchi.',
       '  - Circa uno ogni 10–15 s, su frasi da 1,5 a 6 s; mai l\'aggancio né la chiusura (lì il volto), mai due di fila; stessa ricerca su due frasi = stesso video, pezzi diversi. Se non trova niente resta l\'inquadratura normale.');
+  }
+  if (g.cornice === 'reazione') {
+    righe.push('- **Stile reazione**: Denis risponde a un altro creator. Le sue clip (Sorgenti: CLIP DI UN ALTRO) entrano in una scheda inclinata in alto, dietro a Denis: `"inserto": "<id>", "inserto_da": <secondo della clip>` sulla frase in cui Denis la presenta, la cita o la commenta. Il pezzo giusto lo scegli dal testo della clip (cosa dice e quando): quando Denis dice "lui dice che…", mostra il momento in cui lo dice.',
+      '  - Le clip CON LA SUA VOCE si sentono sotto la voce di Denis: mettile dove serve sentire le sue parole (le frasi che Denis riprende o smentisce), con `inserto_da` all\'inizio di quella frase della clip.',
+      '  - Le clip si alternano spesso (una ogni 5–15 s di discorso, la stessa clip anche più volte su pezzi diversi): il video è un botta e risposta. La COPERTINA va sull\'aggancio, la prima frase.',
+      '  - `"zoom": true` sull\'elemento: la clip è ingrandita sulla faccia (per sottolineare un\'espressione o una frase assurda), al massimo 2–3 volte.',
+      '  - Screenshot di testi, leggi, articoli, profili e commenti (immagini verticali): `"inserto": "<id>"` con `"telefono": true` per mostrarli dentro un telefono.',
+      '- `schede` (campo in cima alla regia, accanto a `keywords`): 2–5 SCHEDE INFORMATIVE di vetro scuro sui passaggi in cui Denis spiega leggi, numeri o fatti (es. cosa dice la legge sul volto coperto, i dati sulla violenza di genere, la libertà di culto). Ognuna: `{"frase": "F012", "dur": 5, "titolo": "QUADRO NORMATIVO & LEGALE", "colore": "blu", "sezioni": [{"titolo": "1. Cosa dice la legge", "testo": "…"}], "sintesi": "…"}`.',
+      '  - `colore`: rosso (avvisi, conseguenze), blu (leggi e norme), verde (dati, ricerche), giallo (contesto), viola (social). Titolo in maiuscolo, 2–4 parole. 2–4 sezioni brevi (1–2 frasi ciascuna), `sintesi` in una frase.',
+      '  - Il contenuto viene SOLO da quello che Denis dice nel video e da fatti certi e generali: niente numeri, articoli di legge o date che Denis non dice e di cui non sei sicuro. Meglio una scheda in meno che un dato inventato.',
+      '  - Mai due schede a meno di 15 s una dall\'altra; mai sopra una clip con la voce dell\'altro.');
   }
   if (g.cornice === 'tv') righe.push('- Gli inserti compaiono dentro un televisore anni \'70 (barre colorate all\'accensione): perfetti per filmati, schermate e foto di cui Denis parla.');
   if (g.biancoNero === 'momenti') righe.push('- **Bianco e nero**: metti `"bn": true` sugli elementi della sequenza che raccontano (ricordi, riflessioni, B-roll d\'atmosfera), circa un terzo; il volto che parla al presente e il prodotto restano a colori.');
