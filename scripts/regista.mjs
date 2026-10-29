@@ -33,6 +33,7 @@ import { chiaveStileR2, preparaStileApp } from './stile-app.mjs';
 import { bloccoRemoteR2, comandiCancellaR2, comandiCopiaDrive, comandiScaricoR2 } from './rete.mjs';
 import { scegliCartella } from './scegli-cartella.mjs';
 import { progettoDaVinci } from './davinci.mjs';
+import { filtroRampa, grigliaBattute, motoRipresa, pianoBeat, scegliTratto } from './beat.mjs';
 import { analizzaBrano, descriviCatalogo, DIR_MUSICA, ESTENSIONI_MUSICA, momentiParlati, richiestaMusica, scegliBrano } from './musica.mjs';
 import { AUDIO_EXT, IMAGE_EXT, NOMI_DISPOSITIVO, VIDEO_EXT, dispositivo, prioritaAudio, tagsPiatti } from './sorgenti.mjs';
 
@@ -325,10 +326,11 @@ function misuraPerLook(s, start, dur) {
 // `lento` (rallentatore): `dur` secondi di sorgente stirati di quel fattore, a `fps` fotogrammi al secondo
 // Stessi argomenti di prima, con -threads fissi: 4 tagli insieme non saturano la CPU e due giri
 // sullo stesso pezzo restano identici (il preset e il crf del master non cambiano).
-export function comandiTaglio(s, start, dur, out, conAudio, senzaLook = false, zoom = 1, lento = 1, fps = 30) {
+// `rampa` (stile Beat): `dur` = durata in uscita, della sorgente se ne usano rampa.fonte secondi a velocità variabile
+export function comandiTaglio(s, start, dur, out, conAudio, senzaLook = false, zoom = 1, lento = 1, fps = 30, rampa = null) {
   // repertorio orizzontale: ritaglio centrale 9:16, poi lo zoom
   const ritaglio = (s.ritaglia916 ? 'crop=trunc(ih*9/16/2)*2:ih,' : '') + (zoom > 1 ? `crop=trunc(iw/${zoom}/2)*2:trunc(ih/${zoom}/2)*2,` : '');
-  const rallenta = lento > 1 ? `setpts=${lento}*PTS,` : '';
+  const rallenta = rampa ? `${filtroRampa(rampa, dur)},` : lento > 1 ? `setpts=${lento}*PTS,` : '';
   let curva = null;
   if (!senzaLook) {
     // look 12K: la sua curva; look chiari ("chiaro caldo" del Narrativo): centro e volto ben esposti;
@@ -339,12 +341,12 @@ export function comandiTaglio(s, start, dur, out, conAudio, senzaLook = false, z
       : (m.pelle != null && m.pelle < 0.2) || m.medio < 0.25 ? curvaChiara(m, { obiettivo: 0.45, obiettivoPelle: 0.3 }) : null;
     if (m) log(`  ${path.basename(out)}: soggetto ${m.medio.toFixed(2)}${m.pelle != null ? `, volto ${m.pelle.toFixed(2)}` : ''}, neri ${m.nero.toFixed(2)}, bianchi ${m.bianco.toFixed(2)}${curva ? ` → curva ${curva}` : ''}`);
   }
-  return ['-y', '-v', 'error', '-ss', start.toFixed(3), '-i', s.originale, '-t', (dur * lento + 0.1).toFixed(3),
+  return ['-y', '-v', 'error', '-ss', start.toFixed(3), '-i', s.originale, '-t', (rampa ? dur + 0.03 : dur * lento + 0.1).toFixed(3),
     '-vf', `${rallenta}${ritaglio}scale='if(gt(iw,ih),1920,1080)':-2:flags=lanczos,${senzaLook ? filtroTecnico(s.colore) : filtroColore(s.colore, curva)}`,
-    ...(lento > 1 ? ['-r', String(fps)] : []),
+    ...(lento > 1 || rampa ? ['-r', String(fps)] : []),
     '-threads', '2',
     '-c:v', 'libx264', '-preset', 'veryfast', '-crf', '16', '-pix_fmt', 'yuv420p', ...TAG_709,
-    ...(conAudio && lento === 1 ? ['-c:a', 'aac', '-b:a', '160k'] : ['-an']), '-movflags', '+faststart', out];
+    ...(conAudio && lento === 1 && !rampa ? ['-c:a', 'aac', '-b:a', '160k'] : ['-an']), '-movflags', '+faststart', out];
 }
 function eseguiUno(cmd, args) {
   return new Promise((ok, ko) => {
@@ -486,7 +488,7 @@ async function tagliaSegmenti(piano, analisi) {
     const lento = c.lento > 1 ? c.lento : 1;
     const start = c.start;
     // la curva del look si misura adesso, in ordine: due pezzi della stessa ripresa non si pestano i piedi
-    const args = comandiTaglio(s, start, dur / lento, path.join(MEDIA, seg), !c.audio && !c.muto && s.haAudio, false, zoom, lento, piano.fps || 30);
+    const args = comandiTaglio(s, start, dur / lento, path.join(MEDIA, seg), !c.audio && !c.muto && s.haAudio, false, zoom, lento, piano.fps || 30, c.rampa || null);
     lavori.push(async () => {
       await eseguiUno('ffmpeg', args);
       Object.assign(c, { file: seg, start: 0, end: +dur.toFixed(3), sorgente: s.id, daSorgente: start });
@@ -781,6 +783,46 @@ function preparaMusica(piano, regia, richiesta) {
   run('ffmpeg', ['-y', '-v', 'error', '-i', sorgente, '-af', 'loudnorm=I=-18:TP=-1.5:LRA=11', '-ar', '48000', '-ac', '2', '-c:a', 'aac', '-b:a', '192k', path.join(MEDIA, 'musica.m4a')]);
   log(`musica: ${nomeBrano}${regia?.musica && !richiesta?.nome ? ' (scelta dall\'AI)' : richiesta?.nome ? ' (chiesta da Denis)' : ''}`);
   return { file: 'media/musica.m4a', nome: nomeBrano, da: catalogoMusica[nomeBrano].entrata || 0, volume: 0.35, parlato: momentiParlati(piano.parole) };
+}
+
+// ---------- stile Beat: montaggio a tempo di musica, senza regia dell'AI (scripts/beat.mjs) ----------
+async function montaBeat(analisi, nome) {
+  await fase(nome, '🥁 Beat: trovo le battute del brano e il movimento delle riprese', 'regia');
+  // il brano: quello dello stile (asset/), se no quello chiesto o il più energico della cartella Musica
+  let brano = stileSuMisura.grafica.musica?.file ? path.join(ROOT, 'public', stileSuMisura.grafica.musica.file) : null;
+  let nomeBrano = brano ? path.basename(brano) : null;
+  if (!brano) {
+    catalogoMusica = catalogoMusica || preparaCatalogoMusica();
+    const voci = Object.entries(catalogoMusica).filter(([, m]) => m.bpm >= 80 && m.bpm <= 140).sort((a, b) => b[1].energia - a[1].energia);
+    nomeBrano = scegliBrano(catalogoMusica, { richiesto: richiestaMusica(analisi.brief)?.nome, dellAI: voci[0]?.[0] });
+    if (!nomeBrano) throw new Error('Beat: nessun brano (mettine uno in asset/ dello stile o nella cartella Musica)');
+    brano = path.join(WORK, 'musica', nomeBrano);
+    if (!fs.existsSync(brano)) rclone('copyto', remote(DIR_MUSICA, nomeBrano), brano);
+  }
+  const griglia = grigliaBattute(brano);
+  const tratto = scegliTratto(griglia, 14);
+  log(`beat: ${nomeBrano} · ${griglia.bpm} BPM · ${tratto.n} battute da ${tratto.da.toFixed(2)} s (${tratto.dur.toFixed(1)} s)`);
+  const riprese = analisi.sorgenti.filter((s) => s.tipo === 'video' && !s.reazione && !s.stock)
+    .map((s) => ({ id: s.id, file: s.file, durata: s.durata, fps: s.fps, orient: s.orient, moto: motoRipresa(s.originale, s.durata) }));
+  if (!riprese.length) throw new Error('Beat: nessuna ripresa video nella cartella');
+  const { clips: scelte, scintille } = pianoBeat({ riprese, griglia, tratto });
+  const perId = new Map(riprese.map((r) => [r.id, r]));
+  const clips = scelte.map((c) => ({ file: c.file, start: c.da, end: +(c.da + c.dur).toFixed(3), orient: perId.get(c.sorgente)?.orient || 'v', muto: true,
+    rampa: { ...c.rampa, fonte: c.fonte }, transizione: c.transizione }));
+  // il tratto del brano, a volume pieno e uniforme, con le battute che partono dallo 0 del video
+  run('ffmpeg', ['-y', '-v', 'error', '-ss', tratto.da.toFixed(3), '-i', brano, '-t', (tratto.dur + 1).toFixed(3),
+    '-af', 'loudnorm=I=-14:TP=-1:LRA=11', '-ar', '48000', '-ac', '2', '-c:a', 'aac', '-b:a', '192k', path.join(MEDIA, 'musica.m4a')]);
+  const usate = new Set(scelte.map((c) => c.sorgente)).size;
+  const piano = {
+    titolo: nome, tavola: '', soggetto: nome.toUpperCase(), clips, keywords: [], flickers: [], sponsor: null, sponsorAt: 0,
+    note: `🥁 Beat: ${nomeBrano}, ${griglia.bpm} BPM, ${clips.length} inquadrature su ${tratto.n} battute da ${usate} riprese`,
+    testo: '', parole: [],
+    musica: { file: 'media/musica.m4a', nome: nomeBrano, da: 0, volume: 0.95, parlato: [] },
+    beat: { battuta: griglia.beat, bpm: griglia.bpm, scintille },
+  };
+  const regia = { titolo: nome, beat: true, sequenza: [], keywords: [], flickers: [], note: piano.note, tratto, clips: scelte };
+  fs.writeFileSync(path.join(WORK, 'regia.json'), JSON.stringify(regia, null, 1));
+  return { regia, risultato: { piano, avvisi: [] } };
 }
 
 // ---------- 3. l'AI scrive la regia ----------
@@ -2035,7 +2077,8 @@ async function main() {
       try { catalogoMusica = preparaCatalogoMusica(); } catch (e) { log('musica: catalogo non disponibile', e.message.split('\n')[0]); }
     }
     // azione "render": stessa regia del giro prima, si rifanno solo colore, tagli e grafica
-    const { regia, risultato: primo } = !nuovaRegia
+    const { regia, risultato: primo } = stileSuMisura?.grafica.beat ? await montaBeat(analisi, nome)
+      : !nuovaRegia
       ? (fs.writeFileSync(path.join(WORK, 'regia.json'), JSON.stringify(regiaPrecedente, null, 1)), { regia: regiaPrecedente, risultato: risolviRegia(perRegia(regiaPrecedente), analisi) })
       : await chiediRegia(testoMateriale, discorso ? fogliDiscorso : fogli, CORREZIONE ? regiaPrecedente : null, (r) => risolviRegia(perRegia(r), analisi)).catch((e) => {
         // discorso: senza AI il video esce lo stesso, con i sottotitoli dello stile ma senza scritte grandi
@@ -2085,7 +2128,7 @@ async function main() {
       }
     }
     fs.rmSync(SCARICO, { recursive: true, force: true });
-    if (musicaChiesta) {
+    if (musicaChiesta && !piano.beat) {
       try {
         piano.musica = preparaMusica(piano, regia, musicaChiesta);
         if (piano.musica) piano.note = [`🎵 musica: ${piano.musica.nome}`, piano.note].filter(Boolean).join(' · ');
@@ -2133,7 +2176,7 @@ async function main() {
         // le didascalie salvate prima del 29/10 non hanno descrizione e hashtag a parte: si riscrivono
         const vecchie = RIRENDER && fs.existsSync(salvate) ? JSON.parse(fs.readFileSync(salvate, 'utf8')) : null;
         const scritte = vecchie?.hashtag?.length ? vecchie
-          : await scriviDidascalie({ titolo: piano.titolo || nome, testo: piano.testo, brief, keywords: piano.keywords.map((k) => k.word) });
+          : await scriviDidascalie({ titolo: piano.titolo || nome, testo: piano.testo || (piano.beat ? `Video senza parlato, solo riprese del prodotto a tempo di musica: ${nome}` : ''), brief, keywords: piano.keywords.map((k) => k.word) });
         if (scritte) {
           fs.writeFileSync(path.join(WORK, 'didascalie.json'), JSON.stringify(scritte, null, 1));
           rclone('copyto', path.join(WORK, 'didascalie.json'), remote(OUT_DIR, nome, CACHE, 'didascalie.json'));

@@ -7,6 +7,7 @@ import { clamp, dentro, norm, OMBRA, pulisci, RACCORDO, SICURA, stileFont, largh
 import { BlocchiMotion, blocchiParlato, Cartello, Firma, Fumi, tagliFumo } from './Motion';
 import { BlocchiUltra, Sfocature } from './Ultra';
 import { InsertiReazione, SchedeInfo } from './Reazione';
+import { Beat } from './Beat';
 
 // Stile "su misura": tutta la grafica arriva da Drive (Stili/<nome>/stile.txt, letto da
 // scripts/stile-su-misura.mjs) dentro piano.grafica. Nessun codice per uno stile nuovo.
@@ -344,6 +345,8 @@ const Chiusura: React.FC<{ nome: string; g: GraficaStile }> = ({ nome, g }) => {
 
 export const SuMisura: React.FC<Piano> = (piano) => {
   usaFps(piano);
+  // stile Beat: tutt'altro montaggio, a tempo di musica (piano.beat non cambia durante il render)
+  if (piano.beat) return <Beat piano={piano} />;
   const g: GraficaStile = { ...BASE, ...(piano.grafica || {}) };
   useFont([g.fontApertura, g.fontSottotitoli, g.fontTitoli, g.fontCorsivo]);
   const totale = f(durataTotale(piano));

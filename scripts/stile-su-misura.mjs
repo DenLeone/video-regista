@@ -104,7 +104,7 @@ const GRAFICA = ['nome', 'apertura', 'font apertura', 'colore apertura', 'sottot
   'maiuscolo sottotitoli', 'posizione sottotitoli', 'dimensione sottotitoli', 'titoli', 'font titoli', 'colore titoli',
   'colore accento', 'posizione titoli', 'look', 'bianco e nero', 'vignettatura', 'effetti sonori', 'musica', 'volume musica',
   'font corsivo', 'scritte dietro di me', 'soggetto in risalto', 'sfondo sfocato', 'inizio', 'chiusura', 'tagli dentro le frasi',
-  'entrata parole grandi', 'firma', 'transizioni', 'inserti', 'b-roll stock', 'colori parole grandi'];
+  'entrata parole grandi', 'firma', 'transizioni', 'inserti', 'b-roll stock', 'colori parole grandi', 'montaggio'];
 
 /** stile.txt → { grafica, testoAI, musica, campi } */
 export function leggiStile(testo, nomeCartella) {
@@ -170,6 +170,8 @@ export function leggiStile(testo, nomeCartella) {
   if (palette?.length) g.palette = palette.map((c) => colore(c, '#FFFFFF'));
   if (campi.inserti) g.cornice = /tv|telev/.test(norm(campi.inserti)) ? 'tv' : /reaz|rispost|blackden/.test(norm(campi.inserti)) ? 'reazione' : 'scheda';
   if (campi['b-roll stock']) g.stock = si(campi['b-roll stock']);
+  // Montaggio: beat = video a tempo di musica, senza voce né regia dell'AI (scripts/beat.mjs)
+  if (/beat|tempo/.test(norm(campi.montaggio))) g.beat = true;
   // i blocchi fanno già le parole chiave enormi: "parole grandi" o "frasi" in più si sovrapporrebbero
   // (stile studiato dall'AI sul Motion, 25/10); restano i cartelli a tutto schermo
   if ((g.sottotitoli === 'blocchi' || g.sottotitoli === 'strati') && (g.tipoTitoli === 'parole' || g.tipoTitoli === 'frasi')) g.tipoTitoli = 'cartelli';

@@ -333,6 +333,19 @@ function ritmo(ric) {
   }
 }
 
+// audio di prova da un video (es. il brano di un esempio dello stile Beat), copiato su Drive in `a`.
+// Solo per le prove: i file restano su Drive, mai nel repo.
+function audio(ric) {
+  for (const a of ric.audio) {
+    const u = path.join(SCARICO, `audio-${pulito(path.basename(a.file))}`);
+    run('rclone', ['copyto', `${REMOTE}:${a.file}`, u]);
+    const o = path.join(OUT, 'tmp', path.basename(a.a));
+    run('ffmpeg', ['-y', '-v', 'error', ...(a.da ? ['-ss', String(a.da)] : []), '-i', u, ...(a.fino ? ['-t', String(a.fino - (a.da || 0))] : []), '-vn', '-ac', '2', '-ar', '48000', o]);
+    run('rclone', ['copyto', o, `${REMOTE}:${a.a}`]);
+    log(`audio ${a.file} → ${a.a}`);
+  }
+}
+
 async function main() {
   const file = process.env.RICETTA || 'lab/ricetta.json';
   const ric = JSON.parse(fs.readFileSync(path.join(ROOT, file), 'utf8'));
@@ -346,6 +359,7 @@ async function main() {
   if (ric.sfx) trovaSfx(ric);
   if (ric.estraiSfx) estraiSfx(ric);
   if (ric.ritmo) ritmo(ric);
+  if (ric.audio) audio(ric);
   if (ric.sequenze) { sequenze(ric); carica(); }
   if (ric.fotogrammi) { fotogrammiEVarianti(ric); carica(); }
   if (ric.clip) { clip(ric); carica(); }

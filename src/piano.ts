@@ -26,6 +26,9 @@ export type Clip = {
   lento?: number;
   fumo?: boolean;   // transizione a nuvola di fumo all'inizio di questa clip (stile Motion)
   stock?: string;   // B-roll di repertorio (Pixabay/Pexels): la ricerca che l'ha trovato, per NOTE.txt
+  // stile Beat (scripts/beat.mjs): come entra sul colpo e la rampa di velocità (già fatta al taglio)
+  transizione?: 'nessuna' | 'frustata' | 'zoom' | 'griglia' | 'carta';
+  rampa?: { bordo: number; veloce: number; lento: number; fonte: number };
 };
 
 export type Keyword = {
@@ -56,6 +59,8 @@ export type Piano = {
   // musica sotto la voce, solo se Denis la chiede (scripts/musica.mjs): da = secondo del brano da cui
   // partire, volume = nelle pause; mentre parla (parlato, sulla timeline) scende
   musica?: { file: string; nome?: string; da: number; volume: number; parlato: [number, number][] };
+  // stile Beat: montaggio a tempo di musica (src/Beat.tsx); scintille = secondo del colpo forte
+  beat?: { battuta: number; bpm: number; scintille: number | null };
   // schede informative di vetro (stile reazione): scritte dall'AI su quello che Denis spiega
   schede?: { at: number; dur: number; titolo: string; colore: string; sezioni: { titolo: string; testo: string }[]; sintesi?: string }[];
   sponsor?: { material: string; test: string } | null;
@@ -100,6 +105,7 @@ export type GraficaStile = {
   firma?: string;                            // logo Instagram e nome (es. @_black_den) fissi in basso a sinistra
   cornice?: 'scheda' | 'tv' | 'reazione';    // inserti: scheda arrotondata, televisore anni '70 o scheda in prospettiva dietro a Denis
   suoni?: Record<string, string>;            // effetti sonori dello stile (asset/suoni): nome → file in public
+  beat?: boolean;                            // montaggio a tempo di musica (stile Beat)
   stock?: boolean;                           // l'AI può chiedere B-roll di repertorio (Pixabay o Pexels, se c'è la chiave)
   fontCorsivo: FontStile;                    // la frase piccola delle scritte a due livelli
   dietro: boolean;                           // le scritte grandi passano dietro alla persona
