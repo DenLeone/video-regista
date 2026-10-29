@@ -1,0 +1,9 @@
+/mnt/lab/0-v26044gc0000d9ivsefog65qro1an7m0.mp4: 7 suoni del pack ritrovati (correlazione ≥ 0.32)
+
+0:14.27  0.34  Impact_Hits. @kummetzz/Impact_Hits. @kummetzz/Impact_Hits_23. @kummetzz.wav
+1:20.84  0.35  Metal. @kummetzz/Metal. @kummetzz/Metal_02. @kummetzz.wav
+1:21.11  0.34  Whoosh. @kummetzz/Whoosh. @kummetzz/Whoosh 10. @kummetzz.mp3
+1:21.39  0.35  Impact_Hits. @kummetzz/Impact_Hits. @kummetzz/Impact_Hits_24. @kummetzz.wav
+1:21.59  0.35  Clicks_Clanks. @kummetzz/Clicks_Clanks. @kummetzz/Clicks_Clanks_14. @kummetzz.wav
+1:21.73  0.40  Impact_Hits. @kummetzz/Impact_Hits. @kummetzz/Impact_Hits_22. @kummetzz.wav
+3:09.24  0.33  Whoosh. @kummetzz/Whoosh. @kummetzz/Whoosh 44. @kummetzz.mp3
