@@ -1243,12 +1243,15 @@ function copertina(piano, regia, analisi, out) {
   } catch (e) { log('copertina non fatta', e.message); return null; }
 }
 // la copertina al bot (come foto e come file in qualità piena, per TikTok)
-async function inviaCopertina(file, nome) {
-  if (!process.env.NOTIFY_URL || !file) return;
+// insieme, descrizione e 5 hashtag da copiare per Instagram e TikTok
+async function inviaCopertina(file, nome, didascalie = null) {
+  if (!process.env.NOTIFY_URL || (!file && !didascalie?.descrizione)) return;
   try {
     const form = new FormData();
     form.append('nome', nome);
-    form.append('foto', new Blob([fs.readFileSync(file)], { type: 'image/jpeg' }), path.basename(file));
+    if (file) form.append('foto', new Blob([fs.readFileSync(file)], { type: 'image/jpeg' }), path.basename(file));
+    if (didascalie?.descrizione) form.append('descrizione', didascalie.descrizione);
+    if (didascalie?.hashtag?.length) form.append('hashtag', didascalie.hashtag.join(' '));
     const r = await fetchRiprova(process.env.NOTIFY_URL.replace(/\/notify$/, '/copertina'), { method: 'POST', headers: { 'x-regista-token': process.env.NOTIFY_TOKEN || '' }, body: form }, 2);
     log(`copertina al bot: ${r.status}`);
   } catch (e) { log('copertina non mandata al bot', e.message); }
@@ -1350,12 +1353,13 @@ function anteprima(outFile, piano, durata) {
 // per YouTube, nella voce di Denis. Senza Gemini (o se non risponde) niente didascalie: il bot
 // le fa scrivere a mano prima di pubblicare.
 const PROMPT_DIDASCALIE = `Scrivi i testi per pubblicare questo video verticale di Denis, creator italiano che parla di prodotti e della sua vita.
-Rispondi SOLO con JSON: {"instagram": "...", "youtube_titolo": "...", "youtube_descrizione": "..."}
+Rispondi SOLO con JSON: {"descrizione": "...", "hashtag": ["#...", "#...", "#...", "#...", "#..."], "youtube_titolo": "...", "youtube_descrizione": "..."}
 
 Regole:
 - Italiano, in prima persona come se scrivesse Denis; mai "Denis" in terza persona.
 - Solo cose dette nel video o scritte nel brief: niente prezzi, dati tecnici o giudizi inventati. Se dà un giudizio, usa le sue parole.
-- instagram: prima riga = gancio breve (massimo 70 caratteri) che fa fermare chi scorre; poi 1–3 righe brevi su cosa si vede e cosa ne pensa; poi una riga vuota e 4–6 hashtag pertinenti (soprattutto italiani). Al massimo 3 emoji. Niente link, niente "link in bio".
+- descrizione (per Instagram e TikTok): prima riga = gancio breve (massimo 70 caratteri) che fa fermare chi scorre; poi 1–3 righe brevi su cosa si vede e cosa ne pensa. Senza hashtag. Al massimo 3 emoji. Niente link, niente "link in bio".
+- hashtag: ESATTAMENTE 5, pertinenti al video (argomento, prodotto, categoria), soprattutto italiani, ognuno con # e senza spazi; niente hashtag generici come #fyp o #viral.
 - Se il brief parla di sponsor o collaborazione pagata: "#adv" all'inizio della prima riga.
 - youtube_titolo: massimo 70 caratteri, chiaro e cercabile (prodotto + cosa succede), senza hashtag.
 - youtube_descrizione: 2–3 righe, poi 3 hashtag tra cui #shorts.`;
@@ -1375,7 +1379,13 @@ async function scriviDidascalie({ titolo, testo, brief, keywords }) {
       const j = await esito.risposta.json();
       const d = JSON.parse((j.candidates?.[0]?.content?.parts || []).map((x) => x.text || '').join('').replace(/^```(?:json)?\s*|\s*```$/g, ''));
       const testoDi = (x, max) => String(x || '').trim().slice(0, max);
-      const out = { instagram: testoDi(d.instagram, 2200), youtube_titolo: testoDi(d.youtube_titolo, 100), youtube_descrizione: testoDi(d.youtube_descrizione, 4000) };
+      // 5 hashtag puliti (Denis, 29/10: con ogni video descrizione e 5 hashtag): # davanti, niente spazi né doppioni
+      const hashtag = [...new Map((Array.isArray(d.hashtag) ? d.hashtag : String(d.hashtag || '').split(/[\s,]+/))
+        .map((h) => `#${String(h).replace(/^#+/, '').replace(/[^\p{L}\p{N}_]/gu, '')}`).filter((h) => h.length > 2)
+        .map((h) => [h.toLowerCase(), h])).values()].slice(0, 5);
+      const descrizione = testoDi(d.descrizione || String(d.instagram || '').replace(/(\s*#[\p{L}\p{N}_]+)+\s*$/u, ''), 2000);
+      const out = { descrizione, hashtag, instagram: testoDi(`${descrizione}${hashtag.length ? `\n\n${hashtag.join(' ')}` : ''}`, 2200),
+        youtube_titolo: testoDi(d.youtube_titolo, 100), youtube_descrizione: testoDi(d.youtube_descrizione, 4000) };
       if (out.instagram) return out;
     } catch (e) { log(`didascalie: risposta di ${modello} non usabile`, e.message); }
   }
@@ -1986,7 +1996,9 @@ async function main() {
       if (PROVA_SECONDI) return null;
       try {
         const salvate = path.join(WORK, 'cache', 'didascalie.json');
-        const scritte = RIRENDER && fs.existsSync(salvate) ? JSON.parse(fs.readFileSync(salvate, 'utf8'))
+        // le didascalie salvate prima del 29/10 non hanno descrizione e hashtag a parte: si riscrivono
+        const vecchie = RIRENDER && fs.existsSync(salvate) ? JSON.parse(fs.readFileSync(salvate, 'utf8')) : null;
+        const scritte = vecchie?.hashtag?.length ? vecchie
           : await scriviDidascalie({ titolo: piano.titolo || nome, testo: piano.testo, brief, keywords: piano.keywords.map((k) => k.word) });
         if (scritte) {
           fs.writeFileSync(path.join(WORK, 'didascalie.json'), JSON.stringify(scritte, null, 1));
@@ -2030,7 +2042,7 @@ async function main() {
     // anteprima: prima provo il video in chat, se non passa mando la foto
     const inviato = await inviaVideo(anteprimaMp4, nome, note, durataN, info);
     if (!inviato) await notifica('✅ pronto', nome, note, { ok: true, foto: anteprima(outFile, piano, durataN), info });
-    await inviaCopertina(fileCopertina, nome);
+    await inviaCopertina(fileCopertina, nome, PROVA_SECONDI ? null : didascalie);
   } catch (e) {
     const testo = `Errore: ${e.message}\n\n` + (CORREZIONE ? 'Puoi riprovare la correzione dal bot (✏️) o scrivermi una richiesta diversa.'
       : vai ? `Per riprovare: 🔁 Riprova dal bot, oppure rinomina ${vaiUsato} in ${nomeVaiOriginale(vai)}.` : 'Per riprovare: 🔁 Riprova.');

@@ -1665,11 +1665,20 @@ async function onNotify(env: Env, n: Notify) {
 
 // copertina del video per Reel e TikTok: come foto (da guardare) e come file in qualità piena
 // (Telegram comprime le foto; su TikTok si carica dal telefono come copertina)
+// Dopo la copertina: descrizione e 5 hashtag, ognuno in un blocco da copiare con un tocco
 async function onCopertina(env: Env, form: FormData) {
   const foto = form.get('foto');
   const nome = String(form.get('nome') || '');
-  if (!foto || typeof foto === 'string') return 'foto mancante';
+  const descrizione = String(form.get('descrizione') || '').trim();
+  const hashtag = String(form.get('hashtag') || '').trim();
+  if ((!foto || typeof foto === 'string') && !descrizione) return 'foto mancante';
+  const testi = descrizione ? [
+    `📝 <b>Descrizione</b> — ${esc(nome)}`, `<pre>${esc(descrizione.slice(0, 2000))}</pre>`,
+    ...(hashtag ? ['#️⃣ <b>Hashtag</b>', `<pre>${esc(hashtag.slice(0, 300))}</pre>`] : []),
+    '<i>Tocca un blocco per copiarlo.</i>',
+  ].join('\n') : '';
   for (const chat of autorizzati(env)) {
+    if (!foto || typeof foto === 'string') { await invia(env, chat, { testo: testi }); continue; }
     const out = new FormData();
     out.append('chat_id', chat);
     out.append('caption', `🖼 <b>Copertina</b> — ${esc(nome)}\nSu Instagram la metto io quando pubblichi dal bot. Per TikTok: salva il file qui sotto e caricalo come copertina.`);
@@ -1680,6 +1689,7 @@ async function onCopertina(env: Env, form: FormData) {
     doc.append('chat_id', chat);
     doc.append('document', foto, `${nome || 'video'} - copertina.jpg`);
     await fetch(`https://api.telegram.org/bot${env.TELEGRAM_BOT_TOKEN}/sendDocument`, { method: 'POST', body: doc });
+    if (testi) await invia(env, chat, { testo: testi });
   }
   return 'ok';
 }
