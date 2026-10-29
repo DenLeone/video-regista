@@ -1,0 +1,8 @@
+{
+  "uscita": "12 · Risorse/Stili/Blackden/_laboratorio",
+  "trascrivi": [ "12 · Risorse/Stili/Blackden/v26044gc0000d9ivsefog65qro1an7m0.mp4" ],
+  "sequenze": [
+    { "file": "12 · Risorse/Stili/Blackden/v26044gc0000d9ivsefog65qro1an7m0.mp4", "quanti": 72, "inizio": 6,
+      "tratti": [ { "da": 0, "a": 4, "fps": 8, "larghezza": 360 }, { "da": 8, "a": 12, "fps": 8, "larghezza": 360 }, { "da": 20, "a": 24, "fps": 8, "larghezza": 360 } ] }
+  ]
+}
