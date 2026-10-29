@@ -53,6 +53,9 @@ export type Piano = {
   flickers: Flicker[];
   // loghi di app e marche (PNG trasparenti in public/media) che entrano con bagliore quando Denis li nomina
   icone?: { file: string; at: number; dur: number }[];
+  // musica sotto la voce, solo se Denis la chiede (scripts/musica.mjs): da = secondo del brano da cui
+  // partire, volume = nelle pause; mentre parla (parlato, sulla timeline) scende
+  musica?: { file: string; nome?: string; da: number; volume: number; parlato: [number, number][] };
   // schede informative di vetro (stile reazione): scritte dall'AI su quello che Denis spiega
   schede?: { at: number; dur: number; titolo: string; colore: string; sezioni: { titolo: string; testo: string }[]; sintesi?: string }[];
   sponsor?: { material: string; test: string } | null;

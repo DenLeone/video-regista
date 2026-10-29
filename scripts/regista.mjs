@@ -33,6 +33,7 @@ import { chiaveStileR2, preparaStileApp } from './stile-app.mjs';
 import { bloccoRemoteR2, comandiCancellaR2, comandiCopiaDrive, comandiScaricoR2 } from './rete.mjs';
 import { scegliCartella } from './scegli-cartella.mjs';
 import { progettoDaVinci } from './davinci.mjs';
+import { analizzaBrano, descriviCatalogo, DIR_MUSICA, ESTENSIONI_MUSICA, momentiParlati, richiestaMusica, scegliBrano } from './musica.mjs';
 import { AUDIO_EXT, IMAGE_EXT, NOMI_DISPOSITIVO, VIDEO_EXT, dispositivo, prioritaAudio, tagsPiatti } from './sorgenti.mjs';
 
 const REMOTE = process.env.REGISTA_REMOTE || 'gdrive';
@@ -745,6 +746,43 @@ function fogliProvino(file, id, durata, offset = 0, colore = null) {
   return { fogli, passo: +passo.toFixed(1), etichette };
 }
 
+// ---------- musica sotto il video (solo se Denis la chiede nel messaggio: scripts/musica.mjs) ----------
+let catalogoMusica = null; // { "nome file": misure } dei brani nella cartella Musica, se la musica è richiesta
+function preparaCatalogoMusica() {
+  const dir = path.join(WORK, 'musica');
+  fs.mkdirSync(dir, { recursive: true });
+  const brani = JSON.parse(rclone('lsjson', remote(DIR_MUSICA), '--files-only')).filter((x) => ESTENSIONI_MUSICA.test(x.Name));
+  let catalogo = {};
+  try { rclone('copyto', remote(DIR_MUSICA, '_catalogo.json'), path.join(dir, '_catalogo.json')); catalogo = JSON.parse(fs.readFileSync(path.join(dir, '_catalogo.json'), 'utf8')); } catch { /* primo giro */ }
+  let nuovi = 0;
+  for (const b of brani) {
+    if (catalogo[b.Name]?.dimensione === b.Size) continue;
+    try {
+      rclone('copyto', remote(DIR_MUSICA, b.Name), path.join(dir, b.Name));
+      catalogo[b.Name] = { ...analizzaBrano(path.join(dir, b.Name)), dimensione: b.Size };
+      nuovi++;
+    } catch (e) { log(`musica: ${b.Name} non analizzabile`, e.message.split('\n')[0]); }
+  }
+  for (const k of Object.keys(catalogo)) if (!brani.some((b) => b.Name === k)) delete catalogo[k];
+  if (nuovi) {
+    fs.writeFileSync(path.join(dir, '_catalogo.json'), JSON.stringify(catalogo, null, 1));
+    rclone('copyto', path.join(dir, '_catalogo.json'), remote(DIR_MUSICA, '_catalogo.json'));
+  }
+  log(`musica: ${Object.keys(catalogo).length} brani nel catalogo (${nuovi} analizzati ora)`);
+  return catalogo;
+}
+// il brano scelto, a volume uniforme (-18 LUFS), in public/media; volumi e momenti parlati per il render
+function preparaMusica(piano, regia, richiesta) {
+  if (!catalogoMusica || !Object.keys(catalogoMusica).length) return null;
+  const nomeBrano = scegliBrano(catalogoMusica, { richiesto: richiesta?.nome, dellAI: regia?.musica });
+  if (!nomeBrano) return null;
+  const sorgente = path.join(WORK, 'musica', nomeBrano);
+  if (!fs.existsSync(sorgente)) rclone('copyto', remote(DIR_MUSICA, nomeBrano), sorgente);
+  run('ffmpeg', ['-y', '-v', 'error', '-i', sorgente, '-af', 'loudnorm=I=-18:TP=-1.5:LRA=11', '-ar', '48000', '-ac', '2', '-c:a', 'aac', '-b:a', '192k', path.join(MEDIA, 'musica.m4a')]);
+  log(`musica: ${nomeBrano}${regia?.musica && !richiesta?.nome ? ' (scelta dall\'AI)' : richiesta?.nome ? ' (chiesta da Denis)' : ''}`);
+  return { file: 'media/musica.m4a', nome: nomeBrano, da: catalogoMusica[nomeBrano].entrata || 0, volume: 0.35, parlato: momentiParlati(piano.parole) };
+}
+
 // ---------- 3. l'AI scrive la regia ----------
 function promptRegia({ modo, testoMateriale, regiaPrecedente }) {
   let p = fs.readFileSync(path.join(ROOT, 'scripts', 'prompt-regista.md'), 'utf8')
@@ -764,6 +802,9 @@ function promptRegia({ modo, testoMateriale, regiaPrecedente }) {
       : 'Questo stile non ha scritte grandi: `keywords` vuoto.';
     const { conBroll } = discorso;
     p += `\n\n## MODALITÀ DISCORSO (regola di Denis: nella cartella c'è un solo video parlato)\nÈ un discorso di Denis da montare così com'è: NIENTE regia. Non togliere frasi per accorciare, non riordinare, non scegliere cosa tenere: la sequenza l'ha già decisa lo script (tutte le frasi in ordine, tolte solo pause, false partenze e ripetizioni) e nella regia va copiata identica:\n\`\`\`json\n"sequenza": ${JSON.stringify(discorso.sequenza)}\n\`\`\`\nIl tuo lavoro è SOLO la grafica dello stile (sezione Grafica): \`titolo\`, \`soggetto\`, \`copertina\`, \`enfasi\` se lo stile ha l'apertura a lettere enormi (sulle prime parole del discorso), le \`keywords\` con le regole dello stile e, se lo stile ha il bianco e nero nei momenti, \`"bn": true\` su qualche elemento della sequenza${stileSuMisura?.grafica.fumo || stileSuMisura?.grafica.stock ? '; se la sezione Grafica li prevede, puoi aggiungere agli elementi anche `fumo`, `stock` e `inserto` (sempre con la stessa `frase`)' : ''}. ${scritte} ${stileSuMisura?.grafica.cornice === 'reazione' && analisiCorrente?.sorgenti?.some((s) => s.reazione) ? 'Nella cartella ci sono le clip dell\'altro creator a cui Denis risponde (vedi Sorgenti, con cosa dicono e quando): mettile come `"inserto": "<id>", "inserto_da": <secondi>` sulle frasi in cui Denis ne parla, le cita o le commenta, come dice la sezione Grafica; anche le immagini (screenshot, copertina) come `inserto`. Usale TUTTE almeno una volta. Ignora le regole su durata, scaletta e scelta delle frasi.' : conBroll ? 'Nella cartella ci sono anche dei B-roll di Denis (vedi Sorgenti e fogli provino): mettili sopra la voce aggiungendo all\'elemento `"broll": "<id>", "da": <secondi>` (stessa `frase`), dove mostrano quello che dice in quel momento, circa uno ogni 8–12 s, mai sull\'aggancio né sulla chiusura: usali TUTTI almeno una volta (anche le registrazioni dello schermo e le immagini, come `inserto`). Le regole sui B-roll valgono (niente bocca che parla, non riusare lo stesso momento); ignora quelle su durata, scaletta e scelta delle frasi.' : 'Ignora le regole su durata, scaletta, inquadrature e B-roll.'} \`scaletta\` = i 3–6 temi del discorso, \`testo_montato\` vuoto.`;
+  }
+  if (catalogoMusica && Object.keys(catalogoMusica).length) {
+    p += `\n\n## Musica\nDenis vuole la musica sotto la voce (bassa, scende quando parla). Scegli il brano più adatto al tono e al ritmo di QUESTO video e scrivilo nel campo \`"musica"\` in cima alla regia (il nome esatto, tra virgolette): energico e veloce per prodotti, tech e ritmo serrato; morbido e lento per racconti, riflessioni e discorsi seri; mai un brano allegro su un argomento serio.\n${descriviCatalogo(catalogoMusica)}`;
   }
   // discorso: fogli provino solo dei B-roll, se ci sono
   const fogliDaLeggere = !discorso || discorso.conBroll;
@@ -1989,6 +2030,10 @@ async function main() {
     if (RIRENDER) await fase(nome, regiaPrecedente ? '🎨 Rifaccio solo il render: stessa regia, colore e grafica aggiornati' : '⚠️ Nessuna regia precedente: la riscrivo', 'regia');
     else if (!discorso) await fase(nome, CORREZIONE ? `🧠 Applico la correzione: “${CORREZIONE.slice(0, 120)}”${pesoAI}`
       : `🧠 Scelgo i tagli: ${analisi.sorgenti.length} sorgenti, voce da ${voci || '—'}, ${sinc} camere sincronizzate, ${analisi.frasi.length} frasi${brief ? ', con brief' : ''}${pesoAI}`, 'regia');
+    const musicaChiesta = richiestaMusica([process.env.BRIEF_EXTRA || '', brief].join('\n'));
+    if (musicaChiesta) {
+      try { catalogoMusica = preparaCatalogoMusica(); } catch (e) { log('musica: catalogo non disponibile', e.message.split('\n')[0]); }
+    }
     // azione "render": stessa regia del giro prima, si rifanno solo colore, tagli e grafica
     const { regia, risultato: primo } = !nuovaRegia
       ? (fs.writeFileSync(path.join(WORK, 'regia.json'), JSON.stringify(regiaPrecedente, null, 1)), { regia: regiaPrecedente, risultato: risolviRegia(perRegia(regiaPrecedente), analisi) })
@@ -2040,6 +2085,13 @@ async function main() {
       }
     }
     fs.rmSync(SCARICO, { recursive: true, force: true });
+    if (musicaChiesta) {
+      try {
+        piano.musica = preparaMusica(piano, regia, musicaChiesta);
+        if (piano.musica) piano.note = [`🎵 musica: ${piano.musica.nome}`, piano.note].filter(Boolean).join(' · ');
+        else piano.note = ['⚠️ musica chiesta ma nessun brano nella cartella Musica', piano.note].filter(Boolean).join(' · ');
+      } catch (e) { log('musica non preparata', e.message.split('\n')[0]); }
+    }
     fs.writeFileSync(path.join(WORK, 'piano.json'), JSON.stringify(piano, null, 1));
     validaPiano(piano);
 

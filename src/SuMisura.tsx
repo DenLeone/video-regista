@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { AbsoluteFill, Audio, continueRender, delayRender, Easing, interpolate, Sequence, staticFile, useCurrentFrame } from 'remotion';
-import { Clips, f, Inserti, Ritagli, Sfx, usaFps, volumeSfx, Icone } from './comune';
+import { Clips, f, Inserti, Ritagli, Sfx, usaFps, volumeSfx, Icone, MusicaSotto } from './comune';
 import { gruppiParole } from './Cinematico';
 import { durataTotale, FontStile, GraficaStile, Keyword, Piano, Posizione, W } from './piano';
 import { clamp, dentro, norm, OMBRA, pulisci, RACCORDO, SICURA, stileFont, larghezzaTesto } from './testo';
@@ -417,12 +417,13 @@ export const SuMisura: React.FC<Piano> = (piano) => {
       ))}
 
       <Icone piano={piano} sfx={sfx} />
+      <MusicaSotto piano={piano} />
 
       {g.chiusura && totale > CHIUSURA * 2 ? (
         <Sequence from={totale - CHIUSURA} durationInFrames={CHIUSURA}><Chiusura nome={g.chiusura} g={g} /></Sequence>
       ) : null}
 
-      {m ? <Audio src={staticFile(m.file)} loop volume={(fr) => m.volume * Math.min(1, fr / 15, (totale - fr) / 30)} /> : null}
+      {m && !piano.musica ? <Audio src={staticFile(m.file)} loop volume={(fr) => m.volume * Math.min(1, fr / 15, (totale - fr) / 30)} /> : null}
       {sfx > 0 ? (
         <>
           {aperture.map((b, i) => <Sfx key={`sa${i}`} nome="whoosh" da={f(b.at) - 6} volume={(i ? 0.3 : 0.45) * sfx} />)}

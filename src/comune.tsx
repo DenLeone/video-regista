@@ -79,6 +79,32 @@ export const Sfx: React.FC<{ nome: string; da: number; volume: number }> = ({ no
   </Sequence>
 );
 
+// ---------- musica sotto la voce (solo se Denis la chiede) ----------
+// Entra in 0,6 s, esce in 1,5 s sull'ultimo fotogramma; mentre Denis parla scende a meno della metà
+// (~ -8 dB) con rampe di 0,3 s, nelle pause e sui B-roll senza parlato torna su
+const SOTTO_VOCE = 0.4;
+export const MusicaSotto: React.FC<{ piano: Piano }> = ({ piano }) => {
+  const m = piano.musica;
+  if (!m) return null;
+  const totale = Math.max(1, f(piano.clips.reduce((t, c) => t + durataClip(c), 0)));
+  const rampa = f(0.3);
+  const parlato = m.parlato.map(([a, b]) => [f(a), f(b)] as const);
+  const quanto = (fr: number) => {
+    // 1 = sta parlando, 0 = pausa, con la rampa ai bordi
+    let v = 0;
+    for (const [a, b] of parlato) {
+      if (fr < a - rampa) break;
+      const dentro = Math.min((fr - (a - rampa)) / rampa, ((b + rampa) - fr) / rampa, 1);
+      v = Math.max(v, Math.max(0, dentro));
+    }
+    return v;
+  };
+  return (
+    <Audio src={staticFile(m.file)} loop startFrom={f(m.da || 0)}
+      volume={(fr) => m.volume * (1 - (1 - SOTTO_VOCE) * quanto(fr)) * Math.min(1, fr / f(0.6), Math.max(0, totale - fr) / f(1.5))} />
+  );
+};
+
 // ---------- inserti: schede arrotondate sopra l'inquadratura ----------
 // Mentre Denis parla di qualcosa che c'è in un file (registrazione dello schermo, screenshot, foto,
 // B-roll del prodotto) la scheda entra dal basso, resta sospesa sopra l'inquadratura ed esce verso

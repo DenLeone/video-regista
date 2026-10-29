@@ -5,7 +5,7 @@ import { BlueprintFrame } from './components/BlueprintFrame';
 import { BlueprintIntroSheet } from './components/BlueprintIntroSheet';
 import { BlueprintKeyword } from './components/BlueprintKeyword';
 import { BlueprintTitleBlock } from './components/BlueprintTitleBlock';
-import { Clips, f, Inserti, Sfx, usaFps, volumeSfx, Icone } from './comune';
+import { Clips, f, Inserti, Sfx, usaFps, volumeSfx, Icone, MusicaSotto } from './comune';
 import { durataTotale, Piano } from './piano';
 
 // Effetti sonori sincronizzati con la grafica, volumi relativi tra loro
@@ -22,6 +22,7 @@ export const Blueprint: React.FC<Piano> = (piano) => {
 
       <Inserti piano={piano} sfx={sfx} />
       <Icone piano={piano} sfx={sfx} />
+      <MusicaSotto piano={piano} />
 
       <Sequence from={0} durationInFrames={15}>
         <BlueprintIntroSheet label={`${piano.tavola} — ${piano.soggetto}`} />

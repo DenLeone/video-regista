@@ -1,7 +1,7 @@
 import React from 'react';
 import { AbsoluteFill, Easing, interpolate, Sequence, useCurrentFrame } from 'remotion';
 import { loadFont } from '@remotion/google-fonts/Montserrat';
-import { Clips, f, Inserti, Sfx, usaFps, volumeSfx, Icone } from './comune';
+import { Clips, f, Inserti, Sfx, usaFps, volumeSfx, Icone, MusicaSotto } from './comune';
 import { Keyword, Piano, W } from './piano';
 import { dentro, SICURA } from './testo';
 
@@ -124,6 +124,7 @@ export const Cinematico: React.FC<Piano> = (piano) => {
 
       <Inserti piano={piano} sfx={sfx} />
       <Icone piano={piano} sfx={sfx} />
+      <MusicaSotto piano={piano} />
 
       {gruppi.map((g, i) => (
         <Sequence key={`p${i}`} from={f(g.at)} durationInFrames={Math.max(2, f(g.fine) - f(g.at))}>
