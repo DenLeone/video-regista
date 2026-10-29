@@ -21,7 +21,7 @@ test('lo spazio in fondo non è un\'altra cartella, un nome inesistente non si i
 test('la quota del giorno si ricorda e il giro di Gemini ha un solo retry', async () => {
   assert.equal(GEMINI_TENTATIVI, 2);
   assert.equal(GEMINI_TIMEOUT_MS, 90_000);
-  assert.equal(DIDASCALIE_MODELLI, 2);
+  assert.equal(DIDASCALIE_MODELLI, 4);
   azzeraQuoteGiorno();
   const prima = globalThis.fetch;
   let chiamate = 0;
@@ -60,27 +60,31 @@ test('un modello oltre il tetto non viene nemmeno chiamato', async () => {
   }
 });
 
-test('le didascalie provano al massimo due modelli', async () => {
+// MacBook, 29/10: con Gemini giù la descrizione deve arrivare lo stesso (Claude, poi le parole del video)
+test('le didascalie provano al massimo quattro modelli e arrivano comunque', async () => {
   azzeraQuoteGiorno();
   const primaFetch = globalThis.fetch;
   const env = (globalThis as unknown as { process: { env: Record<string, string | undefined> } }).process.env;
   const modelli = env.GEMINI_MODELLI;
   const chiave = env.GEMINI_API_KEY;
+  const claude = env.CLAUDE_CODE_OAUTH_TOKEN;
   let chiamate = 0;
   try {
-    env.GEMINI_MODELLI = 'gemini-a,gemini-b,gemini-c,gemini-d';
+    delete env.CLAUDE_CODE_OAUTH_TOKEN;
+    env.GEMINI_MODELLI = 'gemini-a,gemini-b,gemini-c,gemini-d,gemini-e';
     env.GEMINI_API_KEY = 'prova';
     globalThis.fetch = (async () => {
       chiamate += 1;
       return new Response('no', { status: 404 });
     }) as typeof fetch;
     const out = await scriviDidascalie({ titolo: 't', testo: 'detto nel video', brief: '', keywords: [] });
-    assert.equal(out, null);
-    assert.equal(chiamate, 2);
+    assert.equal(chiamate, 4);
+    assert.ok(out?.descrizione.includes('detto nel video'));
   } finally {
     globalThis.fetch = primaFetch;
     if (modelli === undefined) delete env.GEMINI_MODELLI; else env.GEMINI_MODELLI = modelli;
     if (chiave === undefined) delete env.GEMINI_API_KEY; else env.GEMINI_API_KEY = chiave;
+    if (claude !== undefined) env.CLAUDE_CODE_OAUTH_TOKEN = claude;
     azzeraQuoteGiorno();
   }
 });
