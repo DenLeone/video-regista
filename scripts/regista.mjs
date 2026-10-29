@@ -1103,7 +1103,7 @@ function caricaStile(nome) {
   fs.rmSync(dir, { recursive: true, force: true });
   fs.rmSync(pub, { recursive: true, force: true });
   fs.mkdirSync(pub, { recursive: true });
-  rclone('copy', remote(DIR_STILI, nome), dir, '--exclude', 'esempi/**', '--exclude', '*.{mp4,MP4,mov,MOV,m4v,webm,insv}', '--max-size', '80M');
+  rclone('copy', remote(DIR_STILI, nome), dir, '--exclude', 'esempi/**', '--exclude', '_laboratorio/**', '--exclude', '*.{mp4,MP4,mov,MOV,m4v,webm,insv}', '--max-size', '80M');
   const tutti = [];
   const giro = (d) => { for (const x of fs.existsSync(d) ? fs.readdirSync(d) : []) { const p = path.join(d, x); if (fs.statSync(p).isDirectory()) giro(p); else tutti.push(p); } };
   giro(dir);
