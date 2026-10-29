@@ -1,0 +1,97 @@
+{
+ "uscita": "12 · Risorse/Stili/Beat/_laboratorio",
+ "ritmo": [
+  "12 · Risorse/Stili/Beat/export_1793283318641.mov",
+  "12 · Risorse/Stili/Beat/v26044gc0000dah3adnog65oat7vj47g.mp4",
+  "12 · Risorse/Stili/Beat/v26044gc0000dab9fp7og65lissjr6i0.mp4",
+  "12 · Risorse/Stili/Beat/v24025gl0000d8khthfog65mgd0jnth0.mp4",
+  "12 · Risorse/Stili/Beat/v26044gc0000dat509vog65rqpekikrg.mp4",
+  "12 · Risorse/Stili/Beat/v24025gl0000d9144snog65ggnn44700.mp4"
+ ],
+ "sequenze": [
+  {
+   "file": "12 · Risorse/Stili/Beat/export_1793283318641.mov",
+   "quanti": 36,
+   "inizio": 4,
+   "tratti": [
+    {
+     "da": 0,
+     "a": 3,
+     "fps": 10,
+     "larghezza": 240,
+     "colonne": 10
+    }
+   ]
+  },
+  {
+   "file": "12 · Risorse/Stili/Beat/v26044gc0000dah3adnog65oat7vj47g.mp4",
+   "quanti": 36,
+   "inizio": 4,
+   "tratti": [
+    {
+     "da": 0,
+     "a": 3,
+     "fps": 10,
+     "larghezza": 240,
+     "colonne": 10
+    }
+   ]
+  },
+  {
+   "file": "12 · Risorse/Stili/Beat/v26044gc0000dab9fp7og65lissjr6i0.mp4",
+   "quanti": 36,
+   "inizio": 4,
+   "tratti": [
+    {
+     "da": 0,
+     "a": 3,
+     "fps": 10,
+     "larghezza": 240,
+     "colonne": 10
+    }
+   ]
+  },
+  {
+   "file": "12 · Risorse/Stili/Beat/v24025gl0000d8khthfog65mgd0jnth0.mp4",
+   "quanti": 36,
+   "inizio": 4,
+   "tratti": [
+    {
+     "da": 0,
+     "a": 3,
+     "fps": 10,
+     "larghezza": 240,
+     "colonne": 10
+    }
+   ]
+  },
+  {
+   "file": "12 · Risorse/Stili/Beat/v26044gc0000dat509vog65rqpekikrg.mp4",
+   "quanti": 36,
+   "inizio": 4,
+   "tratti": [
+    {
+     "da": 0,
+     "a": 3,
+     "fps": 10,
+     "larghezza": 240,
+     "colonne": 10
+    }
+   ]
+  },
+  {
+   "file": "12 · Risorse/Stili/Beat/v24025gl0000d9144snog65ggnn44700.mp4",
+   "quanti": 36,
+   "inizio": 4,
+   "tratti": [
+    {
+     "da": 0,
+     "a": 3,
+     "fps": 10,
+     "larghezza": 240,
+     "colonne": 10
+    }
+   ]
+  }
+ ]
+}

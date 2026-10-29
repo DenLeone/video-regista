@@ -296,6 +296,43 @@ function estraiSfx(ric) {
   fs.copyFileSync(path.join(dir, 'elenco.txt'), path.join(GIT, `suoni-${pulito(path.parse(ric.estraiSfx).name)}.txt`));
 }
 
+// ritmo (stile Beat): i colpi della musica (attacchi forti nell'audio) e i tagli dell'immagine, e quanti
+// tagli cadono su un colpo (entro 70 ms). { "ritmo": ["<video>", …] } → ritmo-<nome>.txt
+function ritmo(ric) {
+  for (const file of ric.ritmo || []) {
+    const s = sorgente(file);
+    const nome = pulito(path.parse(file).name);
+    const buf = execFileSync('ffmpeg', ['-v', 'error', '-i', s.u, '-ac', '1', '-ar', '11025', '-f', 'f32le', '-'], { maxBuffer: 1 << 28 });
+    const x = new Float32Array(buf.buffer, buf.byteOffset, Math.floor(buf.length / 4));
+    const passo = 110, n = Math.floor(x.length / passo);
+    const rms = new Float32Array(n);
+    for (let i = 0; i < n; i++) { let q = 0; for (let k = i * passo; k < (i + 1) * passo; k++) q += x[k] * x[k]; rms[i] = Math.sqrt(q / passo); }
+    const att = new Float32Array(n);
+    for (let i = 1; i < n; i++) att[i] = Math.max(0, rms[i] - rms[i - 1]);
+    const ord = [...att].sort((a, b) => a - b), soglia = ord[Math.floor(n * 0.97)] || 0;
+    const colpi = [];
+    for (let i = 2; i < n - 2; i++) if (att[i] >= soglia && att[i] === Math.max(...att.slice(i - 2, i + 3)) && (!colpi.length || i - colpi[colpi.length - 1] > 8)) colpi.push(i);
+    let migliore = 0, bpm = 0;
+    for (let b = 70; b <= 180; b += 0.5) { const lag = Math.round(6000 / b); let q = 0; for (let i = lag; i < n; i++) q += att[i] * att[i - lag]; if (q > migliore) { migliore = q; bpm = b; } }
+    const tmp = path.join(OUT, 'tmp', `scene-${nome}.txt`);
+    run('ffmpeg', ['-y', '-v', 'error', '-i', s.u, '-vf', `scale=320:-2,select='gt(scene,0.25)',metadata=print:file='${tmp}'`, '-an', '-f', 'null', '-']);
+    const tagli = [...fs.readFileSync(tmp, 'utf8').matchAll(/pts_time:([\d.]+)/g)].map((m) => Number(m[1]));
+    const sec = colpi.map((i) => i / 100);
+    const sulColpo = tagli.filter((t) => sec.some((c) => Math.abs(c - t) <= 0.07)).length;
+    const durate = tagli.map((t, i) => +(t - (i ? tagli[i - 1] : 0)).toFixed(2));
+    const testo = [`${file} · ${s.info.durata.toFixed(1)} s · ${Math.round(bpm)} BPM (battuta ${(60 / bpm).toFixed(3)} s)`,
+      `tagli: ${tagli.length} · sul colpo (±70 ms): ${sulColpo} (${tagli.length ? Math.round((100 * sulColpo) / tagli.length) : 0}%)`,
+      `durata delle inquadrature (s): ${durate.join(' ')}`,
+      `in battute: ${durate.map((d) => (d / (60 / bpm)).toFixed(2)).join(' ')}`,
+      `tagli (s): ${tagli.map((t) => t.toFixed(2)).join(' ')}`,
+      `colpi forti (s): ${sec.map((t) => t.toFixed(2)).join(' ')}`].join('\n');
+    const o = path.join(OUT, `ritmo-${nome}.txt`);
+    fs.writeFileSync(o, `${testo}\n`);
+    fs.mkdirSync(GIT, { recursive: true });
+    fs.copyFileSync(o, path.join(GIT, path.basename(o)));
+  }
+}
+
 async function main() {
   const file = process.env.RICETTA || 'lab/ricetta.json';
   const ric = JSON.parse(fs.readFileSync(path.join(ROOT, file), 'utf8'));
@@ -308,6 +345,7 @@ async function main() {
   if (ric.trascrivi) await trascrizioni(ric);
   if (ric.sfx) trovaSfx(ric);
   if (ric.estraiSfx) estraiSfx(ric);
+  if (ric.ritmo) ritmo(ric);
   if (ric.sequenze) { sequenze(ric); carica(); }
   if (ric.fotogrammi) { fotogrammiEVarianti(ric); carica(); }
   if (ric.clip) { clip(ric); carica(); }
