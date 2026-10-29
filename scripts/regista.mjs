@@ -1464,19 +1464,22 @@ export async function analizza(nome, brief, cache) {
   // Video già montati (TikTok, Reel, export…) e girati di altri giorni: solo immagini.
   // In Lark A2 c'erano un TikTok già finito e una conversazione di settembre, e le loro voci
   // finivano tra le frasi candidate. Scelta di Denis (18/10): restano come B-roll, la voce mai.
-  const recente = Math.max(0, ...sorgenti.filter((s) => s.tipo === 'video' && s.data).map((s) => s.data));
+  // stile reazione (Blackden, 29/10): "clip …" = video di un altro, nella scheda e muto; "audio …" =
+  // video di un altro di cui si sente anche la voce (più bassa di quella di Denis). Mai voce di Denis,
+  // e non contano per la data delle riprese (sono di altri giorni per forza: il test su Manifestazioni
+  // aveva reso "solo immagini" il discorso di Denis)
+  for (const s of sorgenti.filter((x) => x.tipo === 'video')) {
+    if (/^(clip|audio)\b/i.test(path.parse(s.originale).name) || /^v\d{5}g[a-z0-9]{16,}$/i.test(s.id)) {
+      s.reazione = true;
+      if (/^audio\b/i.test(path.parse(s.originale).name)) s.audioClip = true;
+    }
+  }
+  const recente = Math.max(0, ...sorgenti.filter((s) => s.tipo === 'video' && s.data && !s.reazione).map((s) => s.data));
   // registrazioni dello schermo e video scaricati (TikTok salva col nome "v12044g…"): mai voce.
   // Beats pokemon, 22/10: Whisper aveva "sentito" un "Grazie a tutti" sulla musica della
   // registrazione dello schermo, diventata seconda voce: niente discorso e B-roll scelti a caso
   const altriVideo = sorgenti.filter((x) => x.tipo === 'video' && !x.schermo).length > 0;
   for (const s of sorgenti.filter((x) => x.tipo === 'video')) {
-    // stile reazione (Blackden, 29/10): "clip …" = video di un altro, nella scheda e muto; "audio …" =
-    // video di un altro di cui si sente anche la voce (più bassa di quella di Denis). Mai voce di Denis
-    const nomeFile = path.parse(s.originale).name;
-    if (/^(clip|audio)\b/i.test(nomeFile) || /^v\d{5}g[a-z0-9]{16,}$/i.test(s.id)) {
-      s.reazione = true;
-      if (/^audio\b/i.test(nomeFile)) s.audioClip = true;
-    }
     const perche = s.reazione ? (s.audioClip ? 'clip di un altro, con la sua voce' : 'clip di un altro')
       : s.schermo && altriVideo ? 'registrazione dello schermo'
       : /^v\d{5}g[a-z0-9]{16,}$/i.test(s.id) ? 'video scaricato da TikTok'
