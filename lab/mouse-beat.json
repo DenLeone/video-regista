@@ -1,0 +1,10 @@
+{
+ "uscita": "02 · Fatti/Mouse Beat/_laboratorio",
+ "ritmo": ["02 · Fatti/Mouse Beat/Mouse Beat - FINALE.mp4"],
+ "sequenze": [
+  { "file": "02 · Fatti/Mouse Beat/Mouse Beat - FINALE.mp4", "quanti": 12, "inizio": 0,
+    "tratti": [ { "da": 0, "a": 4.2, "fps": 10, "larghezza": 180, "colonne": 14 },
+                { "da": 4.2, "a": 8.4, "fps": 10, "larghezza": 180, "colonne": 14 },
+                { "da": 8.4, "a": 12.4, "fps": 10, "larghezza": 180, "colonne": 14 } ] }
+ ]
+}
