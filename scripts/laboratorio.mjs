@@ -277,6 +277,25 @@ function trovaSfx(ric) {
   fs.copyFileSync(o, path.join(GIT, path.basename(o)));
 }
 
+// effetti sonori di un edit, estratti puliti (scripts/estrai-sfx.py: Demucs toglie le voci, poi si
+// ritaglia ogni suono e si raggruppano gli uguali). I wav vanno su Drive (uscita/suoni-<nome>/), sul
+// ramo laboratorio-esiti solo l'elenco: il repo è pubblico. { "estraiSfx": "<video>" }
+function estraiSfx(ric) {
+  const s = sorgente(ric.estraiSfx);
+  const venv = path.join(SCARICO, 'venv-demucs');
+  if (!fs.existsSync(venv)) {
+    run('python3', ['-m', 'venv', venv]);
+    const pip = path.join(venv, 'bin', 'pip');
+    run(pip, ['install', '-q', 'torch', 'torchaudio', '--index-url', 'https://download.pytorch.org/whl/cpu'], { stdio: 'inherit', timeout: 30 * 60 * 1000 });
+    run(pip, ['install', '-q', 'demucs', 'numpy', 'scipy', 'soundfile'], { stdio: 'inherit', timeout: 30 * 60 * 1000 });
+  }
+  const dir = path.join(OUT, `suoni-${pulito(path.parse(ric.estraiSfx).name)}`);
+  run(path.join(venv, 'bin', 'python'), [path.join(ROOT, 'scripts', 'estrai-sfx.py'), s.u, dir], { stdio: 'inherit', timeout: 60 * 60 * 1000 });
+  fs.rmSync(path.join(dir, '_lavoro'), { recursive: true, force: true });
+  fs.mkdirSync(GIT, { recursive: true });
+  fs.copyFileSync(path.join(dir, 'elenco.txt'), path.join(GIT, `suoni-${pulito(path.parse(ric.estraiSfx).name)}.txt`));
+}
+
 async function main() {
   const file = process.env.RICETTA || 'lab/ricetta.json';
   const ric = JSON.parse(fs.readFileSync(path.join(ROOT, file), 'utf8'));
@@ -288,6 +307,7 @@ async function main() {
   fs.mkdirSync(SCARICO, { recursive: true });
   if (ric.trascrivi) await trascrizioni(ric);
   if (ric.sfx) trovaSfx(ric);
+  if (ric.estraiSfx) estraiSfx(ric);
   if (ric.sequenze) { sequenze(ric); carica(); }
   if (ric.fotogrammi) { fotogrammiEVarianti(ric); carica(); }
   if (ric.clip) { clip(ric); carica(); }
