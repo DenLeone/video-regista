@@ -32,6 +32,7 @@ import { LOOK_FFMPEG, leggiStile, promptSuMisura } from './stile-su-misura.mjs';
 import { chiaveStileR2, preparaStileApp } from './stile-app.mjs';
 import { bloccoRemoteR2, comandiCancellaR2, comandiCopiaDrive, comandiScaricoR2 } from './rete.mjs';
 import { scegliCartella } from './scegli-cartella.mjs';
+import { progettoDaVinci } from './davinci.mjs';
 import { AUDIO_EXT, IMAGE_EXT, NOMI_DISPOSITIVO, VIDEO_EXT, dispositivo, prioritaAudio, tagsPiatti } from './sorgenti.mjs';
 
 const REMOTE = process.env.REGISTA_REMOTE || 'gdrive';
@@ -501,7 +502,8 @@ async function tagliaSegmenti(piano, analisi) {
       const argsI = comandiTaglio(si, iStart, d, path.join(MEDIA, ins), false, true);
       lavori.push(async () => {
         await eseguiUno('ffmpeg', argsI);
-        Object.assign(c.inserto, { file: ins, start: 0, end: +d.toFixed(3) });
+        // sorgente e punto d'ingresso originali: servono al progetto per DaVinci
+        Object.assign(c.inserto, { file: ins, start: 0, end: +d.toFixed(3), sorgente: si.id, daSorgente: iStart });
       });
     }
   });
@@ -543,7 +545,7 @@ function preparaImmagini(foto) {
       else run('ffmpeg', ['-y', '-v', 'error', '-i', path.join(SCARICO, f), '-frames:v', '1', '-vf', "scale='min(1600,iw)':-2", '-q:v', '3', path.join(MEDIA, file)]);
       const info = probe(path.join(MEDIA, file));
       run('ffmpeg', ['-y', '-v', 'error', '-i', path.join(MEDIA, file), '-vf', `scale=240:426:force_original_aspect_ratio=decrease,pad=240:426:(ow-iw)/2:(oh-ih)/2:black${etichetta(icona ? `ICONA ${id}` : id)}`, '-q:v', '4', path.join(dir, `${String(out.length).padStart(3, '0')}.jpg`)]);
-      out.push({ id, file, orient: info.w > info.h ? 'h' : 'v', ...(icona ? { icona: true } : {}), ...(copertina ? { copertina: true } : {}) });
+      out.push({ id, file, originale: path.basename(f), orient: info.w > info.h ? 'h' : 'v', ...(icona ? { icona: true } : {}), ...(copertina ? { copertina: true } : {}) });
       if (icona) log(`${id}: icona (entra con bagliore quando la nomino)`);
     } catch (e) { log(`immagine ${f} non leggibile (HEIC?): saltata`, e.message.split('\n')[0]); }
   }
@@ -2087,8 +2089,21 @@ async function main() {
         return scritte;
       } catch (e) { log('didascalie non scritte', e.message); return null; }
     })();
+    // progetto per DaVinci Resolve accanto al video (scripts/davinci.mjs): un file di testo, nessun render in più
+    const davinci = (() => {
+      if (PROVA_SECONDI) return null;
+      try {
+        const { xml, avvisi } = progettoDaVinci({ piano, sorgenti: analisi.sorgenti, immagini: analisi.immagini || [], nome,
+          cartella: `${OUT_DIR}/${nome}`, finale, durataFinale: durataN });
+        const f = path.join(WORK, `${nome} - DaVinci.fcpxml`);
+        fs.writeFileSync(f, xml);
+        if (avvisi.length) log(`progetto DaVinci: ${avvisi.join(' · ')}`);
+        return f;
+      } catch (e) { log('progetto DaVinci non scritto', e.message); return null; }
+    })();
     const noteP = (async () => {
       const copie = [
+        ...(davinci ? [inSottofondo('rclone', ['copyto', davinci, remote(DEST, nome, path.basename(davinci))])] : []),
         inSottofondo('rclone', ['copyto', path.join(WORK, 'NOTE.txt'), remote(DEST, nome, 'NOTE.txt')]),
         ...['regia.json', 'piano.json', 'materiale.json'].map((f) => inSottofondo('rclone', ['copyto', path.join(WORK, f), remote(DEST, nome, CACHE, f)])),
         ...fs.readdirSync(WORK).filter((x) => /^colore-.+\.jpg$/.test(x)).map((f) => inSottofondo('rclone', ['copyto', path.join(WORK, f), remote(DEST, nome, CACHE, f)])),
