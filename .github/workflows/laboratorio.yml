@@ -75,6 +75,7 @@ jobs:
       - name: Prove
         env:
           RICETTA: ${{ inputs.ricetta }}
+          GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
           # il girato si scarica nel disco grande del runner (/mnt), un file alla volta
           LAB_SCARICO: /mnt/lab
         run: |

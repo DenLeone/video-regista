@@ -235,6 +235,31 @@ function clip(ric) {
   }
 }
 
+// trascrizioni: il parlato dei file (video di consigli, esempi) in testo con i tempi, con Whisper
+// su Groq come nel montaggio; lingua riconosciuta da sola. Va anche sul ramo laboratorio-esiti
+async function trascrizioni(ric) {
+  for (const file of ric.trascrivi || []) {
+    const s = sorgente(file);
+    const mp3 = path.join(OUT, 'tmp', `${pulito(path.parse(file).name)}.mp3`);
+    run('ffmpeg', ['-y', '-v', 'error', '-i', s.u, '-vn', '-ac', '1', '-ar', '16000', '-b:a', '48k', mp3]);
+    const form = new FormData();
+    form.append('file', new Blob([fs.readFileSync(mp3)]), path.basename(mp3));
+    form.append('model', 'whisper-large-v3');
+    form.append('response_format', 'verbose_json');
+    const res = await fetch('https://api.groq.com/openai/v1/audio/transcriptions', {
+      method: 'POST', headers: { Authorization: `Bearer ${process.env.GROQ_API_KEY || ''}` }, body: form,
+    });
+    if (!res.ok) { log(`trascrizione di ${file} non riuscita: Groq ${res.status}`); continue; }
+    const j = await res.json();
+    const mmss = (t) => `${Math.floor(t / 60)}:${String(Math.floor(t % 60)).padStart(2, '0')}`;
+    const testo = `${file} · lingua ${j.language || '?'}\n\n${(j.segments || []).map((g) => `[${mmss(g.start)}] ${g.text.trim()}`).join('\n')}\n`;
+    const o = path.join(OUT, `trascrizione-${pulito(path.parse(file).name)}.txt`);
+    fs.writeFileSync(o, testo);
+    fs.mkdirSync(GIT, { recursive: true });
+    fs.copyFileSync(o, path.join(GIT, path.basename(o)));
+  }
+}
+
 async function main() {
   const file = process.env.RICETTA || 'lab/ricetta.json';
   const ric = JSON.parse(fs.readFileSync(path.join(ROOT, file), 'utf8'));
@@ -244,6 +269,7 @@ async function main() {
   fs.mkdirSync(path.join(OUT, 'tmp'), { recursive: true });
   uscitaDrive = ric.uscita;
   fs.mkdirSync(SCARICO, { recursive: true });
+  if (ric.trascrivi) await trascrizioni(ric);
   if (ric.sequenze) { sequenze(ric); carica(); }
   if (ric.fotogrammi) { fotogrammiEVarianti(ric); carica(); }
   if (ric.clip) { clip(ric); carica(); }
