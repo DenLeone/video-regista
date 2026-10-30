@@ -5,13 +5,19 @@ Senza scheda video (o senza le librerie CUDA) va sul processore, più lento ma u
 
   python pc/trascrivi.py <video o audio> <uscita.json> [--lingua it] [--nomi "Ajazz, AK980"] [--modello large-v3]
   python pc/trascrivi.py --prova      (carica il modello e dice se usa la scheda video)
+  python pc/trascrivi.py --lista lavori.json   ([{"file": ..., "uscita": ...}]: il modello si carica una volta sola)
 """
 import argparse
 import json
 import os
 import sys
 import time
+import warnings
 from pathlib import Path
+
+# Windows senza modalità sviluppatore: la cache di Hugging Face avvisa dei symlink a ogni avvio (innocuo)
+os.environ.setdefault('HF_HUB_DISABLE_SYMLINKS_WARNING', '1')
+warnings.filterwarnings('ignore', message='.*symlinks.*')
 
 
 def librerie_cuda():
@@ -38,7 +44,33 @@ def modello(nome):
         return WhisperModel(nome, device='cpu', compute_type='int8'), 'processore'
 
 
+def trascrivi(m, file, lingua='it', nomi=''):
+    segmenti, info = m.transcribe(
+        file, language=None if lingua in ('', 'auto') else lingua, word_timestamps=True,
+        initial_prompt=nomi or None, vad_filter=True, beam_size=5,
+    )
+    parole = []
+    for seg in segmenti:
+        for w in seg.words or []:
+            parole.append({'w': w.word, 's': round(w.start, 2), 'e': round(w.end, 2)})
+    return parole, info
+
+
 def main():
+    if len(sys.argv) == 3 and sys.argv[1] == '--lista':
+        librerie_cuda()
+        m, dove = modello(os.environ.get('WHISPER_MODELLO', 'large-v3'))
+        lavori = json.loads(Path(sys.argv[2]).read_text(encoding='utf-8'))
+        for i, l in enumerate(lavori):
+            t0 = time.time()
+            try:
+                parole, info = trascrivi(m, l['file'], l.get('lingua', 'it'), l.get('nomi', ''))
+            except Exception as e:  # un file rovinato non ferma gli altri
+                print(f'[trascrivi] {Path(l["file"]).name}: non riuscita ({e})', file=sys.stderr)
+                continue
+            Path(l['uscita']).write_text(json.dumps(parole, ensure_ascii=False), encoding='utf-8')
+            print(f'[trascrivi] {i + 1}/{len(lavori)} {Path(l["file"]).name}: {len(parole)} parole in {time.time() - t0:.0f} s ({dove})', file=sys.stderr)
+        return
     if sys.argv[1:] == ['--prova']:
         librerie_cuda()
         _, dove = modello(os.environ.get('WHISPER_MODELLO', 'large-v3'))
@@ -54,14 +86,7 @@ def main():
     librerie_cuda()
     t0 = time.time()
     m, dove = modello(o.modello)
-    segmenti, info = m.transcribe(
-        o.file, language=None if o.lingua in ('', 'auto') else o.lingua, word_timestamps=True,
-        initial_prompt=o.nomi or None, vad_filter=True, beam_size=5,
-    )
-    parole = []
-    for seg in segmenti:
-        for w in seg.words or []:
-            parole.append({'w': w.word, 's': round(w.start, 2), 'e': round(w.end, 2)})
+    parole, info = trascrivi(m, o.file, o.lingua, o.nomi)
     Path(o.uscita).write_text(json.dumps(parole, ensure_ascii=False), encoding='utf-8')
     print(f'[trascrivi] {len(parole)} parole, {info.duration:.0f} s di audio in {time.time() - t0:.0f} s ({dove}, {o.modello})', file=sys.stderr)
 
