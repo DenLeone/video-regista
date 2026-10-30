@@ -41,7 +41,9 @@ REGOLE DI REGIA (dai video di riferimento):
 - Chiusura breve (meno di 1 minuto) su un'immagine bella.
 
 FORMATO: JSON { "nome": "${nome}", "cartella": ${JSON.stringify(materiale.cartella)}, "volumeMusica": 0.22, "sequenza": [ ... ] } con elementi:
-{ "musica": "file" } | { "capitolo": "...", "sotto": "...", "musica": "file" } | { "v": "V015", "da": "prime parole", "a": "ultime parole", "sopra": [{ "v": "V012", "dal": 1, "al": 14, "per": 3 }] } | { "broll": "V013", "dal": 5, "per": 3, "audio": "muto" } | { "titolo": "...", "sotto": "...", "su": "V239", "dal": 10, "per": 3.5 }
+{ "musica": "file" } | { "capitolo": "...", "sotto": "...", "musica": "file" } | { "v": "UMXH7108.MP4", "da": "prime parole", "a": "ultime parole", "sopra": [{ "v": "NBVE8895.MP4", "dal": 1, "al": 14, "per": 3 }] } | { "broll": "JGPJ4543.MP4", "dal": 5, "per": 3, "audio": "muto" } | { "titolo": "...", "sotto": "...", "su": "IMG_8917.MOV", "dal": 10, "per": 3.5 }
+In "v", "broll", "su" e "sopra" metti il NOME DEL FILE della clip (quello dopo "## " nel materiale), mai i numeri V001.
+Per i capitoli di un viaggio aggiungi "luogo" (posto preciso cercabile su una mappa, es. "Schloss Schönbrunn, Wien") e nel piano "paese" (codice a due lettere, es. "at"). Le clip segnate EXPORT hanno la data sbagliata: non usarle per capire quando e dove sei.
 Brani disponibili per "musica": ${brani.length ? brani.map((b) => JSON.stringify(b)).join(', ') : '(nessuno: ometti musica)'}
 ${esempio ? `\nESEMPIO di piano fatto bene (un altro video):\n${esempio}\n` : ''}
 MATERIALE:

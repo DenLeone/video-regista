@@ -49,9 +49,13 @@ def audio(file):
     # dalla versione 14 rifiuta un'opzione (metadata_errors, 30/10: nessun video trascritto)
     import subprocess
     import numpy as np
-    r = subprocess.run(['ffmpeg', '-v', 'error', '-nostdin', '-i', str(file), '-vn', '-ac', '1', '-ar', '16000', '-f', 'f32le', '-'],
-                       capture_output=True, check=True)
-    return np.frombuffer(r.stdout, dtype=np.float32)
+    # più tracce audio (iPhone recenti: audio spaziale che ffmpeg non sempre legge + stereo): la prima che va
+    for k in range(4):
+        r = subprocess.run(['ffmpeg', '-v', 'error', '-nostdin', '-i', str(file), '-map', f'0:a:{k}', '-vn', '-ac', '1', '-ar', '16000', '-f', 'f32le', '-'],
+                           capture_output=True)
+        if r.returncode == 0 and r.stdout:
+            return np.frombuffer(r.stdout, dtype=np.float32)
+    raise RuntimeError('nessuna traccia audio leggibile')
 
 
 def trascrivi(m, file, lingua='it', nomi=''):

@@ -18,6 +18,11 @@ const OUT = path.join(ROOT, 'work', 'pc', path.basename(path.resolve(cartella)))
 const FOGLI = path.join(OUT, 'fogli');
 const TRASCR = path.join(OUT, 'trascrizioni');
 for (const d of [OUT, FOGLI, TRASCR]) fs.mkdirSync(d, { recursive: true });
+// fogli e trascrizioni si salvano col NOME DEL FILE, che non cambia: i numeri V001… seguono l'ordine
+// delle clip e scivolano se ne aggiungi o togli una (30/10: trascrizioni finite sulle clip sbagliate).
+// Quelli vecchi salvati per numero non sono affidabili: via.
+const chiave = (file) => file.replace(/[^\w.-]+/g, '_');
+for (const d of [FOGLI, TRASCR]) for (const f of fs.readdirSync(d)) if (/^V\d{3}\.(json|jpg)$/.test(f)) fs.rmSync(path.join(d, f));
 const log = (...a) => console.log('[analizza]', ...a);
 
 const VIDEO = /\.(mov|mp4|m4v|mts|avi|mkv|insv)$/i;
@@ -103,7 +108,8 @@ console.log('');
 voci.sort((a, b) => String(a.data || '').localeCompare(String(b.data || '')) || a.file.localeCompare(b.file));
 voci.forEach((v, i) => {
   v.id = `V${String(i + 1).padStart(3, '0')}`;
-  foglio(path.join(cartella, v.file), v.durata, path.join(FOGLI, `${v.id}.jpg`));
+  v.chiave = chiave(v.file);
+  foglio(path.join(cartella, v.file), v.durata, path.join(FOGLI, `${v.chiave}.jpg`));
   process.stdout.write(`\r[analizza] fogli dei fotogrammi ${i + 1}/${voci.length}`);
 });
 console.log('');
@@ -115,8 +121,8 @@ fs.writeFileSync(FILE_LUOGHI, JSON.stringify(Object.fromEntries(cacheLuoghi)));
 // trascrizione di tutti i video con audio, modello caricato una volta sola
 if (!SENZA_TRASCRIZIONE) {
   const py = process.platform === 'win32' ? path.join(ROOT, '.venv', 'Scripts', 'python.exe') : path.join(ROOT, '.venv', 'bin', 'python');
-  const lavori = voci.filter((v) => v.audio && !fs.existsSync(path.join(TRASCR, `${v.id}.json`)))
-    .map((v) => ({ file: path.join(cartella, v.file), uscita: path.join(TRASCR, `${v.id}.json`) }));
+  const lavori = voci.filter((v) => v.audio && !fs.existsSync(path.join(TRASCR, `${v.chiave}.json`)))
+    .map((v) => ({ file: path.join(cartella, v.file), uscita: path.join(TRASCR, `${v.chiave}.json`) }));
   if (lavori.length) {
     log(`trascrivo ${lavori.length} video sulla scheda video…`);
     const lista = path.join(OUT, 'lavori-trascrizione.json');
@@ -125,7 +131,7 @@ if (!SENZA_TRASCRIZIONE) {
   }
 }
 for (const v of voci) {
-  const f = path.join(TRASCR, `${v.id}.json`);
+  const f = path.join(TRASCR, `${v.chiave}.json`);
   const parole = fs.existsSync(f) ? JSON.parse(fs.readFileSync(f, 'utf8')) : [];
   v.testo = parole.map((p) => p.w).join('').replace(/\s+/g, ' ').trim();
   // parla davvero: almeno ~1 parola ogni 2 secondi (Whisper a volte "sente" parole nel rumore)
@@ -142,11 +148,11 @@ const md = [
   `# Materiale: ${path.basename(cartella)}`,
   '',
   `${voci.length} video (${mmss(totale)} in tutto), ${parlati.length} con Denis che parla (${mmss(parlati.reduce((a, v) => a + v.durata, 0))}), ${foto.length} foto. Giorni: ${giorni.join(', ')}.`,
-  `Camere: ${[...new Set(voci.map((v) => v.camera || '?'))].join(', ')}. Fogli dei fotogrammi in fogli/ (V001.jpg…).`,
+  `Camere: ${[...new Set(voci.map((v) => v.camera || '?'))].join(', ')}. Nel piano indica le clip col NOME DEL FILE (es. UMXH7108.MP4). Fogli dei fotogrammi in fogli/<nome file>.jpg.`,
   '',
   ...voci.map((v) => [
-    `## ${v.id} · ${ora(v.data)} · ${mmss(v.durata)} · ${v.orient}${v.fps >= 50 ? ` · ${Math.round(v.fps)} fps (rallentatore)` : ''}${v.luogo ? ` · ${v.luogo}` : v.gps ? ` · ${v.gps.lat.toFixed(4)}, ${v.gps.lon.toFixed(4)}` : ''}`,
-    `${v.file}${v.camera ? ` · ${v.camera}` : ''}`,
+    `## ${v.file} · ${ora(v.data)} · ${mmss(v.durata)} · ${v.orient}${v.fps >= 50 ? ` · ${Math.round(v.fps)} fps (rallentatore)` : ''}${v.luogo ? ` · ${v.luogo}` : v.gps ? ` · ${v.gps.lat.toFixed(4)}, ${v.gps.lon.toFixed(4)}` : ''}`,
+    `${v.id}${v.camera ? ` · ${v.camera}` : ''}${Math.max(v.w || 0, v.h || 0) < 2160 ? ' · EXPORT (data non affidabile)' : ''}`,
     v.parla ? `PARLA: «${v.testo.slice(0, 1200)}»` : v.testo ? `(audio d'ambiente, qualche parola: «${v.testo.slice(0, 120)}»)` : '(senza parlato)',
     '',
   ].join('\n')),

@@ -30,8 +30,16 @@ const W = IN_4K ? 3840 : 1920, H = IN_4K ? 2160 : 1080, FPS = 30, K = W / 1920;
 
 const materiale = JSON.parse(fs.readFileSync(path.join(LAVORO, 'materiale.json'), 'utf8'));
 const perId = new Map(materiale.video.map((v) => [v.id, v]));
-const sorgente = (id) => { const v = perId.get(id); if (!v) throw new Error(`video ${id} non trovato in materiale.json`); return { ...v, percorso: path.join(piano.cartella, v.file) }; };
-const parole = (id) => { const f = path.join(LAVORO, 'trascrizioni', `${id}.json`); return fs.existsSync(f) ? JSON.parse(fs.readFileSync(f, 'utf8')) : []; };
+// le clip si indicano col NOME DEL FILE ("UMXH7108.MP4", anche senza estensione); i numeri V001 scivolano
+// quando cambia la cartella e valgono solo come riserva
+const perNome = new Map(materiale.video.flatMap((v) => [[v.file.toLowerCase(), v], [v.file.toLowerCase().replace(/\.[^.]+$/, ''), v], [path.basename(v.file).toLowerCase(), v]]));
+const trovaClip = (x) => perNome.get(String(x).toLowerCase()) || perNome.get(String(x).toLowerCase().replace(/\.[^.]+$/, '')) || perId.get(x);
+const sorgente = (id) => { const v = trovaClip(id); if (!v) throw new Error(`clip «${id}» non trovata nella cartella`); return { ...v, percorso: path.join(piano.cartella, v.file) }; };
+const parole = (id) => {
+  const v = trovaClip(id);
+  const f = path.join(LAVORO, 'trascrizioni', `${v?.chiave || id}.json`);
+  return fs.existsSync(f) ? JSON.parse(fs.readFileSync(f, 'utf8')) : [];
+};
 
 // ---------- dalle parole ai tempi ----------
 // gli apostrofi uniscono ("Let's" → "lets", "l'abbiamo" → "labbiamo"), come nelle parole di Whisper
