@@ -346,6 +346,72 @@ function audio(ric) {
   }
 }
 
+// studio di video YouTube lunghi (riferimenti di Denis per genere): Gemini guarda il link da sé,
+// niente download (YouTube non si scarica né da qui né dal cloud). Esce una scheda per video
+// con struttura, ritmo, grafiche, audio e regole misurabili per il montaggio automatico.
+const PROMPT_YOUTUBE = (genere) => `Sei un montatore video professionista. Questo è un video YouTube di riferimento (genere: ${genere}) che il creator Denis vuole usare come modello per il montaggio AUTOMATICO dei suoi video lunghi (15–20 min). Studialo tutto, immagini e audio, e scrivi in italiano una scheda tecnica precisa, con i tempi (mm:ss) di esempio per ogni punto.
+
+## 1. Struttura
+Gancio iniziale (cosa succede nei primi 30–60 s, secondo per secondo), intro/sigla, capitoli (titolo, inizio, durata), sponsor o call to action, chiusura. Come si passa da un capitolo all'altro.
+
+## 2. Ritmo del parlato
+Durata media delle inquadrature sulla persona che parla; jump cut (quanti al minuto, con o senza zoom); pause tolte o lasciate; quanto spesso cambia qualcosa sullo schermo.
+
+## 3. Copertura (B-roll)
+Percentuale di tempo con B-roll invece della persona; tipi (prodotto in mano, dettagli macro, schermate, stock, foto, video di altri); quanto dura ogni B-roll; se la voce continua sotto; movimenti di camera tipici.
+
+## 4. Grafiche
+Ogni tipo di grafica: schede di specifiche, scritte, titoli dei capitoli, frecce, cerchi, confronti, prezzi, loghi, sottotitoli. Per ognuna: aspetto (colori, font simile, sfondo, bordi, ombre), posizione, dimensione, come entra ed esce, quanto resta, ogni quanto compare.
+
+## 5. Zoom, transizioni ed effetti
+Punch-in/zoom (quanto, quanto spesso, su cosa), transizioni (quali e dove), effetti (sfocature, split screen, cornici).
+
+## 6. Audio
+Musica (quando c'è, volume rispetto alla voce, cambi per sezione, genere ed energia), effetti sonori (whoosh, click, pop: su cosa), silenzi voluti.
+
+## 7. Colore e immagine
+Look generale, set dello studio, inquadratura (piano, posizione nel quadro), profondità di campo.
+
+## 8. Cosa lo rende efficace
+Le 5 scelte di montaggio che più tengono incollati, in concreto.
+
+## 9. Regole per il montaggio automatico
+Elenco numerato di regole misurabili e applicabili da un programma (es. "un cambio visivo ogni 4–6 s", "scheda specifiche a destra per 5 s quando si nomina un dato tecnico", "zoom 115% ogni 2–3 frasi"). Almeno 20 regole.`;
+
+async function youtube(ric) {
+  const chiave = process.env.GEMINI_API_KEY;
+  if (!chiave) throw new Error('manca GEMINI_API_KEY');
+  const modelli = (process.env.LAB_MODELLI || 'gemini-pro-latest,gemini-flash-latest').split(',');
+  fs.mkdirSync(GIT, { recursive: true });
+  for (const v of ric.youtube) {
+    const id = (/(?:youtu\.be\/|v=)([\w-]{11})/.exec(v.url) || [])[1] || pulito(v.url);
+    let testo = null;
+    for (const modello of modelli) {
+      for (let prova = 0; prova < 3 && !testo; prova++) {
+        try {
+          const r = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${modello}:generateContent`, {
+            method: 'POST', headers: { 'content-type': 'application/json', 'x-goog-api-key': chiave },
+            signal: AbortSignal.timeout(15 * 60 * 1000),
+            body: JSON.stringify({
+              contents: [{ role: 'user', parts: [{ file_data: { file_uri: `https://www.youtube.com/watch?v=${id}` }, video_metadata: { fps: v.fps || 1 } }, { text: PROMPT_YOUTUBE(v.genere || 'tech') }] }],
+              generationConfig: { mediaResolution: 'MEDIA_RESOLUTION_LOW', temperature: 0.3 },
+            }),
+          });
+          const j = await r.json();
+          if (!r.ok) { log(`youtube ${id} ${modello}: ${r.status} ${JSON.stringify(j).slice(0, 300)}`); if (r.status === 503 || r.status === 429) { await new Promise((ok) => setTimeout(ok, 20000)); continue; } break; }
+          testo = (j.candidates?.[0]?.content?.parts || []).map((x) => x.text || '').join('').trim() || null;
+          if (testo) testo = `# ${v.url}\n_genere: ${v.genere || 'tech'} · ${modello} · token ${j.usageMetadata?.promptTokenCount ?? '?'}_\n\n${testo}\n`;
+        } catch (e) { log(`youtube ${id} ${modello}: ${e.message}`); }
+      }
+      if (testo) break;
+    }
+    const o = path.join(OUT, `youtube-${id}.md`);
+    fs.writeFileSync(o, testo || `# ${v.url}\nanalisi non riuscita\n`);
+    fs.copyFileSync(o, path.join(GIT, path.basename(o)));
+    log(`youtube ${id}: ${testo ? `${testo.length} caratteri` : 'NON riuscito'}`);
+  }
+}
+
 async function main() {
   const file = process.env.RICETTA || 'lab/ricetta.json';
   const ric = JSON.parse(fs.readFileSync(path.join(ROOT, file), 'utf8'));
@@ -360,6 +426,7 @@ async function main() {
   if (ric.estraiSfx) estraiSfx(ric);
   if (ric.ritmo) ritmo(ric);
   if (ric.audio) audio(ric);
+  if (ric.youtube) await youtube(ric);
   if (ric.sequenze) { sequenze(ric); carica(); }
   if (ric.fotogrammi) { fotogrammiEVarianti(ric); carica(); }
   if (ric.clip) { clip(ric); carica(); }
