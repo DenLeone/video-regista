@@ -11,7 +11,7 @@
 import { execFileSync, spawnSync } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
-import { cerca, clipMappa } from './mappe.mjs';
+import { cerca, clipMappa, km } from './mappe.mjs';
 
 const ROOT = path.resolve(path.dirname(new URL(import.meta.url).pathname.replace(/^\/([A-Za-z]:)/, '$1')), '..');
 const FILE_PIANO = process.argv[2];
@@ -113,7 +113,6 @@ const usati = new Set(piano.sequenza.flatMap((e) => [e.v, e.broll, e.su, ...(e.s
 const quando = (v) => (v.data ? Date.parse(v.data) : NaN);
 const originale = (v) => Number.isFinite(quando(v)) && Math.max(v.w || 0, v.h || 0) >= 2160 && !/lavf|avc1/i.test(v.camera || '');
 const giorno = (v) => new Date(quando(v)).toLocaleDateString('it-IT', { timeZone: 'Europe/Rome' });
-const km = (a, b) => { const r = Math.PI / 180, x = (b.lon - a.lon) * r * Math.cos(((a.lat + b.lat) / 2) * r), y = (b.lat - a.lat) * r; return Math.hypot(x, y) * 6371; };
 function brollVicini(id) {
   const p = perId.get(id);
   if (!originale(p)) return [];
@@ -138,23 +137,37 @@ if (piano.mappe !== false && piano.sequenza.some((e) => e.capitolo && e.luogo)) 
   }
   fs.writeFileSync(path.join(LAVORO, 'luoghi-capitoli.json'), JSON.stringify(cacheLuoghi, null, 1));
 }
-const mappe = []; // { da, a, nome, sotto, file }
+const mappe = []; // { tappe, nome, file }
 const DUR_MAPPA = 3.5;
+let mappaInAttesa = null;
 const errori = [];
 for (const [indice, el] of piano.sequenza.entries()) {
   if (t >= FINO) break;
   try {
   if (el.capitolo) {
     capitoli.push({ nome: el.capitolo, sotto: el.sotto || '', t, musica: el.musica ?? null });
+    // mappa solo se ci si sposta davvero (più di 25 km dalla tappa prima): va sopra i primi secondi
+    // del capitolo mentre Denis parla (o da sola, con la musica, se il capitolo inizia senza parlato)
     if (posti.has(indice)) {
-      const prima = [...posti.entries()].filter(([k]) => k < indice).pop()?.[1] || partenza;
-      mappe.push({ da: prima, a: posti.get(indice), nome: el.capitolo, sotto: el.sotto || '' });
-      aggiungi({ v: { id: 'mappa', mappa: mappe.length - 1, t0: 0 }, a: null, amb: 0, dur: DUR_MAPPA, zoom: 1 });
+      const fatte = [...posti.entries()].filter(([k]) => k < indice).map(([k, p]) => ({ ...p, nome: piano.sequenza[k].capitolo }));
+      const prima = fatte[fatte.length - 1] || (partenza && { ...partenza, nome: '' });
+      const qui = { ...posti.get(indice), nome: el.capitolo };
+      if (!prima || km(prima, qui) > 25) {
+        // tutto il viaggio fino a qui: partenza, tappe precedenti (una per città), quella nuova
+        const tappe = [];
+        for (const x of [...(partenza ? [{ ...partenza, nome: '' }] : []), ...fatte, qui]) if (!tappe.length || km(tappe[tappe.length - 1], x) > 25) tappe.push(x);
+        mappe.push({ tappe, nome: el.capitolo });
+        mappaInAttesa = mappe.length - 1;
+      } else log(`mappa «${el.capitolo}»: stessa zona della tappa prima (${Math.round(km(prima, qui))} km), niente mappa`);
     }
     if (el.titolo !== false) titoliInAttesa.push({ testo: el.capitolo, sotto: el.sotto || '', stile: 'capitolo', per: 3.2 });
     continue;
   }
   if (el.musica !== undefined && !el.capitolo) { capitoli.push({ nome: null, t, musica: el.musica }); continue; }
+  if (mappaInAttesa !== null && !el.v && (el.broll || el.titolo)) {
+    aggiungi({ v: { id: 'mappa', mappa: mappaInAttesa, t0: 0 }, a: null, amb: 0, dur: DUR_MAPPA, zoom: 1 });
+    mappaInAttesa = null;
+  }
   if (el.titolo) { // titolo grande su un B-roll (sigla)
     const s = sorgente(el.su);
     aggiungi({ v: { id: s.id, t0: el.dal || 0 }, a: null, amb: 0, dur: el.per || 3.5, zoom: 1, titoli: [{ testo: el.titolo, sotto: el.sotto || '', stile: 'sigla', da: 0, per: el.per || 3.5 }] });
@@ -182,6 +195,13 @@ for (const [indice, el] of piano.sequenza.entries()) {
       if (el.sopra.length) log(`${s.id}: ${el.sopra.length} B-roll automatici (${el.sopra.map((x) => x.v).join(', ')})`);
     }
     const sopra = (el.sopra || []).map((x) => ({ ...x, s: sorgente(x.v) }));
+    if (mappaInAttesa !== null) {
+      const m = mappaInAttesa;
+      mappaInAttesa = null;
+      // i B-roll che cadrebbero sotto la mappa si spostano dopo
+      for (const x of sopra) if (x.al < DUR_MAPPA + 0.5) x.al += DUR_MAPPA + 0.5;
+      sopra.unshift({ mappa: m, dal: 0, al: 0, per: Math.min(DUR_MAPPA, lungo), s: { id: 'mappa' } });
+    }
     let tp = 0;
     ivs.forEach(([a, b], k) => {
       if (k > 0) zoomAlterna = !zoomAlterna;
@@ -194,7 +214,8 @@ for (const [indice, el] of piano.sequenza.entries()) {
         const q0 = tagli[n], q1 = tagli[n + 1], dur = +(q1 - q0).toFixed(3);
         if (dur < 0.05) continue;
         const br = sopra.find((x) => tp + q0 >= x.al - 0.01 && tp + q0 < x.al + x.per);
-        if (br) aggiungi({ v: { id: br.s.id, t0: (br.dal || 0) + (tp + q0 - br.al) }, a: { id: s.id, t0: a + q0 }, dur, zoom: 1 });
+        if (br?.mappa !== undefined) aggiungi({ v: { id: 'mappa', mappa: br.mappa, t0: tp + q0 - br.al }, a: { id: s.id, t0: a + q0 }, dur, zoom: 1 });
+        else if (br) aggiungi({ v: { id: br.s.id, t0: (br.dal || 0) + (tp + q0 - br.al) }, a: { id: s.id, t0: a + q0 }, dur, zoom: 1 });
         else aggiungi({ v: { id: s.id, t0: a + q0 }, a: { id: s.id, t0: a + q0 }, dur, zoom });
       }
       tp += b - a;
@@ -285,7 +306,7 @@ if (mappe.length) {
   fs.mkdirSync(dir, { recursive: true });
   if (fs.existsSync(FONT)) fs.copyFileSync(FONT, path.join(dir, 'font.ttf'));
   for (const [k, m] of mappe.entries()) {
-    m.file = await clipMappa({ ...m, uscita: path.join(dir, `m${k}-${W}.mp4`), dir, W, H, FPS, dur: DUR_MAPPA, encoder: codifica() });
+    m.file = await clipMappa({ tappe: m.tappe, paese: piano.paese || '', uscita: path.join(dir, `m${k}-${W}-v2.mp4`), dir, W, H, FPS, dur: DUR_MAPPA, encoder: codifica() });
     process.stdout.write(`\r[monta] mappe ${k + 1}/${mappe.length}`);
   }
   console.log('');
@@ -345,8 +366,11 @@ const asset = (id) => {
 };
 let ora = 0;
 const marcati = new Set();
-const spine = pezzi.map((p) => {
-  if (p.v.mappa !== undefined) { const x = `      <gap offset="${fr(ora)}/${FPS}s" duration="${tt(p.dur)}" start="0s" name="mappa ${esc(mappe[p.v.mappa].nome)}"/>`; ora += p.dur; return x; }
+const spine = pezzi.map((p0) => {
+  let p = p0;
+  // mappa: in DaVinci al suo posto la clip di cui si sente la voce (o uno spazio vuoto)
+  if (p.v.mappa !== undefined && p.a) p = { ...p, v: { id: p.a.id, t0: p.a.t0 } };
+  else if (p.v.mappa !== undefined) { const x = `      <gap offset="${fr(ora)}/${FPS}s" duration="${tt(p.dur)}" start="0s" name="mappa ${esc(mappe[p.v.mappa].nome)}"/>`; ora += p.dur; return x; }
   const ref = asset(p.v.id);
   const marc = capitoli.filter((c) => c.nome && !marcati.has(c) && c.t <= ora + 0.02).map((c) => { marcati.add(c); return `\n        <marker start="${tt(p.v.t0)}" duration="1/${FPS}s" value="${esc(c.nome)}"/>`; }).join('');
   const voceAltrove = p.a && p.a.id !== p.v.id ? `\n        <asset-clip ref="${asset(p.a.id)}" lane="-1" offset="${tt(p.v.t0)}" start="${tt(p.a.t0)}" duration="${tt(p.dur)}" srcEnable="audio"/>` : '';
