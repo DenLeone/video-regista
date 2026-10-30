@@ -43,6 +43,8 @@ Salva la risposta come `pc\progetti\<nome>.json`.
 
 ### Il formato, se vuoi ritoccarlo a mano (Blocco note)
 - `{ "capitolo": "Vienna", "sotto": "Il centro · 5 ottobre", "musica": "ES_Legend - DonVayei.mp3" }` titolo del capitolo + musica (da G:\Il mio Drive\12 · Risorse\Assets\Suoni\Musica; `""` = silenzio)
+- `"luogo": "Schloss Schönbrunn, Wien"` dentro un capitolo: mappa animata (OpenStreetMap) col percorso dalla tappa prima; `"paese": "at"` nel piano limita la ricerca a quel paese. Se il posto non si trova, niente mappa (lo scrive).
+- B-roll automatici: sui pezzi parlati lunghi, clip senza parlato girate nello stesso posto (stesso giorno, entro 15 minuti, entro 3 km se c'è il GPS; mai dagli export). `"auto": false` su un pezzo li toglie, `"brollAuto": false` nel piano li toglie tutti.
 - `{ "v": "V058", "da": "prime parole", "a": "ultime parole" }` pezzo dove parli, tagliato sulle parole (le pause lunghe si tolgono da sole)
 - `"sopra": [{ "v": "V071", "dal": 3, "al": 5, "per": 3 }]` dentro un pezzo parlato: B-roll sopra la voce (dal = secondo nel B-roll, al = secondo nel pezzo)
 - `{ "broll": "V071", "dal": 3, "per": 3 }` B-roll da solo (`"audio": "muto"` o `"pieno"`)

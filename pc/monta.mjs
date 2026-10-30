@@ -11,6 +11,7 @@
 import { execFileSync, spawnSync } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
+import { cerca, clipMappa } from './mappe.mjs';
 
 const ROOT = path.resolve(path.dirname(new URL(import.meta.url).pathname.replace(/^\/([A-Za-z]:)/, '$1')), '..');
 const FILE_PIANO = process.argv[2];
@@ -104,22 +105,52 @@ const aggiungi = (p) => {
   t += p.dur;
 };
 // B-roll automatici: sui parlati lunghi senza "sopra", ogni ~9 s una clip senza parlato girata vicino
-// (entro 45 minuti) e non già usata nel piano. "brollAuto": false nel piano o "auto": false sul pezzo li toglie.
+// (entro 15 minuti) e non già usata nel piano. "brollAuto": false nel piano o "auto": false sul pezzo li toglie.
 const usati = new Set(piano.sequenza.flatMap((e) => [e.v, e.broll, e.su, ...(e.sopra || []).map((x) => x.v)]).filter(Boolean));
+// Solo clip ORIGINALI: gli export (1080p, "Lavf…") hanno la data dell'export, non della ripresa, e un
+// pezzo di Salisburgo esportato la sera sembrerebbe girato a Vienna. Stesso giorno, entro 15 minuti e,
+// se entrambe hanno il GPS, entro 3 km. Meglio nessun B-roll che uno sbagliato.
 const quando = (v) => (v.data ? Date.parse(v.data) : NaN);
+const originale = (v) => Number.isFinite(quando(v)) && Math.max(v.w || 0, v.h || 0) >= 2160 && !/lavf|avc1/i.test(v.camera || '');
+const giorno = (v) => new Date(quando(v)).toLocaleDateString('it-IT', { timeZone: 'Europe/Rome' });
+const km = (a, b) => { const r = Math.PI / 180, x = (b.lon - a.lon) * r * Math.cos(((a.lat + b.lat) / 2) * r), y = (b.lat - a.lat) * r; return Math.hypot(x, y) * 6371; };
 function brollVicini(id) {
-  const base = quando(perId.get(id));
-  if (!Number.isFinite(base)) return [];
+  const p = perId.get(id);
+  if (!originale(p)) return [];
+  const base = quando(p);
   return materiale.video
-    .filter((v) => !v.parla && !usati.has(v.id) && v.durata >= 3 && (v.w || 0) >= 640 && Number.isFinite(quando(v)) && Math.abs(quando(v) - base) < 45 * 60_000)
+    .filter((v) => !v.parla && !usati.has(v.id) && v.durata >= 3 && originale(v) && giorno(v) === giorno(p) && Math.abs(quando(v) - base) < 15 * 60_000
+      && (!v.gps || !p.gps || km(v.gps, p.gps) < 3))
     .sort((a, b) => Math.abs(quando(a) - base) - Math.abs(quando(b) - base));
 }
+// mappe: posto di ogni capitolo dal suo "luogo" (cercato nel paese del piano), partenza dal piano o dalla
+// prima clip col GPS. Stampa cosa ha trovato; se non trova, niente mappa.
+const cacheLuoghi = (() => { try { return JSON.parse(fs.readFileSync(path.join(LAVORO, 'luoghi-capitoli.json'), 'utf8')); } catch { return {}; } })();
+const posti = new Map(); // indice dell'elemento → { lat, lon }
+let partenza = null;
+if (piano.mappe !== false && piano.sequenza.some((e) => e.capitolo && e.luogo)) {
+  partenza = piano.partenza ? await cerca(piano.partenza, '', cacheLuoghi)
+    : materiale.video.filter((v) => v.gps && v.data).sort((a, b) => a.data.localeCompare(b.data))[0]?.gps || null;
+  for (const [k, e] of piano.sequenza.entries()) {
+    if (!e.capitolo || !e.luogo) continue;
+    const r = await cerca(e.luogo, piano.paese || '', cacheLuoghi);
+    if (r) { posti.set(k, r); log(`mappa «${e.capitolo}»: ${e.luogo} → ${r.nome}`); } else log(`mappa «${e.capitolo}»: «${e.luogo}» non trovato, niente mappa`);
+  }
+  fs.writeFileSync(path.join(LAVORO, 'luoghi-capitoli.json'), JSON.stringify(cacheLuoghi, null, 1));
+}
+const mappe = []; // { da, a, nome, sotto, file }
+const DUR_MAPPA = 3.5;
 const errori = [];
-for (const el of piano.sequenza) {
+for (const [indice, el] of piano.sequenza.entries()) {
   if (t >= FINO) break;
   try {
   if (el.capitolo) {
     capitoli.push({ nome: el.capitolo, sotto: el.sotto || '', t, musica: el.musica ?? null });
+    if (posti.has(indice)) {
+      const prima = [...posti.entries()].filter(([k]) => k < indice).pop()?.[1] || partenza;
+      mappe.push({ da: prima, a: posti.get(indice), nome: el.capitolo, sotto: el.sotto || '' });
+      aggiungi({ v: { id: 'mappa', mappa: mappe.length - 1, t0: 0 }, a: null, amb: 0, dur: DUR_MAPPA, zoom: 1 });
+    }
     if (el.titolo !== false) titoliInAttesa.push({ testo: el.capitolo, sotto: el.sotto || '', stile: 'capitolo', per: 3.2 });
     continue;
   }
@@ -219,7 +250,7 @@ function renderPezzo(p, n) {
   const firma = JSON.stringify({ ...p, W });
   const fileFirma = `${uscita}.json`;
   if (fs.existsSync(uscita) && fs.existsSync(fileFirma) && fs.readFileSync(fileFirma, 'utf8') === firma) return uscita;
-  const sv = sorgente(p.v.id);
+  const sv = p.v.mappa !== undefined ? { id: 'mappa', percorso: mappe[p.v.mappa].file, w: W, h: H, hdr: false, audio: false } : sorgente(p.v.id);
   const sa = p.a ? sorgente(p.a.id) : null;
   const args = ['-v', 'error', '-y', '-ss', p.v.t0.toFixed(3), '-t', (p.dur + 0.1).toFixed(3), '-i', sv.percorso];
   let ia = null;
@@ -248,6 +279,17 @@ function renderPezzo(p, n) {
   return uscita;
 }
 
+// le clip delle mappe, prima dei pezzi
+if (mappe.length) {
+  const dir = path.join(OUT, 'mappe');
+  fs.mkdirSync(dir, { recursive: true });
+  if (fs.existsSync(FONT)) fs.copyFileSync(FONT, path.join(dir, 'font.ttf'));
+  for (const [k, m] of mappe.entries()) {
+    m.file = await clipMappa({ ...m, uscita: path.join(dir, `m${k}-${W}.mp4`), dir, W, H, FPS, dur: DUR_MAPPA, encoder: codifica() });
+    process.stdout.write(`\r[monta] mappe ${k + 1}/${mappe.length}`);
+  }
+  console.log('');
+}
 const t0 = Date.now();
 const fatti = pezzi.map((p, n) => {
   const u = renderPezzo(p, n);
@@ -302,9 +344,11 @@ const asset = (id) => {
   return assets.get(id).ref;
 };
 let ora = 0;
+const marcati = new Set();
 const spine = pezzi.map((p) => {
+  if (p.v.mappa !== undefined) { const x = `      <gap offset="${fr(ora)}/${FPS}s" duration="${tt(p.dur)}" start="0s" name="mappa ${esc(mappe[p.v.mappa].nome)}"/>`; ora += p.dur; return x; }
   const ref = asset(p.v.id);
-  const marc = capitoli.filter((c) => c.nome && Math.abs(c.t - ora) < 0.02).map((c) => `\n        <marker start="${tt(p.v.t0)}" duration="1/${FPS}s" value="${esc(c.nome)}"/>`).join('');
+  const marc = capitoli.filter((c) => c.nome && !marcati.has(c) && c.t <= ora + 0.02).map((c) => { marcati.add(c); return `\n        <marker start="${tt(p.v.t0)}" duration="1/${FPS}s" value="${esc(c.nome)}"/>`; }).join('');
   const voceAltrove = p.a && p.a.id !== p.v.id ? `\n        <asset-clip ref="${asset(p.a.id)}" lane="-1" offset="${tt(p.v.t0)}" start="${tt(p.a.t0)}" duration="${tt(p.dur)}" srcEnable="audio"/>` : '';
   const conAudio = p.a && p.a.id === p.v.id;
   const x = `      <asset-clip ref="${ref}" offset="${ora === 0 ? '0s' : `${fr(ora)}/${FPS}s`}" start="${tt(p.v.t0)}" duration="${tt(p.dur)}" srcEnable="${conAudio ? 'all' : 'video'}" name="${esc(p.v.id)}">${marc}${voceAltrove}${marc || voceAltrove ? '\n      ' : ''}</asset-clip>`;
