@@ -9,55 +9,49 @@
     {
       "v": "VGZZ9880.MP4",
       "da": "indovinate chi ha perso la sd",
-      "a": "nessun video su youtube"
+      "a": "però non ci sono più"
     },
     {
-      "broll": "GNRD1504.MP4",
-      "dal": 45,
-      "per": 1.6,
-      "audio": "muto"
-    },
-    {
-      "broll": "TYHO0219.MP4",
-      "dal": 3,
+      "broll": "JGPJ4543.MP4",
+      "dal": 5,
       "per": 1.4,
       "audio": "muto"
     },
     {
-      "broll": "AYTA5102.MP4",
-      "dal": 60,
+      "broll": "NBVE8895.MP4",
+      "dal": 2,
       "per": 1.4,
       "audio": "muto"
     },
     {
-      "broll": "SQOS5894.MP4",
-      "dal": 30,
-      "per": 1.4,
-      "audio": "muto"
-    },
-    {
-      "broll": "WGNM9705.MP4",
-      "dal": 40,
-      "per": 1.4,
-      "audio": "muto"
-    },
-    {
-      "broll": "JRYC5402.MP4",
+      "broll": "LKBA0399.MOV",
       "dal": 20,
       "per": 1.4,
       "audio": "muto"
     },
     {
-      "broll": "YBDP9382.MP4",
-      "dal": 2,
+      "broll": "SIBA7595.MP4",
+      "dal": 5,
+      "per": 1.4,
+      "audio": "muto"
+    },
+    {
+      "broll": "UVWY3794.MP4",
+      "dal": 3,
+      "per": 1.4,
+      "audio": "muto"
+    },
+    {
+      "broll": "TAZD5348.MP4",
+      "dal": 3,
       "per": 1.4,
       "audio": "muto"
     },
     {
       "titolo": "Austria",
       "sotto": "6 giorni · 1 SD persa",
-      "su": "RIFG2415.MP4",
-      "dal": 10,
+      "su": "IMG_8917.MOV",
+      "dal": 0,
       "per": 3.5
     },
     {
@@ -73,11 +67,6 @@
       "audio": "basso"
     },
     {
-      "broll": "JGPJ4543.MP4",
-      "dal": 5,
-      "per": 3
-    },
-    {
       "v": "UMXH7108.MP4",
       "da": "Quello alle mie spalle",
       "a": "perché è figo",
@@ -85,13 +74,13 @@
         {
           "v": "NBVE8895.MP4",
           "dal": 1,
-          "al": 14,
+          "al": 8,
           "per": 3
         },
         {
           "v": "JGPJ4543.MP4",
-          "dal": 12,
-          "al": 28,
+          "dal": 5,
+          "al": 20,
           "per": 3
         }
       ]
@@ -104,12 +93,8 @@
     {
       "capitolo": "Salisburgo",
       "sotto": "Red Bull World · 2 ottobre",
+      "musica": "ES_Legend - DonVayei.mp3",
       "luogo": "Getreidegasse, Salzburg"
-    },
-    {
-      "v": "MQDF5072.MP4",
-      "da": "E tutte queste persone",
-      "a": "poi c'è la casa di Mozart"
     },
     {
       "v": "JRYC5402.MP4",
@@ -123,39 +108,34 @@
     },
     {
       "v": "SWBX1668.MP4",
-      "da": "Tu, non ti piace il cappello",
-      "a": "Va bene, brava"
+      "da": "Tuo! Non ti piace il",
+      "a": "Va bene, brava!"
     },
     {
       "capitolo": "Vienna",
       "sotto": "Schönbrunn · 4 ottobre",
-      "musica": "ES_Legend - DonVayei.mp3",
+      "musica": "ES_PENTHOUSE - BLUE STEEL.mp3",
       "luogo": "Schloss Schönbrunn, Wien"
     },
     {
-      "v": "CXRB5286.MP4",
-      "da": "buongiorno mondo",
-      "a": "come sempre, che culo"
-    },
-    {
-      "v": "AKKO8035.MP4",
-      "da": "Adesso vedremo il palazzo",
-      "a": "75 minuti di camminata"
+      "v": "OIHV3836.MP4",
+      "da": "Buongiorno, buongiorno mondo. Stiamo per",
+      "a": "cammineremo un sacco oggi smettila"
     },
     {
       "v": "RNIR2543.MP4",
       "da": "Questa è la faccia perplessa",
-      "a": "niente di fortunato"
+      "a": "avviciniamoci"
     },
     {
       "v": "AYTA5102.MP4",
-      "da": "Ragazzi l'abbiamo rischiata tantissimo",
+      "da": "ragazzi l'abbiamo rischiata tantissimo",
       "a": "perché eravamo venuti in Austria"
     },
     {
       "v": "AYTA5102.MP4",
-      "da": "questo è il castello di Schombrun che lei mi ha chiesto",
-      "a": "Una persona semplice"
+      "da": "questo è il castello di Shombrun che lei mi ha chiesto",
+      "a": "almeno che giardina"
     },
     {
       "broll": "SIBA7595.MP4",
@@ -174,13 +154,13 @@
     },
     {
       "v": "KMAO3965.MP4",
-      "da": "Ho il naso gelato",
-      "a": "non è vero, non è vero"
+      "da": "ho il naso gelato",
+      "a": "io odio Lara"
     },
     {
       "v": "QIAP5111.MP4",
-      "da": "Let's go to the maze",
-      "a": "bisogna pagare col cazzo"
+      "da": "Let's go to the maze!",
+      "a": "bisogna pagare"
     },
     {
       "broll": "KCEQ3533.MP4",
@@ -200,7 +180,7 @@
     },
     {
       "v": "BVJM6854.MP4",
-      "da": "Oggi siamo in centro",
+      "da": "Oggi siamo in centro, centro a Vienna.",
       "a": "un'anziana signora"
     },
     {
@@ -215,7 +195,7 @@
     },
     {
       "v": "IOMT8058.MP4",
-      "da": "Questi sono i semafori dell'amore",
+      "da": "Questi sono i semafori dell'amore.",
       "a": "le strisce"
     },
     {
@@ -225,12 +205,12 @@
     },
     {
       "v": "YGUH8322.MP4",
-      "da": "E ovviamente entriamo nel posto più tipico",
-      "a": "è bello però"
+      "da": "e ovviamente entriamo nel posto più tipico",
+      "a": "cazzo ma è bello però"
     },
     {
       "v": "BIVQ8748.MP4",
-      "da": "per la prima volta Lara proverà",
+      "da": "Siamo nel posto più tipico di Vienna",
       "a": "lo scoprirà"
     },
     {
@@ -241,22 +221,22 @@
     {
       "v": "WDTE7691.MP4",
       "da": "Questa è una di quelle cose",
-      "a": "è crazy"
+      "a": "parlami di tua madre"
     },
     {
       "v": "TKYA7771.MP4",
-      "da": "Stavamo dicendogli a Lara",
+      "da": "stavamo dicendo Gerara",
       "a": "Noi non ci trasferiremo, via"
     },
     {
-      "v": "EHCJ8608.MP4",
-      "da": "Amore, quindi tu vorresti dirmi",
-      "a": "un gran bel posto"
+      "v": "EUPA5713.MP4",
+      "da": "E quella cosa arancione e verde",
+      "a": "Ok."
     },
     {
       "v": "MXBU2705.MP4",
       "da": "Come ho già detto mille volte",
-      "a": "Sembra quasi Brescia"
+      "a": "Sembra quasi Brescia, figa."
     },
     {
       "v": "GIUV8448.MP4",
@@ -276,37 +256,37 @@
     {
       "v": "GTPW3920.MP4",
       "da": "Io non so se è peggio lo spar",
-      "a": "Strani gli austriaci"
+      "a": "strani gli austriaci"
     },
     {
       "v": "GSYQ9098.MP4",
-      "da": "Adesso per colpa di un TikTok",
+      "da": "adesso per colpa di un TikTok",
       "a": "appena troviamo la U3"
     },
     {
       "v": "GHUJ2512.MP4",
       "da": "Un consiglio che do alle coppie",
-      "a": "io non so, un cazzo"
+      "a": "Un cazzo"
     },
     {
       "v": "VYNC5009.MP4",
-      "da": "quindi per arrivare al rooftop",
-      "a": "sono un atleta"
+      "da": "E quindi per arrivare al rooftop",
+      "a": "Sono un atleta."
     },
     {
       "v": "GNRD1504.MP4",
-      "da": "siamo sul rooftop siamo sul rooftop",
-      "a": "a sto giro centrato"
+      "da": "Siamo sul rooftop e da qua",
+      "a": "TikTok a sto giro centrato"
     },
     {
-      "v": "BVPM4781.MP4",
-      "da": "Siamo a Vienna e siamo tutti e due tristi",
-      "a": "lo vedremo più avanti"
+      "v": "CAIQ8869.MP4",
+      "da": "Siamo a Vienna, siamo a Vienna",
+      "a": "più avanti"
     },
     {
       "v": "SQOS5894.MP4",
-      "da": "siamo arrivati finalmente da Demel",
-      "a": "happy wife, happy life"
+      "da": "Allora, dopo una lieve pressione",
+      "a": "happy wife happy life"
     },
     {
       "v": "LGEB4762.MP4",
@@ -326,11 +306,6 @@
     {
       "v": "YBDP9382.MP4",
       "da": "questa qua è una chiesa votiva",
-      "a": "rinnovamento dell'organo"
-    },
-    {
-      "v": "YBDP9382.MP4",
-      "da": "e quindi in realtà volevamo vedere lo spettacolo",
       "a": "a testa esatto"
     },
     {
@@ -346,13 +321,13 @@
     },
     {
       "v": "WMGB3914.MP4",
-      "da": "per quelli come me",
-      "a": "è una regola"
+      "da": "Per quelli come me",
+      "a": "È una regola."
     },
     {
       "v": "NQYM0255.MP4",
       "da": "Siamo al Belvedere",
-      "a": "Let's go"
+      "a": "Let's go!"
     },
     {
       "broll": "XZQH6440.MP4",
@@ -373,9 +348,10 @@
       "audio": "muto"
     },
     {
-      "v": "KVCL0224.MP4",
-      "da": "quindi qua ci sono alcuni dei quadri più famosi",
-      "a": "white activities mi piace"
+      "broll": "KVCL0224.MP4",
+      "dal": 10,
+      "per": 4,
+      "audio": "muto"
     },
     {
       "broll": "LMBH9991.MP4",
@@ -399,7 +375,7 @@
     {
       "capitolo": "Lago di Faak",
       "sotto": "Carinzia · 7 ottobre",
-      "musica": "ES_Butterfly (Instrumental Version) - Nic Hanson.mp3",
+      "musica": "ES_Confidence - Witchitaw Slim.mp3",
       "luogo": "Faaker See"
     },
     {
@@ -415,7 +391,7 @@
     {
       "v": "FQZT7820.MP4",
       "da": "noi siamo arrivati qua al lago di Fak",
-      "a": "what else"
+      "a": "What else?"
     },
     {
       "v": "WGNM9705.MP4",
@@ -433,9 +409,9 @@
       "per": 4
     },
     {
-      "v": "PFFX5152.MP4",
-      "da": "Questo ci ha accompagnati",
-      "a": "almeno questo caffè è buono"
+      "v": "FBVN5243.MP4",
+      "da": "siamo a fine di queste ferie belle",
+      "a": "Almeno questo caffè è buono"
     },
     {
       "broll": "PYVI3936.MP4",

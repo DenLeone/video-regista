@@ -5,7 +5,7 @@
 // racconto; se c'è Google Drive (G:) ne mette una copia in 30 · Sviluppo/video-regista/pc/<nome>, così
 // lo legge anche il regista nel cloud.
 //   node pc\analizza.mjs "E:\Backup Iphone\Ottobre\Austria" [--senza-trascrizione]
-import { execFileSync, spawn, spawnSync } from 'node:child_process';
+import { spawn } from 'node:child_process';
 const esegui = (cmd, args, opts = {}) => new Promise((ok) => { const c = spawn(cmd, args, { ...opts, stdio: 'ignore' }); c.on('close', (status) => ok({ status })); });
 import fs from 'node:fs';
 import path from 'node:path';
@@ -37,8 +37,7 @@ function elenco(dir) {
 }
 
 // ---------- metadati ----------
-function probe(file) {
-  const j = JSON.parse(execFileSync('ffprobe', ['-v', 'error', '-print_format', 'json', '-show_format', '-show_streams', file], { encoding: 'utf8', maxBuffer: 1 << 24 }));
+function leggiProbe(j) {
   const v = (j.streams || []).find((s) => s.codec_type === 'video');
   const a = (j.streams || []).find((s) => s.codec_type === 'audio');
   const tag = { ...(j.format?.tags || {}), ...(v?.tags || {}) };
@@ -55,6 +54,18 @@ function probe(file) {
     camera: [t('com.apple.quicktime.make'), t('com.apple.quicktime.model')].filter(Boolean).join(' ') || t('encoder') || null,
     gps: m ? { lat: Number(m[1]), lon: Number(m[2]) } : null, audio: Boolean(a),
   };
+}
+function probe(file) {
+  return new Promise((ok, ko) => {
+    const c = spawn('ffprobe', ['-v', 'error', '-print_format', 'json', '-show_format', '-show_streams', file], { stdio: ['ignore', 'pipe', 'pipe'] });
+    let out = '', err = '';
+    c.stdout.on('data', (d) => { out += d; });
+    c.stderr.on('data', (d) => { err += d; });
+    c.on('close', (status) => {
+      if (status !== 0) return ko(new Error(err.split('\n')[0] || 'ffprobe'));
+      try { ok(leggiProbe(JSON.parse(out))); } catch (e) { ko(e); }
+    });
+  });
 }
 
 // nome del posto dalle coordinate (OpenStreetMap, una richiesta al secondo, cache per ~1 km)
@@ -100,10 +111,14 @@ const video = tutti.filter((f) => VIDEO.test(f));
 const foto = tutti.filter((f) => FOTO.test(f));
 log(`${video.length} video e ${foto.length} foto in ${cartella} → risultati in ${OUT}`);
 const voci = [];
-for (const [i, file] of video.entries()) {
-  try { voci.push({ file: path.relative(cartella, file), ...probe(file) }); } catch (e) { log(`${path.basename(file)}: illeggibile (${String(e.message).split('\n')[0]})`); }
-  process.stdout.write(`\r[analizza] metadati ${i + 1}/${video.length}`);
-}
+let prossimoFile = 0, fattiMeta = 0;
+await Promise.all(Array.from({ length: 8 }, async () => {
+  while (prossimoFile < video.length) {
+    const file = video[prossimoFile++];
+    try { voci.push({ file: path.relative(cartella, file), ...await probe(file) }); } catch (e) { log(`${path.basename(file)}: illeggibile (${String(e.message).split('\n')[0]})`); }
+    if (++fattiMeta % 25 === 0 || fattiMeta === video.length) process.stdout.write(`\r[analizza] metadati ${fattiMeta}/${video.length}`);
+  }
+}));
 console.log('');
 // in ordine di ripresa: V001 è il primo girato
 voci.sort((a, b) => String(a.data || '').localeCompare(String(b.data || '')) || a.file.localeCompare(b.file));

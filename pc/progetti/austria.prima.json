@@ -1,0 +1,427 @@
+{
+  "nome": "Austria",
+  "cartella": "E:\\Backup Iphone\\Ottobre\\Austria",
+  "volumeMusica": 0.22,
+  "sequenza": [
+    {
+      "musica": "ES_IRRATIONAL - Dylan Sitts.mp3"
+    },
+    {
+      "v": "VGZZ9880.MP4",
+      "da": "indovinate chi ha perso la sd",
+      "a": "però non ci sono più"
+    },
+    {
+      "broll": "JGPJ4543.MP4",
+      "dal": 5,
+      "per": 1.4,
+      "audio": "muto"
+    },
+    {
+      "broll": "NBVE8895.MP4",
+      "dal": 2,
+      "per": 1.4,
+      "audio": "muto"
+    },
+    {
+      "broll": "LKBA0399.MOV",
+      "dal": 20,
+      "per": 1.4,
+      "audio": "muto"
+    },
+    {
+      "broll": "SIBA7595.MP4",
+      "dal": 5,
+      "per": 1.4,
+      "audio": "muto"
+    },
+    {
+      "broll": "UVWY3794.MP4",
+      "dal": 3,
+      "per": 1.4,
+      "audio": "muto"
+    },
+    {
+      "broll": "TAZD5348.MP4",
+      "dal": 3,
+      "per": 1.4,
+      "audio": "muto"
+    },
+    {
+      "titolo": "Austria",
+      "sotto": "6 giorni · 1 SD persa",
+      "su": "IMG_8917.MOV",
+      "dal": 0,
+      "per": 3.5
+    },
+    {
+      "capitolo": "Innsbruck",
+      "sotto": "Castello di Ambras · 2 ottobre",
+      "musica": "ES_Butterfly (Instrumental Version) - Nic Hanson.mp3",
+      "luogo": "Schloss Ambras, Innsbruck"
+    },
+    {
+      "broll": "LKBA0399.MOV",
+      "dal": 20,
+      "per": 3,
+      "audio": "basso"
+    },
+    {
+      "v": "UMXH7108.MP4",
+      "da": "Quello alle mie spalle",
+      "a": "perché è figo",
+      "sopra": [
+        {
+          "v": "NBVE8895.MP4",
+          "dal": 1,
+          "al": 8,
+          "per": 3
+        },
+        {
+          "v": "JGPJ4543.MP4",
+          "dal": 5,
+          "al": 20,
+          "per": 3
+        }
+      ]
+    },
+    {
+      "v": "UMXH7108.MP4",
+      "da": "E poi ci sono i pavoni",
+      "a": "non mi è piaciuto tanto il castello"
+    },
+    {
+      "capitolo": "Salisburgo",
+      "sotto": "Red Bull World · 2 ottobre",
+      "musica": "ES_Legend - DonVayei.mp3",
+      "luogo": "Getreidegasse, Salzburg"
+    },
+    {
+      "v": "MQDF5072.MP4",
+      "da": "E tutte queste persone",
+      "a": "poi c'è la casa di Mozart"
+    },
+    {
+      "v": "JRYC5402.MP4",
+      "da": "E così a casa a Salisburgo",
+      "a": "100 euro, neanche tanto"
+    },
+    {
+      "v": "FSWB5814.MP4",
+      "da": "Adesso andiamo al piano 0",
+      "a": "appesa al muro"
+    },
+    {
+      "v": "SWBX1668.MP4",
+      "da": "Tuo! Non ti piace il",
+      "a": "Va bene, brava!"
+    },
+    {
+      "capitolo": "Vienna",
+      "sotto": "Schönbrunn · 4 ottobre",
+      "musica": "ES_PENTHOUSE - BLUE STEEL.mp3",
+      "luogo": "Schloss Schönbrunn, Wien"
+    },
+    {
+      "v": "OIHV3836.MP4",
+      "da": "Buongiorno, buongiorno mondo. Stiamo per",
+      "a": "cammineremo un sacco oggi smettila"
+    },
+    {
+      "v": "RNIR2543.MP4",
+      "da": "Questa è la faccia perplessa",
+      "a": "avviciniamoci"
+    },
+    {
+      "v": "AYTA5102.MP4",
+      "da": "ragazzi l'abbiamo rischiata tantissimo",
+      "a": "perché eravamo venuti in Austria"
+    },
+    {
+      "v": "AYTA5102.MP4",
+      "da": "questo è il castello di Shombrun che lei mi ha chiesto",
+      "a": "almeno che giardina"
+    },
+    {
+      "broll": "SIBA7595.MP4",
+      "dal": 5,
+      "per": 3
+    },
+    {
+      "v": "ELNU1258.MP4",
+      "da": "spettacolo è il giardino",
+      "a": "questi ci vivevano qua"
+    },
+    {
+      "v": "VCIS0251.MP4",
+      "da": "Non faremo lo zoo",
+      "a": "il panda in Austria, boh"
+    },
+    {
+      "v": "KMAO3965.MP4",
+      "da": "ho il naso gelato",
+      "a": "io odio Lara"
+    },
+    {
+      "v": "QIAP5111.MP4",
+      "da": "Let's go to the maze!",
+      "a": "bisogna pagare"
+    },
+    {
+      "broll": "KCEQ3533.MP4",
+      "dal": 3,
+      "per": 3
+    },
+    {
+      "v": "TGXU3725.MP4",
+      "da": "questa è la fontana",
+      "a": "una gran giocata"
+    },
+    {
+      "capitolo": "Vienna",
+      "sotto": "Il centro · 5 ottobre",
+      "musica": "ES_dumb (Instrumental Version) - MV Archives.mp3",
+      "luogo": "Stephansplatz, Wien"
+    },
+    {
+      "v": "BVJM6854.MP4",
+      "da": "Oggi siamo in centro, centro a Vienna.",
+      "a": "un'anziana signora"
+    },
+    {
+      "broll": "UVWY3794.MP4",
+      "dal": 3,
+      "per": 3
+    },
+    {
+      "v": "JBRN7605.MP4",
+      "da": "Questo è il municipio di Vienna",
+      "a": "città più belle del mondo"
+    },
+    {
+      "v": "IOMT8058.MP4",
+      "da": "Questi sono i semafori dell'amore.",
+      "a": "le strisce"
+    },
+    {
+      "broll": "TAZD5348.MP4",
+      "dal": 3,
+      "per": 3
+    },
+    {
+      "v": "YGUH8322.MP4",
+      "da": "e ovviamente entriamo nel posto più tipico",
+      "a": "cazzo ma è bello però"
+    },
+    {
+      "v": "BIVQ8748.MP4",
+      "da": "Siamo nel posto più tipico di Vienna",
+      "a": "lo scoprirà"
+    },
+    {
+      "v": "SHOO7032.MP4",
+      "da": "Lara qua in Austria",
+      "a": "in un posto decente dai"
+    },
+    {
+      "v": "WDTE7691.MP4",
+      "da": "Questa è una di quelle cose",
+      "a": "parlami di tua madre"
+    },
+    {
+      "v": "TKYA7771.MP4",
+      "da": "stavamo dicendo Gerara",
+      "a": "Noi non ci trasferiremo, via"
+    },
+    {
+      "v": "EUPA5713.MP4",
+      "da": "E quella cosa arancione e verde",
+      "a": "Ok."
+    },
+    {
+      "v": "MXBU2705.MP4",
+      "da": "Come ho già detto mille volte",
+      "a": "Sembra quasi Brescia, figa."
+    },
+    {
+      "v": "GIUV8448.MP4",
+      "da": "Questo penso che sia una delle cose più belle",
+      "a": "possiamo sbagliare poco"
+    },
+    {
+      "v": "GIUV8448.MP4",
+      "da": "Qua è dove la Lara faceva",
+      "a": "Beautiful ears"
+    },
+    {
+      "v": "MBWO1018.MP4",
+      "da": "E alla fine non mangeremo italiano",
+      "a": "Vediamo cosa sceglieremo"
+    },
+    {
+      "v": "GTPW3920.MP4",
+      "da": "Io non so se è peggio lo spar",
+      "a": "strani gli austriaci"
+    },
+    {
+      "v": "GSYQ9098.MP4",
+      "da": "adesso per colpa di un TikTok",
+      "a": "appena troviamo la U3"
+    },
+    {
+      "v": "GHUJ2512.MP4",
+      "da": "Un consiglio che do alle coppie",
+      "a": "Un cazzo"
+    },
+    {
+      "v": "VYNC5009.MP4",
+      "da": "E quindi per arrivare al rooftop",
+      "a": "Sono un atleta."
+    },
+    {
+      "v": "GNRD1504.MP4",
+      "da": "Siamo sul rooftop e da qua",
+      "a": "TikTok a sto giro centrato"
+    },
+    {
+      "v": "CAIQ8869.MP4",
+      "da": "Siamo a Vienna, siamo a Vienna",
+      "a": "più avanti"
+    },
+    {
+      "v": "SQOS5894.MP4",
+      "da": "Allora, dopo una lieve pressione",
+      "a": "happy wife happy life"
+    },
+    {
+      "v": "LGEB4762.MP4",
+      "da": "Quella che vedete lì per conto suo",
+      "a": "e quindi è così"
+    },
+    {
+      "v": "TYHO0219.MP4",
+      "da": "E questa è la stessa piazza",
+      "a": "rende qualcosina in più"
+    },
+    {
+      "broll": "OPJC1813.MP4",
+      "dal": 3,
+      "per": 4
+    },
+    {
+      "v": "YBDP9382.MP4",
+      "da": "questa qua è una chiesa votiva",
+      "a": "a testa esatto"
+    },
+    {
+      "v": "EEMR2426.MP4",
+      "da": "siamo stati al centro di Vienna tutto il giorno",
+      "a": "a pari merito con Praga forse"
+    },
+    {
+      "capitolo": "Belvedere",
+      "sotto": "Il bacio di Klimt · 6 ottobre",
+      "musica": "ES_bird wings - dreem.mp3",
+      "luogo": "Oberes Belvedere, Wien"
+    },
+    {
+      "v": "WMGB3914.MP4",
+      "da": "Per quelli come me",
+      "a": "È una regola."
+    },
+    {
+      "v": "NQYM0255.MP4",
+      "da": "Siamo al Belvedere",
+      "a": "Let's go!"
+    },
+    {
+      "broll": "XZQH6440.MP4",
+      "dal": 5,
+      "per": 3,
+      "audio": "muto"
+    },
+    {
+      "broll": "QVNO4981.MP4",
+      "dal": 10,
+      "per": 3,
+      "audio": "muto"
+    },
+    {
+      "broll": "QNNV4535.MP4",
+      "dal": 5,
+      "per": 3,
+      "audio": "muto"
+    },
+    {
+      "v": "KVCL0224.MP4",
+      "da": "quindi qua ci sono alcuni dei quadri",
+      "a": "white activities mi piace"
+    },
+    {
+      "broll": "LMBH9991.MP4",
+      "dal": 5,
+      "per": 3,
+      "audio": "muto"
+    },
+    {
+      "musica": ""
+    },
+    {
+      "v": "VGZZ9880.MP4",
+      "da": "indovinate chi ha perso la sd",
+      "a": "però non ci sono più"
+    },
+    {
+      "v": "SDSZ5041.MP4",
+      "da": "Ora che mi è passata un po' la tristezza",
+      "a": "unlucky"
+    },
+    {
+      "capitolo": "Lago di Faak",
+      "sotto": "Carinzia · 7 ottobre",
+      "musica": "ES_Confidence - Witchitaw Slim.mp3",
+      "luogo": "Faaker See"
+    },
+    {
+      "v": "IMG_8723.MOV",
+      "da": "Ha un buonissimo profumo",
+      "a": "che ho mai vista"
+    },
+    {
+      "v": "IMG_8724.MOV",
+      "da": "dopo una breve discussione accesa",
+      "a": "no ma folle"
+    },
+    {
+      "v": "FQZT7820.MP4",
+      "da": "noi siamo arrivati qua al lago di Fak",
+      "a": "What else?"
+    },
+    {
+      "v": "WGNM9705.MP4",
+      "da": "Quindi ora abbiamo messo i filtri CPL",
+      "a": "cancellato praticamente"
+    },
+    {
+      "v": "HBDR8611.MP4",
+      "da": "adesso la vediamo bene la differenza",
+      "a": "la videocamera sott'acqua"
+    },
+    {
+      "broll": "RIFG2415.MP4",
+      "dal": 20,
+      "per": 4
+    },
+    {
+      "v": "FBVN5243.MP4",
+      "da": "siamo a fine di queste ferie belle",
+      "a": "Almeno questo caffè è buono"
+    },
+    {
+      "broll": "PYVI3936.MP4",
+      "dal": 10,
+      "per": 5
+    }
+  ],
+  "paese": "at"
+}

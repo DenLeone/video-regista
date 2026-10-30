@@ -1,0 +1,140 @@
+{
+  "nome": "Wecanrace",
+  "cartella": "E:\\Backup Iphone\\Luglio\\Wecanrace",
+  "volumeMusica": 0.22,
+  "sequenza": [
+    {
+      "musica": "Torque Mode.wav"
+    },
+    {
+      "v": "V025",
+      "da": "Dimmi qua, sta scrivendo",
+      "a": "Basta."
+    },
+    {
+      "broll": "V006",
+      "dal": 1,
+      "per": 1.4,
+      "audio": "muto"
+    },
+    {
+      "broll": "V009",
+      "dal": 1,
+      "per": 1.4,
+      "audio": "muto"
+    },
+    {
+      "broll": "V016",
+      "dal": 1,
+      "per": 1.4,
+      "audio": "muto"
+    },
+    {
+      "broll": "V017",
+      "dal": 1,
+      "per": 1.4,
+      "audio": "muto"
+    },
+    {
+      "broll": "V018",
+      "dal": 2,
+      "per": 1.4,
+      "audio": "muto"
+    },
+    {
+      "broll": "V007",
+      "dal": 5,
+      "per": 1.4,
+      "audio": "muto"
+    },
+    {
+      "titolo": "Wecanrace",
+      "sotto": "Giornata in pista · 5 luglio",
+      "su": "V018",
+      "dal": 3,
+      "per": 3.5
+    },
+    {
+      "capitolo": "Grancia-Pagliera",
+      "sotto": "Pista · 5 luglio",
+      "musica": "ES_Confidence - Witchitaw Slim.mp3"
+    },
+    {
+      "v": "V005",
+      "da": "Obiettivo di oggi?",
+      "a": "cofanetto."
+    },
+    {
+      "broll": "V006",
+      "dal": 2,
+      "per": 3,
+      "audio": "muto"
+    },
+    {
+      "v": "V008",
+      "da": "Come mai sono bollinato",
+      "a": "top"
+    },
+    {
+      "v": "V011",
+      "da": "Piccolo problema logistico",
+      "a": "insieme."
+    },
+    {
+      "broll": "V009",
+      "dal": 1,
+      "per": 3
+    },
+    {
+      "v": "V012",
+      "da": "Ad esempio, quella dietro al palo",
+      "a": "sta già sgasando"
+    },
+    {
+      "capitolo": "Box",
+      "sotto": "Preparativi · 5 luglio",
+      "musica": "ES_PENTHOUSE - BLUE STEEL.mp3"
+    },
+    {
+      "v": "V014",
+      "da": "Non sono qua a vendere panini",
+      "a": "in cassa tra"
+    },
+    {
+      "v": "V020",
+      "da": "E quindi, intanto che aspettiamo il pilota",
+      "a": "ci sto a pelo."
+    },
+    {
+      "v": "V021",
+      "da": "La situazione in cui siamo",
+      "a": "sta andando."
+    },
+    {
+      "broll": "V016",
+      "dal": 2,
+      "per": 3
+    },
+    {
+      "v": "V024",
+      "da": "Ma come, ma come ancora fila",
+      "a": "Hai iniziato adesso?"
+    },
+    {
+      "capitolo": "Il Rientro",
+      "sotto": "Fine sessione · 5 luglio",
+      "musica": "ES_Legend - DonVayei.mp3"
+    },
+    {
+      "v": "V026",
+      "da": "registrando ancora, dimmi quando",
+      "a": "ciao a tutti!"
+    },
+    {
+      "broll": "V017",
+      "dal": 2,
+      "per": 4,
+      "audio": "muto"
+    }
+  ]
+}

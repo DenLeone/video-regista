@@ -9,14 +9,16 @@
 // - progetto DaVinci (FCPXML) con gli originali e i marcatori dei capitoli
 //   node pc\monta.mjs pc\progetti\austria.json [--fino 120] [--4k]   (--fino: anteprima dei primi N secondi)
 import { execFileSync, spawn, spawnSync } from 'node:child_process';
+import crypto from 'node:crypto';
 import fs from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 import { cerca, clipMappa, km } from './mappe.mjs';
 
 const ROOT = path.resolve(path.dirname(new URL(import.meta.url).pathname.replace(/^\/([A-Za-z]:)/, '$1')), '..');
 const FILE_PIANO = process.argv[2];
 const FINO = process.argv.includes('--fino') ? Number(process.argv[process.argv.indexOf('--fino') + 1]) : Infinity;
-if (!FILE_PIANO) { console.error('uso: node pc/monta.mjs <piano.json> [--fino secondi]'); process.exit(1); }
+if (!FILE_PIANO) { console.error('uso: node pc/monta.mjs <piano.json> [--fino secondi] [--4k] [--solo-controllo]'); process.exit(1); }
 const piano = JSON.parse(fs.readFileSync(FILE_PIANO, 'utf8'));
 const nome = piano.nome || path.basename(piano.cartella);
 const LAVORO = path.join(ROOT, 'work', 'pc', nome);
@@ -215,7 +217,21 @@ for (const [indice, el] of piano.sequenza.entries()) {
   }
   if (el.v) { // parlato
     const s = sorgente(el.v);
-    const ivs = intervalli(s.id, el.da, el.a, el.pausa ?? 0.7);
+    let ivs;
+    try {
+      ivs = intervalli(s.id, el.da, el.a, el.pausa ?? 0.7);
+    } catch (e) {
+      // l'AI a volte scrive una frase su una clip dove Denis non parla: si tiene l'immagine, muta
+      if (!s.parla) {
+        const dal = Math.min(Math.max(0, s.durata * 0.4), Math.max(0, s.durata - 1.2));
+        const dur = Math.min(4, Math.max(0.5, s.durata - dal - 0.05));
+        log(`${s.id}: non è parlato, entra come immagine muta (${e.message})`);
+        aggiungi({ v: { id: s.id, t0: +dal.toFixed(3) }, a: null, amb: 0, dur: +dur.toFixed(3), zoom: 1 });
+        continue;
+      }
+      const detto = (s.testo || '').replace(/\s+/g, ' ').trim().slice(0, 160);
+      throw new Error(`${e.message}${detto ? `. Nel file: «${detto}»` : ''}`);
+    }
     // B-roll sopra la voce: { v, dal, al (secondi nel pezzo montato), per }
     const lungo = ivs.reduce((x, [a, b]) => x + b - a, 0);
     if (!el.sopra && el.auto !== false && piano.brollAuto !== false && lungo > 7) {
@@ -264,6 +280,7 @@ if (errori.length) {
 }
 const totale = t;
 log(`${pezzi.length} pezzi, ${Math.floor(totale / 60)}:${String(Math.round(totale % 60)).padStart(2, '0')} di video, ${capitoli.filter((c) => c.nome).length} capitoli`);
+if (process.argv.includes('--solo-controllo')) process.exit(0);
 
 // ---------- render dei pezzi ----------
 let encoder = null;
@@ -309,7 +326,8 @@ const esegui = (args, opts) => new Promise((ok) => {
 });
 async function renderPezzo(p, n) {
   const uscita = path.join(PEZZI, `p${String(n).padStart(4, '0')}.mp4`);
-  const firma = JSON.stringify({ ...p, W });
+  // FILTRI sale se cambia il modo in cui si disegna il pezzo: quelli già fatti non si mescolano coi nuovi
+  const firma = JSON.stringify({ ...p, W, FILTRI: 2 });
   const fileFirma = `${uscita}.json`;
   if (fs.existsSync(uscita) && fs.existsSync(fileFirma) && fs.readFileSync(fileFirma, 'utf8') === firma) return uscita;
   const sv = p.v.mappa !== undefined ? { id: 'mappa', percorso: mappe[p.v.mappa].file, w: W, h: H, hdr: false, audio: false } : sorgente(p.v.id);
@@ -322,10 +340,20 @@ async function renderPezzo(p, n) {
   const hdr = sv.hdr ? `${TONEMAP},` : '';
   const verticale = sv.h > sv.w;
   const z = p.zoom || 1;
-  let v = verticale
-    ? `[0:v:0]${hdr}split[a][b];[a]scale=${W}:${H}:force_original_aspect_ratio=increase,crop=${W}:${H},gblur=sigma=${40 * K},eq=brightness=-0.12[bg];[b]scale=-2:${H}[fg];[bg][fg]overlay=(W-w)/2:0`
-    : `[0:v:0]${hdr}scale=${W}:${H}:force_original_aspect_ratio=increase,crop=${W}:${H}${z > 1 ? `,crop=iw/${z}:ih/${z},scale=${W}:${H}` : ''}`;
-  v += `,fps=${FPS},format=yuv420p,setsar=1`;
+  // già della misura giusta e senza zoom: niente ricampionamento (i pixel restano quelli, solo 10 bit → 8)
+  const nativo = !sv.hdr && !verticale && z <= 1 && sv.w === W && sv.h === H;
+  let v;
+  if (verticale) {
+    // lo sfondo è sfocato comunque. Stesso raggio di prima (sigma 40 a 1080p, 80 a 4K), calcolato
+    // su un'immagine piccola: il soggetto in primo piano resta a piena risoluzione
+    const bgW = 480, bgH = Math.round((bgW * H) / W);
+    v = `[0:v:0]${hdr}split[a][b];[a]scale=${bgW}:${bgH}:force_original_aspect_ratio=increase:flags=bilinear,crop=${bgW}:${bgH},gblur=sigma=10,scale=${W}:${H}:flags=bilinear,eq=brightness=-0.12[bg];[b]scale=-2:${H}:flags=lanczos[fg];[bg][fg]overlay=(W-w)/2:0`;
+  } else if (nativo) v = '[0:v:0]';
+  else {
+    const crop = z > 1 ? `crop=iw/${z}:ih/${z},` : '';
+    v = `[0:v:0]${hdr}${crop}scale=${W}:${H}:force_original_aspect_ratio=increase:flags=lanczos,crop=${W}:${H}`;
+  }
+  v += `${nativo ? '' : ','}fps=${FPS},format=yuv420p,setsar=1`;
   const tit = p.titoli?.length ? filtroTitoli(p, n) : '';
   if (tit) v += `,${tit}`;
   v += `,trim=duration=${p.dur.toFixed(3)},setpts=PTS-STARTPTS[v]`;
@@ -349,13 +377,15 @@ if (mappe.length) {
   fs.mkdirSync(dir, { recursive: true });
   if (fs.existsSync(FONT)) fs.copyFileSync(FONT, path.join(dir, 'font.ttf'));
   for (const [k, m] of mappe.entries()) {
-    m.file = await clipMappa({ tappe: m.tappe, paese: piano.paese || '', uscita: path.join(dir, `m${k}-${W}-v2.mp4`), dir, W, H, FPS, dur: DUR_MAPPA, encoder: codifica() });
+    const firma = crypto.createHash('sha1').update(JSON.stringify({ tappe: m.tappe.map((t) => [t.lat, t.lon, t.nome]), paese: piano.paese || '', W, H, FPS })).digest('hex').slice(0, 10);
+    m.file = await clipMappa({ tappe: m.tappe, paese: piano.paese || '', uscita: path.join(dir, `m${k}-${W}-${firma}.mp4`), dir, W, H, FPS, dur: DUR_MAPPA, encoder: codifica() });
     process.stdout.write(`\r[monta] mappe ${k + 1}/${mappe.length}`);
   }
   console.log('');
 }
 const t0 = Date.now();
-const PARALLELI = Number(process.env.REGISTA_PARALLELI) || 4;
+// sul PC di Denis (5070 Ti, 20 core, pezzi corti in 4K): 8 codifiche insieme vanno ~18% più veloci di 4; da 10 in su rallenta
+const PARALLELI = Number(process.env.REGISTA_PARALLELI) || (os.cpus().length >= 16 ? 8 : 4);
 const fatti = new Array(pezzi.length);
 let prossimo = 0, finiti = 0;
 await Promise.all(Array.from({ length: PARALLELI }, async () => {
