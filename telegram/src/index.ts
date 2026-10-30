@@ -33,8 +33,8 @@ export interface Env {
   GITHUB_TOKEN: string;      // fine-grained, Actions read & write sul repo
   GITHUB_REPO: string;       // "DenLeone/video-regista"
   NOTIFY_TOKEN: string;      // condiviso con il workflow
-  IG_TOKEN?: string;
-  IG_USER_ID?: string;       // id dell'account Instagram, per la chiave del login unificato (EAA…)         // chiave Instagram (secret, 60 giorni): poi la tiene e la rinnova il bot
+  IG_TOKEN?: string;         // chiave Instagram (secret): IGAA… dura 60 giorni e la rinnova il bot, EAA… non scade
+  IG_USER_ID?: string;       // id dell'account Instagram, per la chiave del login unificato (EAA…)
   APP_SETUP_CODE?: string;   // codice segreto per registrare o sostituire la passkey dell'app
   R2_ACCOUNT_ID?: string;
   R2_ACCESS_KEY_ID?: string;
@@ -1452,9 +1452,16 @@ async function onPubblicato(env: Env, n: { nonce?: string; nome?: string; instag
 
 // chiave Instagram: la prima arriva dal secret IG_TOKEN, poi il bot la rinnova ogni settimana
 // (dura 60 giorni) e tiene in memoria quella nuova
-type ChiaveIg = { token: string; rinnovata: number };
+// `base`: il secret da cui viene la chiave rinnovata. Se Denis mette un secret nuovo vince quello
+// (30/10: "Cannot parse token" con una chiave vecchia in memoria al posto della nuova). Spazi, a capo
+// e virgolette incollati per sbaglio si tolgono.
+type ChiaveIg = { token: string; rinnovata: number; base?: string };
+const pulisciChiave = (t?: string) => (t || '').trim().replace(/^["']+|["']+$/g, '').replace(/\s+/g, '') || undefined;
 async function chiaveInstagram(env: Env): Promise<string | undefined> {
-  return (await leggi<ChiaveIg>(env, 'ig_token'))?.token || env.IG_TOKEN || undefined;
+  const segreto = pulisciChiave(env.IG_TOKEN);
+  const m = await leggi<ChiaveIg>(env, 'ig_token');
+  if (segreto && (!m || m.base !== segreto)) return segreto;
+  return pulisciChiave(m?.token) || segreto;
 }
 async function rinnovaChiaveInstagram(env: Env) {
   const token = await chiaveInstagram(env);
@@ -1462,7 +1469,7 @@ async function rinnovaChiaveInstagram(env: Env) {
   if (!token || chiaveFacebook(token)) return;
   const r = await fetch(`https://graph.instagram.com/refresh_access_token?grant_type=ig_refresh_token&access_token=${encodeURIComponent(token)}`);
   const j = (await r.json().catch(() => ({}))) as { access_token?: string; error?: { message?: string } };
-  if (r.ok && j.access_token) { await mem(env).scrivi('ig_token', { token: j.access_token, rinnovata: Date.now() } satisfies ChiaveIg); return; }
+  if (r.ok && j.access_token) { await mem(env).scrivi('ig_token', { token: j.access_token, rinnovata: Date.now(), base: pulisciChiave(env.IG_TOKEN) } satisfies ChiaveIg); return; }
   for (const chat of autorizzati(env)) {
     await invia(env, chat, { testo: `⚠️ <b>Chiave di Instagram non rinnovata</b>\n<code>${esc(tronca(j.error?.message || `HTTP ${r.status}`, 300))}</code>\nSe è scaduta, generane una nuova (Meta for Developers) e aggiorna il secret IG_TOKEN su Cloudflare.`, tasti: [[MENU_TASTO]] }, true);
   }
