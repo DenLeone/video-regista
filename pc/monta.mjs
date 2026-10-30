@@ -35,7 +35,24 @@ const parole = (id) => { const f = path.join(LAVORO, 'trascrizioni', `${id}.json
 // ---------- dalle parole ai tempi ----------
 // gli apostrofi uniscono ("Let's" → "lets", "l'abbiamo" → "labbiamo"), come nelle parole di Whisper
 const norm = (t) => String(t).toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/['’`]/g, '').replace(/[^a-z0-9]+/g, ' ').trim().split(' ').filter(Boolean);
+// prima per lettere di seguito, senza spazi né apostrofi (Whisper spezza "l'abbiamo" a volte sì a volte no),
+// poi parola per parola con un po' di tolleranza
 function trova(ws, frase, da = 0, fine = false) {
+  const lettere = norm(frase).join('');
+  const pezzo = fine ? lettere.slice(-24) : lettere.slice(0, 24);
+  let testo = '';
+  const inizio = [];
+  ws.forEach((w, k) => { inizio[k] = testo.length; testo += norm(w.w).join(''); });
+  const pos = pezzo.length >= 6 ? testo.indexOf(pezzo, inizio[da] ?? 0) : -1;
+  if (pos >= 0) {
+    const c = fine ? pos + pezzo.length - 1 : pos;
+    let k = 0;
+    while (k + 1 < ws.length && inizio[k + 1] <= c) k++;
+    return k;
+  }
+  return trovaParole(ws, frase, da, fine);
+}
+function trovaParole(ws, frase, da = 0, fine = false) {
   const cerca = norm(frase);
   const tok = ws.map((w) => norm(w.w).join(''));
   const k = Math.min(cerca.length, 5);
