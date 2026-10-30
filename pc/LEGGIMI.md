@@ -17,6 +17,7 @@ Per scriverlo senza fatica: apri `claude` in C:\regista e chiedigli «leggi pc\L
 
 ## 3. Montaggio
     node pc\monta.mjs pc\progetti\<nome>.json --fino 120     (anteprima: primi 2 minuti)
-    node pc\monta.mjs pc\progetti\<nome>.json                (tutto)
+    node pc\monta.mjs pc\progetti\<nome>.json                (tutto, 1080p)
+    node pc\monta.mjs pc\progetti\<nome>.json --4k           (tutto, in 4K)
 Esce in `C:\regista\work\pc\<nome>\montaggio\`: il video `<nome>.mp4` e `<nome> - DaVinci.fcpxml`
 (DaVinci → File → Importa → Timeline). Rilanciando, i pezzi già fatti non si rifanno.

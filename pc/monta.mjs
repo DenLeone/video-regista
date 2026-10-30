@@ -7,7 +7,7 @@
 // - musica per capitolo che si abbassa quando Denis parla; voce a −14 LUFS
 // - codifica sulla scheda video (NVENC), se no x264
 // - progetto DaVinci (FCPXML) con gli originali e i marcatori dei capitoli
-//   node pc\monta.mjs pc\progetti\austria.json [--fino 120]   (--fino: anteprima dei primi N secondi)
+//   node pc\monta.mjs pc\progetti\austria.json [--fino 120] [--4k]   (--fino: anteprima dei primi N secondi)
 import { execFileSync, spawnSync } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -23,7 +23,9 @@ const OUT = path.join(LAVORO, 'montaggio');
 const PEZZI = path.join(OUT, 'pezzi');
 fs.mkdirSync(PEZZI, { recursive: true });
 const log = (...a) => console.log('[monta]', ...a);
-const W = 1920, H = 1080, FPS = 30;
+// 1080p di base; "--4k" (o "risoluzione": "4k" nel piano) per l'uscita in 3840×2160
+const IN_4K = process.argv.includes('--4k') || piano.risoluzione === '4k';
+const W = IN_4K ? 3840 : 1920, H = IN_4K ? 2160 : 1080, FPS = 30, K = W / 1920;
 
 const materiale = JSON.parse(fs.readFileSync(path.join(LAVORO, 'materiale.json'), 'utf8'));
 const perId = new Map(materiale.video.map((v) => [v.id, v]));
@@ -134,7 +136,7 @@ let encoder = null;
 function codifica() {
   if (encoder) return encoder;
   const prova = spawnSync('ffmpeg', ['-v', 'error', '-f', 'lavfi', '-i', 'color=c=black:s=320x240:d=0.2', '-c:v', 'h264_nvenc', '-f', 'null', '-']);
-  encoder = prova.status === 0 ? ['-c:v', 'h264_nvenc', '-preset', 'p5', '-rc', 'vbr', '-cq', '20', '-b:v', '0', '-pix_fmt', 'yuv420p']
+  encoder = prova.status === 0 ? ['-c:v', 'h264_nvenc', '-preset', 'p5', '-rc', 'vbr', '-cq', IN_4K ? '22' : '20', '-b:v', '0', '-pix_fmt', 'yuv420p']
     : ['-c:v', 'libx264', '-preset', 'veryfast', '-crf', '19', '-pix_fmt', 'yuv420p'];
   log(`codifica: ${prova.status === 0 ? 'scheda video (NVENC)' : 'processore (x264)'}`);
   return encoder;
@@ -155,18 +157,18 @@ function filtroTitoli(p, n) {
     const f1 = `t${n}_${k}a.txt`, f2 = `t${n}_${k}b.txt`;
     fs.writeFileSync(path.join(OUT, f1), x.testo.toUpperCase());
     if (x.stile === 'sigla') {
-      out.push(`drawtext=fontfile=font.ttf:textfile=${f1}:fontsize=190:fontcolor=0xFFE500:shadowcolor=black@0.55:shadowx=6:shadowy=6:x=(w-text_w)/2:y=(h-text_h)/2-40:alpha='${alpha}'`);
-      if (x.sotto) { fs.writeFileSync(path.join(OUT, f2), x.sotto); out.push(`drawtext=fontfile=font.ttf:textfile=${f2}:fontsize=52:fontcolor=white:shadowcolor=black@0.6:shadowx=3:shadowy=3:x=(w-text_w)/2:y=(h/2)+90:alpha='${alpha}'`); }
+      out.push(`drawtext=fontfile=font.ttf:textfile=${f1}:fontsize=${190 * K}:fontcolor=0xFFE500:shadowcolor=black@0.55:shadowx=${6 * K}:shadowy=${6 * K}:x=(w-text_w)/2:y=(h-text_h)/2-${40 * K}:alpha='${alpha}'`);
+      if (x.sotto) { fs.writeFileSync(path.join(OUT, f2), x.sotto); out.push(`drawtext=fontfile=font.ttf:textfile=${f2}:fontsize=${52 * K}:fontcolor=white:shadowcolor=black@0.6:shadowx=${3 * K}:shadowy=${3 * K}:x=(w-text_w)/2:y=(h/2)+${90 * K}:alpha='${alpha}'`); }
     } else {
-      out.push(`drawtext=fontfile=font.ttf:textfile=${f1}:fontsize=104:fontcolor=0xFFE500:shadowcolor=black@0.6:shadowx=5:shadowy=5:x=90:y=h-300:alpha='${alpha}'`);
-      if (x.sotto) { fs.writeFileSync(path.join(OUT, f2), x.sotto); out.push(`drawtext=fontfile=font.ttf:textfile=${f2}:fontsize=46:fontcolor=white:shadowcolor=black@0.6:shadowx=3:shadowy=3:x=96:y=h-175:alpha='${alpha}'`); }
+      out.push(`drawtext=fontfile=font.ttf:textfile=${f1}:fontsize=${104 * K}:fontcolor=0xFFE500:shadowcolor=black@0.6:shadowx=${5 * K}:shadowy=${5 * K}:x=${90 * K}:y=h-${300 * K}:alpha='${alpha}'`);
+      if (x.sotto) { fs.writeFileSync(path.join(OUT, f2), x.sotto); out.push(`drawtext=fontfile=font.ttf:textfile=${f2}:fontsize=${46 * K}:fontcolor=white:shadowcolor=black@0.6:shadowx=${3 * K}:shadowy=${3 * K}:x=${96 * K}:y=h-${175 * K}:alpha='${alpha}'`); }
     }
   });
   return out.join(',');
 }
 function renderPezzo(p, n) {
   const uscita = path.join(PEZZI, `p${String(n).padStart(4, '0')}.mp4`);
-  const firma = JSON.stringify(p);
+  const firma = JSON.stringify({ ...p, W });
   const fileFirma = `${uscita}.json`;
   if (fs.existsSync(uscita) && fs.existsSync(fileFirma) && fs.readFileSync(fileFirma, 'utf8') === firma) return uscita;
   const sv = sorgente(p.v.id);
@@ -179,7 +181,7 @@ function renderPezzo(p, n) {
   const verticale = sv.h > sv.w;
   const z = p.zoom || 1;
   let v = verticale
-    ? `[0:v:0]${hdr}split[a][b];[a]scale=${W}:${H}:force_original_aspect_ratio=increase,crop=${W}:${H},gblur=sigma=40,eq=brightness=-0.12[bg];[b]scale=-2:${H}[fg];[bg][fg]overlay=(W-w)/2:0`
+    ? `[0:v:0]${hdr}split[a][b];[a]scale=${W}:${H}:force_original_aspect_ratio=increase,crop=${W}:${H},gblur=sigma=${40 * K},eq=brightness=-0.12[bg];[b]scale=-2:${H}[fg];[bg][fg]overlay=(W-w)/2:0`
     : `[0:v:0]${hdr}scale=${W}:${H}:force_original_aspect_ratio=increase,crop=${W}:${H}${z > 1 ? `,crop=iw/${z}:ih/${z},scale=${W}:${H}` : ''}`;
   v += `,fps=${FPS},format=yuv420p,setsar=1`;
   const tit = p.titoli?.length ? filtroTitoli(p, n) : '';
@@ -262,7 +264,7 @@ const xml = `<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE fcpxml>
 <fcpxml version="1.9">
   <resources>
-    <format id="r1" name="FFVideoFormat1080p30" frameDuration="1/${FPS}s" width="${W}" height="${H}"/>
+    <format id="r1" name="FFVideoFormat${IN_4K ? '3840x2160p30' : '1080p30'}" frameDuration="1/${FPS}s" width="${W}" height="${H}"/>
 ${[...assets.values()].map((a) => a.xml).join('\n')}
   </resources>
   <library>
