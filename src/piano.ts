@@ -17,7 +17,9 @@ export type Clip = {
   // audio: si sente la voce della clip (più bassa di Denis); zoom: ingrandita sulla faccia; telefono:
   // dentro un telefono; copertina: la copertina del post a cui si risponde (stile reazione, Blackden)
   inserto?: { file: string; tipo: 'video' | 'immagine'; orient?: 'v' | 'h'; start?: number; end?: number; continua?: boolean;
-    audio?: boolean; zoom?: boolean; telefono?: boolean; copertina?: boolean };
+    audio?: boolean; zoom?: boolean; telefono?: boolean; copertina?: boolean;
+    // clip "guarda …": Denis tace e la guarda, si sente a volume pieno e la scheda è più grande
+    pieno?: boolean };
   // la persona ritagliata (video con trasparenza) per far passare le scritte grandi dietro di lei;
   // da = secondi dall'inizio della clip
   ritaglio?: { file: string; da: number; dur: number };

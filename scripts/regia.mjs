@@ -252,6 +252,30 @@ export function risolviRegia(regia, analisi) {
     }
     clips.push(clip);
     t = q(t + (clip.end - clip.start));
+    // "guarda": dopo la frase, il silenzio di Denis che guarda con la clip a volume pieno sopra
+    if (it.guarda && it.frase) {
+      const f = frasi.get(normFrase(it.frase));
+      const b = trovaSorgente(String(it.guarda));
+      const pausa = pauseGuarda(analisi).find((x) => x.frase === f.id);
+      const cam = sorgenti.find((s) => s.id === f.principale && s.tipo === 'video') || sorgenti.find((s) => s.tipo === 'video' && offsetCamera(s, f) != null);
+      if (!b || b.tipo !== 'video') avvisi.push(`guarda ${it.guarda}: clip inesistente, tolta`);
+      else if (!pausa || !cam) avvisi.push(`guarda ${b.id}: dopo ${f.id} Denis non resta in silenzio abbastanza (${PAUSA_GUARDA} s), tolta`);
+      else {
+        let da = Math.max(0, Number(it.guarda_da) || 0);
+        if (da > b.durata - 1) da = 0;
+        // dal silenzio si tolgono 0,15 s per lato (coda dell'ultima parola, attacco della successiva)
+        const dur = q(Math.min(pausa.pausa - 0.3, b.durata - da));
+        if (dur < 1) avvisi.push(`guarda ${b.id}: pezzo troppo corto, tolta`);
+        else {
+          const off = offsetCamera(cam, f) ?? 0;
+          const ini = f.fine + off + 0.15;
+          clips.push({ file: cam.file, start: +ini.toFixed(3), end: +(ini + dur).toFixed(3), orient: cam.orient, muto: true, punch: clip.punch,
+            inserto: { file: b.file, tipo: 'video', orient: b.orient, start: +da.toFixed(3), end: +(da + dur).toFixed(3), audio: true, pieno: true } });
+          t = q(t + dur);
+          if (b.durata - da > pausa.pausa) avvisi.push(`guarda ${b.id}: il tuo silenzio dopo ${f.id} (${pausa.pausa} s) è più corto della clip, si sente solo l'inizio`);
+        }
+      }
+    }
   });
 
   const totale = t;
@@ -561,6 +585,22 @@ export function sequenzaDiscorso(analisi) {
   };
 }
 
+// Clip "guarda …" (stile reazione, Denis 30/10): Denis dice "ha detto questo" e resta in silenzio a
+// guardare; quel silenzio non si taglia e la clip ci suona sopra a volume pieno. Le pause buone sono
+// i silenzi di almeno 1,8 s dopo una frase, nella stessa voce, prima della frase seguente.
+export const PAUSA_GUARDA = 1.8;
+const CUE_GUARDA = /\b(ha detto|dice|diceva|guarda(te)?|senti(te)?|ascolta(te)?|ecco|questo|questa|testuali)\b/i;
+export function pauseGuarda(analisi) {
+  const out = [];
+  for (const f of analisi.frasi) {
+    const dopo = analisi.frasi.filter((g) => g.principale === f.principale && g.inizio > f.fine - 0.05).reduce((a, g) => (!a || g.inizio < a.inizio ? g : a), null);
+    if (!dopo) continue; // dopo l'ultima frase non è un silenzio "a guardare", è la fine della ripresa
+    const pausa = dopo.inizio - f.fine;
+    if (pausa >= PAUSA_GUARDA) out.push({ frase: f.id, pausa: +pausa.toFixed(2), cue: CUE_GUARDA.test(String(f.testo).split(/\s+/).slice(-6).join(' ')) });
+  }
+  return out;
+}
+
 // Il materiale in forma compatta per l'AI: sorgenti, fogli provino, frasi.
 export function materialePerAI(analisi) {
   const r = [];
@@ -582,7 +622,10 @@ export function materialePerAI(analisi) {
         ? `inquadratura sincronizzata con la voce di ${s.sync.con}: usabile come "camera" su ${intervalli(coperte.map((f) => f.id))}`
         : `sincronizzata con ${s.sync.con} ma non copre nessuna frase intera: usala come B-roll`);
     } else if (s.reazione) {
-      parti.push(s.audioClip
+      const pause = s.guarda ? pauseGuarda(analisi) : [];
+      parti.push(s.guarda
+        ? `CLIP DA GUARDARE IN SILENZIO: Denis la introduce ("ha detto questo") e poi tace guardandola; va SOLO con "guarda": "${s.id}" (e "guarda_da" = secondo di partenza nella clip) sull'elemento della frase subito PRIMA del suo silenzio, mai come "inserto". Silenzi di Denis adatti: ${pause.length ? pause.map((x) => `${x.frase} (${x.pausa} s${x.cue ? ', la frase lo introduce' : ''})`).join(', ') : 'nessuno trovato'}`
+        : s.audioClip
         ? 'CLIP DI UN ALTRO CON LA SUA VOCE: solo come "inserto" (con "inserto_da" = il secondo da cui parte il pezzo che vuoi far sentire); la sua voce si sente sotto quella di Denis'
         : 'CLIP DI UN ALTRO: solo come "inserto" (con "inserto_da"), muta; mai "broll" né "camera"');
       if (s.testoClip) parti.push(`cosa dice (secondi nella clip):\n${s.testoClip.split('\n').map((r) => `    ${r}`).join('\n')}`);
@@ -639,11 +682,21 @@ export function usaTuttoIlMateriale(regia, analisi) {
   const sequenza = regia.sequenza.map((it) => ({ ...it }));
   const citati = new Set();
   for (const it of sequenza) {
-    for (const k of ['broll', 'inserto', 'camera']) if (it[k]) citati.add(baseNome(String(it[k])));
+    for (const k of ['broll', 'inserto', 'camera', 'guarda']) if (it[k]) citati.add(baseNome(String(it[k])));
     for (const st of [].concat(it.stacco || [])) for (const k of ['broll', 'camera']) if (st?.[k]) citati.add(baseNome(String(st[k])));
   }
-  const mancanti = propri.filter((s) => !citati.has(baseNome(s.id)) && !citati.has(baseNome(s.file || '')));
-  if (!mancanti.length) return regia;
+  let mancanti = propri.filter((s) => !citati.has(baseNome(s.id)) && !citati.has(baseNome(s.file || '')));
+  // clip "guarda" lasciate fuori: sui silenzi liberi, in ordine (prima quelli introdotti da "ha detto…")
+  const guarda = mancanti.filter((s) => s.guarda);
+  if (guarda.length) {
+    const inSeq = new Map(sequenza.map((it, i) => [normFrase(it.frase), i]));
+    const libere = pauseGuarda(analisi).filter((x) => inSeq.has(x.frase) && !sequenza[inSeq.get(x.frase)].guarda);
+    const scelte = [...libere.filter((x) => x.cue), ...libere.filter((x) => !x.cue)].slice(0, guarda.length)
+      .sort((a, b) => inSeq.get(a.frase) - inSeq.get(b.frase));
+    scelte.forEach((x, k) => Object.assign(sequenza[inSeq.get(x.frase)], { guarda: guarda[k].id }));
+    mancanti = mancanti.filter((s) => !s.guarda || !scelte.some((_, k) => guarda[k] === s));
+  }
+  if (!mancanti.length) return { ...regia, sequenza };
   const frasi = new Map(analisi.frasi.map((f) => [f.id, f]));
   const durata = (it) => { const f = frasi.get(normFrase(it.frase)); return f ? f.fine - f.inizio : Infinity; };
   const libero = (it, i) => it.frase && i > 0 && i < sequenza.length - 1 && !it.broll && !it.inserto && !it.stock && !it.stacco;

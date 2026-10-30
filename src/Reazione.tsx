@@ -9,12 +9,14 @@ import { clamp, stileFont } from './testo';
 // - Le clip dell'altro stanno in una scheda verticale arrotondata, in alto, inclinata in prospettiva
 //   come un telefono girato, a sinistra o a destra, DIETRO a Denis (la sua testa passa davanti: la
 //   persona ritagliata va sopra, vedi SuMisura). Clip diverse di fila: la scheda resta, cambia il contenuto.
-// - Le clip "audio …" si sentono sotto la voce di Denis.
+// - Le clip "audio …" si sentono sotto la voce di Denis; le "guarda …" nel suo silenzio, a volume pieno e
+//   in una scheda più grande e meno inclinata (Denis la guarda insieme a chi vede il video).
 // - Copertina del post all'apertura, dritta e centrata; screenshot dentro un telefono.
 // - Schede informative di vetro scuro (titolo colorato, sezioni, "in sintesi") scritte dall'AI.
 // - I suoni sono quelli di Denis (asset/suoni dello stile), estratti dal suo edit.
 
 const VOLUME_CLIP = 0.32; // la voce dell'altro, sempre sotto quella di Denis
+const VOLUME_GUARDA = 1; // "guarda …": Denis tace
 
 // effetto sonoro dello stile per nome ("entrata scheda"), altrimenti quello di riserva del repo
 export const suono = (g: GraficaStile, nome: string, riserva: string) => g.suoni?.[nome] || riserva;
@@ -27,7 +29,7 @@ const Contenuto: React.FC<{ s: Scheda }> = ({ s }) => (
           {p.ins.tipo === 'immagine'
             ? <Img src={staticFile(`media/${p.ins.file}`)} style={{ width: '100%', height: '100%', objectFit: p.ins.copertina ? 'contain' : 'cover', objectPosition: 'top' }} />
             : <OffthreadVideo src={staticFile(`media/${p.ins.file}`)} startFrom={f(p.ins.start || 0)} endAt={f(p.ins.start || 0) + p.len + 1}
-              muted={!p.ins.audio} volume={p.ins.audio ? VOLUME_CLIP : 0}
+              muted={!p.ins.audio} volume={p.ins.audio ? (p.ins.pieno ? VOLUME_GUARDA : VOLUME_CLIP) : 0}
               style={{ width: '100%', height: '100%', objectFit: 'cover', transform: p.ins.zoom ? 'scale(2.3)' : undefined, transformOrigin: '50% 32%' }} />}
         </AbsoluteFill>
       </Sequence>
@@ -41,14 +43,15 @@ const SchedaInclinata: React.FC<{ s: Scheda; sinistra: boolean }> = ({ s, sinist
   const entra = interpolate(fr, [0, 10], [0, 1], { ...clamp, easing: Easing.out(Easing.cubic) });
   const esce = interpolate(fr, [s.len - 8, s.len], [0, 1], { ...clamp, easing: Easing.in(Easing.cubic) });
   const orizz = s.pezzi[0].ins.orient === 'h';
-  const w = orizz ? 620 : 440, h = orizz ? 350 : 782;
-  const left = sinistra ? 70 : 1080 - 70 - w;
+  const pieno = Boolean(s.pezzi[0].ins.pieno);
+  const w = orizz ? (pieno ? 800 : 620) : pieno ? 540 : 440, h = orizz ? (pieno ? 450 : 350) : pieno ? 960 : 782;
+  const left = sinistra ? (pieno ? 50 : 70) : 1080 - (pieno ? 50 : 70) - w;
   const verso = sinistra ? 1 : -1;
-  const giro = 20 + 50 * (1 - entra) + 40 * esce;
+  const giro = (pieno ? 10 : 20) + 50 * (1 - entra) + 40 * esce;
   return (
     <AbsoluteFill style={{ perspective: 1500 }}>
       <div style={{
-        position: 'absolute', left, top: orizz ? 300 : 150, width: w, height: h, borderRadius: 36, overflow: 'hidden', backgroundColor: '#0D0D0F',
+        position: 'absolute', left, top: orizz ? (pieno ? 260 : 300) : pieno ? 110 : 150, width: w, height: h, borderRadius: 36, overflow: 'hidden', backgroundColor: '#0D0D0F',
         border: '2px solid rgba(255,255,255,0.28)', boxShadow: '0 30px 70px rgba(0,0,0,0.45)',
         opacity: Math.min(entra * 1.5, 1 - esce),
         transform: `translateX(${verso * -(1 - entra) * 160}px) rotateY(${verso * giro}deg)`, transformOrigin: sinistra ? 'left center' : 'right center',

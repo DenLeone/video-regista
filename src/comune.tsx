@@ -126,7 +126,8 @@ export function schedeInserti(piano: Piano, unisci = false): Scheda[] {
       const lenIns = c.inserto.tipo === 'video' && c.inserto.end != null ? Math.max(2, Math.min(len, f(c.inserto.end - (c.inserto.start || 0)))) : len;
       const pezzo = { from: t, len: lenIns, ins: c.inserto };
       const ultimo = prec?.pezzi[prec.pezzi.length - 1].ins;
-      if (prec && ultimo && prec.from + prec.len === t
+      // la clip "guarda" (a volume pieno, scheda grande) ha sempre la sua scheda
+      if (prec && ultimo && prec.from + prec.len === t && Boolean(ultimo.pieno) === Boolean(c.inserto.pieno)
         && (c.inserto.continua || ultimo.file === c.inserto.file || (unisci && !aSe(ultimo) && !aSe(c.inserto)))) {
         prec.pezzi.push(pezzo);
         prec.len += lenIns;

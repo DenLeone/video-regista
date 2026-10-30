@@ -193,7 +193,7 @@ function preparaDiscorso(analisi) {
 // la sequenza del discorso vince su quella dell'AI (tiene solo le sue aggiunte di stile: "bn", e nel
 // Motion "fumo", "stock" e gli inserti); `discorso: true` dice a risolviRegia di alternare lo zoom solo
 // dove c'è un salto. Anche per correzioni e "Solo render" di un discorso (DISCORSO senza la sequenza nuova)
-const AGGIUNTE_DISCORSO = ['bn', 'fumo', 'stock', 'inserto', 'inserto_da', 'broll', 'da', 'lento', 'zoom', 'telefono'];
+const AGGIUNTE_DISCORSO = ['bn', 'fumo', 'stock', 'inserto', 'inserto_da', 'broll', 'da', 'lento', 'zoom', 'telefono', 'guarda', 'guarda_da'];
 const aggiunteDi = (x) => Object.fromEntries(AGGIUNTE_DISCORSO.filter((k) => (k === 'bn' || k === 'fumo' || k === 'lento' || k === 'zoom' || k === 'telefono' ? x[k] === true : x[k] != null && x[k] !== '')).map((k) => [k, x[k]]));
 const conSequenza = (r) => (discorso ? { ...r, sequenza: discorso.sequenza.map((it) => {
   const x = (r.sequenza || []).find((y) => normFrase(y.frase) === it.frase);
@@ -495,14 +495,15 @@ async function tagliaSegmenti(piano, analisi) {
       if (zoom > 1) c.punch = false;
       delete c.lento; // il pezzo è già al rallentatore
     });
-    // inserto video: il suo pezzo, muto e senza look creativo (le schermate restano fedeli)
+    // inserto video: il suo pezzo, senza look creativo (le schermate restano fedeli); con l'audio solo
+    // per le clip "audio …"/"guarda …" (prima era sempre muto: le "audio …" di Blackden non si sentivano)
     if (c.inserto?.tipo === 'video') {
       const si = perFile.get(c.inserto.file);
       if (!si) { lavori.push(async () => { delete c.inserto; }); return; }
       const ins = `ins_${String(i).padStart(3, '0')}.mp4`;
       const d = c.inserto.end - c.inserto.start;
       const iStart = c.inserto.start;
-      const argsI = comandiTaglio(si, iStart, d, path.join(MEDIA, ins), false, true);
+      const argsI = comandiTaglio(si, iStart, d, path.join(MEDIA, ins), Boolean(c.inserto.audio && si.haAudio), true);
       lavori.push(async () => {
         await eseguiUno('ffmpeg', argsI);
         // sorgente e punto d'ingresso originali: servono al progetto per DaVinci
@@ -843,7 +844,7 @@ function promptRegia({ modo, testoMateriale, regiaPrecedente }) {
       ? `Il video dura circa ${Math.round(durata)} s: distribuisci ${cartelli ? 'al massimo' : 'circa'} ${quante} ${cartelli ? 'cartelli' : 'scritte grandi'} su tutta la durata (${cartelli ? 'uno ogni ~45 s' : 'una ogni ~20 s'}), sulle frasi più forti; questo vale più del numero indicato nella sezione Grafica.`
       : 'Questo stile non ha scritte grandi: `keywords` vuoto.';
     const { conBroll } = discorso;
-    p += `\n\n## MODALITÀ DISCORSO (regola di Denis: nella cartella c'è un solo video parlato)\nÈ un discorso di Denis da montare così com'è: NIENTE regia. Non togliere frasi per accorciare, non riordinare, non scegliere cosa tenere: la sequenza l'ha già decisa lo script (tutte le frasi in ordine, tolte solo pause, false partenze e ripetizioni) e nella regia va copiata identica:\n\`\`\`json\n"sequenza": ${JSON.stringify(discorso.sequenza)}\n\`\`\`\nIl tuo lavoro è SOLO la grafica dello stile (sezione Grafica): \`titolo\`, \`soggetto\`, \`copertina\`, \`enfasi\` se lo stile ha l'apertura a lettere enormi (sulle prime parole del discorso), le \`keywords\` con le regole dello stile e, se lo stile ha il bianco e nero nei momenti, \`"bn": true\` su qualche elemento della sequenza${stileSuMisura?.grafica.fumo || stileSuMisura?.grafica.stock ? '; se la sezione Grafica li prevede, puoi aggiungere agli elementi anche `fumo`, `stock` e `inserto` (sempre con la stessa `frase`)' : ''}. ${scritte} ${stileSuMisura?.grafica.cornice === 'reazione' && analisiCorrente?.sorgenti?.some((s) => s.reazione) ? 'Nella cartella ci sono le clip dell\'altro creator a cui Denis risponde (vedi Sorgenti, con cosa dicono e quando): mettile come `"inserto": "<id>", "inserto_da": <secondi>` sulle frasi in cui Denis ne parla, le cita o le commenta, come dice la sezione Grafica; anche le immagini (screenshot, copertina) come `inserto`. Usale TUTTE almeno una volta. Ignora le regole su durata, scaletta e scelta delle frasi.' : conBroll ? 'Nella cartella ci sono anche dei B-roll di Denis (vedi Sorgenti e fogli provino): mettili sopra la voce aggiungendo all\'elemento `"broll": "<id>", "da": <secondi>` (stessa `frase`), dove mostrano quello che dice in quel momento, circa uno ogni 8–12 s, mai sull\'aggancio né sulla chiusura: usali TUTTI almeno una volta (anche le registrazioni dello schermo e le immagini, come `inserto`). Le regole sui B-roll valgono (niente bocca che parla, non riusare lo stesso momento); ignora quelle su durata, scaletta e scelta delle frasi.' : 'Ignora le regole su durata, scaletta, inquadrature e B-roll.'} \`scaletta\` = i 3–6 temi del discorso, \`testo_montato\` vuoto.`;
+    p += `\n\n## MODALITÀ DISCORSO (regola di Denis: nella cartella c'è un solo video parlato)\nÈ un discorso di Denis da montare così com'è: NIENTE regia. Non togliere frasi per accorciare, non riordinare, non scegliere cosa tenere: la sequenza l'ha già decisa lo script (tutte le frasi in ordine, tolte solo pause, false partenze e ripetizioni) e nella regia va copiata identica:\n\`\`\`json\n"sequenza": ${JSON.stringify(discorso.sequenza)}\n\`\`\`\nIl tuo lavoro è SOLO la grafica dello stile (sezione Grafica): \`titolo\`, \`soggetto\`, \`copertina\`, \`enfasi\` se lo stile ha l'apertura a lettere enormi (sulle prime parole del discorso), le \`keywords\` con le regole dello stile e, se lo stile ha il bianco e nero nei momenti, \`"bn": true\` su qualche elemento della sequenza${stileSuMisura?.grafica.fumo || stileSuMisura?.grafica.stock ? '; se la sezione Grafica li prevede, puoi aggiungere agli elementi anche `fumo`, `stock` e `inserto` (sempre con la stessa `frase`)' : ''}. ${scritte} ${stileSuMisura?.grafica.cornice === 'reazione' && analisiCorrente?.sorgenti?.some((s) => s.reazione) ? 'Nella cartella ci sono le clip dell\'altro creator a cui Denis risponde (vedi Sorgenti, con cosa dicono e quando): mettile come `"inserto": "<id>", "inserto_da": <secondi>` sulle frasi in cui Denis ne parla, le cita o le commenta, come dice la sezione Grafica; anche le immagini (screenshot, copertina) come `inserto`. Le clip "DA GUARDARE IN SILENZIO" invece vanno con `"guarda": "<id>"` (e `"guarda_da"`) sulla frase subito prima del silenzio in cui Denis la guarda (vedi i silenzi elencati in Sorgenti), una per silenzio. Usale TUTTE almeno una volta. Ignora le regole su durata, scaletta e scelta delle frasi.' : conBroll ? 'Nella cartella ci sono anche dei B-roll di Denis (vedi Sorgenti e fogli provino): mettili sopra la voce aggiungendo all\'elemento `"broll": "<id>", "da": <secondi>` (stessa `frase`), dove mostrano quello che dice in quel momento, circa uno ogni 8–12 s, mai sull\'aggancio né sulla chiusura: usali TUTTI almeno una volta (anche le registrazioni dello schermo e le immagini, come `inserto`). Le regole sui B-roll valgono (niente bocca che parla, non riusare lo stesso momento); ignora quelle su durata, scaletta e scelta delle frasi.' : 'Ignora le regole su durata, scaletta, inquadrature e B-roll.'} \`scaletta\` = i 3–6 temi del discorso, \`testo_montato\` vuoto.`;
   }
   if (catalogoMusica && Object.keys(catalogoMusica).length) {
     p += `\n\n## Musica\nDenis vuole la musica sotto la voce (bassa, scende quando parla). Scegli il brano più adatto al tono e al ritmo di QUESTO video e scrivilo nel campo \`"musica"\` in cima alla regia (il nome esatto, tra virgolette): energico e veloce per prodotti, tech e ritmo serrato; morbido e lento per racconti, riflessioni e discorsi seri; mai un brano allegro su un argomento serio.\n${descriviCatalogo(catalogoMusica)}`;
@@ -1609,9 +1610,11 @@ export async function analizza(nome, brief, cache) {
   // e non contano per la data delle riprese (sono di altri giorni per forza: il test su Manifestazioni
   // aveva reso "solo immagini" il discorso di Denis)
   for (const s of sorgenti.filter((x) => x.tipo === 'video')) {
-    if (/^(clip|audio)\b/i.test(path.parse(s.originale).name) || /^v\d{5}g[a-z0-9]{16,}$/i.test(s.id)) {
+    // "guarda …" (30/10): Denis la introduce e la guarda in silenzio; suona a volume pieno nel suo silenzio
+    if (/^(clip|audio|guarda)\b/i.test(path.parse(s.originale).name) || /^v\d{5}g[a-z0-9]{16,}$/i.test(s.id)) {
       s.reazione = true;
-      if (/^audio\b/i.test(path.parse(s.originale).name)) s.audioClip = true;
+      if (/^(audio|guarda)\b/i.test(path.parse(s.originale).name)) s.audioClip = true;
+      if (/^guarda\b/i.test(path.parse(s.originale).name)) s.guarda = true;
     }
   }
   const recente = Math.max(0, ...sorgenti.filter((s) => s.tipo === 'video' && s.data && !s.reazione).map((s) => s.data));
