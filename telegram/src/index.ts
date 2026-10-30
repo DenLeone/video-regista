@@ -24,6 +24,7 @@ import { avvisoUtente } from './push';
 import STILI_BASE from '../../scripts/stili-base.json';
 import type { Ops, Segreti } from './ops';
 import { unisciNomi } from './stile-studio';
+import { commentiNuovi, controllaEsplosioni, K_RADAR, kCommento, nascondiCommento, proposte, reportSettimana, rispondiCommento, testoCommento, type CommentoSalvato } from './crescita';
 import { PAGINA_PRIVACY, PAGINA_TERMINI, chiaveFacebook, completaLoginTikTok, linkLoginTikTok, pianoDelGiorno, statoTikTok, type DepsSocial } from './social';
 
 export interface Env {
@@ -59,16 +60,36 @@ export interface Env {
 export class Memoria extends DurableObject {
   // /social: dopo la risposta a Telegram il Worker ha ~30 s, il piano (Instagram, TikTok, AI) ne
   // chiede di più. L'allarme dell'oggetto ha 15 minuti: il lavoro si sposta qui
-  async socialDopo(chat: string, msg?: number) {
-    await this.ctx.storage.put('social:richiesta', { chat, msg });
+  // anche i commenti (/commenti) e il report della settimana (/report): stesso motivo
+  async socialDopo(chat: string, msg?: number, tipo: 'piano' | 'commenti' | 'report' = 'piano') {
+    await this.ctx.storage.put('social:richiesta', { chat, msg, tipo });
+    await this.ctx.storage.setAlarm(Date.now());
+  }
+  // lavori del cron, uno per allarme: ognuno ha il suo limite di ~50 chiamate esterne (piano gratuito),
+  // tutti insieme nello stesso giro lo supererebbero
+  async accoda(lavori: LavoroSocial[]) {
+    const coda = ((await this.ctx.storage.get('social:coda')) as LavoroSocial[] | undefined) || [];
+    await this.ctx.storage.put('social:coda', [...coda, ...lavori]);
     await this.ctx.storage.setAlarm(Date.now());
   }
   async alarm() {
-    const r = (await this.ctx.storage.get('social:richiesta')) as { chat: string; msg?: number } | undefined;
+    const env = this.env as Env;
+    const coda = ((await this.ctx.storage.get('social:coda')) as LavoroSocial[] | undefined) || [];
+    if (coda.length) {
+      const [lavoro, ...resto] = coda;
+      await this.ctx.storage.put('social:coda', resto);
+      if (resto.length || (await this.ctx.storage.get('social:richiesta'))) await this.ctx.storage.setAlarm(Date.now() + 2000);
+      try { await eseguiLavoro(env, lavoro); } catch (e) { console.error(e); }
+      return;
+    }
+    const r = (await this.ctx.storage.get('social:richiesta')) as { chat: string; msg?: number; tipo?: string } | undefined;
     await this.ctx.storage.delete('social:richiesta');
     if (!r) return;
-    const env = this.env as Env;
-    try { await completaSocial(env, r.chat, r.msg); } catch (e) { await segnalaErrore(env, r.chat, e); }
+    try {
+      if (r.tipo === 'commenti') await completaCommenti(env, r.chat, r.msg);
+      else if (r.tipo === 'report') await completaReport(env, r.chat, r.msg);
+      else await completaSocial(env, r.chat, r.msg);
+    } catch (e) { await segnalaErrore(env, r.chat, e); }
   }
   async leggi(k: string): Promise<unknown> { return this.ctx.storage.get(k); }
   async scrivi(k: string, v: unknown) { await this.ctx.storage.put(k, v); }
@@ -92,6 +113,7 @@ export class Memoria extends DurableObject {
     await this.ctx.storage.put(k, [v, ...a.filter((x) => x.runId !== v.runId)].slice(0, n));
   }
 }
+type LavoroSocial = 'mattina' | 'report' | 'commenti' | 'esplosioni' | 'rinnovo';
 const mem = (env: Env) => env.MEMORIA.get(env.MEMORIA.idFromName('denis'));
 // i metodi chiamati da remoto (RPC) non portano il tipo generico: lo rimetto qui
 const leggi = async <T>(env: Env, k: string) => (await mem(env).leggi(k)) as T | undefined;
@@ -115,7 +137,7 @@ const URL_98 = 'https://drive.google.com/drive/folders/1icN7ww-f6CrClZ5nhxi9eiX3
 const URL_STILI = 'https://drive.google.com/drive/folders/1HD6Qv-KO3tmAQORJXuvsSnCALpK85e8w';
 const cartellaDrive = (id: string) => `https://drive.google.com/drive/folders/${id}`;
 const PROVA_S = 10; // render di prova di uno stile: i primi N secondi del video
-const VERSIONE_COMANDI = 6; // cambia → il bot ri-registra da solo il menu comandi
+const VERSIONE_COMANDI = 7; // cambia → il bot ri-registra da solo il menu comandi
 let ORIGINE_BOT = ''; // https://regista-telegram…workers.dev (dalla richiesta in corso)
 const ANTEPRIMA_URL = () => (ORIGINE_BOT ? `${ORIGINE_BOT}/stili.jpg?v=1` : undefined);
 const LINEA = '━━━━━━━━━━━━━━━━━━';
@@ -654,6 +676,8 @@ type Attesa =
   | { tipo: 'didascalia'; runId: string; campo: 'didascalia' | 'titolo'; msg?: number }
   // nome di una cartella scritto senza domande in sospeso: "La monto?"
   | { tipo: 'rapido'; cartella: string; msg?: number }
+  // risposta scritta da Denis a un commento di Instagram (✏️)
+  | { tipo: 'commento'; id: string; msg?: number }
   // schermata da ridisegnare quando arriva l'elenco aggiornato dal workflow (stili, secret YouTube)
   | { tipo: 'schermo'; quale: 'stili' | 'collegamenti'; runId?: string; msg?: number };
 const kAttesa = (chat: string) => `attesa:${chat}`;
@@ -1050,6 +1074,9 @@ async function onMessage(env: Env, msg: Msg) {
     if (nome === 'aiuto' || nome === 'guida') return invia(env, chat, GUIDA);
     if (nome === 'social') return social(env, chat);
     if (nome === 'tiktok') return invia(env, chat, await schermoTikTok(env));
+    if (nome === 'commenti') return commentiOra(env, chat);
+    if (nome === 'report') return reportOra(env, chat);
+    if (nome === 'radar') return schermoRadar(env, chat, resto);
     if (nome === 'nuovo') return vaiAPasso(env, chat, { tipo: 'nuovo', passo: 'cartella', dati: {} });
     if (nome === 'monta') {
       const [cartella = '', brief = ''] = resto.split('|').map((s) => s.trim());
@@ -1060,6 +1087,10 @@ async function onMessage(env: Env, msg: Msg) {
 
   // testo libero: risposta a una domanda in sospeso?
   const attesa = await leggi<Attesa>(env, kAttesa(chat));
+  if (attesa?.tipo === 'commento' && text) {
+    await mem(env).cancella(kAttesa(chat));
+    return pubblicaRisposta(env, chat, attesa.id, text, attesa.msg);
+  }
   if (attesa?.tipo === 'nome_raccolta' && text) return nomeRaccolta(env, chat, attesa, nomeDaDidascalia(text) || nomeAutomatico());
   if (attesa?.tipo === 'didascalia' && text) {
     await togliTasti(env, chat, attesa.msg);
@@ -1095,6 +1126,33 @@ async function onCallback(env: Env, cb: Callback) {
 
   if (data === 'menu') { await avviso(); return mostra(env, chat, await pannello(env), msgId); }
   if (data === 'social') { await avviso(); return social(env, chat); }
+  if (data === 'commenti') { await avviso(); return commentiOra(env, chat); }
+  if (data === 'report') { await avviso(); return reportOra(env, chat); }
+  // commento di Instagram: s = pubblica la risposta proposta, e = scrivila tu, h = nascondi, x = salta
+  if (data.startsWith('cm:')) {
+    const [, azione, id] = data.split(':');
+    const c = await leggi<CommentoSalvato>(env, kCommento(id));
+    if (!c) { await avviso('Commento non più in memoria'); return togliTasti(env, chat, msgId); }
+    if (azione === 's') {
+      if (!c.proposta) return avviso('Nessuna risposta proposta: usa ✏️');
+      await avviso('Pubblico…');
+      return pubblicaRisposta(env, chat, id, c.proposta, msgId);
+    }
+    if (azione === 'e') {
+      await avviso();
+      await mem(env).scrivi(kAttesa(chat), { tipo: 'commento', id, msg: msgId } satisfies Attesa);
+      return invia(env, chat, { testo: `✏️ Scrivi qui la risposta per <b>@${esc(c.utente)}</b>: la pubblico così com'è.`, tasti: [[tasto('Annulla', 'annulla')]] });
+    }
+    if (azione === 'h') {
+      try { await nascondiCommento(await depsSocial(env), id); } catch (e) { await avviso(); return invia(env, chat, { testo: `⚠️ ${esc((e as Error).message)}` }); }
+      await avviso('Nascosto');
+      const fatto = { ...c, fatto: '🙈 <i>Nascosto</i>' };
+      await mem(env).scrivi(kCommento(id), fatto);
+      return mostra(env, chat, { testo: testoCommento(fatto) }, msgId);
+    }
+    await avviso();
+    return togliTasti(env, chat, msgId);
+  }
   if (data === 'stato') { await avviso(); return mostra(env, chat, await schermoStato(env), msgId); }
   if (data === 'imp') { await avviso(); return mostra(env, chat, await schermoImpostazioni(env), msgId); }
   if (data === 'guida') { await avviso(); return mostra(env, chat, GUIDA, msgId); }
@@ -1807,9 +1865,10 @@ async function social(env: Env, chat: string) {
   const msg = await invia(env, chat, { testo: '⏳ Leggo Instagram e TikTok e preparo il piano… (circa un minuto)' }, true);
   await mem(env).socialDopo(chat, msg);
 }
+const TASTI_SOCIAL = () => [[tasto('🔄 Aggiorna', 'social'), tasto('💬 Commenti', 'commenti')], [tasto('📈 Report settimana', 'report'), MENU_TASTO]];
 async function completaSocial(env: Env, chat: string, msg?: number) {
   const testo = await pianoDelGiorno(await depsSocial(env));
-  const tasti = [[tasto('🔄 Aggiorna', 'social'), MENU_TASTO]];
+  const tasti = TASTI_SOCIAL();
   if (await mostra(env, chat, { testo, tasti }, msg)) return;
   // Telegram ha rifiutato l'HTML: lo stesso testo senza formattazione, piuttosto che niente
   await invia(env, chat, { testo: testo.replace(/<[^>]+>/g, ''), tasti });
@@ -1817,7 +1876,88 @@ async function completaSocial(env: Env, chat: string, msg?: number) {
 // ogni mattina dal cron, a tutte le chat autorizzate
 async function socialMattina(env: Env) {
   const testo = await pianoDelGiorno(await depsSocial(env));
-  for (const chat of autorizzati(env)) await invia(env, chat, { testo, tasti: [[tasto('🔄 Aggiorna', 'social'), MENU_TASTO]] });
+  for (const chat of autorizzati(env)) await invia(env, chat, { testo, tasti: TASTI_SOCIAL() });
+}
+
+// ---------- crescita (crescita.ts): commenti, "sta esplodendo", report, radar ----------
+async function commentiOra(env: Env, chat: string) {
+  const msg = await invia(env, chat, { testo: '⏳ Leggo i commenti nuovi di Instagram…' }, true);
+  await mem(env).socialDopo(chat, msg, 'commenti');
+}
+async function reportOra(env: Env, chat: string) {
+  const msg = await invia(env, chat, { testo: '⏳ Preparo il report della settimana… (circa un minuto)' }, true);
+  await mem(env).socialDopo(chat, msg, 'report');
+}
+async function completaReport(env: Env, chat: string, msg?: number) {
+  const testo = await reportSettimana(await depsSocial(env));
+  const tasti = TASTI_SOCIAL();
+  if (await mostra(env, chat, { testo, tasti }, msg)) return;
+  await invia(env, chat, { testo: testo.replace(/<[^>]+>/g, ''), tasti });
+}
+// un messaggio per commento (al massimo 8 per giro) con la risposta proposta e i tasti
+const MAX_COMMENTI = 8;
+async function inviaCommenti(env: Env, chats: string[], silenzioso: boolean): Promise<number> {
+  const d = await depsSocial(env);
+  const nuovi = await commentiNuovi(d);
+  if (!nuovi.length) return 0;
+  const scelti = nuovi.slice(-MAX_COMMENTI);
+  const p = await proposte(d, scelti);
+  for (const c of scelti) {
+    const salvato: CommentoSalvato = { ...c, proposta: p[c.id]?.risposta || undefined, spam: p[c.id]?.spam };
+    const tasti = [
+      [...(salvato.proposta && !salvato.spam ? [tasto('✅ Rispondi così', `cm:s:${c.id}`)] : []), tasto('✏️ Scrivo io', `cm:e:${c.id}`)],
+      [tasto('🙈 Nascondi', `cm:h:${c.id}`), tasto('⏭ Salta', `cm:x:${c.id}`)],
+    ];
+    for (const chat of chats) salvato.msg = await invia(env, chat, { testo: testoCommento(salvato), tasti }, silenzioso);
+    await mem(env).scrivi(kCommento(c.id), salvato);
+  }
+  if (nuovi.length > scelti.length) for (const chat of chats) await invia(env, chat, { testo: `💬 …e altri ${nuovi.length - scelti.length} commenti più vecchi: li trovi su Instagram.` }, true);
+  return nuovi.length;
+}
+async function completaCommenti(env: Env, chat: string, msg?: number) {
+  const quanti = await inviaCommenti(env, [chat], false);
+  await mostra(env, chat, { testo: quanti ? `💬 ${quanti} commenti nuovi qui sotto.` : '💬 Nessun commento nuovo dall’ultima volta.', tasti: quanti ? undefined : [[MENU_TASTO]] }, msg);
+}
+async function pubblicaRisposta(env: Env, chat: string, id: string, testo: string, msgId?: number) {
+  const c = await leggi<CommentoSalvato>(env, kCommento(id));
+  try {
+    await rispondiCommento(await depsSocial(env), id, testo);
+  } catch (e) {
+    return invia(env, chat, { testo: `⚠️ Risposta non pubblicata: ${esc((e as Error).message)}` });
+  }
+  if (!c) return invia(env, chat, { testo: '✅ Risposta pubblicata.' });
+  const fatto = { ...c, fatto: `✅ <i>Risposto: ${esc(testo)}</i>` };
+  await mem(env).scrivi(kCommento(id), fatto);
+  return mostra(env, chat, { testo: testoCommento(fatto) }, msgId);
+}
+// /radar nome1 nome2 … : account Instagram da tenere d'occhio nel report del lunedì (/radar via = svuota)
+async function schermoRadar(env: Env, chat: string, resto: string) {
+  const nomi = [...new Set((resto.match(/@?[\w.]{2,30}/g) || []).map((x) => x.replace(/^@/, '').toLowerCase()))];
+  if (nomi.length === 1 && nomi[0] === 'via') { await mem(env).cancella(K_RADAR); return invia(env, chat, { testo: '🛰 Radar svuotato.', tasti: [[MENU_TASTO]] }); }
+  if (nomi.length) await mem(env).scrivi(K_RADAR, nomi.slice(0, 10));
+  const att = (await leggi<string[]>(env, K_RADAR)) || [];
+  return invia(env, chat, {
+    testo: `🛰 <b>Radar concorrenti</b>
+${att.length ? att.map((x) => `• @${esc(x)}`).join('\n') : '<i>nessun account</i>'}
+
+Ogni lunedì nel report: i loro post andati meglio negli ultimi 14 giorni.
+Per cambiarli: <code>/radar nome1 nome2 …</code> (max 10, account creator o business). <code>/radar via</code> li toglie.`,
+    tasti: [[tasto('📈 Report adesso', 'report'), MENU_TASTO]],
+  });
+}
+// i lavori del cron (uno per allarme della Memoria, vedi accoda)
+async function eseguiLavoro(env: Env, lavoro: LavoroSocial) {
+  const chats = autorizzati(env);
+  if (lavoro === 'rinnovo') return rinnovaChiaveInstagram(env);
+  if (lavoro === 'mattina') return socialMattina(env);
+  if (lavoro === 'commenti') { await inviaCommenti(env, chats, true); return; }
+  if (lavoro === 'report') {
+    const testo = await reportSettimana(await depsSocial(env)).catch((e) => `⚠️ Report non riuscito: ${esc((e as Error).message)}`);
+    for (const chat of chats) await invia(env, chat, { testo, tasti: TASTI_SOCIAL() });
+    return;
+  }
+  const avvisi = await controllaEsplosioni(await depsSocial(env));
+  for (const a of avvisi) for (const chat of chats) await invia(env, chat, { testo: a, tasti: [[tasto('💬 Commenti', 'commenti'), MENU_TASTO]] });
 }
 async function schermoTikTok(env: Env): Promise<Schermo> {
   const d = await depsSocial(env);
@@ -1844,6 +1984,9 @@ const COMANDI = [
   { command: 'video', description: 'Ultimi video: pubblica, cambia stile, correggi' },
   { command: 'stato', description: 'Montaggi in corso e ultimi risultati' },
   { command: 'social', description: 'Numeri di Instagram e TikTok e piano di oggi' },
+  { command: 'commenti', description: 'Commenti nuovi su Instagram, con la risposta pronta' },
+  { command: 'report', description: 'Report della settimana' },
+  { command: 'radar', description: 'Account concorrenti da tenere d’occhio' },
   { command: 'tiktok', description: 'Collega TikTok per le statistiche' },
   { command: 'stili', description: 'Stili disponibili e predefinito' },
   { command: 'impostazioni', description: 'Stile predefinito, AI, Instagram e YouTube' },
@@ -2048,13 +2191,16 @@ export default {
     return new Response('regista bot', { status: 200 });
   },
 
-  // cron di wrangler.toml, ogni mattina: piano social; il lunedì anche il rinnovo della chiave Instagram
-  // (un solo cron: il piano gratuito di Cloudflare ne ha pochi per account)
+  // cron di wrangler.toml, ogni 3 ore (un solo cron: il piano gratuito di Cloudflare ne ha pochi per
+  // account). Alle 6:17 UTC il piano del mattino (il lunedì anche rinnovo della chiave Instagram e report
+  // della settimana); negli altri giri, tra le 9 e le 23 italiane, "sta esplodendo" e commenti nuovi
   async scheduled(evento: { scheduledTime?: number }, env: Env, ctx: { waitUntil(p: Promise<unknown>): void }) {
-    const lunedi = new Date(evento?.scheduledTime || Date.now()).getUTCDay() === 1;
-    ctx.waitUntil((async () => {
-      if (lunedi) await rinnovaChiaveInstagram(env).catch((e) => console.error(e));
-      await socialMattina(env).catch((e) => console.error(e));
-    })());
+    const quando = new Date(evento?.scheduledTime || Date.now());
+    const lunedi = quando.getUTCDay() === 1;
+    const oraIt = Number(new Intl.DateTimeFormat('it-IT', { timeZone: 'Europe/Rome', hour: '2-digit', hourCycle: 'h23' }).format(quando));
+    const lavori: LavoroSocial[] = quando.getUTCHours() === 6
+      ? [...(lunedi ? ['rinnovo', 'mattina', 'report'] as const : ['mattina'] as const), 'commenti']
+      : oraIt >= 9 && oraIt <= 23 ? ['esplosioni', 'commenti'] : [];
+    if (lavori.length) ctx.waitUntil(mem(env).accoda(lavori));
   },
 };

@@ -14,9 +14,10 @@ class_name = "Memoria"
 tag = "v1"
 new_sqlite_classes = ["Memoria"]
 
-# ogni mattina (UTC): piano social (/social); il lunedì anche il rinnovo della chiave Instagram
+# ogni 3 ore (UTC): alle 6:17 il piano social (/social), il lunedì anche rinnovo della chiave Instagram e
+# report della settimana; negli altri giri (9–23 in Italia) "sta esplodendo" e commenti nuovi
 [triggers]
-crons = ["17 6 * * *"]
+crons = ["17 */3 * * *"]
 
 # L'app (PWA) sta in ./app. Il worker risponde prima: le route del bot e /api restano sue.
 [assets]

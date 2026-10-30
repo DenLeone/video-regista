@@ -30,9 +30,9 @@ export type DepsSocial = {
 
 const K_TT = 'tt_token';
 const K_TT_STATO = 'tt_stato';
-const K_GIORNI = 'social:giorni';
+export const K_GIORNI = 'social:giorni';
 const K_PIANI = 'social:piani';
-const kGiorno = (g: string) => `social:g:${g}`;
+export const kGiorno = (g: string) => `social:g:${g}`;
 const GIORNI_TENUTI = 35;
 
 const esc = (s: unknown) => String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
@@ -234,7 +234,7 @@ export function confronta(f: Fotografia, prima: Fotografia[]): Riga[] {
 }
 
 // ---------- AI ----------
-async function chiediAI(d: DepsSocial, prompt: string): Promise<string | undefined> {
+export async function chiediAI(d: DepsSocial, prompt: string): Promise<string | undefined> {
   if (d.geminiKey) {
     for (const [modello, ragiona] of [['gemini-flash-latest', true], ['gemini-flash-lite-latest', false]] as const) {
       try {
