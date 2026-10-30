@@ -108,7 +108,7 @@ for (const el of piano.sequenza) {
   if (t >= FINO) break;
   try {
   if (el.capitolo) {
-    capitoli.push({ nome: el.capitolo, t, musica: el.musica ?? null });
+    capitoli.push({ nome: el.capitolo, sotto: el.sotto || '', t, musica: el.musica ?? null });
     if (el.titolo !== false) titoliInAttesa.push({ testo: el.capitolo, sotto: el.sotto || '', stile: 'capitolo', per: 3.2 });
     continue;
   }
@@ -262,6 +262,9 @@ if (brani.length) {
   execFileSync('ffmpeg', ['-v', 'error', '-y', '-i', voce, '-af', 'loudnorm=I=-14:TP=-1:LRA=11', '-c:v', 'copy', '-c:a', 'aac', '-b:a', '192k', finale]);
 }
 log(`video: ${finale} (${Math.round((Date.now() - t0) / 1000)} s)`);
+// per il pacchetto YouTube (pc/pacchetto.mjs): capitoli con i tempi e dov'è la sigla
+const sigla = (() => { let x = 0; for (const p of pezzi) { if (p.titoli?.some((y) => y.stile === 'sigla')) return x + 0.8; x += p.dur; } return null; })();
+fs.writeFileSync(path.join(OUT, 'capitoli.json'), JSON.stringify({ totale, sigla, finale, capitoli: capitoli.filter((c) => c.nome).map(({ nome: n, sotto, t: tc }) => ({ nome: n, sotto, t: +tc.toFixed(2) })) }, null, 1));
 
 // ---------- progetto DaVinci ----------
 const fr = (s) => Math.round(s * FPS);
@@ -309,3 +312,8 @@ ${spine.join('\n')}
 const progetto = path.join(OUT, `${nome} - DaVinci.fcpxml`);
 fs.writeFileSync(progetto, xml);
 log(`DaVinci: ${progetto} (File → Importa → Timeline; titoli e musica sono solo nel video)`);
+
+// video intero: pacchetto YouTube (descrizione con i capitoli, titoli, tag, copertine)
+if (!Number.isFinite(FINO) && !process.argv.includes('--senza-pacchetto')) {
+  spawnSync(process.execPath, [path.join(ROOT, 'pc', 'pacchetto.mjs'), FILE_PIANO], { stdio: 'inherit' });
+}
