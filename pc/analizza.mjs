@@ -108,33 +108,31 @@ console.log('');
 // in ordine di ripresa: V001 è il primo girato
 voci.sort((a, b) => String(a.data || '').localeCompare(String(b.data || '')) || a.file.localeCompare(b.file));
 voci.forEach((v, i) => { v.id = `V${String(i + 1).padStart(3, '0')}`; v.chiave = chiave(v.file); });
-// fogli 4 alla volta
-let prossimo = 0, finiti = 0;
-await Promise.all(Array.from({ length: 4 }, async () => {
-  while (prossimo < voci.length) {
-    const v = voci[prossimo++];
-    await foglio(path.join(cartella, v.file), v.durata, path.join(FOGLI, `${v.chiave}.jpg`));
-    process.stdout.write(`\r[analizza] fogli dei fotogrammi ${++finiti}/${voci.length}`);
-  }
-}));
-console.log('');
-
-log('luoghi dalle coordinate GPS…');
-for (const v of voci) v.luogo = await luogo(v.gps);
-fs.writeFileSync(FILE_LUOGHI, JSON.stringify(Object.fromEntries(cacheLuoghi)));
-
-// trascrizione di tutti i video con audio, modello caricato una volta sola
-if (!SENZA_TRASCRIZIONE) {
+// in parallelo: la scheda video trascrive, intanto il processore fa i fogli (3 alla volta) e cerca i posti
+const trascrizione = (async () => {
+  if (SENZA_TRASCRIZIONE) return;
   const py = process.platform === 'win32' ? path.join(ROOT, '.venv', 'Scripts', 'python.exe') : path.join(ROOT, '.venv', 'bin', 'python');
   const lavori = voci.filter((v) => v.audio && !fs.existsSync(path.join(TRASCR, `${v.chiave}.json`)))
     .map((v) => ({ file: path.join(cartella, v.file), uscita: path.join(TRASCR, `${v.chiave}.json`) }));
-  if (lavori.length) {
-    log(`trascrivo ${lavori.length} video sulla scheda video…`);
-    const lista = path.join(OUT, 'lavori-trascrizione.json');
-    fs.writeFileSync(lista, JSON.stringify(lavori));
-    spawnSync(py, [path.join(ROOT, 'pc', 'trascrivi.py'), '--lista', lista], { stdio: 'inherit' });
+  if (!lavori.length) return;
+  log(`trascrivo ${lavori.length} video sulla scheda video (intanto fogli e posti)…`);
+  const lista = path.join(OUT, 'lavori-trascrizione.json');
+  fs.writeFileSync(lista, JSON.stringify(lavori));
+  await new Promise((ok) => spawn(py, [path.join(ROOT, 'pc', 'trascrivi.py'), '--lista', lista], { stdio: 'inherit' }).on('close', ok));
+})();
+let prossimo = 0, finiti = 0;
+const fogli = Promise.all(Array.from({ length: 3 }, async () => {
+  while (prossimo < voci.length) {
+    const v = voci[prossimo++];
+    await foglio(path.join(cartella, v.file), v.durata, path.join(FOGLI, `${v.chiave}.jpg`));
+    if (++finiti % 25 === 0 || finiti === voci.length) log(`fogli dei fotogrammi ${finiti}/${voci.length}`);
   }
-}
+}));
+const posti = (async () => {
+  for (const v of voci) v.luogo = await luogo(v.gps);
+  fs.writeFileSync(FILE_LUOGHI, JSON.stringify(Object.fromEntries(cacheLuoghi)));
+})();
+await Promise.all([trascrizione, fogli, posti]);
 for (const v of voci) {
   const f = path.join(TRASCR, `${v.chiave}.json`);
   const parole = fs.existsSync(f) ? JSON.parse(fs.readFileSync(f, 'utf8')) : [];
