@@ -51,12 +51,21 @@ const FB = 'https://graph.facebook.com/v24.0';
 export const chiaveFacebook = (t: string) => /^EA/.test(t);
 export async function accountIg(f: typeof fetch, token: string, idFisso?: string): Promise<{ base: string; io: string }> {
   if (!chiaveFacebook(token)) return { base: IG, io: 'me' };
-  if (idFisso) return { base: FB, io: idFisso };
-  const r = await f(`${FB}/me/accounts?fields=instagram_business_account&access_token=${encodeURIComponent(token)}`, { signal: AbortSignal.timeout(20_000) });
-  const j = (await r.json().catch(() => ({}))) as { data?: { instagram_business_account?: { id: string } }[] };
-  const id = (j.data || []).map((p) => p.instagram_business_account?.id).find(Boolean);
-  if (!id) throw new Error('Instagram: con la chiave di Facebook serve l\'id dell\'account (secret IG_USER_ID su Cloudflare)');
-  return { base: FB, io: id };
+  const t = encodeURIComponent(token);
+  const leggi = async (url: string) => {
+    const r = await f(url, { signal: AbortSignal.timeout(20_000) });
+    return { ok: r.ok, j: (await r.json().catch(() => ({}))) as { error?: { message?: string } } & Record<string, unknown> };
+  };
+  // l'id messo a mano, se la chiave lo vede; se no lo si cerca tra le pagine Facebook della chiave
+  if (idFisso && (await leggi(`${FB}/${idFisso}?fields=username&access_token=${t}`)).ok) return { base: FB, io: idFisso };
+  const pagine = await leggi(`${FB}/me/accounts?fields=name,instagram_business_account{id,username}&access_token=${t}`);
+  const lista = (pagine.j.data as { name?: string; instagram_business_account?: { id: string; username?: string } }[] | undefined) || [];
+  const conIg = lista.find((p) => p.instagram_business_account?.id);
+  if (conIg) return { base: FB, io: conIg.instagram_business_account!.id };
+  const io = await leggi(`${FB}/me?fields=name&access_token=${t}`);
+  throw new Error(`Instagram: la chiave (di ${String(io.j.name || 'chi?')}) non vede ${idFisso ? `l'account ${idFisso}` : 'nessun account Instagram'}. `
+    + (pagine.ok ? (lista.length ? `Pagine Facebook viste: ${lista.map((p) => p.name).join(', ')}, nessuna collegata a Instagram.` : 'Nessuna pagina Facebook vista (manca pages_show_list o il tuo Instagram non è collegato a una pagina).')
+      : `Pagine: ${pagine.j.error?.message || 'errore'}`));
 }
 type IgMedia = { id: string; caption?: string; media_product_type?: string; timestamp?: string; like_count?: number; comments_count?: number; permalink?: string };
 type IgInsight = { name: string; values?: { value?: number }[]; total_value?: { value?: number } };

@@ -72,11 +72,12 @@ async function accountIg(token, utente) {
     const me = await json(await fetch(`${IG()}/me?fields=user_id,username&access_token=${t}`), 'account Instagram');
     return { io: me.user_id || me.id, username: me.username };
   }
-  let io = utente;
+  // l'id messo a mano, se la chiave lo vede; se no lo si cerca tra le pagine Facebook della chiave
+  let io = utente && (await fetch(`${IG()}/${utente}?fields=username&access_token=${t}`)).ok ? utente : null;
   if (!io) {
     const p = await json(await fetch(`${IG()}/me/accounts?fields=instagram_business_account&access_token=${t}`), 'pagine Facebook');
     io = (p.data || []).map((x) => x.instagram_business_account?.id).find(Boolean);
-    if (!io) throw new Error('Instagram: con la chiave di Facebook serve IG_USER_ID (secret su Cloudflare)');
+    if (!io) throw new Error(`Instagram: la chiave di Facebook non vede ${utente ? `l'account ${utente}` : 'nessun account Instagram'} (serve un Instagram collegato a una tua pagina Facebook)`);
   }
   const me = await json(await fetch(`${IG()}/${io}?fields=username&access_token=${t}`), 'account Instagram').catch(() => ({}));
   return { io, username: me.username };
