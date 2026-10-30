@@ -1,5 +1,12 @@
 # Video YouTube sul PC (tutto in locale)
 
+## Il modo facile: doppio clic su C:\regista\VIDEO.bat
+Ti chiede la cartella (trascinala nella finestra), i minuti e cosa vuoi, poi fa tutto: analisi,
+piano (Gemini), anteprima, video intero e apre la cartella con il risultato.
+Comodo: tasto destro su VIDEO.bat → Mostra altre opzioni → Invia a → Desktop (crea collegamento).
+
+## A mano, passo per passo
+
 Tre comandi, sempre da PowerShell in `C:\regista` (e dopo ogni comando: Invio 😄).
 Prima di tutto, ogni volta: `git pull` (prende gli aggiornamenti).
 
