@@ -27,7 +27,7 @@ const filePiano = path.join(ROOT, 'pc', 'progetti', `${nome.toLowerCase().replac
 titolo('PIANO DI MONTAGGIO');
 let rifai = !fs.existsSync(filePiano) || await si(`C'è già un piano per "${nome}". Lo rifaccio da capo?`);
 if (rifai) {
-  if (process.env.GEMINI_API_KEY) {
+  if (process.env.GEMINI_API_KEY || spawnSync('ollama', ['list'], { encoding: 'utf8' }).stdout?.includes('qwen2.5')) {
     if (!node('pc/piano.mjs', nome, minuti, brief)) rifai = null;
   } else rifai = null;
   if (rifai === null) {

@@ -10,7 +10,17 @@ const ROOT = path.resolve(path.dirname(new URL(import.meta.url).pathname.replace
 const [nome, minuti = '15', brief = ''] = process.argv.slice(2);
 if (!nome) { console.error('uso: node pc/piano.mjs <nome cartella> [minuti] ["brief"]'); process.exit(1); }
 const chiave = process.env.GEMINI_API_KEY;
-if (!chiave) { console.error('manca GEMINI_API_KEY: vedi pc\\LEGGIMI.md'); process.exit(1); }
+// AI locale (Ollama sulla 5070 Ti): gratis e privata, prima di Gemini se è accesa e ha il modello
+const OLLAMA = process.env.OLLAMA_HOST || 'http://127.0.0.1:11434';
+const MODELLO_LOCALE = process.env.REGISTA_MODELLO || 'qwen2.5:14b';
+async function localeDisponibile() {
+  try {
+    const r = await fetch(`${OLLAMA}/api/tags`, { signal: AbortSignal.timeout(3000) });
+    return ((await r.json()).models || []).some((m) => m.name === MODELLO_LOCALE || m.name.startsWith(`${MODELLO_LOCALE}`));
+  } catch { return false; }
+}
+const conLocale = await localeDisponibile();
+if (!chiave && !conLocale) { console.error('manca GEMINI_API_KEY (o Ollama con qwen2.5:14b): vedi pc\\LEGGIMI.md'); process.exit(1); }
 const LAVORO = path.join(ROOT, 'work', 'pc', nome);
 const materiale = JSON.parse(fs.readFileSync(path.join(LAVORO, 'materiale.json'), 'utf8'));
 const riassunto = fs.readFileSync(path.join(LAVORO, 'materiale.md'), 'utf8');
@@ -47,8 +57,22 @@ async function chiedi(modello) {
   if (!r.ok) throw new Error(`${modello}: ${r.status} ${j.error?.message || ''}`);
   return (j.candidates?.[0]?.content?.parts || []).map((p) => p.text || '').join('');
 }
+async function chiediLocale() {
+  const r = await fetch(`${OLLAMA}/api/chat`, {
+    method: 'POST', headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ model: MODELLO_LOCALE, stream: false, format: 'json', messages: [{ role: 'user', content: prompt }],
+      options: { temperature: 0.4, num_ctx: 32768 } }),
+    signal: AbortSignal.timeout(30 * 60 * 1000),
+  });
+  const j = await r.json();
+  if (!r.ok) throw new Error(`locale: ${r.status} ${j.error || ''}`);
+  return j.message?.content || '';
+}
 let testo = null;
-for (const m of ['gemini-pro-latest', 'gemini-flash-latest', 'gemini-flash-lite-latest']) {
+if (conLocale && process.env.REGISTA_AI !== 'gemini') {
+  try { console.log(`[piano] chiedo all'AI locale (${MODELLO_LOCALE} sulla scheda video, qualche minuto)…`); testo = await chiediLocale(); JSON.parse(testo); } catch (e) { console.log(`[piano] AI locale: ${e.message.slice(0, 200)}`); testo = null; }
+}
+for (const m of testo || !chiave ? [] : ['gemini-pro-latest', 'gemini-flash-latest', 'gemini-flash-lite-latest']) {
   try { console.log(`[piano] chiedo a ${m}…`); testo = await chiedi(m); JSON.parse(testo); break; } catch (e) { console.log(`[piano] ${e.message.slice(0, 200)}`); testo = null; }
 }
 if (!testo) { console.error('[piano] nessun modello ha risposto: riprova tra poco'); process.exit(1); }

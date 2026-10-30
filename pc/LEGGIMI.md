@@ -24,6 +24,13 @@ poi chiudi e riapri PowerShell. Da lì in poi:
     node pc\piano.mjs <nome cartella> 15 "vlog di viaggio, gancio su …"
 (15 = minuti; la frase tra virgolette è facoltativa). Scrive `pc\progetti\<nome>.json`.
 
+### A2) Con l'AI locale (gratis, sul PC, niente limiti)
+Una volta sola, in PowerShell:
+    winget install Ollama.Ollama
+    ollama pull qwen2.5:14b
+(scarica ~9 GB). Da lì `pc\piano.mjs` e VIDEO.bat usano lei per prima, Gemini solo se non risponde.
+Per forzare Gemini: `setx REGISTA_AI gemini`. Più lenta di Gemini e un po' meno brava nel racconto.
+
 ### B) Con Gemini sul sito (gemini.google.com), a mano
 Allega `work\pc\<nome>\materiale.md` e `pc\progetti\austria.json` (esempio) e scrivi:
 «Scrivi il piano di montaggio di un vlog di 15 minuti dal materiale, nello stesso formato JSON
