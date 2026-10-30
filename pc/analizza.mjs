@@ -52,7 +52,8 @@ function probe(file) {
 }
 
 // nome del posto dalle coordinate (OpenStreetMap, una richiesta al secondo, cache per ~1 km)
-const cacheLuoghi = new Map();
+const FILE_LUOGHI = path.join(OUT, 'luoghi.json');
+const cacheLuoghi = new Map(fs.existsSync(FILE_LUOGHI) ? Object.entries(JSON.parse(fs.readFileSync(FILE_LUOGHI, 'utf8'))) : []);
 async function luogo(gps) {
   if (!gps) return null;
   const k = `${gps.lat.toFixed(2)},${gps.lon.toFixed(2)}`;
@@ -109,6 +110,7 @@ console.log('');
 
 log('luoghi dalle coordinate GPS…');
 for (const v of voci) v.luogo = await luogo(v.gps);
+fs.writeFileSync(FILE_LUOGHI, JSON.stringify(Object.fromEntries(cacheLuoghi)));
 
 // trascrizione di tutti i video con audio, modello caricato una volta sola
 if (!SENZA_TRASCRIZIONE) {
@@ -160,5 +162,8 @@ if (fs.existsSync(drive)) {
   fs.mkdirSync(path.join(dest, 'fogli'), { recursive: true });
   for (const f of ['materiale.md', 'materiale.json']) fs.copyFileSync(path.join(OUT, f), path.join(dest, f));
   for (const f of fs.readdirSync(FOGLI)) fs.copyFileSync(path.join(FOGLI, f), path.join(dest, 'fogli', f));
+  // i tempi parola per parola: servono per tagliare le frasi (piccoli, solo testo)
+  fs.mkdirSync(path.join(dest, 'trascrizioni'), { recursive: true });
+  for (const f of fs.readdirSync(TRASCR)) fs.copyFileSync(path.join(TRASCR, f), path.join(dest, 'trascrizioni', f));
   log(`copia su Drive: ${dest}`);
 }
