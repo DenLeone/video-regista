@@ -43,7 +43,10 @@ const parole = (id) => {
 
 // ---------- dalle parole ai tempi ----------
 // gli apostrofi uniscono ("Let's" → "lets", "l'abbiamo" → "labbiamo"), come nelle parole di Whisper
-const norm = (t) => String(t).toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/['’`]/g, '').replace(/[^a-z0-9]+/g, ' ').trim().split(' ').filter(Boolean);
+// numeri in cifre = in lettere ("piano 0" / "piano zero"): Whisper li scrive a volte in un modo a volte nell'altro
+const NUMERI = ['zero', 'uno', 'due', 'tre', 'quattro', 'cinque', 'sei', 'sette', 'otto', 'nove', 'dieci'];
+const norm = (t) => String(t).toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/['’`]/g, '').replace(/[^a-z0-9]+/g, ' ').trim().split(' ').filter(Boolean)
+  .map((w) => (/^\d+$/.test(w) && Number(w) <= 10 ? NUMERI[Number(w)] : w));
 // prima per lettere di seguito, senza spazi né apostrofi (Whisper spezza "l'abbiamo" a volte sì a volte no),
 // poi parola per parola con un po' di tolleranza
 function trova(ws, frase, da = 0, fine = false) {
@@ -59,7 +62,30 @@ function trova(ws, frase, da = 0, fine = false) {
     while (k + 1 < ws.length && inizio[k + 1] <= c) k++;
     return k;
   }
-  return trovaParole(ws, frase, da, fine);
+  const k = trovaParole(ws, frase, da, fine);
+  return k >= 0 ? k : trovaSimile(ws, frase, da, fine);
+}
+// ultima prova (l'AI ha riscritto un po' la frase): la finestra di parole più simile, accettata solo
+// se almeno 3 parole su 4 ci sono, in qualsiasi ordine, e non c'è un'altra finestra altrettanto buona
+function trovaSimile(ws, frase, da = 0, fine = false) {
+  const cerca = norm(frase), k = Math.min(cerca.length, 4);
+  if (k < 3) return -1;
+  const pezzo = fine ? cerca.slice(-k) : cerca.slice(0, k);
+  const tok = ws.map((w) => norm(w.w).join(''));
+  const punti = [];
+  for (let i = da; i + k <= tok.length; i++) {
+    const fin = new Set(tok.slice(i, i + k + 1));
+    punti.push({ i, ok: pezzo.filter((w) => fin.has(w)).length });
+  }
+  const meglio = Math.max(0, ...punti.map((x) => x.ok));
+  const migliori = punti.filter((x) => x.ok === meglio);
+  // finestre vicine con lo stesso punteggio sono lo stesso punto; lontane = frase ambigua, meglio fermarsi
+  if (meglio < k - 1 || migliori[migliori.length - 1].i - migliori[0].i > k) return -1;
+  if (!fine) return migliori[0].i;
+  const ultima = migliori[migliori.length - 1].i;
+  let j = ultima + k; // l'ultima parola della frase dentro la finestra
+  while (j > ultima && !pezzo.includes(tok[j])) j--;
+  return Math.min(j, tok.length - 1);
 }
 function trovaParole(ws, frase, da = 0, fine = false) {
   const cerca = norm(frase);
