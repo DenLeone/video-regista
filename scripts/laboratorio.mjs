@@ -381,24 +381,26 @@ Elenco numerato di regole misurabili e applicabili da un programma (es. "un camb
 async function youtube(ric) {
   const chiave = process.env.GEMINI_API_KEY;
   if (!chiave) throw new Error('manca GEMINI_API_KEY');
-  const modelli = (process.env.LAB_MODELLI || 'gemini-pro-latest,gemini-flash-latest').split(',');
+  // Pro è fuori quota sul piano gratuito (429 del 30/10): Flash, poi Flash Lite
+  const modelli = (process.env.LAB_MODELLI || 'gemini-flash-latest,gemini-flash-lite-latest').split(',');
   fs.mkdirSync(GIT, { recursive: true });
   for (const v of ric.youtube) {
     const id = (/(?:youtu\.be\/|v=)([\w-]{11})/.exec(v.url) || [])[1] || pulito(v.url);
     let testo = null;
     for (const modello of modelli) {
-      for (let prova = 0; prova < 3 && !testo; prova++) {
+      // i video lunghi (40+ min) a volte danno 500: si riprova con metà dei fotogrammi
+      for (let prova = 0, fps = v.fps || 1; prova < 4 && !testo; prova++) {
         try {
           const r = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${modello}:generateContent`, {
             method: 'POST', headers: { 'content-type': 'application/json', 'x-goog-api-key': chiave },
             signal: AbortSignal.timeout(15 * 60 * 1000),
             body: JSON.stringify({
-              contents: [{ role: 'user', parts: [{ file_data: { file_uri: `https://www.youtube.com/watch?v=${id}` }, video_metadata: { fps: v.fps || 1 } }, { text: PROMPT_YOUTUBE(v.genere || 'tech') }] }],
+              contents: [{ role: 'user', parts: [{ file_data: { file_uri: `https://www.youtube.com/watch?v=${id}` }, video_metadata: { fps } }, { text: PROMPT_YOUTUBE(v.genere || 'tech') }] }],
               generationConfig: { mediaResolution: 'MEDIA_RESOLUTION_LOW', temperature: 0.3 },
             }),
           });
           const j = await r.json();
-          if (!r.ok) { log(`youtube ${id} ${modello}: ${r.status} ${JSON.stringify(j).slice(0, 300)}`); if (r.status === 503 || r.status === 429) { await new Promise((ok) => setTimeout(ok, 20000)); continue; } break; }
+          if (!r.ok) { log(`youtube ${id} ${modello}: ${r.status} ${JSON.stringify(j).slice(0, 300)}`); if ([429, 500, 503].includes(r.status)) { if (r.status === 500) fps = Math.max(0.25, fps / 2); await new Promise((ok) => setTimeout(ok, 30000)); continue; } break; }
           testo = (j.candidates?.[0]?.content?.parts || []).map((x) => x.text || '').join('').trim() || null;
           if (testo) testo = `# ${v.url}\n_genere: ${v.genere || 'tech'} · ${modello} · token ${j.usageMetadata?.promptTokenCount ?? '?'}_\n\n${testo}\n`;
         } catch (e) { log(`youtube ${id} ${modello}: ${e.message}`); }
