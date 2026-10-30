@@ -8,7 +8,7 @@
 // - codifica sulla scheda video (NVENC), se no x264
 // - progetto DaVinci (FCPXML) con gli originali e i marcatori dei capitoli
 //   node pc\monta.mjs pc\progetti\austria.json [--fino 120] [--4k]   (--fino: anteprima dei primi N secondi)
-import { execFileSync, spawnSync } from 'node:child_process';
+import { execFileSync, spawn, spawnSync } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
 import { cerca, clipMappa, km } from './mappe.mjs';
@@ -274,14 +274,22 @@ function filtroTitoli(p, n) {
   });
   return out.join(',');
 }
-function renderPezzo(p, n) {
+// ffmpeg asincrono: più pezzi insieme (NVENC regge più codifiche contemporanee)
+const esegui = (args, opts) => new Promise((ok) => {
+  const c = spawn('ffmpeg', args, { ...opts, stdio: ['ignore', 'ignore', 'pipe'] });
+  let stderr = '';
+  c.stderr.on('data', (d) => { stderr += d; });
+  c.on('close', (status) => ok({ status, stderr }));
+});
+async function renderPezzo(p, n) {
   const uscita = path.join(PEZZI, `p${String(n).padStart(4, '0')}.mp4`);
   const firma = JSON.stringify({ ...p, W });
   const fileFirma = `${uscita}.json`;
   if (fs.existsSync(uscita) && fs.existsSync(fileFirma) && fs.readFileSync(fileFirma, 'utf8') === firma) return uscita;
   const sv = p.v.mappa !== undefined ? { id: 'mappa', percorso: mappe[p.v.mappa].file, w: W, h: H, hdr: false, audio: false } : sorgente(p.v.id);
   const sa = p.a ? sorgente(p.a.id) : null;
-  const args = ['-v', 'error', '-y', '-ss', p.v.t0.toFixed(3), '-t', (p.dur + 0.1).toFixed(3), '-i', sv.percorso];
+  // decodifica sulla scheda video (4K HEVC dell'iPhone); se non va, ffmpeg torna da solo al processore
+  const args = ['-v', 'error', '-y', '-hwaccel', 'auto', '-ss', p.v.t0.toFixed(3), '-t', (p.dur + 0.1).toFixed(3), '-i', sv.percorso];
   let ia = null;
   if (sa && sa.id !== sv.id) { args.push('-ss', p.a.t0.toFixed(3), '-t', (p.dur + 0.1).toFixed(3), '-i', sa.percorso); ia = '1:a:0'; }
   else if (sa) ia = '0:a:0';
@@ -301,8 +309,9 @@ function renderPezzo(p, n) {
   else if (p.amb > 0 && sv.audio) a = `[0:a:0]aresample=48000,aformat=channel_layouts=stereo,volume=${p.amb},apad,atrim=duration=${p.dur.toFixed(3)},afade=t=in:d=0.15,afade=t=out:st=${Math.max(0, p.dur - 0.2).toFixed(3)}:d=0.2[a]`;
   else a = nul;
   const comando = (vf) => [...args, '-filter_complex', `${vf};${a}`, '-map', '[v]', '-map', '[a]', ...codifica(), '-r', String(FPS), '-c:a', 'aac', '-b:a', '192k', '-ar', '48000', uscita];
-  let r = spawnSync('ffmpeg', comando(v), { cwd: OUT, encoding: 'utf8' });
-  if (r.status !== 0 && hdr) r = spawnSync('ffmpeg', comando(v.replace(`${TONEMAP},`, '')), { cwd: OUT, encoding: 'utf8' }); // ffmpeg senza zscale
+  let r = await esegui(comando(v), { cwd: OUT });
+  if (r.status !== 0) r = await esegui(comando(v).filter((x, i, a) => !(x === '-hwaccel' || a[i - 1] === '-hwaccel')), { cwd: OUT }); // senza decodifica sulla scheda
+  if (r.status !== 0 && hdr) r = await esegui(comando(v.replace(`${TONEMAP},`, '')), { cwd: OUT }); // ffmpeg senza zscale
   if (r.status !== 0) throw new Error(`pezzo ${n} (${p.v.id} da ${p.v.t0}s): ${String(r.stderr).split('\n').filter(Boolean).slice(-3).join(' | ')}`);
   fs.writeFileSync(fileFirma, firma);
   return uscita;
@@ -320,11 +329,16 @@ if (mappe.length) {
   console.log('');
 }
 const t0 = Date.now();
-const fatti = pezzi.map((p, n) => {
-  const u = renderPezzo(p, n);
-  process.stdout.write(`\r[monta] pezzi ${n + 1}/${pezzi.length}`);
-  return u;
-});
+const PARALLELI = Number(process.env.REGISTA_PARALLELI) || 4;
+const fatti = new Array(pezzi.length);
+let prossimo = 0, finiti = 0;
+await Promise.all(Array.from({ length: PARALLELI }, async () => {
+  while (prossimo < pezzi.length) {
+    const n = prossimo++;
+    fatti[n] = await renderPezzo(pezzi[n], n);
+    process.stdout.write(`\r[monta] pezzi ${++finiti}/${pezzi.length}`);
+  }
+}));
 console.log('');
 const lista = path.join(OUT, 'lista.txt');
 fs.writeFileSync(lista, fatti.map((f) => `file '${f.replace(/\\/g, '/')}'`).join('\n'));

@@ -58,9 +58,22 @@ def audio(file):
     raise RuntimeError('nessuna traccia audio leggibile')
 
 
-def trascrivi(m, file, lingua='it', nomi=''):
+def trascrivi(m, file, lingua='it', nomi='', dati=None):
+    # a lotti (stesso modello, stessa precisione, più veloce sulla scheda video) se la versione lo ha
+    try:
+        from faster_whisper import BatchedInferencePipeline
+        if not hasattr(m, '_lotti'):
+            m._lotti = BatchedInferencePipeline(model=m)
+        segmenti, info = m._lotti.transcribe(
+            dati if dati is not None else audio(file), language=None if lingua in ('', 'auto') else lingua, word_timestamps=True,
+            initial_prompt=nomi or None, vad_filter=True, batch_size=16,
+        )
+        parole = [{'w': w.word, 's': round(w.start, 2), 'e': round(w.end, 2)} for seg in segmenti for w in (seg.words or [])]
+        return parole, info
+    except (ImportError, TypeError, AttributeError):
+        pass
     segmenti, info = m.transcribe(
-        audio(file), language=None if lingua in ('', 'auto') else lingua, word_timestamps=True,
+        dati if dati is not None else audio(file), language=None if lingua in ('', 'auto') else lingua, word_timestamps=True,
         initial_prompt=nomi or None, vad_filter=True, beam_size=5,
     )
     parole = []
@@ -75,10 +88,17 @@ def main():
         librerie_cuda()
         m, dove = modello(os.environ.get('WHISPER_MODELLO', 'large-v3'))
         lavori = json.loads(Path(sys.argv[2]).read_text(encoding='utf-8'))
+        # mentre la scheda trascrive una clip, il processore prepara già l'audio della successiva
+        from concurrent.futures import ThreadPoolExecutor
+        pre = ThreadPoolExecutor(max_workers=2)
+        futuri = [pre.submit(audio, l['file']) for l in lavori[:2]]
         for i, l in enumerate(lavori):
             t0 = time.time()
+            if i + 2 < len(lavori):
+                futuri.append(pre.submit(audio, lavori[i + 2]['file']))
             try:
-                parole, info = trascrivi(m, l['file'], l.get('lingua', 'it'), l.get('nomi', ''))
+                dati = futuri[i].result()
+                parole, info = trascrivi(m, l['file'], l.get('lingua', 'it'), l.get('nomi', ''), dati)
             except Exception as e:  # un file rovinato non ferma gli altri
                 print(f'[trascrivi] {Path(l["file"]).name}: non riuscita ({e})', file=sys.stderr)
                 continue
