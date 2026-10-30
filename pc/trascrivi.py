@@ -44,9 +44,19 @@ def modello(nome):
         return WhisperModel(nome, device='cpu', compute_type='int8'), 'processore'
 
 
+def audio(file):
+    # l'audio lo estrae ffmpeg (16 kHz mono): la lettura interna di faster-whisper passa da PyAV, che
+    # dalla versione 14 rifiuta un'opzione (metadata_errors, 30/10: nessun video trascritto)
+    import subprocess
+    import numpy as np
+    r = subprocess.run(['ffmpeg', '-v', 'error', '-nostdin', '-i', str(file), '-vn', '-ac', '1', '-ar', '16000', '-f', 'f32le', '-'],
+                       capture_output=True, check=True)
+    return np.frombuffer(r.stdout, dtype=np.float32)
+
+
 def trascrivi(m, file, lingua='it', nomi=''):
     segmenti, info = m.transcribe(
-        file, language=None if lingua in ('', 'auto') else lingua, word_timestamps=True,
+        audio(file), language=None if lingua in ('', 'auto') else lingua, word_timestamps=True,
         initial_prompt=nomi or None, vad_filter=True, beam_size=5,
     )
     parole = []
