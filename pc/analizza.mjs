@@ -70,11 +70,20 @@ async function luogo(gps) {
   return nome;
 }
 
-// 6 fotogrammi distribuiti sul video in una striscia (la luce HDR dell'iPhone esce un po' slavata: per guardare basta)
+// 6 fotogrammi distribuiti sul video in una striscia: si salta a ogni punto (-ss prima di -i) invece di
+// decodificare tutto il file, con la scheda video quando c'è (4K HEVC dell'iPhone: da minuti a secondi)
 function foglio(file, durata, uscita) {
   if (fs.existsSync(uscita)) return;
-  const passo = Math.max(0.2, durata / 6);
-  spawnSync('ffmpeg', ['-v', 'error', '-y', '-i', file, '-vf', `fps=1/${passo.toFixed(3)},scale=-2:320,tile=6x1`, '-frames:v', '1', '-q:v', '5', uscita], { stdio: 'ignore' });
+  const punti = Array.from({ length: 6 }, (_, k) => Math.max(0, (durata * (k + 0.5)) / 6 - 0.05));
+  const args = ['-v', 'error', '-y'];
+  for (const t of punti) args.push('-hwaccel', 'auto', '-ss', t.toFixed(2), '-i', file);
+  const filtro = punti.map((_, k) => `[${k}:v:0]scale=-2:320,format=yuvj420p,setsar=1[f${k}]`).join(';')
+    + `;${punti.map((_, k) => `[f${k}]`).join('')}hstack=inputs=6`;
+  const r = spawnSync('ffmpeg', [...args, '-filter_complex', filtro, '-frames:v', '1', '-q:v', '5', uscita], { stdio: 'ignore' });
+  if (r.status !== 0 || !fs.existsSync(uscita)) {
+    // riserva: il modo lento ma sicuro
+    spawnSync('ffmpeg', ['-v', 'error', '-y', '-i', file, '-vf', `fps=1/${Math.max(0.2, durata / 6).toFixed(3)},scale=-2:320,tile=6x1`, '-frames:v', '1', '-q:v', '5', uscita], { stdio: 'ignore' });
+  }
 }
 
 // ---------- via ----------
