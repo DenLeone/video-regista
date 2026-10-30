@@ -24,7 +24,7 @@ import { avvisoUtente } from './push';
 import STILI_BASE from '../../scripts/stili-base.json';
 import type { Ops, Segreti } from './ops';
 import { unisciNomi } from './stile-studio';
-import { PAGINA_PRIVACY, PAGINA_TERMINI, completaLoginTikTok, linkLoginTikTok, pianoDelGiorno, statoTikTok, type DepsSocial } from './social';
+import { PAGINA_PRIVACY, PAGINA_TERMINI, chiaveFacebook, completaLoginTikTok, linkLoginTikTok, pianoDelGiorno, statoTikTok, type DepsSocial } from './social';
 
 export interface Env {
   TELEGRAM_BOT_TOKEN: string;
@@ -33,7 +33,8 @@ export interface Env {
   GITHUB_TOKEN: string;      // fine-grained, Actions read & write sul repo
   GITHUB_REPO: string;       // "DenLeone/video-regista"
   NOTIFY_TOKEN: string;      // condiviso con il workflow
-  IG_TOKEN?: string;         // chiave Instagram (secret, 60 giorni): poi la tiene e la rinnova il bot
+  IG_TOKEN?: string;
+  IG_USER_ID?: string;       // id dell'account Instagram, per la chiave del login unificato (EAA…)         // chiave Instagram (secret, 60 giorni): poi la tiene e la rinnova il bot
   APP_SETUP_CODE?: string;   // codice segreto per registrare o sostituire la passkey dell'app
   R2_ACCOUNT_ID?: string;
   R2_ACCESS_KEY_ID?: string;
@@ -1457,7 +1458,8 @@ async function chiaveInstagram(env: Env): Promise<string | undefined> {
 }
 async function rinnovaChiaveInstagram(env: Env) {
   const token = await chiaveInstagram(env);
-  if (!token) return;
+  // la chiave di sistema del login unificato (EAA…) non scade: niente da rinnovare
+  if (!token || chiaveFacebook(token)) return;
   const r = await fetch(`https://graph.instagram.com/refresh_access_token?grant_type=ig_refresh_token&access_token=${encodeURIComponent(token)}`);
   const j = (await r.json().catch(() => ({}))) as { access_token?: string; error?: { message?: string } };
   if (r.ok && j.access_token) { await mem(env).scrivi('ig_token', { token: j.access_token, rinnovata: Date.now() } satisfies ChiaveIg); return; }
@@ -1785,6 +1787,7 @@ const depsSocial = async (env: Env): Promise<DepsSocial> => ({
   scrivi: (k, v) => mem(env).scrivi(k, v),
   cancella: (k) => mem(env).cancella(k),
   igToken: await chiaveInstagram(env),
+  igUtente: env.IG_USER_ID,
   ttKey: env.TIKTOK_CLIENT_KEY,
   ttSecret: env.TIKTOK_CLIENT_SECRET,
   geminiKey: env.GEMINI_API_KEY,
@@ -1991,7 +1994,7 @@ export default {
     // chiave Instagram per il workflow "pubblica" (che non la conosce: la custodisce il bot)
     if (req.method === 'GET' && url.pathname === '/ig-token') {
       if (req.headers.get('x-regista-token') !== env.NOTIFY_TOKEN) return new Response('no', { status: 401 });
-      return Response.json({ token: (await chiaveInstagram(env)) || null });
+      return Response.json({ token: (await chiaveInstagram(env)) || null, utente: env.IG_USER_ID || null });
     }
 
     if (req.method === 'GET' && (url.pathname === '/privacy' || url.pathname === '/termini')) {

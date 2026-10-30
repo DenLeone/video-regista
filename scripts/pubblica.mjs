@@ -20,7 +20,10 @@ const WORK = path.join(ROOT, 'work');
 const REMOTE = process.env.RCLONE_REMOTE || 'gdrive';
 const OUT_DIR = DIR_FATTI;
 const PUB_DIR = DIR_PUBBLICARE;
-const IG = () => `${process.env.IG_BASE || 'https://graph.instagram.com'}/${process.env.IG_API_VERSION || 'v24.0'}`;
+// chiave del login con Instagram (IGAA…) → graph.instagram.com; chiave di sistema del login unificato
+// di Meta (EAA…, app nuove dal 2026) → graph.facebook.com, con l'account per id (IG_USER_ID dal bot)
+let IG_FB = false;
+const IG = () => `${process.env.IG_BASE || (IG_FB ? 'https://graph.facebook.com' : 'https://graph.instagram.com')}/${process.env.IG_API_VERSION || 'v24.0'}`;
 const DRIVE = () => process.env.DRIVE_BASE || 'https://www.googleapis.com';
 const YT_UPLOAD = () => process.env.YT_UPLOAD_BASE || 'https://www.googleapis.com';
 const OAUTH = () => process.env.OAUTH_URL || 'https://oauth2.googleapis.com/token';
@@ -59,13 +62,32 @@ async function chiaveInstagram() {
   const r = await fetch(process.env.NOTIFY_URL.replace(/\/notify$/, '/ig-token'), { headers: { 'x-regista-token': process.env.NOTIFY_TOKEN || '' } });
   const j = await json(r, 'chiave Instagram dal bot');
   if (!j.token) throw new Error('Instagram non collegato: manca la chiave (IG_TOKEN)');
-  return j.token;
+  return j;
+}
+
+// id dell'account Instagram e nome: dalla chiave stessa, o (chiave di Facebook) da IG_USER_ID o dalla pagina collegata
+async function accountIg(token, utente) {
+  const t = encodeURIComponent(token);
+  if (!IG_FB) {
+    const me = await json(await fetch(`${IG()}/me?fields=user_id,username&access_token=${t}`), 'account Instagram');
+    return { io: me.user_id || me.id, username: me.username };
+  }
+  let io = utente;
+  if (!io) {
+    const p = await json(await fetch(`${IG()}/me/accounts?fields=instagram_business_account&access_token=${t}`), 'pagine Facebook');
+    io = (p.data || []).map((x) => x.instagram_business_account?.id).find(Boolean);
+    if (!io) throw new Error('Instagram: con la chiave di Facebook serve IG_USER_ID (variabile su Cloudflare)');
+  }
+  const me = await json(await fetch(`${IG()}/${io}?fields=username&access_token=${t}`), 'account Instagram').catch(() => ({}));
+  return { io, username: me.username };
 }
 
 async function instagram(d) {
-  const token = await chiaveInstagram();
-  const me = await json(await fetch(`${IG()}/me?fields=user_id,username&access_token=${encodeURIComponent(token)}`), 'account Instagram');
-  const io = me.user_id || me.id;
+  const chiave = await chiaveInstagram();
+  const token = chiave.token;
+  IG_FB = /^EA/.test(token);
+  const me = await accountIg(token, chiave.utente);
+  const io = me.io;
   await linkPubblico(d.fileId, true);
   // la copertina su Drive va resa pubblica come il video, per il tempo della pubblicazione
   const conCopertina = Boolean(d.copertinaId) && await linkPubblico(d.copertinaId, true).then(() => true, (e) => { log(`copertina non usata: ${e.message}`); return false; });

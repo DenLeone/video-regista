@@ -21,6 +21,7 @@ export type DepsSocial = {
   scrivi: (k: string, v: unknown) => Promise<void>;
   cancella: (k: string) => Promise<void>;
   igToken?: string;
+  igUtente?: string; // IG_USER_ID: account Instagram per la chiave di Facebook
   ttKey?: string;
   ttSecret?: string;
   geminiKey?: string;
@@ -41,7 +42,22 @@ const messaggio = (e: unknown) => String((e as Error)?.message || e).slice(0, 20
 export const giornoRoma = (t = Date.now()) => new Intl.DateTimeFormat('sv-SE', { timeZone: 'Europe/Rome' }).format(new Date(t));
 
 // ---------- Instagram ----------
+// Due tipi di chiave: quella del "login con Instagram" (IGAA…, graph.instagram.com, 60 giorni, si
+// rinnova) e quella del "login unificato" che Meta dà alle app nuove dal 2026 (EAA…, chiave di sistema
+// che non scade, graph.facebook.com). Con la seconda l'account si indica per id: IG_USER_ID, oppure
+// si trova dalla pagina Facebook collegata.
 const IG = 'https://graph.instagram.com';
+const FB = 'https://graph.facebook.com/v24.0';
+export const chiaveFacebook = (t: string) => /^EA/.test(t);
+export async function accountIg(f: typeof fetch, token: string, idFisso?: string): Promise<{ base: string; io: string }> {
+  if (!chiaveFacebook(token)) return { base: IG, io: 'me' };
+  if (idFisso) return { base: FB, io: idFisso };
+  const r = await f(`${FB}/me/accounts?fields=instagram_business_account&access_token=${encodeURIComponent(token)}`, { signal: AbortSignal.timeout(20_000) });
+  const j = (await r.json().catch(() => ({}))) as { data?: { instagram_business_account?: { id: string } }[] };
+  const id = (j.data || []).map((p) => p.instagram_business_account?.id).find(Boolean);
+  if (!id) throw new Error('Instagram: con la chiave di Facebook serve l\'id dell\'account (variabile IG_USER_ID su Cloudflare)');
+  return { base: FB, io: id };
+}
 type IgMedia = { id: string; caption?: string; media_product_type?: string; timestamp?: string; like_count?: number; comments_count?: number; permalink?: string };
 type IgInsight = { name: string; values?: { value?: number }[]; total_value?: { value?: number } };
 
@@ -54,10 +70,10 @@ async function igJson<T>(d: DepsSocial, url: string): Promise<T> {
 
 // ig_reels_avg_watch_time non c'è su tutti i reel: se la richiesta intera viene rifiutata, senza
 const METRICHE_IG = ['views', 'reach', 'saved', 'shares', 'ig_reels_avg_watch_time'];
-async function insightsIg(d: DepsSocial, id: string, t: string): Promise<Record<string, number>> {
+async function insightsIg(d: DepsSocial, base: string, id: string, t: string): Promise<Record<string, number>> {
   for (const metriche of [METRICHE_IG, METRICHE_IG.slice(0, 4)]) {
     try {
-      const j = await igJson<{ data?: IgInsight[] }>(d, `${IG}/${id}/insights?metric=${metriche.join(',')}&access_token=${t}`);
+      const j = await igJson<{ data?: IgInsight[] }>(d, `${base}/${id}/insights?metric=${metriche.join(',')}&access_token=${t}`);
       return Object.fromEntries((j.data || []).map((x) => [x.name, Number(x.total_value?.value ?? x.values?.[0]?.value ?? 0)]));
     } catch (e) {
       if (metriche.length === 4) throw e;
@@ -69,10 +85,11 @@ async function insightsIg(d: DepsSocial, id: string, t: string): Promise<Record<
 export async function videoInstagram(d: DepsSocial, quanti = 15): Promise<Video[]> {
   if (!d.igToken) throw new Error('Instagram: manca la chiave (secret IG_TOKEN)');
   const t = encodeURIComponent(d.igToken);
-  const lista = await igJson<{ data?: IgMedia[] }>(d, `${IG}/me/media?fields=id,caption,media_product_type,timestamp,like_count,comments_count,permalink&limit=${quanti}&access_token=${t}`);
+  const { base, io } = await accountIg(d.fetch, d.igToken, d.igUtente);
+  const lista = await igJson<{ data?: IgMedia[] }>(d, `${base}/${io}/media?fields=id,caption,media_product_type,timestamp,like_count,comments_count,permalink&limit=${quanti}&access_token=${t}`);
   const reel = (lista.data || []).filter((m) => m.media_product_type === 'REELS');
   return Promise.all(reel.map(async (m): Promise<Video> => {
-    const i = await insightsIg(d, m.id, t);
+    const i = await insightsIg(d, base, m.id, t);
     return {
       id: m.id, p: 'ig', data: m.timestamp || '', titolo: (m.caption || '').replace(/\s+/g, ' ').slice(0, 100), link: m.permalink,
       views: i.views || 0, like: m.like_count || 0, commenti: m.comments_count || 0, condivisioni: i.shares || 0,
