@@ -103,6 +103,17 @@ const aggiungi = (p) => {
   pezzi.push(p);
   t += p.dur;
 };
+// B-roll automatici: sui parlati lunghi senza "sopra", ogni ~9 s una clip senza parlato girata vicino
+// (entro 45 minuti) e non già usata nel piano. "brollAuto": false nel piano o "auto": false sul pezzo li toglie.
+const usati = new Set(piano.sequenza.flatMap((e) => [e.v, e.broll, e.su, ...(e.sopra || []).map((x) => x.v)]).filter(Boolean));
+const quando = (v) => (v.data ? Date.parse(v.data) : NaN);
+function brollVicini(id) {
+  const base = quando(perId.get(id));
+  if (!Number.isFinite(base)) return [];
+  return materiale.video
+    .filter((v) => !v.parla && !usati.has(v.id) && v.durata >= 3 && (v.w || 0) >= 640 && Number.isFinite(quando(v)) && Math.abs(quando(v) - base) < 45 * 60_000)
+    .sort((a, b) => Math.abs(quando(a) - base) - Math.abs(quando(b) - base));
+}
 const errori = [];
 for (const el of piano.sequenza) {
   if (t >= FINO) break;
@@ -128,6 +139,17 @@ for (const el of piano.sequenza) {
     const s = sorgente(el.v);
     const ivs = intervalli(s.id, el.da, el.a, el.pausa ?? 0.7);
     // B-roll sopra la voce: { v, dal, al (secondi nel pezzo montato), per }
+    const lungo = ivs.reduce((x, [a, b]) => x + b - a, 0);
+    if (!el.sopra && el.auto !== false && piano.brollAuto !== false && lungo > 7) {
+      const vicini = brollVicini(s.id);
+      el.sopra = [];
+      for (let al = 4; al + 3 < lungo - 1.5 && vicini.length; al += 9) {
+        const b = vicini.shift();
+        usati.add(b.id);
+        el.sopra.push({ v: b.id, dal: +Math.max(0, b.durata * 0.3).toFixed(2), al, per: Math.min(3, b.durata - b.durata * 0.3 - 0.1) });
+      }
+      if (el.sopra.length) log(`${s.id}: ${el.sopra.length} B-roll automatici (${el.sopra.map((x) => x.v).join(', ')})`);
+    }
     const sopra = (el.sopra || []).map((x) => ({ ...x, s: sorgente(x.v) }));
     let tp = 0;
     ivs.forEach(([a, b], k) => {
