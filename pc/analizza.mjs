@@ -1,7 +1,7 @@
 // Analisi di una cartella di girato sul PC di Denis (video YouTube lunghi, 30/10): tutto in locale,
 // niente upload. Per ogni video: durata, camera, data e ora, orientamento, luogo (GPS dell'iPhone →
 // nome del posto), se Denis parla e cosa dice (Whisper sulla scheda video) e un foglio di 6 fotogrammi.
-// Esce <cartella>\_regista\materiale.md (+ .json e fogli\), il riassunto da cui l'AI costruisce il
+// Esce C:\regista\work\pc\<nome>\materiale.md (+ .json e fogli\), il riassunto da cui l'AI costruisce il
 // racconto; se c'è Google Drive (G:) ne mette una copia in 30 · Sviluppo/video-regista/pc/<nome>, così
 // lo legge anche il regista nel cloud.
 //   node pc\analizza.mjs "E:\Backup Iphone\Ottobre\Austria" [--senza-trascrizione]
@@ -13,7 +13,8 @@ const ROOT = path.resolve(path.dirname(new URL(import.meta.url).pathname.replace
 const cartella = process.argv[2];
 const SENZA_TRASCRIZIONE = process.argv.includes('--senza-trascrizione');
 if (!cartella || !fs.existsSync(cartella)) { console.error('uso: node pc/analizza.mjs "<cartella>"'); process.exit(1); }
-const OUT = path.join(cartella, '_regista');
+// i risultati sul PC, mai nella cartella del girato (spesso un disco di backup in sola lettura)
+const OUT = path.join(ROOT, 'work', 'pc', path.basename(path.resolve(cartella)));
 const FOGLI = path.join(OUT, 'fogli');
 const TRASCR = path.join(OUT, 'trascrizioni');
 for (const d of [OUT, FOGLI, TRASCR]) fs.mkdirSync(d, { recursive: true });
@@ -24,7 +25,7 @@ const FOTO = /\.(heic|heif|jpe?g|png|dng)$/i;
 function elenco(dir) {
   return fs.readdirSync(dir, { withFileTypes: true }).flatMap((e) => {
     const p = path.join(dir, e.name);
-    if (e.isDirectory()) return e.name === '_regista' ? [] : elenco(p);
+    if (e.isDirectory()) return elenco(p);
     return [p];
   });
 }
@@ -77,10 +78,11 @@ function foglio(file, durata, uscita) {
 }
 
 // ---------- via ----------
+log(`leggo ${cartella}…`);
 const tutti = elenco(cartella).sort();
 const video = tutti.filter((f) => VIDEO.test(f));
 const foto = tutti.filter((f) => FOTO.test(f));
-log(`${video.length} video e ${foto.length} foto in ${cartella}`);
+log(`${video.length} video e ${foto.length} foto in ${cartella} → risultati in ${OUT}`);
 const voci = [];
 for (const [i, file] of video.entries()) {
   try { voci.push({ file: path.relative(cartella, file), ...probe(file) }); } catch (e) { log(`${path.basename(file)}: illeggibile (${String(e.message).split('\n')[0]})`); }
@@ -129,7 +131,7 @@ const md = [
   `# Materiale: ${path.basename(cartella)}`,
   '',
   `${voci.length} video (${mmss(totale)} in tutto), ${parlati.length} con Denis che parla (${mmss(parlati.reduce((a, v) => a + v.durata, 0))}), ${foto.length} foto. Giorni: ${giorni.join(', ')}.`,
-  `Camere: ${[...new Set(voci.map((v) => v.camera || '?'))].join(', ')}. Fogli dei fotogrammi in _regista/fogli (V001.jpg…).`,
+  `Camere: ${[...new Set(voci.map((v) => v.camera || '?'))].join(', ')}. Fogli dei fotogrammi in fogli/ (V001.jpg…).`,
   '',
   ...voci.map((v) => [
     `## ${v.id} · ${ora(v.data)} · ${mmss(v.durata)} · ${v.orient}${v.fps >= 50 ? ` · ${Math.round(v.fps)} fps (rallentatore)` : ''}${v.luogo ? ` · ${v.luogo}` : v.gps ? ` · ${v.gps.lat.toFixed(4)}, ${v.gps.lon.toFixed(4)}` : ''}`,
