@@ -76,7 +76,7 @@ async function accountIg(token, utente) {
   if (!io) {
     const p = await json(await fetch(`${IG()}/me/accounts?fields=instagram_business_account&access_token=${t}`), 'pagine Facebook');
     io = (p.data || []).map((x) => x.instagram_business_account?.id).find(Boolean);
-    if (!io) throw new Error('Instagram: con la chiave di Facebook serve IG_USER_ID (variabile su Cloudflare)');
+    if (!io) throw new Error('Instagram: con la chiave di Facebook serve IG_USER_ID (secret su Cloudflare)');
   }
   const me = await json(await fetch(`${IG()}/${io}?fields=username&access_token=${t}`), 'account Instagram').catch(() => ({}));
   return { io, username: me.username };

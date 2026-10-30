@@ -55,7 +55,7 @@ export async function accountIg(f: typeof fetch, token: string, idFisso?: string
   const r = await f(`${FB}/me/accounts?fields=instagram_business_account&access_token=${encodeURIComponent(token)}`, { signal: AbortSignal.timeout(20_000) });
   const j = (await r.json().catch(() => ({}))) as { data?: { instagram_business_account?: { id: string } }[] };
   const id = (j.data || []).map((p) => p.instagram_business_account?.id).find(Boolean);
-  if (!id) throw new Error('Instagram: con la chiave di Facebook serve l\'id dell\'account (variabile IG_USER_ID su Cloudflare)');
+  if (!id) throw new Error('Instagram: con la chiave di Facebook serve l\'id dell\'account (secret IG_USER_ID su Cloudflare)');
   return { base: FB, io: id };
 }
 type IgMedia = { id: string; caption?: string; media_product_type?: string; timestamp?: string; like_count?: number; comments_count?: number; permalink?: string };
