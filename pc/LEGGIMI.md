@@ -1,19 +1,38 @@
 # Video YouTube sul PC (tutto in locale)
 
-## 1. Analisi della cartella (una volta per video)
-    cd C:\regista
-    git pull
-    node pc\analizza.mjs "E:\cartella\del\girato"
-Esce `C:\regista\work\pc\<nome>\materiale.md`: ogni video con data, posto, durata e cosa dici.
+Tre comandi, sempre da PowerShell in `C:\regista` (e dopo ogni comando: Invio 😄).
+Prima di tutto, ogni volta: `git pull` (prende gli aggiornamenti).
 
-## 2. Il piano (pc\progetti\<nome>.json)
-Elenco in ordine di cosa va nel video:
+## 1. Analisi della cartella
+    node pc\analizza.mjs "E:\cartella\del\girato"
+Esce `C:\regista\work\pc\<nome cartella>\materiale.md`: ogni video con data, posto, durata e cosa dici.
+La trascrizione gira sulla 5070 Ti; si può rilanciare quando si vuole (rifà solo quello che manca).
+
+## 2. Il piano: chi decide cosa va nel video
+
+### A) Con Gemini, automatico (consigliato quando non hai Claude)
+Una volta sola: chiave gratuita su https://aistudio.google.com/apikey → in PowerShell
+    setx GEMINI_API_KEY "LA-TUA-CHIAVE"
+poi chiudi e riapri PowerShell. Da lì in poi:
+    node pc\piano.mjs <nome cartella> 15 "vlog di viaggio, gancio su …"
+(15 = minuti; la frase tra virgolette è facoltativa). Scrive `pc\progetti\<nome>.json`.
+
+### B) Con Gemini sul sito (gemini.google.com), a mano
+Allega `work\pc\<nome>\materiale.md` e `pc\progetti\austria.json` (esempio) e scrivi:
+«Scrivi il piano di montaggio di un vlog di 15 minuti dal materiale, nello stesso formato JSON
+dell'esempio. Copia esatte le parole di "da" e "a" dal testo dei video.»
+Salva la risposta come `pc\progetti\<nome>.json`.
+
+### C) Con Claude Code (se hai ancora crediti)
+    claude
+«leggi pc\LEGGIMI.md e work\pc\<nome>\materiale.md e scrivi il piano di un vlog di 15 minuti in pc\progetti\<nome>.json»
+
+### Il formato, se vuoi ritoccarlo a mano (Blocco note)
 - `{ "capitolo": "Vienna", "sotto": "Il centro · 5 ottobre", "musica": "ES_Legend - DonVayei.mp3" }` titolo del capitolo + musica (da G:\Il mio Drive\12 · Risorse\Assets\Suoni\Musica; `""` = silenzio)
-- `{ "v": "V058", "da": "prime parole", "a": "ultime parole" }` un pezzo dove parli, tagliato sulle parole (le pause lunghe si tolgono da sole)
+- `{ "v": "V058", "da": "prime parole", "a": "ultime parole" }` pezzo dove parli, tagliato sulle parole (le pause lunghe si tolgono da sole)
 - `"sopra": [{ "v": "V071", "dal": 3, "al": 5, "per": 3 }]` dentro un pezzo parlato: B-roll sopra la voce (dal = secondo nel B-roll, al = secondo nel pezzo)
 - `{ "broll": "V071", "dal": 3, "per": 3 }` B-roll da solo (`"audio": "muto"` o `"pieno"`)
 - `{ "titolo": "Austria", "sotto": "…", "su": "V239", "dal": 10, "per": 3.5 }` titolo grande (sigla)
-Per scriverlo senza fatica: apri `claude` in C:\regista e chiedigli «leggi pc\LEGGIMI.md e work\pc\<nome>\materiale.md e scrivi il piano di un vlog di 15 minuti».
 
 ## 3. Montaggio
     node pc\monta.mjs pc\progetti\<nome>.json --fino 120     (anteprima: primi 2 minuti)
@@ -21,3 +40,6 @@ Per scriverlo senza fatica: apri `claude` in C:\regista e chiedigli «leggi pc\L
     node pc\monta.mjs pc\progetti\<nome>.json --4k           (tutto, in 4K)
 Esce in `C:\regista\work\pc\<nome>\montaggio\`: il video `<nome>.mp4` e `<nome> - DaVinci.fcpxml`
 (DaVinci → File → Importa → Timeline). Rilanciando, i pezzi già fatti non si rifanno.
+
+Se si ferma con «problemi nel piano»: sono frasi non trovate. Apri il piano, copia le parole giuste
+da `materiale.md` e rilancia.
