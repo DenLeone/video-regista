@@ -33,7 +33,8 @@ const sorgente = (id) => { const v = perId.get(id); if (!v) throw new Error(`vid
 const parole = (id) => { const f = path.join(LAVORO, 'trascrizioni', `${id}.json`); return fs.existsSync(f) ? JSON.parse(fs.readFileSync(f, 'utf8')) : []; };
 
 // ---------- dalle parole ai tempi ----------
-const norm = (t) => String(t).toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9]+/g, ' ').trim().split(' ').filter(Boolean);
+// gli apostrofi uniscono ("Let's" → "lets", "l'abbiamo" → "labbiamo"), come nelle parole di Whisper
+const norm = (t) => String(t).toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/['’`]/g, '').replace(/[^a-z0-9]+/g, ' ').trim().split(' ').filter(Boolean);
 function trova(ws, frase, da = 0, fine = false) {
   const cerca = norm(frase);
   const tok = ws.map((w) => norm(w.w).join(''));
@@ -85,8 +86,10 @@ const aggiungi = (p) => {
   pezzi.push(p);
   t += p.dur;
 };
+const errori = [];
 for (const el of piano.sequenza) {
   if (t >= FINO) break;
+  try {
   if (el.capitolo) {
     capitoli.push({ nome: el.capitolo, t, musica: el.musica ?? null });
     if (el.titolo !== false) titoliInAttesa.push({ testo: el.capitolo, sotto: el.sotto || '', stile: 'capitolo', per: 3.2 });
@@ -127,6 +130,12 @@ for (const el of piano.sequenza) {
       tp += b - a;
     });
   }
+  } catch (e) { errori.push(e.message); }
+}
+// prima di montare, tutti gli errori del piano insieme
+if (errori.length) {
+  console.error(`[monta] ${errori.length} problemi nel piano (correggi pc/progetti e rilancia):\n${errori.map((e) => `  - ${e}`).join('\n')}`);
+  process.exit(1);
 }
 const totale = t;
 log(`${pezzi.length} pezzi, ${Math.floor(totale / 60)}:${String(Math.round(totale % 60)).padStart(2, '0')} di video, ${capitoli.filter((c) => c.nome).length} capitoli`);
