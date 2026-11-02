@@ -59,16 +59,17 @@ export const MotionCollage: React.FC<Piano> = (piano) => {
   const totale = f(durataTotale(piano));
   const sfx = volumeSfx(piano);
 
-  // Esempio elementi per test Sharia (da sostituire con dati dal piano)
+  // Elementi di prova Sharia (76%, 53%, 30%)
   const elementi = [
-    { type: 'box', text: 'SHARIA', at: 1.2, dur: 3.5, top: 380, left: 80 },
-    { type: 'box', text: '80%', at: 5, dur: 2.5, top: 720, left: 420 },
-    { type: 'arrow', at: 2.5, dur: 2, x1: 200, y1: 450, x2: 500, y2: 680 },
+    { type: 'box', text: '76%', at: 2.5, dur: 3.2, top: 340, left: 90 },
+    { type: 'box', text: '53%', at: 8.0, dur: 2.8, top: 680, left: 380 },
+    { type: 'box', text: '30%', at: 12.5, dur: 2.5, top: 520, left: 160 },
+    { type: 'box', text: 'SHARIA', at: 1.0, dur: 2.5, top: 220, left: 70 },
+    { type: 'arrow', at: 3.8, dur: 2.0, x1: 220, y1: 400, x2: 480, y2: 640 },
   ];
 
   return (
     <AbsoluteFill style={{ backgroundColor: '#F4EDE0' }}>
-      {/* Sfondo carta procedurale */}
       <AbsoluteFill style={{
         background: 'linear-gradient(135deg, #f7f1e3 0%, #e8dcc8 100%)',
         filter: 'contrast(1.05)',
