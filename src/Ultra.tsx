@@ -30,10 +30,18 @@ const Scia: React.FC<{ v: number; children: React.ReactNode }> = ({ v, children 
   );
 };
 
-const Parola: React.FC<{ testo: string; da: number; stile: React.CSSProperties; grande: boolean }> = ({ testo, da, stile, grande }) => {
+const Parola: React.FC<{ testo: string; da: number; stile: React.CSSProperties; grande: boolean; pop?: boolean }> = ({ testo, da, stile, grande, pop }) => {
   const fr = useCurrentFrame();
   const v = interpolate(fr, [da, da + ENTRATA], [0, 1], { ...clamp, easing: Easing.out(Easing.cubic) });
   if (fr < da) return <span style={{ ...stile, visibility: 'hidden' }}>{testo}</span>;
+  if (pop) {
+    const scala = 0.86 + v * 0.14;
+    return (
+      <span style={{ ...stile, display: 'inline-block', opacity: Math.min(1, v * 1.8), transform: `scale(${scala})`, transformOrigin: '50% 60%' }}>
+        {testo}
+      </span>
+    );
+  }
   const x = (1 - v) * -60;
   const scala = grande ? 1 + (1 - v) * 0.12 : 1;
   return (
@@ -58,7 +66,8 @@ const BloccoUltra: React.FC<{ b: BloccoM; len: number; g: GraficaStile; colore: 
   const righeGrandi = b.righe.filter((r) => r.tipo === 'grande');
   const fsGrande = righeGrandi.length ? Math.min(MAX, ...righeGrandi.map((r) => misura(testoRiga(r)))) : MAX;
   const base = Math.max(40, Math.min(100, g.dimensione || 84));
-  const fsPiccola = Math.min(base, ...b.righe.filter((r) => r.tipo === 'piccolo').map((r) => dentro(testoRiga(r), g.fontSottotitoli, base)));
+  const righePiccole = b.righe.filter((r) => r.tipo === 'piccolo');
+  const fsPiccola = righePiccole.length ? Math.min(base, ...righePiccole.map((r) => dentro(testoRiga(r), g.fontSottotitoli, base))) : base;
   const corsivo = Boolean(g.enfasiCorsivo);
   const righe = b.righe.map((r) => {
     const testo = testoRiga(r);
@@ -71,7 +80,17 @@ const BloccoUltra: React.FC<{ b: BloccoM; len: number; g: GraficaStile; colore: 
   const dalBasso: number[] = [];
   let acc = 0;
   for (let i = righe.length - 1; i >= 0; i--) { dalBasso[i] = acc; acc += righe[i].h; }
-  const ancora = g.dietro ? ANCORA_SPALLE : 1920 - Math.min(1330, SICURA.basso);
+  // alto = terzo alto, centro = petto, basso = sopra i tasti. «Dietro» con la posizione
+  // lasciata in basso sale alle spalle: è lì che la persona copre le parole grosse.
+  const ANCORA: Record<string, number> = { alto: 1180, centro: 900, basso: 1920 - Math.min(1330, SICURA.basso) };
+  const ancora = g.dietro && g.posizione === 'basso' ? ANCORA_SPALLE : (ANCORA[g.posizione] ?? ANCORA.basso);
+  const pop = g.entrata === 'pop';
+  const scritto = (w: string, grande: boolean) => {
+    if (grande && g.maiuscoloGrandi) return w.toUpperCase();
+    if (g.maiuscolo) return w.toUpperCase();
+    if (g.minuscolo) return w.toLowerCase();
+    return w;
+  };
   let grandi = 0;
   const ombra = 'drop-shadow(0 3px 8px rgba(0,0,0,0.45)) drop-shadow(0 1px 2px rgba(0,0,0,0.5))';
   const visibili = righe.some((x) => (solo === 'grandi' ? x.grande : solo === 'piccole' ? !x.grande : true));
@@ -91,7 +110,7 @@ const BloccoUltra: React.FC<{ b: BloccoM; len: number; g: GraficaStile; colore: 
             <div key={i} style={{ position: 'absolute', left: 0, right: 0, bottom: dalBasso[i], textAlign: 'center', whiteSpace: 'nowrap' }}>
               {x.r.parole.map((p, j) => (
                 <React.Fragment key={j}>
-                  <Parola testo={g.maiuscolo ? p.w.toUpperCase() : p.w} da={f(p.da)} stile={stile} grande={x.grande} />
+                  <Parola testo={scritto(p.w, x.grande)} da={f(p.da)} stile={stile} grande={x.grande} pop={pop} />
                   {j < x.r.parole.length - 1 ? <span style={stile}> </span> : null}
                 </React.Fragment>
               ))}

@@ -55,7 +55,7 @@ function segnaGrandi(parole: { w: string; at: number }[], enfasi: string[]): boo
 // `salta`: i momenti coperti dai cartelli
 // `strati` (Ultra): il blocco continua anche dopo una parola grande ("You / KNOW / that agent"),
 // fino a 4 righe, come negli esempi; si chiude su pause e punteggiatura
-export function blocchiParlato(parole: Piano['parole'] = [], enfasi: string[] = [], salta: { at: number; dur: number }[] = [], strati = false, forzaNumeri = false): BloccoM[] {
+export function blocchiParlato(parole: Piano['parole'] = [], enfasi: string[] = [], salta: { at: number; dur: number }[] = [], strati = false, forzaNumeri = false, maxRighe = 4): BloccoM[] {
   const usate = parole.filter((p) => !salta.some((s) => p.at >= s.at - 0.05 && p.at < s.at + s.dur));
   const grande = segnaGrandi(usate, enfasi);
   // i numeri restano enormi anche se l'AI non li ha messi tra le parole chiave (76%, 53%)
@@ -71,7 +71,7 @@ export function blocchiParlato(parole: Piano['parole'] = [], enfasi: string[] = 
     const lungo = (r?: RigaM) => (r ? r.parole.map((x) => x.w).join(' ').length : 0);
     const nuovo = !cur || !prima
       || p.at - (prima.at + prima.dur) > 0.35 || /[.,;:!?…]$/.test(prima.w)
-      || (strati && riga?.tipo !== tipo && cur.righe.length >= 4)
+      || (strati && cur.righe.length >= maxRighe)
       || (strati && cur.righe.filter((r) => r.tipo === 'grande').length >= 2 && tipo === 'grande' && riga?.tipo !== 'grande')
       || (!strati && riga?.tipo === 'grande' && tipo === 'piccolo')
       || (riga?.tipo === 'grande' && tipo === 'grande' && lungo(riga) + w.length + 1 > MAX_GRANDE)

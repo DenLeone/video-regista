@@ -100,7 +100,9 @@ export type GraficaStile = {
   // dette, una parola alla volta enormi al centro, mentre il resto va piccolo in basso (Esplicativo)
   // cartelli = 1–3 scritte a tutto schermo su fondo scurito, lettere battute a macchina (Motion)
   tipoTitoli: 'titoli' | 'frasi' | 'parole' | 'cartelli';
-  entrata?: 'sfocata' | 'scramble';          // come entrano le parole grandi: scramble = lettere a caso che si fissano
+  entrata?: 'sfocata' | 'scramble' | 'pop';   // come entrano le parole grandi; pop = comparsa sul posto, senza scivolata
+  righe?: number;                            // strati: quante righe restano insieme prima di chiudere il blocco (1–4)
+  maiuscoloGrandi?: boolean;                 // solo le parole grosse in maiuscolo, il resto come è detto
   fumo?: boolean;                            // transizioni a nuvola di fumo sui cambi di scena scelti dall'AI
   transizione?: 'fumo' | 'sfocata';          // sfocata = scia sfocata veloce sul taglio (Ultra); senza, fumo
   palette?: string[];                        // colori a giro delle parole grandi (sottotitoli a strati)

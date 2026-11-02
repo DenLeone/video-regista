@@ -363,7 +363,7 @@ export const SuMisura: React.FC<Piano> = (piano) => {
   // Motion: tutto il parlato a blocchi (le parole chiave dell'AI enormi), tranne dove c'è un cartello
   const strati = g.sottotitoli === 'strati';
   const reazione = g.cornice === 'reazione';
-  const blocchi = g.sottotitoli === 'blocchi' || strati ? blocchiParlato(piano.parole, piano.enfasi, cartelli, strati, Boolean(strati && g.enfasiCorsivo)) : [];
+  const blocchi = g.sottotitoli === 'blocchi' || strati ? blocchiParlato(piano.parole, piano.enfasi, cartelli, strati, Boolean(strati && g.enfasiCorsivo), strati && g.righe ? g.righe : 4) : [];
   const grandi = paroleGrandi(piano.parole, forti);
   const dopoApertura = (piano.parole || []).filter((p) => p.at >= fineApertura - 0.01);
   const occupato = [...titoli, ...frasi, ...forti];

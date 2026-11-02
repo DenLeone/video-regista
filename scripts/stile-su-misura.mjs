@@ -24,10 +24,12 @@ Sottotitoli: frase            # frase (2–5 parole) | parola (una alla volta) |
 Font sottotitoli: Montserrat 700
 Colore sottotitoli: #FFFFFF
 Maiuscolo sottotitoli: no     # sì | no | minuscole (tutto minuscolo con la punteggiatura, come i reel tech americani)
-Posizione sottotitoli: basso  # alto | centro | basso
+Maiuscolo parole grandi: no   # sì = solo le parole grosse in maiuscolo, le piccole restano come sono dette
+Posizione sottotitoli: basso  # alto | centro | basso. Vale anche per gli strati (alto = terzo alto, non sulle gambe)
+Righe: 4                      # con Sottotitoli: strati, quante righe stanno insieme (1–4). 2 evita che il numero finisca addosso alla frase
 Dimensione sottotitoli: 56    # in pixel su 1080 di larghezza (40–90)
 Titoli: sì                    # sì = 3–5 titoli (nome prodotto, dati) | frasi = 3–5 frasi forti a due livelli (corsivo piccolo + parole enormi) | parole grandi = le frasi forti che dici, una parola alla volta enormi al centro (il resto piccolo in basso) | cartelli = 1–3 scritte a tutto schermo su fondo scuro, battute a macchina | no
-Entrata parole grandi: sfocata  # sfocata | scramble (lettere a caso che si fissano in mezzo secondo)
+Entrata parole grandi: sfocata  # sfocata | scramble (lettere a caso che si fissano) | pop (comparsa sul posto: gli strati non scivolano da sinistra)
 Font titoli: Montserrat 900
 Font corsivo: Playfair Display Italic 400   # la frase piccola delle scritte a due livelli; con Enfasi corsivo, anche le parole chiave
 Enfasi corsivo: no            # sì, solo con Sottotitoli: strati. Parole chiave in Font corsivo, numeri e percentuali in Font titoli, sempre enormi
@@ -105,7 +107,8 @@ const GRAFICA = ['nome', 'apertura', 'font apertura', 'colore apertura', 'sottot
   'maiuscolo sottotitoli', 'posizione sottotitoli', 'dimensione sottotitoli', 'titoli', 'font titoli', 'colore titoli',
   'colore accento', 'posizione titoli', 'look', 'bianco e nero', 'vignettatura', 'effetti sonori', 'musica', 'volume musica',
   'font corsivo', 'enfasi corsivo', 'scritte dietro di me', 'soggetto in risalto', 'sfondo sfocato', 'inizio', 'chiusura', 'tagli dentro le frasi',
-  'entrata parole grandi', 'firma', 'transizioni', 'inserti', 'b-roll stock', 'colori parole grandi', 'montaggio'];
+  'entrata parole grandi', 'firma', 'transizioni', 'inserti', 'b-roll stock', 'colori parole grandi', 'montaggio',
+  'maiuscolo parole grandi', 'righe'];
 
 /** stile.txt → { grafica, testoAI, musica, campi } */
 export function leggiStile(testo, nomeCartella) {
@@ -162,7 +165,12 @@ export function leggiStile(testo, nomeCartella) {
   if (chiusura) g.chiusura = chiusura;
   const firma = (/@[\w.]+/.exec(campi.firma || '') || [])[0];
   if (firma) g.firma = firma;
-  if (campi['entrata parole grandi']) g.entrata = /scramb|lettere|decod/.test(norm(campi['entrata parole grandi'])) ? 'scramble' : 'sfocata';
+  if (campi['entrata parole grandi']) {
+    const entrata = norm(campi['entrata parole grandi']);
+    g.entrata = /pop|compar|scatto/.test(entrata) ? 'pop' : /scramb|lettere|decod/.test(entrata) ? 'scramble' : 'sfocata';
+  }
+  if (campi['maiuscolo parole grandi']) g.maiuscoloGrandi = si(campi['maiuscolo parole grandi']);
+  if (campi.righe) g.righe = numero(campi.righe, 4, 1, 4);
   if (campi.transizioni) {
     const t = norm(campi.transizioni);
     g.fumo = /fum|sfoc|scia|blur/.test(t);
