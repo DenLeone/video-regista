@@ -45,6 +45,10 @@ const RIRENDER = process.env.AZIONE === 'render'; // rifà solo il render con la
 // render di prova (input "secondi"): solo i primi N secondi del montaggio, per provare look e
 // grafica di uno stile in pochi minuti; esce come "<nome> - PROVA Ns.mp4", senza didascalie
 const PROVA_SECONDI = Math.max(0, Number(process.env.PROVA_SECONDI) || 0);
+// Confronto stili: un solo scarico, 2 o 3 anteprime da 10 s, il server aspetta il tasto
+// e monta il video intero nello stile scelto senza riscaricare. Nomi separati da |.
+const STILI_CONFRONTO = (process.env.STILI_SCELTA || '').split('|').map((s) => s.trim()).filter(Boolean).slice(0, 3);
+const ATTESA_SCELTA_MS = Math.max(60_000, Number(process.env.ATTESA_SCELTA_MS) || 12 * 60 * 1000);
 // file mandati direttamente al bot: [{"m": id_messaggio, "n": "nome.mov"}, ...]
 const TELEGRAM_FILE = (process.env.TELEGRAM_FILE || '').trim();
 const DA_TELEGRAM = Boolean(TELEGRAM_FILE && TELEGRAM_FILE !== '[]');
@@ -624,6 +628,15 @@ async function ritagliPersona(piano) {
     intervalli.push([0, fine + 0.6]);
   }
   if (g.titoli && g.tipoTitoli === 'frasi') for (const k of piano.keywords) intervalli.push([k.at, k.at + k.dur]);
+  // strati con le scritte dietro: il ritaglio copre tutto il parlato, così numeri e parole forti ci passano sotto
+  if (g.dietro && g.sottotitoli === 'strati') {
+    let t0 = 0;
+    for (const c of piano.clips) {
+      const d = c.end - c.start;
+      if (!c.muto && c.orient !== 'h') intervalli.push([t0, t0 + d]);
+      t0 += d;
+    }
+  }
   if (!intervalli.length) return;
   try {
     const { py, modello } = await preparaMediaPipe();
@@ -1929,6 +1942,102 @@ async function archiviaDaR2() {
   await notifica('📥 originali su Drive', nome, `${n.length} file in ${IN_DIR}/${nome}. Il montaggio già partito non li vede: per usarli, 🔁 Rifai da zero.`, { ok: true });
 }
 
+// Piano pronto per il render (note, grafica, b/n) senza tagliare i file. La usa il confronto,
+// una volta per stile, prima dell'anteprima da 10 secondi.
+async function rifinisciPiano(regia, risultato, analisi, avvisoStile) {
+  let { piano, avvisi } = risultato;
+  if (stileSuMisura?.grafica.stock && await scaricaStock(conSequenza(regia), analisi)) ({ piano, avvisi } = risolviRegia(perRegia(regia), analisi));
+  if (DISCORSO) { Object.assign(regia, { sequenza: conSequenza(regia).sequenza, discorso: true }); fs.writeFileSync(path.join(WORK, 'regia.json'), JSON.stringify(regia, null, 1)); }
+  if (avvisi.length) log('avvisi regia:', avvisi.join(' | '));
+  if (avvisoStile) piano.note = [`⚠️ ${avvisoStile}`, piano.note].filter(Boolean).join(' · ');
+  if (discorso) piano.note = [`🎙️ Discorso (un solo video): tenute tutte le ${discorso.sequenza.length} frasi in ordine${discorso.tolte.length ? `, tolte ${discorso.tolte.length} tra false partenze e ripetizioni` : ''}`, piano.note].filter(Boolean).join(' · ');
+  const livelloVoce = Math.max(-60, ...analisi.sorgenti.filter((s) => s.principale && s.livello != null).map((s) => s.livello));
+  piano.sfx = process.env.REGISTA_SFX === '0' ? false
+    : { volume: +Math.min(0.6, Math.max(0.1, livelloVoce > -60 ? 10 ** ((livelloVoce + 2) / 20) : 0.25)).toFixed(3) };
+  if (stileSuMisura) piano.grafica = stileSuMisura.grafica;
+  piano.fps = analisi.fps || 30;
+  if (!stileSuMisura || stileSuMisura.grafica.biancoNero === 'no') for (const c of piano.clips) delete c.bn;
+  return { regia, piano, avvisi };
+}
+
+async function regiaDiUnoStile(nomeStile, nome, analisi, testoMateriale, fogliUsati) {
+  const { stile, avviso } = scegliStile(`Stile: ${nomeStile}`);
+  stileCorrente = stile;
+  if (avviso) log(avviso);
+  await fase(nome, `🧠 Regia · ${nomeStile}`, 'regia');
+  const fatto = stileSuMisura?.grafica.beat ? await montaBeat(analisi, nome)
+    : await chiediRegia(testoMateriale, fogliUsati, null, (r) => risolviRegia(perRegia(r), analisi)).catch((e) => {
+      if (!discorso) throw e;
+      log(`regia del discorso senza AI (${e.message.split('\n')[0]}): niente scritte grandi`);
+      const r = { titolo: nome, soggetto: '', sequenza: discorso.sequenza, keywords: [], flickers: [], note: 'scritte grandi non scelte: AI non disponibile', discorso: true };
+      return { regia: r, risultato: risolviRegia(r, analisi) };
+    });
+  const rifinito = await rifinisciPiano(fatto.regia, fatto.risultato, analisi, avviso);
+  return { ...rifinito, stile, nomeStile: stileSuMisura?.nome || nomeStile };
+}
+
+// Tre anteprime da 10 secondi, poi attesa del tasto. Ritorna il piano intero dello stile scelto,
+// con i file originali ancora da tagliare. null = Denis non ha scelto in tempo.
+async function confrontaStili(nome, analisi, testoMateriale, fogliUsati) {
+  const pronti = [];
+  for (const chiesto of STILI_CONFRONTO) {
+    try {
+      const uno = await regiaDiUnoStile(chiesto, nome, analisi, testoMateriale, fogliUsati);
+      const copia = JSON.parse(JSON.stringify(uno.piano));
+      troncaPiano(copia, 10);
+      fs.writeFileSync(path.join(WORK, 'piano.json'), JSON.stringify(copia, null, 1));
+      await fase(nome, `✂️ Taglio dei primi 10 s · ${uno.nomeStile}`, 'tagli');
+      await tagliaSegmenti(copia, analisi);
+      await risaltoPersona(copia);
+      await ritagliPersona(copia);
+      fs.writeFileSync(path.join(WORK, 'piano.json'), JSON.stringify(copia, null, 1));
+      const sicuro = uno.nomeStile.replace(/[^\p{L}\p{N} ._-]+/gu, '').trim() || 'stile';
+      const out = path.join(ROOT, 'out', `${nome} - PROVA 10s ${sicuro}.mp4`);
+      fs.mkdirSync(path.dirname(out), { recursive: true });
+      await fase(nome, `🎬 Prova 10 s · ${uno.nomeStile}`, 'render');
+      renderizza(out, uno.stile);
+      const durataN = probe(out).durata;
+      const anteprimaMp4 = process.env.NOTIFY_URL ? await codificaAnteprima(out, durataN) : null;
+      await inviaVideo(anteprimaMp4, nome, `Prova 10 secondi · ${uno.nomeStile}`, durataN, {
+        prova: 10, stile: uno.nomeStile, confronta: true, tagli: copia.clips.length,
+        minuti: Math.round((Date.now() - T0) / 60000),
+      });
+      pronti.push(uno);
+      log(`anteprima pronta: ${uno.nomeStile}`);
+    } catch (e) {
+      log(`anteprima non riuscita per ${chiesto}:`, e.message.split('\n')[0]);
+      await fase(nome, `⚠️ ${chiesto}: ${e.message.split('\n')[0].slice(0, 140)}`, 'regia');
+    }
+  }
+  if (pronti.length < 2) throw new Error(`confronto fermo: servono almeno 2 anteprime, ne ho ${pronti.length}`);
+  if (!process.env.NOTIFY_URL) throw new Error('confronto senza NOTIFY_URL: non posso chiedere lo stile in chat');
+  const url = process.env.NOTIFY_URL.replace(/\/notify$/, '/scegli');
+  const token = process.env.NOTIFY_TOKEN || '';
+  const apri = await fetch(url, {
+    method: 'POST', headers: { 'content-type': 'application/json', 'x-regista-token': token },
+    body: JSON.stringify({ run_id: process.env.GITHUB_RUN_ID || '', nome, stili: pronti.map((p) => p.nomeStile) }),
+  });
+  if (!apri.ok) throw new Error(`non riesco a mandare i tasti dello stile (HTTP ${apri.status})`);
+  await fase(nome, `⏸ Scegli lo stile in chat (${pronti.map((p) => p.nomeStile).join(' · ')}). Aspetto 12 minuti, i file restano qui`, 'render');
+  const fino = Date.now() + ATTESA_SCELTA_MS;
+  let scelta = '';
+  while (Date.now() < fino && !scelta) {
+    await attesa(5000);
+    try {
+      const r = await fetch(`${url}?run=${encodeURIComponent(process.env.GITHUB_RUN_ID || '')}`, { headers: { 'x-regista-token': token } });
+      if (!r.ok) continue;
+      scelta = String((await r.json())?.scelta || '');
+    } catch { /* riprovo */ }
+  }
+  const uno = pronti.find((p) => p.nomeStile === scelta);
+  if (!uno) return null;
+  log(`stile scelto: ${uno.nomeStile}`);
+  scegliStile(`Stile: ${uno.nomeStile}`);
+  stileCorrente = uno.stile;
+  fs.writeFileSync(path.join(WORK, 'regia.json'), JSON.stringify(uno.regia, null, 1));
+  return uno;
+}
+
 async function main() {
   if (process.env.AZIONE === 'esempi') {
     return analizzaEsempi().catch(async (e) => {
@@ -2052,7 +2161,7 @@ async function main() {
     consumi.stima = { totale: stima.totale, esatta: false };
     log(`stima materiale per l'AI: ${stima.testo} token di testo + ${stima.immagini} di immagini (${fogli.length} fogli)`);
     // lo stile chiesto al bot (input brief) vale più di quello scritto in brief.txt o nel giro precedente
-    const { stile, avviso: avvisoStile } = scegliStile([process.env.BRIEF_EXTRA || '', brief].join('\n'));
+    let { stile, avviso: avvisoStile } = scegliStile([process.env.BRIEF_EXTRA || '', brief].join('\n'));
     stileCorrente = stile;
     if (stile !== STILI[0]) log(`stile: ${stile}`);
     const pesoAI = ` · materiale ≈ ${kTok(stima.totale)} token`;
@@ -2072,45 +2181,71 @@ async function main() {
       log(`discorso: ${d.sequenza.length} frasi su ${analisi.frasi.length} (${durata.toFixed(0)} s)${d.tolte.length ? `, tolte ${d.tolte.map((x) => `${x.id} ${x.motivo}`).join(', ')}` : ''}`);
       await fase(nome, `🎙️ Discorso: tengo tutto il parlato in ordine (${d.sequenza.length} frasi, ${Math.round(durata)} s), tolgo pause e ripetizioni; l'AI sceglie solo le scritte`, 'regia');
     }
-    if (RIRENDER) await fase(nome, regiaPrecedente ? '🎨 Rifaccio solo il render: stessa regia, colore e grafica aggiornati' : '⚠️ Nessuna regia precedente: la riscrivo', 'regia');
-    else if (!discorso) await fase(nome, CORREZIONE ? `🧠 Applico la correzione: “${CORREZIONE.slice(0, 120)}”${pesoAI}`
-      : `🧠 Scelgo i tagli: ${analisi.sorgenti.length} sorgenti, voce da ${voci || '—'}, ${sinc} camere sincronizzate, ${analisi.frasi.length} frasi${brief ? ', con brief' : ''}${pesoAI}`, 'regia');
+    const confronto = STILI_CONFRONTO.length >= 2 && nuovaRegia && !CORREZIONE && !RIRENDER;
+    if (!confronto) {
+      if (RIRENDER) await fase(nome, regiaPrecedente ? '🎨 Rifaccio solo il render: stessa regia, colore e grafica aggiornati' : '⚠️ Nessuna regia precedente: la riscrivo', 'regia');
+      else if (!discorso) await fase(nome, CORREZIONE ? `🧠 Applico la correzione: “${CORREZIONE.slice(0, 120)}”${pesoAI}`
+        : `🧠 Scelgo i tagli: ${analisi.sorgenti.length} sorgenti, voce da ${voci || '—'}, ${sinc} camere sincronizzate, ${analisi.frasi.length} frasi${brief ? ', con brief' : ''}${pesoAI}`, 'regia');
+    }
     const musicaChiesta = richiestaMusica([process.env.BRIEF_EXTRA || '', brief].join('\n'));
     if (musicaChiesta) {
       try { catalogoMusica = preparaCatalogoMusica(); } catch (e) { log('musica: catalogo non disponibile', e.message.split('\n')[0]); }
     }
-    // azione "render": stessa regia del giro prima, si rifanno solo colore, tagli e grafica
-    const { regia, risultato: primo } = stileSuMisura?.grafica.beat ? await montaBeat(analisi, nome)
-      : !nuovaRegia
-      ? (fs.writeFileSync(path.join(WORK, 'regia.json'), JSON.stringify(regiaPrecedente, null, 1)), { regia: regiaPrecedente, risultato: risolviRegia(perRegia(regiaPrecedente), analisi) })
-      : await chiediRegia(testoMateriale, discorso ? fogliDiscorso : fogli, CORREZIONE ? regiaPrecedente : null, (r) => risolviRegia(perRegia(r), analisi)).catch((e) => {
-        // discorso: senza AI il video esce lo stesso, con i sottotitoli dello stile ma senza scritte grandi
-        if (!discorso) throw e;
-        log(`regia del discorso senza AI (${e.message.split('\n')[0]}): niente scritte grandi`);
-        const r = { titolo: nome, soggetto: '', sequenza: discorso.sequenza, keywords: [], flickers: [], note: 'scritte grandi non scelte: AI non disponibile', discorso: true };
-        return { regia: r, risultato: risolviRegia(r, analisi) };
-      });
-    let { piano, avvisi } = primo;
-    // B-roll di repertorio: si scaricano le ricerche dell'AI e si rifà il piano con quei video
-    if (stileSuMisura?.grafica.stock && await scaricaStock(conSequenza(regia), analisi)) ({ piano, avvisi } = risolviRegia(perRegia(regia), analisi));
-    // salvata con la sequenza vera: "Solo render" e "Correggi" ripartono da questa
-    if (DISCORSO && nuovaRegia) { Object.assign(regia, { sequenza: conSequenza(regia).sequenza, discorso: true }); fs.writeFileSync(path.join(WORK, 'regia.json'), JSON.stringify(regia, null, 1)); }
-    if (avvisi.length) log('avvisi regia:', avvisi.join(' | '));
-    if (regia.scaletta) log('scaletta:', [].concat(regia.scaletta).join(' → '));
-    log('testo montato:', piano.testo);
-    if (avvisoStile) analisi.avvisi = [...(analisi.avvisi || []), avvisoStile];
-    if (analisi.avvisi?.length) piano.note = [...analisi.avvisi.map((a) => `⚠️ ${a}`), piano.note].filter(Boolean).join(' · ');
-    if (discorso) piano.note = [`🎙️ Discorso (un solo video): tenute tutte le ${discorso.sequenza.length} frasi in ordine${discorso.tolte.length ? `, tolte ${discorso.tolte.length} tra false partenze e ripetizioni` : ''}`, piano.note].filter(Boolean).join(' · ');
-    // effetti sonori sotto la voce: più bassa la voce registrata, più bassi gli effetti (~12–16 dB sotto)
-    const livelloVoce = Math.max(-60, ...analisi.sorgenti.filter((s) => s.principale && s.livello != null).map((s) => s.livello));
-    piano.sfx = process.env.REGISTA_SFX === '0' ? false
-      : { volume: +Math.min(0.6, Math.max(0.1, livelloVoce > -60 ? 10 ** ((livelloVoce + 2) / 20) : 0.25)).toFixed(3) };
-    if (stileSuMisura) piano.grafica = stileSuMisura.grafica;
-    piano.fps = analisi.fps || 30;
-    if (piano.fps !== 30) log(`video a ${piano.fps} fps (come la camera principale)`);
-    // b/n solo se lo stile lo prevede: con "Bianco e nero: no" (o uno stile pronto) i "bn" della regia
-    // non valgono (12K Quality rifatto sulla regia del Narrativo, 19/10: un pezzo era uscito in b/n)
-    if (!stileSuMisura || stileSuMisura.grafica.biancoNero === 'no') for (const c of piano.clips) delete c.bn;
+    // azione "render": stessa regia del giro prima, si rifanno solo colore, tagli e grafica.
+    // Confronto: le anteprime sono già uscite, qui arriva il piano intero dello stile scelto.
+    let regia;
+    let piano;
+    let avvisi = [];
+    if (confronto) {
+      const scelto = await confrontaStili(nome, analisi, testoMateriale, discorso ? fogliDiscorso : fogli);
+      if (!scelto) {
+        if (copiaOriginali) { try { await copiaOriginali; } catch (e) { log('copia degli originali non riuscita', e.message); } }
+        try { rclone('copyto', path.join(WORK, 'materiale.json'), remote(SRC_DIR, nome, CACHE, 'materiale.json')); }
+        catch (e) { log('cache del confronto non salvata', e.message); }
+        await notifica('⏸ scelta non arrivata', nome, 'Non hai scelto uno stile entro 12 minuti. Il girato è ancora in 01 · Da editare e la trascrizione è salvata. Rilancia il confronto quando vuoi.', { ok: false });
+        return;
+      }
+      stile = scelto.stile;
+      avvisoStile = scelto.avviso;
+      regia = scelto.regia;
+      piano = scelto.piano;
+      avvisi = scelto.avvisi;
+      await fase(nome, `✅ Stile scelto: ${scelto.nomeStile}. Monto il video intero, senza riscaricare`, 'tagli');
+    } else {
+      const fatto = stileSuMisura?.grafica.beat ? await montaBeat(analisi, nome)
+        : !nuovaRegia
+        ? (fs.writeFileSync(path.join(WORK, 'regia.json'), JSON.stringify(regiaPrecedente, null, 1)), { regia: regiaPrecedente, risultato: risolviRegia(perRegia(regiaPrecedente), analisi) })
+        : await chiediRegia(testoMateriale, discorso ? fogliDiscorso : fogli, CORREZIONE ? regiaPrecedente : null, (r) => risolviRegia(perRegia(r), analisi)).catch((e) => {
+          // discorso: senza AI il video esce lo stesso, con i sottotitoli dello stile ma senza scritte grandi
+          if (!discorso) throw e;
+          log(`regia del discorso senza AI (${e.message.split('\n')[0]}): niente scritte grandi`);
+          const r = { titolo: nome, soggetto: '', sequenza: discorso.sequenza, keywords: [], flickers: [], note: 'scritte grandi non scelte: AI non disponibile', discorso: true };
+          return { regia: r, risultato: risolviRegia(r, analisi) };
+        });
+      regia = fatto.regia;
+      ({ piano, avvisi } = fatto.risultato);
+      // B-roll di repertorio: si scaricano le ricerche dell'AI e si rifà il piano con quei video
+      if (stileSuMisura?.grafica.stock && await scaricaStock(conSequenza(regia), analisi)) ({ piano, avvisi } = risolviRegia(perRegia(regia), analisi));
+      // salvata con la sequenza vera: "Solo render" e "Correggi" ripartono da questa
+      if (DISCORSO && nuovaRegia) { Object.assign(regia, { sequenza: conSequenza(regia).sequenza, discorso: true }); fs.writeFileSync(path.join(WORK, 'regia.json'), JSON.stringify(regia, null, 1)); }
+      if (avvisi.length) log('avvisi regia:', avvisi.join(' | '));
+      if (regia.scaletta) log('scaletta:', [].concat(regia.scaletta).join(' → '));
+      log('testo montato:', piano.testo);
+      if (avvisoStile) analisi.avvisi = [...(analisi.avvisi || []), avvisoStile];
+      if (analisi.avvisi?.length) piano.note = [...analisi.avvisi.map((a) => `⚠️ ${a}`), piano.note].filter(Boolean).join(' · ');
+      if (discorso) piano.note = [`🎙️ Discorso (un solo video): tenute tutte le ${discorso.sequenza.length} frasi in ordine${discorso.tolte.length ? `, tolte ${discorso.tolte.length} tra false partenze e ripetizioni` : ''}`, piano.note].filter(Boolean).join(' · ');
+      // effetti sonori sotto la voce: più bassa la voce registrata, più bassi gli effetti (~12–16 dB sotto)
+      const livelloVoce = Math.max(-60, ...analisi.sorgenti.filter((s) => s.principale && s.livello != null).map((s) => s.livello));
+      piano.sfx = process.env.REGISTA_SFX === '0' ? false
+        : { volume: +Math.min(0.6, Math.max(0.1, livelloVoce > -60 ? 10 ** ((livelloVoce + 2) / 20) : 0.25)).toFixed(3) };
+      if (stileSuMisura) piano.grafica = stileSuMisura.grafica;
+      piano.fps = analisi.fps || 30;
+      if (piano.fps !== 30) log(`video a ${piano.fps} fps (come la camera principale)`);
+      // b/n solo se lo stile lo prevede: con "Bianco e nero: no" (o uno stile pronto) i "bn" della regia
+      // non valgono (12K Quality rifatto sulla regia del Narrativo, 19/10: un pezzo era uscito in b/n)
+      if (!stileSuMisura || stileSuMisura.grafica.biancoNero === 'no') for (const c of piano.clips) delete c.bn;
+    }
+    if (confronto) log('testo montato:', piano.testo);
     const nomeStile = stileSuMisura?.nome || stile;
     if (PROVA_SECONDI) { troncaPiano(piano, PROVA_SECONDI); log(`render di prova: primi ${PROVA_SECONDI} s (${piano.clips.length} tagli)`); }
     // i pezzi scelti, prima del render vero: la card dell'app distingue tagli e render

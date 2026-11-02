@@ -267,7 +267,7 @@ async function gh(env: Env, path: string, init: RequestInit = {}) {
 }
 // azione "render": rifà solo il render con la regia salvata (origine 98), senza AI;
 // secondi: render di prova, solo i primi N secondi (Cambia stile → 🧪 Prova)
-type Inputs = { cartella?: string; brief?: string; origine?: '97' | '98'; correzione?: string; telegram?: string; azione?: 'render'; secondi?: number; r2?: string };
+type Inputs = { cartella?: string; brief?: string; origine?: '97' | '98'; correzione?: string; telegram?: string; azione?: 'render'; secondi?: number; r2?: string; stili?: string };
 const dispatch = (env: Env, ref: string, inputs: Record<string, string>) =>
   gh(env, `/actions/workflows/${WORKFLOW}/dispatches`, { method: 'POST', body: JSON.stringify({ ref, inputs }) });
 
@@ -277,6 +277,7 @@ async function avvia(env: Env, i: Inputs, imp: Imp): Promise<string | null> {
   if (i.azione) base.azione = i.azione;
   if (i.secondi) base.secondi = String(i.secondi); // idem: senza, partirebbe il render intero
   if (i.r2) base.r2 = i.r2; // girato già su R2: il runner non lo riscarica da Drive
+  if (i.stili) base.stili = i.stili; // confronto: 2 o 3 nomi separati da |
   let r = await dispatch(env, RAMO[imp.versione], { ...base, ai: imp.ai, modello: imp.modello, modello_gemini: imp.gemini });
   // il workflow della versione stabile non conosce ancora ai/modello: riprovo senza
   if (r.status === 422) {
@@ -284,6 +285,7 @@ async function avvia(env: Env, i: Inputs, imp: Imp): Promise<string | null> {
     if (!/unexpected inputs/i.test(t)) return `GitHub 422: ${t}`;
     if (i.r2 && /\br2\b/.test(t)) return 'Il workflow non conosce ancora il caricamento dall\'app (input r2). Aggiorna il ramo Stabile.';
     if (i.secondi && /secondi/.test(t)) return 'La versione Beta non ha ancora il render di prova: passa a Stabile da ⚙️ Impostazioni → 🔧 Avanzate.';
+    if (i.stili && /\bstili\b/.test(t)) return 'Il workflow non ha ancora il confronto stili. Serve il codice aggiornato sul ramo che stai usando.';
     r = await dispatch(env, RAMO[imp.versione], base);
   }
   return r.status === 204 ? null : `GitHub ${r.status}: ${await r.text()}`;
@@ -665,9 +667,9 @@ const GUIDA: Schermo = {
 // note e tavola si aprono dal riepilogo, solo quando servono.
 type Brief = {
   cartella?: string; scritta?: string; stile?: string; sponsor?: string; durata?: string; tono?: string;
-  giudizio?: string; tavola?: string; note?: string; telegram?: boolean;
+  giudizio?: string; tavola?: string; note?: string; telegram?: boolean; confronta?: string[];
 };
-type Passo = 'cartella' | 'stile' | 'sponsor' | 'sponsor_testo' | 'durata' | 'tono' | 'giudizio' | 'tavola' | 'note' | 'riepilogo';
+type Passo = 'cartella' | 'stile' | 'sponsor' | 'sponsor_testo' | 'durata' | 'tono' | 'giudizio' | 'tavola' | 'note' | 'riepilogo' | 'confronta';
 type Attesa =
   | { tipo: 'nuovo'; passo: Passo; dati: Brief; msg?: number; modifica?: boolean }
   | { tipo: 'lotto'; scelte: string[]; stile?: string; msg?: number }
@@ -784,7 +786,7 @@ function riassunto(d: Brief, imp: Imp): string {
   ].filter(Boolean);
   return [
     d.telegram ? `📥 <b>Video</b>       ${esc(d.cartella || '')} · file da Telegram` : `📁 <b>Cartella</b>   ${d.cartella ? esc(d.cartella) : '⚡ tutte quelle con VAI'}`,
-    `🎨 <b>Stile</b>         ${esc(d.stile || imp.stile)}`,
+    `🎨 <b>Stile</b>         ${d.confronta?.length ? esc(d.confronta.join(' · ')) : esc(d.stile || imp.stile)}`,
     `⚙️ <b>Opzioni</b>    ${opz.length ? opz.join(' · ') : '<i>nessuna, regia automatica</i>'}`,
     ...(d.note ? [`📝 <b>Note</b>        ${esc(tronca(d.note, 200))}`] : []),
     `🧠 <b>AI</b>             ${esc(motore(imp))}`,
@@ -820,6 +822,18 @@ async function schermoPasso(env: Env, a: Attesa & { tipo: 'nuovo' }): Promise<Sc
         tasti: [...righeStili((x) => tasto(`${x.tasto}${x.nome === (d.stile || imp.stile) ? ' ✓' : ''}`, `w:v:stile:${x.nome}`)), nav(a)],
         anteprima: ANTEPRIMA_URL(),
       };
+    case 'confronta': {
+      const scelti = d.confronta || [];
+      const lista = tuttiStili();
+      return {
+        testo: `👁 <b>Confronta gli stili</b>\nScegline 2 o 3. Un solo scarico, un'anteprima da 10 secondi per stile, poi tre tasti. Il video intero parte da lì, senza riscaricare.\n\n${scelti.length ? scelti.map((s) => `● ${esc(s)}`).join('\n') : '<i>nessuno ancora</i>'}`,
+        tasti: [
+          ...righeStili((x) => tasto(`${scelti.includes(x.nome) ? '● ' : '○ '}${x.tasto}`, `w:cf:${lista.findIndex((s) => s.nome === x.nome)}`)),
+          ...(scelti.length >= 2 ? [[tasto(`🧪 Anteprima · ${scelti.length} stili`, 'w:ante')]] : []),
+          [tasto('◀ Riepilogo', 'w:riepilogo')],
+        ],
+      };
+    }
     case 'sponsor':
       return { testo: `${testata(a)}\n💰 <b>C'è uno sponsor?</b>`, tasti: [[tasto('No', 'w:v:sponsor:no'), tasto('Sì', 'w:v:sponsor:si')], nav(a)] };
     case 'sponsor_testo':
@@ -846,6 +860,7 @@ async function schermoPasso(env: Env, a: Attesa & { tipo: 'nuovo' }): Promise<Sc
         testo: `🆕 <b>Nuovo montaggio</b> · pronto\n\n${riassunto(d, imp)}\n\n<i>🚀 per partire, oppure aggiungi un'opzione.</i>`,
         tasti: [
           [tasto('🚀 Avvia montaggio', 'w:avvia')],
+          [tasto(d.confronta?.length ? `👁 Confronta · ${d.confronta.length}` : '👁 Confronta 2–3 stili', 'w:con')],
           [...(d.telegram ? [] : [tasto('📁 Cartella', 'w:mod:cartella')]), tasto('🎨 Stile', 'w:mod:stile'), tasto('💰 Sponsor', 'w:mod:sponsor')],
           [tasto('⏱ Durata', 'w:mod:durata'), tasto('🎭 Tono', 'w:mod:tono'), tasto('🏁 Giudizio', 'w:mod:giudizio')],
           [tasto('📝 Note', 'w:mod:note'), ...(conTavola(d, imp.stile) ? [tasto('📐 Tavola', 'w:mod:tavola')] : []), tasto('✖️ Annulla', 'annulla')],
@@ -912,7 +927,8 @@ async function lancia(env: Env, chat: string, i: Inputs, msgId?: number): Promis
   }
   const card: Card = {
     nome: i.cartella || '⚡ cartelle con VAI', fasi: {}, minuti: 0, msg: {}, inCoda: true,
-    versione: imp.versione === 'beta' ? 'v2 beta' : undefined, brief: i.brief, correzione: i.correzione,
+    versione: imp.versione === 'beta' ? 'v2 beta' : undefined,
+    brief: i.stili ? `${i.brief || ''} · confronto: ${i.stili.split('|').join(', ')}`.trim() : i.brief, correzione: i.correzione,
     prova: i.secondi, soloRender: i.azione === 'render',
   };
   const id = await mostra(env, chat, { testo: scheda(card), tasti: [[tasto('📊 Stato', 'stato'), MENU_TASTO]] }, msgId);
@@ -1043,14 +1059,14 @@ async function svuotaRaccolta(env: Env, chat: string) {
   for (const x of [k.file, k.nome, k.msg, k.scheda]) await mem(env).cancella(x);
 }
 
-async function lanciaRaccolta(env: Env, chat: string, nome: string, brief: string, msgId?: number) {
+async function lanciaRaccolta(env: Env, chat: string, nome: string, brief: string, msgId?: number, stili?: string) {
   const files = (await leggi<FileTg[]>(env, kR(chat).file)) || [];
   if (!files.length) return mostra(env, chat, { testo: '📥 Non ho file in attesa: mandameli qui e poi premi Monta.', tasti: [[MENU_TASTO]] }, msgId);
   const telegram = JSON.stringify(files.map((f) => ({ m: f.m, n: f.n })));
   const vecchia = await leggi<number>(env, kR(chat).msg);
   await svuotaRaccolta(env, chat);
   if (vecchia && vecchia !== msgId) await togliTasti(env, chat, vecchia);
-  return lancia(env, chat, { cartella: nome, brief, telegram }, msgId);
+  return lancia(env, chat, { cartella: nome, brief, telegram, ...(stili ? { stili } : {}) }, msgId);
 }
 
 async function onMessage(env: Env, msg: Msg) {
@@ -1123,6 +1139,19 @@ async function onCallback(env: Env, cb: Callback) {
   const data = cb.data || '';
   const avviso = (text?: string) => tg(env, 'answerCallbackQuery', { callback_query_id: cb.id, ...(text ? { text } : {}) });
   if (!ok(env, chat)) return avviso();
+
+  // confronto stili: il giro è già acceso e aspetta questo tasto. Non parte un montaggio nuovo.
+  if (data.startsWith('cs:')) {
+    const [, runId, idx] = data.split(':');
+    const slot = await leggi<SceltaStile>(env, `scegli:${runId}`);
+    if (!slot) return avviso('Questa scelta è scaduta');
+    if (slot.scelta) return avviso(`Già scelto: ${slot.scelta}`);
+    const stile = slot.stili[Number(idx)];
+    if (!stile) return avviso('Stile non trovato');
+    await mem(env).scrivi(`scegli:${runId}`, { ...slot, scelta: stile });
+    await avviso(`Monto in ${stile}`);
+    return mostra(env, chat, { testo: `✅ <b>${esc(slot.nome)}</b>\nStile scelto: <b>${esc(stile)}</b>\nIl video intero parte adesso, senza riscaricare il girato.`, tasti: [[tasto('📊 Stato', 'stato'), MENU_TASTO]] }, msgId);
+  }
 
   if (data === 'menu') { await avviso(); return mostra(env, chat, await pannello(env), msgId); }
   if (data === 'social') { await avviso(); return social(env, chat); }
@@ -1288,11 +1317,25 @@ async function onCallback(env: Env, cb: Callback) {
     if (azione === 'usa' && a.passo === 'cartella' && a.dati.scritta) { await avviso(); return rispondiPasso(env, chat, a, a.dati.scritta, msgId); }
     if (azione === 'riepilogo') { await avviso(); return vaiAPasso(env, chat, { ...a, passo: 'riepilogo', modifica: false }, msgId); }
     if (azione === 'mod') { await avviso(); return vaiAPasso(env, chat, { ...a, passo: x as Passo, modifica: true }, msgId); }
-    if (azione === 'avvia') {
-      await avviso('Avvio…');
-      const brief = componiBrief(a.dati, (await impostazioni(env)).stile);
-      if (a.dati.telegram) return lanciaRaccolta(env, chat, a.dati.cartella || '', brief, msgId);
-      return lancia(env, chat, { cartella: a.dati.cartella, brief }, msgId);
+    if (azione === 'avvia' || azione === 'ante') {
+      const stili = azione === 'ante' ? (a.dati.confronta || []) : [];
+      if (azione === 'ante' && stili.length < 2) return avviso('Scegline almeno 2');
+      await avviso(azione === 'ante' ? 'Avvio il confronto…' : 'Avvio…');
+      const base = (await impostazioni(env)).stile;
+      const brief = componiBrief(a.dati, stili[0] || base);
+      const extra = stili.length >= 2 ? { stili: stili.join('|') } : {};
+      if (a.dati.telegram) return lanciaRaccolta(env, chat, a.dati.cartella || '', brief, msgId, extra.stili);
+      return lancia(env, chat, { cartella: a.dati.cartella, brief, ...extra }, msgId);
+    }
+    if (azione === 'con') { await avviso(); return vaiAPasso(env, chat, { ...a, passo: 'confronta' }, msgId); }
+    if (azione === 'cf' && a.passo === 'confronta') {
+      const st = tuttiStili()[Number(x)];
+      if (!st) return avviso('Stile non trovato');
+      const cur = a.dati.confronta || [];
+      if (!cur.includes(st.nome) && cur.length >= 3) { await avviso('Massimo 3'); return; }
+      await avviso();
+      const confronta = cur.includes(st.nome) ? cur.filter((n) => n !== st.nome) : [...cur, st.nome];
+      return vaiAPasso(env, chat, { ...a, dati: { ...a.dati, confronta } }, msgId);
     }
     if (azione === 'c' && a.passo === 'cartella') {
       const c = await leggi<Cartelle>(env, 'cartelle');
@@ -1538,8 +1581,9 @@ async function rinnovaChiaveInstagram(env: Env) {
 type Info = {
   file?: string; durata?: number; tagli?: number; sorgenti?: number; voce?: string; keywords?: string[]; note?: string; stile?: string;
   ai?: { chi: string; modello: string; input: number; output: number; usd?: number } | null; minuti?: number; correzione?: string; errore?: string;
-  pubblica?: Pubblica; prova?: number; link?: string; esempi?: number;
+  pubblica?: Pubblica; prova?: number; link?: string; esempi?: number; confronta?: boolean;
 };
+type SceltaStile = { nome: string; stili: string[]; scelta?: string };
 // azione: com'è partito il giro (monta, render, esempi, regia, elenco); prova: secondi del render di prova
 type Notify = {
   tipo?: 'fase' | 'esito' | 'cartelle' | 'vuoto' | 'pubblicato'; esito?: string; nome: string; testo: string; ok?: boolean; foto?: string;
@@ -1800,7 +1844,7 @@ async function onVideo(env: Env, form: FormData) {
   try { info = form.get('info') ? JSON.parse(String(form.get('info'))) : undefined; } catch { /* vecchio formato */ }
   const video = form.get('video');
   if (!video || typeof video === 'string') return false;
-  if (runId) {
+  if (runId && !info?.confronta) {
     await mem(env).scrivi(`run:${runId}`, memoFinale(await leggi<RunMemo | string>(env, `run:${runId}`), nome, undefined, info, info?.prova ? 'render' : undefined));
     const c = await cardDelGiro(env, runId, nome);
     c.fine = 'ok';
@@ -1808,9 +1852,17 @@ async function onVideo(env: Env, form: FormData) {
     if (info?.minuti != null) c.minuti = info.minuti;
     if (info?.prova) c.prova = info.prova;
     await aggiornaCard(env, runId, c, runUrl);
+  } else if (runId && info?.confronta) {
+    const c = await cardDelGiro(env, runId, nome);
+    c.corrente = 'render';
+    if (info.minuti != null) c.minuti = info.minuti;
+    c.fasi.render = `prova 10 s · ${info.stile || ''}`;
+    await aggiornaCard(env, runId, c, runUrl);
   }
-  const corpo = didascalia(nome, info, testo);
-  const tasti = tastiRisultato(runId || undefined, runUrl || undefined, info);
+  const corpo = info?.confronta
+    ? `🧪 <b>${esc(nome)}</b> · ${esc(info.stile || '')}\nprimi 10 secondi. Il tasto arriva sotto, quando ci sono tutte.`
+    : didascalia(nome, info, testo);
+  const tasti = info?.confronta ? [] : tastiRisultato(runId || undefined, runUrl || undefined, info);
   let fileId: string | undefined;
   let almenoUno = false;
   for (const chat of autorizzati(env)) {
@@ -1822,7 +1874,7 @@ async function onVideo(env: Env, form: FormData) {
     out.append('width', '720');
     out.append('height', '1280');
     if (form.get('durata')) out.append('duration', String(Math.round(Number(form.get('durata')))));
-    out.append('reply_markup', JSON.stringify(tastiera(tasti)));
+    if (tasti.length) out.append('reply_markup', JSON.stringify(tastiera(tasti)));
     if (fileId) out.append('video', fileId);
     else out.append('video', video, `${nome}.mp4`);
     const r = await fetch(`https://api.telegram.org/bot${env.TELEGRAM_BOT_TOKEN}/sendVideo`, { method: 'POST', body: out });
@@ -2126,6 +2178,28 @@ export default {
       return new Response(Uint8Array.from(atob(ANTEPRIMA_STILI), (c) => c.charCodeAt(0)), {
         headers: { 'content-type': 'image/jpeg', 'cache-control': 'public, max-age=86400' },
       });
+    }
+
+    if (req.method === 'GET' && url.pathname === '/scegli') {
+      if (req.headers.get('x-regista-token') !== env.NOTIFY_TOKEN) return new Response('no', { status: 401 });
+      const slot = await leggi<SceltaStile>(env, `scegli:${url.searchParams.get('run') || ''}`);
+      return Response.json({ scelta: slot?.scelta || null });
+    }
+    if (req.method === 'POST' && url.pathname === '/scegli') {
+      if (req.headers.get('x-regista-token') !== env.NOTIFY_TOKEN) return new Response('no', { status: 401 });
+      const corpo = await req.json().catch(() => ({})) as { run_id?: string; nome?: string; stili?: string[] };
+      const stili = (corpo.stili || []).map((s) => String(s)).filter(Boolean).slice(0, 3);
+      const runId = String(corpo.run_id || '');
+      if (!runId || stili.length < 2) return new Response('scelta incompleta', { status: 400 });
+      await mem(env).scrivi(`scegli:${runId}`, { nome: String(corpo.nome || ''), stili } satisfies SceltaStile);
+      const tasti = [stili.map((s, i) => tasto(s, `cs:${runId}:${i}`))];
+      for (const chat of autorizzati(env)) {
+        await invia(env, chat, {
+          testo: `👁 <b>${esc(String(corpo.nome || ''))}</b>\nQuale stile monto per intero?\n<i>Il server è acceso: se non scegli entro 12 minuti si ferma e il girato resta dov'è.</i>`,
+          tasti,
+        });
+      }
+      return new Response('ok');
     }
 
     if (req.method === 'POST' && (url.pathname === '/notify' || url.pathname === '/video' || url.pathname === '/foto-profilo' || url.pathname === '/copertina' || url.pathname === '/stile-esito' || url.pathname === '/stile-correggi')) {

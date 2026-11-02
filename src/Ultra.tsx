@@ -43,7 +43,10 @@ const Parola: React.FC<{ testo: string; da: number; stile: React.CSSProperties; 
   );
 };
 
-const BloccoUltra: React.FC<{ b: BloccoM; len: number; g: GraficaStile; colore: (k: number) => string }> = ({ b, len, g, colore }) => {
+// dietro la persona il blocco sale alle spalle; altrimenti resta sopra la zona di TikTok, all'altezza delle gambe in un piano intero
+const ANCORA_SPALLE = 1020;
+
+const BloccoUltra: React.FC<{ b: BloccoM; len: number; g: GraficaStile; colore: (k: number) => string; solo?: 'tutte' | 'grandi' | 'piccole' }> = ({ b, len, g, colore, solo = 'tutte' }) => {
   const fr = useCurrentFrame();
   const esce = interpolate(fr, [len - 4, len], [0, 1], clamp);
   const testoRiga = (r: BloccoM['righe'][number]) => r.parole.map((x) => x.w).join(' ');
@@ -51,28 +54,45 @@ const BloccoUltra: React.FC<{ b: BloccoM; len: number; g: GraficaStile; colore: 
   // negli esempi la parola grande prende circa due terzi della larghezza ("know", "sells", "more")
   const MAX = 250;
   // le parole lunghe ("semplicemente") possono allargarsi fino alla zona sicura per non diventare minuscole
-  const misura = (t: string) => { const fs = dentro(t, g.fontTitoli, MAX, 700, 1.04); return fs >= 130 ? fs : Math.min(130, dentro(t, g.fontTitoli, MAX, SICURA.larghezza, 1.04)); };
-  const fsGrande = Math.min(MAX, ...b.righe.filter((r) => r.tipo === 'grande').map((r) => misura(testoRiga(r))));
+  const misura = (t: string, ft = g.fontTitoli) => { const fs = dentro(t, ft, MAX, 700, 1.04); return fs >= 130 ? fs : Math.min(130, dentro(t, ft, MAX, SICURA.larghezza, 1.04)); };
+  const righeGrandi = b.righe.filter((r) => r.tipo === 'grande');
+  const fsGrande = righeGrandi.length ? Math.min(MAX, ...righeGrandi.map((r) => misura(testoRiga(r)))) : MAX;
   const base = Math.max(40, Math.min(100, g.dimensione || 84));
   const fsPiccola = Math.min(base, ...b.righe.filter((r) => r.tipo === 'piccolo').map((r) => dentro(testoRiga(r), g.fontSottotitoli, base)));
+  const corsivo = Boolean(g.enfasiCorsivo);
+  const righe = b.righe.map((r) => {
+    const testo = testoRiga(r);
+    const grande = r.tipo === 'grande';
+    const num = grande && /\d/.test(testo);
+    const ft = grande && corsivo && !num ? g.fontCorsivo : grande ? g.fontTitoli : g.fontSottotitoli;
+    const fs = grande ? (corsivo && !num ? misura(testo, ft) : fsGrande) : Math.min(fsPiccola, dentro(testo, ft, fsPiccola));
+    return { r, grande, ft, fs, h: Math.ceil(grande ? fs * 0.92 : fs * 1.18) };
+  });
+  const dalBasso: number[] = [];
+  let acc = 0;
+  for (let i = righe.length - 1; i >= 0; i--) { dalBasso[i] = acc; acc += righe[i].h; }
+  const ancora = g.dietro ? ANCORA_SPALLE : 1920 - Math.min(1330, SICURA.basso);
   let grandi = 0;
   const ombra = 'drop-shadow(0 3px 8px rgba(0,0,0,0.45)) drop-shadow(0 1px 2px rgba(0,0,0,0.5))';
+  const visibili = righe.some((x) => (solo === 'grandi' ? x.grande : solo === 'piccole' ? !x.grande : true));
+  if (!visibili) return null;
   return (
-    // il blocco poggia sopra la zona di TikTok in basso (petto nelle inquadrature a mezzo busto) e cresce verso l'alto
     <AbsoluteFill style={{ opacity: 1 - esce, filter: esce > 0 ? `blur(${esce * 10}px)` : undefined }}>
-      <div style={{ position: 'absolute', left: SICURA.lato, right: SICURA.lato, bottom: 1920 - Math.min(1330, SICURA.basso), display: 'flex', flexDirection: 'column', alignItems: 'center', filter: ombra }}>
-        {b.righe.map((r, i) => {
-          const grande = r.tipo === 'grande';
-          const c = grande ? colore(grandi++) : g.coloreSottotitoli;
-          const stile: React.CSSProperties = grande
-            ? { ...stileFont(g.fontTitoli), fontSize: fsGrande, lineHeight: 0.84, color: c, letterSpacing: '-0.035em' }
-            : { ...stileFont(g.fontSottotitoli), fontSize: fsPiccola, lineHeight: 0.98, color: c, letterSpacing: '-0.01em' };
+      <div style={{ position: 'absolute', left: SICURA.lato, right: SICURA.lato, bottom: ancora, height: acc, filter: ombra }}>
+        {righe.map((x, i) => {
+          if (solo === 'grandi' && !x.grande) return null;
+          if (solo === 'piccole' && x.grande) return null;
+          const c = x.grande && !corsivo ? colore(grandi++) : x.grande ? '#FFFFFF' : g.coloreSottotitoli;
+          const stile: React.CSSProperties = {
+            ...stileFont(x.ft), fontSize: x.fs, lineHeight: x.grande ? 0.84 : 0.98, color: c,
+            letterSpacing: x.grande ? '-0.035em' : '-0.01em',
+          };
           return (
-            <div key={i} style={{ whiteSpace: 'nowrap', marginTop: i && grande ? -fsGrande * 0.06 : 0 }}>
-              {r.parole.map((p, j) => (
+            <div key={i} style={{ position: 'absolute', left: 0, right: 0, bottom: dalBasso[i], textAlign: 'center', whiteSpace: 'nowrap' }}>
+              {x.r.parole.map((p, j) => (
                 <React.Fragment key={j}>
-                  <Parola testo={g.maiuscolo ? p.w.toUpperCase() : p.w} da={f(p.da)} stile={stile} grande={grande} />
-                  {j < r.parole.length - 1 ? <span style={stile}> </span> : null}
+                  <Parola testo={g.maiuscolo ? p.w.toUpperCase() : p.w} da={f(p.da)} stile={stile} grande={x.grande} />
+                  {j < x.r.parole.length - 1 ? <span style={stile}> </span> : null}
                 </React.Fragment>
               ))}
             </div>
@@ -83,7 +103,7 @@ const BloccoUltra: React.FC<{ b: BloccoM; len: number; g: GraficaStile; colore: 
   );
 };
 
-export const BlocchiUltra: React.FC<{ blocchi: BloccoM[]; g: GraficaStile }> = ({ blocchi, g }) => {
+export const BlocchiUltra: React.FC<{ blocchi: BloccoM[]; g: GraficaStile; solo?: 'tutte' | 'grandi' | 'piccole' }> = ({ blocchi, g, solo = 'tutte' }) => {
   const palette = g.palette && g.palette.length ? g.palette : PALETTE_ULTRA;
   // il colore gira su tutte le parole grandi del video, non riparte a ogni blocco
   const primo: number[] = [];
@@ -95,7 +115,7 @@ export const BlocchiUltra: React.FC<{ blocchi: BloccoM[]; g: GraficaStile }> = (
         const len = Math.max(2, f(b.fine) - f(b.at));
         return (
           <Sequence key={`u${i}`} from={f(b.at)} durationInFrames={len}>
-            <BloccoUltra b={b} len={len} g={g} colore={(k) => palette[(primo[i] + k) % palette.length]} />
+            <BloccoUltra b={b} len={len} g={g} solo={solo} colore={(k) => palette[(primo[i] + k) % palette.length]} />
           </Sequence>
         );
       })}

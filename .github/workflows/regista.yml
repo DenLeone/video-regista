@@ -47,6 +47,10 @@ on:
         description: 'Render di prova: solo i primi N secondi del montaggio (vuoto = tutto)'
         required: false
         default: ''
+      stili:
+        description: 'Confronto: 2 o 3 stili separati da | . Un solo scarico, anteprima da 10 s per ciascuno, poi il video intero nello stile scelto in chat'
+        required: false
+        default: ''
       tentativo:
         description: 'Interno, non cambiare. 1 = primo giro, 2 = rilancio automatico se il server ha fallito'
         required: false
@@ -376,6 +380,7 @@ jobs:
           CORREZIONE: ${{ inputs.correzione }}
           AZIONE: ${{ inputs.azione }}
           PROVA_SECONDI: ${{ inputs.secondi }}
+          STILI_SCELTA: ${{ inputs.stili }}
         run: |
           # l'archivio non installa i pacchetti: la cartella sul disco grande va creata lo stesso
           sudo mkdir -p /mnt/regista && sudo chown "$USER" /mnt/regista
@@ -415,6 +420,7 @@ jobs:
           R2: ${{ inputs.r2 }}
           TELEGRAM: ${{ inputs.telegram }}
           SECONDI: ${{ inputs.secondi }}
+          STILI: ${{ inputs.stili }}
         run: |
           if ! command -v gh >/dev/null 2>&1; then
             echo "ok=0" >> "$GITHUB_OUTPUT"
@@ -426,8 +432,8 @@ jobs:
             --arg cartella "$CARTELLA" --arg brief "$BRIEF" --arg origine "$ORIGINE" \
             --arg correzione "$CORREZIONE" --arg ai "$AI" --arg modello "$MODELLO" \
             --arg modello_gemini "$MODELLO_GEMINI" --arg azione "$AZIONE" \
-            --arg r2 "$R2" --arg telegram "$TELEGRAM" --arg secondi "$SECONDI" \
-            '{ref:$ref, inputs:{cartella:$cartella, brief:$brief, origine:$origine, correzione:$correzione, ai:$ai, modello:$modello, modello_gemini:$modello_gemini, azione:$azione, r2:$r2, telegram:$telegram, secondi:$secondi, tentativo:"2"}}' \
+            --arg r2 "$R2" --arg telegram "$TELEGRAM" --arg secondi "$SECONDI" --arg stili "$STILI" \
+            '{ref:$ref, inputs:{cartella:$cartella, brief:$brief, origine:$origine, correzione:$correzione, ai:$ai, modello:$modello, modello_gemini:$modello_gemini, azione:$azione, r2:$r2, telegram:$telegram, secondi:$secondi, stili:$stili, tentativo:"2"}}' \
             | gh api --method POST "/repos/${GITHUB_REPOSITORY}/actions/workflows/regista.yml/dispatches" --input -; then
             echo "ok=1" >> "$GITHUB_OUTPUT"
             echo "rilancio avviato (tentativo 2): Telegram solo se fallisce anche quello"

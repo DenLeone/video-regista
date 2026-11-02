@@ -363,7 +363,7 @@ export const SuMisura: React.FC<Piano> = (piano) => {
   // Motion: tutto il parlato a blocchi (le parole chiave dell'AI enormi), tranne dove c'è un cartello
   const strati = g.sottotitoli === 'strati';
   const reazione = g.cornice === 'reazione';
-  const blocchi = g.sottotitoli === 'blocchi' || strati ? blocchiParlato(piano.parole, piano.enfasi, cartelli, strati) : [];
+  const blocchi = g.sottotitoli === 'blocchi' || strati ? blocchiParlato(piano.parole, piano.enfasi, cartelli, strati, Boolean(strati && g.enfasiCorsivo)) : [];
   const grandi = paroleGrandi(piano.parole, forti);
   const dopoApertura = (piano.parole || []).filter((p) => p.at >= fineApertura - 0.01);
   const occupato = [...titoli, ...frasi, ...forti];
@@ -389,13 +389,15 @@ export const SuMisura: React.FC<Piano> = (piano) => {
           <ScrittaDueLivelli righe={righeFrase(k)} len={Math.max(2, f(k.dur))} g={g} top={k.top} />
         </Sequence>
       ))}
+      {/* le parole grosse degli strati stanno sotto il ritaglio: i numeri passano dietro il busto */}
+      {strati && g.dietro ? <BlocchiUltra blocchi={blocchi} g={g} solo="grandi" /> : null}
       {/* stile reazione: le clip dell'altro dietro a Denis (la persona ritagliata va sopra) */}
       {reazione ? <InsertiReazione piano={piano} g={g} sfx={sfx} /> : null}
       {g.dietro || reazione ? <Ritagli piano={piano} filtro={LOOK[g.look]} /> : null}
       {reazione ? <SchedeInfo piano={piano} g={g} sfx={sfx} /> : <Inserti piano={piano} sfx={sfx} cornice={g.cornice} />}
       {g.fumo && g.transizione !== 'sfocata' ? <Fumi piano={piano} /> : null}
       {g.fumo && g.transizione === 'sfocata' ? <Sfocature piano={piano} /> : null}
-      {strati ? <BlocchiUltra blocchi={blocchi} g={g} /> : <BlocchiMotion blocchi={blocchi} g={g} />}
+      {strati ? <BlocchiUltra blocchi={blocchi} g={g} solo={g.dietro ? 'piccole' : 'tutte'} /> : <BlocchiMotion blocchi={blocchi} g={g} />}
       {cartelli.map((k, i) => (
         <Sequence key={`ca${i}`} from={f(k.at)} durationInFrames={Math.max(8, f(k.dur))}>
           <Cartello k={k} len={Math.max(8, f(k.dur))} g={g} />

@@ -29,8 +29,9 @@ Dimensione sottotitoli: 56    # in pixel su 1080 di larghezza (40–90)
 Titoli: sì                    # sì = 3–5 titoli (nome prodotto, dati) | frasi = 3–5 frasi forti a due livelli (corsivo piccolo + parole enormi) | parole grandi = le frasi forti che dici, una parola alla volta enormi al centro (il resto piccolo in basso) | cartelli = 1–3 scritte a tutto schermo su fondo scuro, battute a macchina | no
 Entrata parole grandi: sfocata  # sfocata | scramble (lettere a caso che si fissano in mezzo secondo)
 Font titoli: Montserrat 900
-Font corsivo: Playfair Display Italic 400   # la frase piccola delle scritte a due livelli
-Scritte dietro di me: no      # sì = le scritte grandi passano dietro alla persona (ritaglio automatico)
+Font corsivo: Playfair Display Italic 400   # la frase piccola delle scritte a due livelli; con Enfasi corsivo, anche le parole chiave
+Enfasi corsivo: no            # sì, solo con Sottotitoli: strati. Parole chiave in Font corsivo, numeri e percentuali in Font titoli, sempre enormi
+Scritte dietro di me: no      # sì = le scritte grandi passano dietro alla persona. Con gli strati, le parole chiave e i numeri stanno dietro, le parole piccole davanti, il blocco sale alle spalle
 Colore titoli: #FFFFFF
 Colore accento: #FFE62E       # sottotitolo dei titoli
 Colori parole grandi: #F4E41C, #F2231B, #C6E01F, #E4E4E4   # con Sottotitoli: strati, le parole chiave prendono questi colori a giro
@@ -103,7 +104,7 @@ export const LOOK_FFMPEG = {
 const GRAFICA = ['nome', 'apertura', 'font apertura', 'colore apertura', 'sottotitoli', 'font sottotitoli', 'colore sottotitoli',
   'maiuscolo sottotitoli', 'posizione sottotitoli', 'dimensione sottotitoli', 'titoli', 'font titoli', 'colore titoli',
   'colore accento', 'posizione titoli', 'look', 'bianco e nero', 'vignettatura', 'effetti sonori', 'musica', 'volume musica',
-  'font corsivo', 'scritte dietro di me', 'soggetto in risalto', 'sfondo sfocato', 'inizio', 'chiusura', 'tagli dentro le frasi',
+  'font corsivo', 'enfasi corsivo', 'scritte dietro di me', 'soggetto in risalto', 'sfondo sfocato', 'inizio', 'chiusura', 'tagli dentro le frasi',
   'entrata parole grandi', 'firma', 'transizioni', 'inserti', 'b-roll stock', 'colori parole grandi', 'montaggio'];
 
 /** stile.txt → { grafica, testoAI, musica, campi } */
@@ -145,6 +146,7 @@ export function leggiStile(testo, nomeCartella) {
     g.titoli = g.tipoTitoli !== 'titoli' || si(campi.titoli);
   }
   g.fontCorsivo = font(campi['font corsivo'], g.fontCorsivo);
+  if (campi['enfasi corsivo']) g.enfasiCorsivo = si(campi['enfasi corsivo']);
   if (campi['scritte dietro di me']) g.dietro = si(campi['scritte dietro di me']);
   g.fontTitoli = font(campi['font titoli'], g.fontTitoli);
   g.coloreTitoli = colore(campi['colore titoli'], g.coloreTitoli);

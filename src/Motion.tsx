@@ -55,9 +55,11 @@ function segnaGrandi(parole: { w: string; at: number }[], enfasi: string[]): boo
 // `salta`: i momenti coperti dai cartelli
 // `strati` (Ultra): il blocco continua anche dopo una parola grande ("You / KNOW / that agent"),
 // fino a 4 righe, come negli esempi; si chiude su pause e punteggiatura
-export function blocchiParlato(parole: Piano['parole'] = [], enfasi: string[] = [], salta: { at: number; dur: number }[] = [], strati = false): BloccoM[] {
+export function blocchiParlato(parole: Piano['parole'] = [], enfasi: string[] = [], salta: { at: number; dur: number }[] = [], strati = false, forzaNumeri = false): BloccoM[] {
   const usate = parole.filter((p) => !salta.some((s) => p.at >= s.at - 0.05 && p.at < s.at + s.dur));
   const grande = segnaGrandi(usate, enfasi);
+  // i numeri restano enormi anche se l'AI non li ha messi tra le parole chiave (76%, 53%)
+  if (forzaNumeri) usate.forEach((p, i) => { if (/\d/.test(p.w)) grande[i] = true; });
   const blocchi: (BloccoM & { ultimo: number })[] = [];
   usate.forEach((p, i) => {
     const w = pulisci(p.w);

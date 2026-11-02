@@ -110,6 +110,8 @@ export type GraficaStile = {
   beat?: boolean;                            // montaggio a tempo di musica (stile Beat)
   stock?: boolean;                           // l'AI può chiedere B-roll di repertorio (Pixabay o Pexels, se c'è la chiave)
   fontCorsivo: FontStile;                    // la frase piccola delle scritte a due livelli
+  // strati: le parole chiave usano il corsivo, i numeri il sans nero e sono sempre enormi
+  enfasiCorsivo?: boolean;
   dietro: boolean;                           // le scritte grandi passano dietro alla persona
   look: 'naturale' | 'caldo' | 'freddo' | 'bianco e nero' | 'teal' | 'chiaro caldo';  // teal e chiaro caldo: in ffmpeg, non CSS
   risalto?: boolean;                         // soggetto in risalto: tu luminoso, sfondo buio e petrolio (scripts/look/risalto.py)
