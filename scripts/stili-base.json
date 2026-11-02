@@ -8,5 +8,10 @@
     "nome": "Cinematico",
     "tasto": "🎬 Cinematico",
     "cosa": "spot di prodotto, sottotitoli parola per parola, titoli grandi"
+  },
+  {
+    "nome": "MotionCollage",
+    "tasto": "🖼️ Motion-Collage",
+    "cosa": "collage carta/giornale, testi kinetici, mix clip reali + motion graphics (90-95%)"
   }
 ]
