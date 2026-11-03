@@ -16,8 +16,9 @@ const solo = process.argv.includes('--solo') ? process.argv[process.argv.indexOf
 const log = (...a) => console.log('[campionario]', ...a);
 fs.mkdirSync(OUT, { recursive: true });
 
+// la shell serve solo a npx su Windows (è un .cmd); ffmpeg va lanciato senza, se no i nomi con gli spazi si spezzano
 function esegui(cmd, args) {
-  const r = spawnSync(cmd, args, { cwd: ROOT, stdio: 'inherit', shell: process.platform === 'win32' });
+  const r = spawnSync(cmd, args, { cwd: ROOT, stdio: 'inherit', shell: process.platform === 'win32' && cmd === 'npx' });
   if (r.status !== 0) throw new Error(`${cmd} ${args.slice(0, 3).join(' ')}: uscito con ${r.status}`);
 }
 const browser = process.env.REMOTION_BROWSER ? [`--browser-executable=${process.env.REMOTION_BROWSER}`] : [];
