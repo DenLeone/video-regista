@@ -1,13 +1,14 @@
 name: bot
 
-# Pubblica il bot Telegram (Cloudflare Worker) quando cambia telegram/ su main,
+# Pubblica il bot Telegram (Cloudflare Worker) quando cambia telegram/ su main (o l'elenco degli
+# stili pronti, che il bot importa: senza, Lista UI e MotionCollage non comparivano nel bot, 03/11),
 # oppure a mano dal tab Actions (anche da un altro ramo).
 # Serve una volta sola: secret CLOUDFLARE_API_TOKEN (modello "Edit Cloudflare Workers");
 # l'account è in telegram/wrangler.toml. Senza secret il job finisce con un avviso, non fallisce.
 on:
   push:
     branches: [main]
-    paths: ['telegram/**']
+    paths: ['telegram/**', 'scripts/stili-base.json', '.github/workflows/bot.yml']
   workflow_dispatch:
 
 concurrency:
