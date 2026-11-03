@@ -14,6 +14,8 @@ const NERO = '#111111', GRIGIO = '#8E8E93', BLU = '#4AA8F0', BIANCO = '#FFFFFF',
 const lua = (s) => JSON.stringify(s); // stringa tra virgolette, con \n
 
 // keyframe di Fusion: [[fotogramma, valore], ...] lineari (a 30 fps, dall'inizio del titolo in timeline)
+// Niente GlobalOut = 0 sui generatori (Background, Text+): con quello Fusion li tiene fermi sul primo fotogramma
+// e nessuna animazione si vede (03/11, "tutti fermi ancora")
 const curva = (nome, chiavi) => `${nome} = BezierSpline { SplineColor = { Red = 220, Green = 180, Blue = 40 }, NameSet = true, KeyFrames = { ${chiavi.map(([f, v]) => `[${f}] = { ${v}, Flags = { Linear = true } }`).join(', ')} } }`;
 const POP = [[0, 0.6], [6, 1.04], [10, 1]]; // entrata a molla, come appare() in src/ListaUI.tsx
 
@@ -37,7 +39,7 @@ function contenitore(nome, pezzi, esposti) {
     ultimo = m;
   };
   const mappa = {};
-  const cornice = `GlobalOut = Input { Value = 0 }, Width = Input { Value = ${W} }, Height = Input { Value = ${H} }, UseFrameFormatSettings = Input { Value = 1 }`;
+  const cornice = `Width = Input { Value = ${W} }, Height = Input { Value = ${H} }, UseFrameFormatSettings = Input { Value = 1 }`;
   for (const p of pezzi) {
     const n = uno(p.nome);
     mappa[p.nome] = n;
