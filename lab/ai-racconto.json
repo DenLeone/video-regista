@@ -1,0 +1,9 @@
+{
+ "uscita": "02 · Fatti/Ai/_laboratorio",
+ "racconto": {
+  "dati": "scripts/racconto/ai.json",
+  "voce": "02 · Fatti/Ai/_laboratorio/voce Ai.m4a",
+  "foto": [{ "a": "racconto/denis.jpg", "file": "02 · Fatti/Ai/VID_20261026_130517_033_02_17.mp4", "t": 8 }],
+  "video": "02 · Fatti/Ai/Ai - RACCONTO 21x9.mp4"
+ }
+}

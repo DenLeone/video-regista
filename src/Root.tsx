@@ -6,6 +6,8 @@ import { Copertina, PropsCopertina } from './Copertina';
 import { MotionCollage } from './MotionCollage';
 import { ListaUI, Pezzo } from './ListaUI';
 import { SuMisura } from './SuMisura';
+import { Racconto } from './racconto/Racconto';
+import { Racconto as PropsRacconto } from './racconto/tipi';
 import { durataTotale, FPS, fpsDi, H, Piano, W } from './piano';
 
 // Piano di esempio per lo Studio: il render vero riceve --props=work/piano.json
@@ -37,6 +39,10 @@ export const Root: React.FC = () => (
       durationInFrames={90} calculateMetadata={metadati} defaultProps={esempio} />
     <Composition id="ListaUI" component={ListaUI} fps={FPS} width={W} height={H}
       durationInFrames={90} calculateMetadata={metadati} defaultProps={esempio} />
+    {/* Racconto: piano sequenza cinematografico 21:9 disegnato col codice (src/racconto, props in work/racconto) */}
+    <Composition id="Racconto" component={Racconto} fps={30} width={3840} height={1646} durationInFrames={300}
+      calculateMetadata={({ props }: { props: PropsRacconto }) => ({ durationInFrames: Math.max(30, Math.round(props.durata * 30)) })}
+      defaultProps={{ durata: 10, mondo: { w: 4000, h: 3000 }, camera: [{ t: 0, x: 2000, y: 1500, zoom: 1 }, { t: 10, x: 2100, y: 1500, zoom: 1.1 }], oggetti: [], eventi: [] } as PropsRacconto} />
     {/* un contenitore di Lista UI da solo (campionario per DaVinci, pc/campionario.mjs) */}
     <Composition id="Pezzo" component={Pezzo} fps={30} width={W} height={H} durationInFrames={90}
       calculateMetadata={({ props }) => ({ durationInFrames: Math.max(15, Math.round(props.durata * 30)) })}

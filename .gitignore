@@ -5,3 +5,7 @@ public/media/
 .env
 __pycache__/
 public/stili/
+
+# Racconto: voce e foto vere solo nel runner, mai nel repo
+public/racconto/*.jpg
+public/racconto/voce.*

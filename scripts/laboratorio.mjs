@@ -351,6 +351,38 @@ function audio(ric) {
   }
 }
 
+// Racconto 21:9 (src/racconto): voce e foto da Drive, render Remotion qui sul runner, video su Drive.
+// { "racconto": { "dati": "scripts/racconto/ai.json", "voce": "<file audio su Drive>",
+//   "foto": [{ "a": "racconto/denis.jpg", "file": "<video su Drive>", "t": 12 }], "video": "<mp4 su Drive>" } }
+// Voce e foto restano su Drive e nel runner: mai nel repo (è pubblico).
+function racconto(ric) {
+  const r = ric.racconto;
+  if (!fs.existsSync(path.join(ROOT, 'node_modules', 'remotion'))) run('npm', ['ci', '--no-audit', '--no-fund'], { cwd: ROOT, stdio: 'inherit' });
+  const pub = path.join(ROOT, 'public', 'racconto');
+  fs.mkdirSync(pub, { recursive: true });
+  const voce = path.join(pub, `voce${path.extname(r.voce)}`);
+  run('rclone', ['copyto', `${REMOTE}:${r.voce}`, voce]);
+  for (const f of r.foto || []) {
+    const v = path.join(SCARICO, `foto-${pulito(path.basename(f.file))}`);
+    if (!fs.existsSync(v)) run('rclone', ['copyto', `${REMOTE}:${f.file}`, v]);
+    // un fotogramma, ritagliato 4:5 al centro e appena più vivo (stampa fotografica sulla scrivania)
+    run('ffmpeg', ['-y', '-v', 'error', '-ss', String(f.t), '-i', v, '-frames:v', '1', '-vf',
+      "crop='min(iw,ih*0.8)':'min(ih,iw*1.25)',scale=1200:1500,eq=contrast=1.08:saturation=1.12", '-q:v', '2', path.join(ROOT, 'public', f.a)]);
+    fs.copyFileSync(path.join(ROOT, 'public', f.a), path.join(OUT, path.basename(f.a)));
+  }
+  const dati = JSON.parse(fs.readFileSync(path.join(ROOT, r.dati), 'utf8'));
+  dati.durata = +Number(run('ffprobe', ['-v', 'error', '-show_entries', 'format=duration', '-of', 'csv=p=0', voce]).trim()).toFixed(3);
+  dati.audio = `racconto/${path.basename(voce)}`;
+  const props = path.join(OUT, 'tmp', 'racconto.json');
+  fs.writeFileSync(props, JSON.stringify(dati));
+  const out = path.join(OUT, 'tmp', path.basename(r.video));
+  log(`racconto: ${dati.durata} s, render 3840×1646`);
+  run('npx', ['remotion', 'render', 'src/index.ts', 'Racconto', out, `--props=${props}`, '--codec=h264', '--crf=16', '--image-format=jpeg', '--jpeg-quality=95',
+    '--audio-codec=aac', '--audio-bitrate=320k', '--concurrency=100%', '--color-space=bt709'], { cwd: ROOT, stdio: 'inherit', timeout: 80 * 60 * 1000 });
+  run('rclone', ['copyto', out, `${REMOTE}:${r.video}`]);
+  log(`racconto → ${r.video}`);
+}
+
 // studio di video YouTube lunghi (riferimenti di Denis per genere): Gemini guarda il link da sé,
 // niente download (YouTube non si scarica né da qui né dal cloud). Esce una scheda per video
 // con struttura, ritmo, grafiche, audio e regole misurabili per il montaggio automatico.
@@ -433,6 +465,7 @@ async function main() {
   if (ric.estraiSfx) estraiSfx(ric);
   if (ric.ritmo) ritmo(ric);
   if (ric.audio) audio(ric);
+  if (ric.racconto) racconto(ric);
   if (ric.youtube) await youtube(ric);
   if (ric.sequenze) { sequenze(ric); carica(); }
   if (ric.fotogrammi) { fotogrammiEVarianti(ric); carica(); }
