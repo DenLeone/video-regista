@@ -63,6 +63,7 @@ export type Livello = {
   frasi?: { t: number; testo: string; cps?: number }[];   // prompt
   inizio?: number; fine?: number; t0?: number; t1?: number; // contatore, barra
   formato?: string;           // contatore: "{n} views"
+  lingua?: string;            // contatore: separatori dei numeri (default en-US)
   icona?: 'pollice';
   fondo?: string;             // barra
   copie?: { x?: number; y?: number; ritardo?: number; scala?: number }[];
@@ -336,7 +337,9 @@ const Elemento: React.FC<{ l: Livello; t: number; c: Ctx; seme: string }> = ({ l
     case 'prompt': dentro = <Prompt l={l} t={t} c={c} altezza={altezza!} />; break;
     case 'contatore': {
       const p = clamp((tl - (l.t0 ?? 0)) / Math.max(0.001, (l.t1 ?? 1) - (l.t0 ?? 0)));
-      const n = Math.round(lerp(l.inizio ?? 0, l.fine ?? 0, p)).toLocaleString('en-US');
+      // decimali solo se il numero li ha (un voto 8,5); lingua per il separatore (238,426 / 8,5)
+      const decimali = Number.isInteger(l.inizio ?? 0) && Number.isInteger(l.fine ?? 0) ? 0 : 1;
+      const n = lerp(l.inizio ?? 0, l.fine ?? 0, p).toLocaleString(l.lingua ?? 'en-US', { minimumFractionDigits: decimali, maximumFractionDigits: decimali });
       const corpo = ((l.size ?? 6) * c.W) / 100;
       dentro = (
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: l.ancora === 'sx' ? 'flex-start' : 'center', gap: corpo * 0.3, whiteSpace: 'nowrap',

@@ -3,12 +3,14 @@
 //   node pc\collage.mjs <nome> --anteprima      1080×1920 veloce, per controllare i tempi
 //   node pc\collage.mjs <nome> --fotogrammi 2,17.5,26   PNG piccoli in work\collage\<nome>\prove
 //   node pc\collage.mjs <nome> --studio         apre Remotion Studio sul progetto
+//   --regia (con uno qualsiasi dei precedenti)   l'AI rifà scena.json seguendo il parlato di voce.mp4
 // La prima volta crea la cartella con scena.json di esempio. Si cambia il video cambiando i file
 // della cartella (stesso nome) o i numeri in scena.json; i file che mancano escono come segnaposto rosa.
 import fs from 'node:fs';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
+import { regia } from './collage-regia.mjs';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const args = process.argv.slice(2);
@@ -34,6 +36,7 @@ if (!fs.existsSync(path.join(DIR, 'scena.json'))) {
   console.log(`creata ${DIR} con scena.json di esempio`);
 }
 
+if (opz('regia')) await regia(DIR);
 const scena = JSON.parse(fs.readFileSync(path.join(DIR, 'scena.json'), 'utf8'));
 const presenti = fs.readdirSync(DIR).filter((f) => fs.statSync(path.join(DIR, f)).isFile());
 
