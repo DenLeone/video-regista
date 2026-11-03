@@ -40,6 +40,23 @@ Quello che fai in DaVinci **non entra da solo** nei montaggi del bot. Le strade 
   ⚠️ Il programma **non li usa ancora**: va collegato (chiedilo a Claude). In quel caso il testo del
   contenitore lo aggiunge il programma sopra il tuo video.
 
+## 4. Contenitori modificabili in DaVinci (Titoli Fusion, in prova)
+I `.mov` del campionario sono "cotti": si spostano ma dentro non si cambiano. I **Titoli Fusion** invece
+hanno ogni pezzo separato (cartella, linguetta, numero, titolo) con testo, font, colori e posizione modificabili.
+File in `pc\davinci\*.setting`. Per ora c'è solo **Lista UI - Capitolo** (fermo: le animazioni le aggiungi tu).
+
+Installarli (DaVinci chiuso):
+```powershell
+$dir = "$env:APPDATA\Blackmagic Design\DaVinci Resolve\Support\Fusion\Templates\Edit\Titles\Regista"
+New-Item -ItemType Directory -Force $dir
+Copy-Item "C:\regista\pc\davinci\*.setting" $dir
+```
+Poi in DaVinci: pagina Edit → Effetti → **Titoli** → sezione **Fusion Titles** → "Lista UI - Capitolo",
+trascinalo in timeline sopra il fondo. Nell'Inspector: Numero, Titolo, font, grandezza, colori, posizioni.
+Per animare un pezzo: clic destro sul titolo → **Apri in pagina Fusion**.
+Sono scritti a mano senza poterli provare in DaVinci: se uno non si apre o è fuori posto, uno screenshot
+basta per correggerlo (o lo sistema Claude Code sul PC aprendo il `.setting`, che è testo).
+
 ---
 
 ## Per Claude Code sul PC di Denis (istruzioni)
