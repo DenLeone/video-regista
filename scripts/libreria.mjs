@@ -14,22 +14,20 @@ export function nomiLogo(file) {
 }
 
 // il nome è detto nel parlato? Parole intere; "chatgpt" vale anche "chat gpt" (Whisper li stacca)
-export function detto(nome, testo) {
-  const t = ` ${norm(testo).replace(/[^\p{L}\p{N}]+/gu, ' ')} `;
-  const lettere = nome.replace(/\s+/g, '');
-  const re = new RegExp(`(?:^|\\s)${[...lettere].map((c) => c.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('\\s?')}(?=\\s)`);
-  return re.test(t);
-}
+const pulito = (testo) => ` ${norm(testo).replace(/[^\p{L}\p{N}]+/gu, ' ')} `;
+const regexNome = (nome) => new RegExp(`(?:^|\\s)${[...nome.replace(/\s+/g, '')].map((c) => c.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('\\s?')}(?=\\s)`);
+export const detto = (nome, testo) => regexNome(nome).test(pulito(testo));
 
 // loghi della libreria nominati nel parlato, al massimo `max`, nell'ordine in cui escono la prima volta
 export function loghiDetti(files, testo, max = 8) {
-  const t = norm(testo);
+  const t = pulito(testo);
   const trovati = [];
   for (const f of files) {
     if (!/\.(png|webp|svg)$/i.test(f)) continue;
-    const nomi = nomiLogo(f);
-    const nome = nomi.find((n) => detto(n, t));
-    if (nome) trovati.push({ file: f, nome, pos: t.search(new RegExp(nome.split(' ')[0])) });
+    for (const nome of nomiLogo(f)) {
+      const pos = t.search(regexNome(nome));
+      if (pos >= 0) { trovati.push({ file: f, nome, pos }); break; }
+    }
   }
   return trovati.sort((a, b) => a.pos - b.pos).slice(0, max);
 }

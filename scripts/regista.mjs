@@ -585,15 +585,18 @@ function loghiDallaLibreria(analisi) {
   const testo = (analisi.frasi || []).map((f) => f.testo || '').join(' ');
   if (!testo.trim()) return;
   const gia = new Set((analisi.immagini || []).filter((im) => im.icona).flatMap((im) => nomiLogo(im.id)));
-  const detti = loghiDetti(elencoLibreria('Loghi').filter((f) => /\.(png|webp)$/i.test(f)), testo).filter((l) => !gia.has(l.nome));
+  const detti = loghiDetti(elencoLibreria('Loghi'), testo).filter((l) => !gia.has(l.nome));
   const dir = path.join(WORK, 'loghi');
   fs.mkdirSync(dir, { recursive: true });
   for (const l of detti) {
     const locale = path.join(dir, path.basename(l.file));
-    const file = `img_logo_${l.nome.replace(/[^\w]+/g, '_')}.png`;
+    // SVG (es. simple-icons, monocromi neri): resta SVG, lo disegna il browser del render sopra l'alone bianco
+    const svg = /\.svg$/i.test(l.file);
+    const file = `img_logo_${l.nome.replace(/[^\w]+/g, '_')}.${svg ? 'svg' : 'png'}`;
     try {
       rclone('copyto', remote(DIR_ASSETS, 'Loghi', l.file), locale);
-      run('ffmpeg', ['-y', '-v', 'error', '-i', locale, '-frames:v', '1', '-vf', 'scale=512:512:force_original_aspect_ratio=decrease', path.join(MEDIA, file)]);
+      if (svg) fs.copyFileSync(locale, path.join(MEDIA, file));
+      else run('ffmpeg', ['-y', '-v', 'error', '-i', locale, '-frames:v', '1', '-vf', 'scale=512:512:force_original_aspect_ratio=decrease', path.join(MEDIA, file)]);
       analisi.immagini = [...(analisi.immagini || []), { id: l.nome, file, originale: `Assets/Loghi/${l.file}`, orient: 'v', icona: true, libreria: true }];
       log(`logo dalla libreria: ${l.nome} (${l.file})`);
     } catch (e) { log(`logo ${l.file} non scaricato`, String(e.message).split('\n')[0]); }
