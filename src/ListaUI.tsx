@@ -17,7 +17,7 @@ const GRIGIO = '#8E8E93';
 const BLU = '#4AA8F0';
 const MENTA = '#8FE3CF';
 const SFX = { whoosh: 0.35, ui_in: 0.4, ui_conferma: 0.45 } as const;
-type Schermata = NonNullable<Piano['schermate']>[number];
+export type Schermata = NonNullable<Piano['schermate']>[number];
 const PIENE = new Set(['capitolo', 'chat', 'finestra', 'griglia', 'app']);
 
 const appare = (frame: number, fps: number, ritardo = 0) => spring({ frame: frame - ritardo, fps, config: { damping: 15, stiffness: 170 } });
@@ -213,6 +213,20 @@ const Piena: React.FC<{ s: Schermata; len: number }> = ({ s, len }) => {
     <AbsoluteFill style={{ backgroundColor: CREMA, clipPath: `circle(${r}% at 50% 50%)` }}>
       {s.tipo === 'capitolo' ? <Capitolo s={s} len={len} /> : s.tipo === 'chat' ? <Chat s={s} len={len} />
         : s.tipo === 'finestra' ? <Finestra s={s} /> : s.tipo === 'griglia' ? <Griglia s={s} /> : <App s={s} len={len} />}
+    </AbsoluteFill>
+  );
+};
+
+// un contenitore da solo, su fondo trasparente (campionario per DaVinci: pc/campionario.mjs).
+// fondo = crema dietro, come nel video; senza, si esporta con il canale alfa
+export const Pezzo: React.FC<{ s: Schermata; durata: number; fondo?: boolean }> = ({ s, durata, fondo }) => {
+  usaFps({ fps: 30 });
+  const len = f(durata);
+  return (
+    <AbsoluteFill style={{ backgroundColor: fondo ? CREMA : 'transparent' }}>
+      {s.tipo === 'capitolo' ? <Capitolo s={s} len={len} /> : s.tipo === 'chat' ? <Chat s={s} len={len} />
+        : s.tipo === 'finestra' ? <Finestra s={s} /> : s.tipo === 'griglia' ? <Griglia s={s} />
+        : s.tipo === 'app' ? <App s={s} len={len} /> : <Pillola s={s} len={len + 6} />}
     </AbsoluteFill>
   );
 };

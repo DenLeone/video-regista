@@ -1,0 +1,13 @@
+{
+  "nota": "Contenuti di prova dei contenitori di Lista UI. Cambia i testi e rilancia: node pc\\campionario.mjs",
+  "durata": 3,
+  "pezzi": [
+    { "nome": "capitolo", "s": { "tipo": "capitolo", "numero": 1, "titolo": "Contesto" } },
+    { "nome": "chat", "s": { "tipo": "chat", "titolo": "ChatGPT", "testo": "Montami i miei clip migliori nella griglia del profilo" } },
+    { "nome": "finestra", "s": { "tipo": "finestra", "titolo": "workspace", "voci": ["progetti", "riferimenti", "musica", "grafica", "idee"] } },
+    { "nome": "griglia", "s": { "tipo": "griglia", "titolo": "@_black_den" } },
+    { "nome": "app", "s": { "tipo": "app", "titolo": "Suno", "testo": "Beat lo-fi allegro per un reel tech, 118 bpm, senza voce" } },
+    { "nome": "pillola capitolo", "s": { "tipo": "pillola", "numero": 2, "titolo": "Musica" } },
+    { "nome": "pillola musica", "s": { "tipo": "pillola", "titolo": "Pixel Bloom", "testo": "Suno · 118 bpm" } }
+  ]
+}

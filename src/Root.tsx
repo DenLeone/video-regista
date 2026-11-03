@@ -4,7 +4,7 @@ import { Blueprint } from './Blueprint';
 import { Cinematico } from './Cinematico';
 import { Copertina, PropsCopertina } from './Copertina';
 import { MotionCollage } from './MotionCollage';
-import { ListaUI } from './ListaUI';
+import { ListaUI, Pezzo } from './ListaUI';
 import { SuMisura } from './SuMisura';
 import { durataTotale, FPS, fpsDi, H, Piano, W } from './piano';
 
@@ -37,6 +37,10 @@ export const Root: React.FC = () => (
       durationInFrames={90} calculateMetadata={metadati} defaultProps={esempio} />
     <Composition id="ListaUI" component={ListaUI} fps={FPS} width={W} height={H}
       durationInFrames={90} calculateMetadata={metadati} defaultProps={esempio} />
+    {/* un contenitore di Lista UI da solo (campionario per DaVinci, pc/campionario.mjs) */}
+    <Composition id="Pezzo" component={Pezzo} fps={30} width={W} height={H} durationInFrames={90}
+      calculateMetadata={({ props }) => ({ durationInFrames: Math.max(15, Math.round(props.durata * 30)) })}
+      defaultProps={{ s: { at: 0, dur: 3, tipo: 'capitolo' as const, numero: 1, titolo: 'Contesto' }, durata: 3 }} />
     {/* stili creati da Drive: la grafica arriva in props.grafica (scripts/stile-su-misura.mjs) */}
     <Composition id="SuMisura" component={SuMisura} fps={FPS} width={W} height={H}
       durationInFrames={90} calculateMetadata={metadati} defaultProps={esempio} />
