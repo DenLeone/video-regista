@@ -246,6 +246,9 @@ async function trascrizioni(ric) {
     form.append('file', new Blob([fs.readFileSync(mp3)]), path.basename(mp3));
     form.append('model', 'whisper-large-v3');
     form.append('response_format', 'verbose_json');
+    // anche i tempi parola per parola (salvati in JSON accanto al testo)
+    form.append('timestamp_granularities[]', 'segment');
+    form.append('timestamp_granularities[]', 'word');
     const res = await fetch('https://api.groq.com/openai/v1/audio/transcriptions', {
       method: 'POST', headers: { Authorization: `Bearer ${process.env.GROQ_API_KEY || ''}` }, body: form,
     });
@@ -257,6 +260,7 @@ async function trascrizioni(ric) {
     fs.writeFileSync(o, testo);
     fs.mkdirSync(GIT, { recursive: true });
     fs.copyFileSync(o, path.join(GIT, path.basename(o)));
+    if (j.words?.length) fs.writeFileSync(path.join(GIT, `parole-${pulito(path.parse(file).name)}.json`), JSON.stringify(j.words.map((w) => ({ w: w.word, a: w.start, b: w.end }))));
   }
 }
 
@@ -342,6 +346,8 @@ function audio(ric) {
     const o = path.join(OUT, 'tmp', path.basename(a.a));
     run('ffmpeg', ['-y', '-v', 'error', ...(a.da ? ['-ss', String(a.da)] : []), '-i', u, ...(a.fino ? ['-t', String(a.fino - (a.da || 0))] : []), '-vn', '-ac', '2', '-ar', '48000', o]);
     run('rclone', ['copyto', o, `${REMOTE}:${a.a}`]);
+    // git: true → anche sul ramo laboratorio-esiti (voce per le prove fatte fuori dal runner, es. Cinematic 03/11)
+    if (a.git) { fs.mkdirSync(GIT, { recursive: true }); fs.copyFileSync(o, path.join(GIT, path.basename(o))); }
     log(`audio ${a.file} → ${a.a}`);
   }
 }
