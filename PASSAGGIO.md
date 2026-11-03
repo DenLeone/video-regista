@@ -196,7 +196,8 @@ Mappe v2, B-roll automatico, pacchetto (descrizione e copertine), uscita 4K, vel
 - **Confronto stili nel bot** (d407100): in Nuovo montaggio → "👁 Confronta 2–3 stili". Un solo scarico, anteprime da 10 s per stile, tasti `cs:<run>:<n>`, il runner aspetta fino a 12 min (`/scegli` GET/POST sul Worker), poi monta tutto nello stile scelto. Input workflow `stili` (nomi separati da `|`).
 - **Strati** (b1138bb, Ultra/Impact): `enfasiCorsivo`, `maiuscoloGrandi`, `entrata: pop`, `righe`, posizione; con `dietro` le scritte passano dietro la persona per tutto il parlato.
 - **MotionCollage**: la prima versione (02/11, altro bot) era rotta (testi fissi "SHARIA 76%", voce solo in 3 finestre da 1,5 s). Rifatta da Claude il 03/11 (1b8d0eb): video incollato su carta che si inclina a ogni taglio, voce sempre, parole chiave della regia come ritagli (numeri in box giallo, `filled` verde), frecce, titolo in apertura. Provata con fotogrammi e un render di prova.
-- **Prossimo**: stile nuovo "tipo softgirlnocode" (lista numerata con schermate UI animate: cartelle blu "No.1", chat che si scrive, finestra di file, griglia profilo, card app). Vedi la chat del 03/11.
+- **ListaUI** (03/11, d7d640f): stile riutilizzabile ispirato ai reel "3 tips" (softgirlnocode). La regia scrive il campo `schermate` (tipi capitolo/chat/finestra/griglia/app/pillola, ancorati a `frase`, `media` = immagini della cartella), risolto in `scripts/regia.mjs` → `piano.schermate` → `src/ListaUI.tsx`. Istruzioni AI in `scripts/stili/ListaUI.md`. Provato con fotogrammi, non ancora su un video vero.
+- `scripts/stili/MotionCollage.md` aggiunto: senza, scegliere MotionCollage fermava il montaggio (ogni stile base vuole il suo .md).
 
 ---
 
