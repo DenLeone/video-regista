@@ -391,6 +391,7 @@ function troncaPiano(piano, secondi) {
   piano.keywords = piano.keywords.filter((k) => k.at < t - 0.3).map((k) => ({ ...k, dur: +Math.min(k.dur, t - k.at).toFixed(3) }));
   piano.parole = (piano.parole || []).filter((w) => w.at < t);
   piano.flickers = (piano.flickers || []).filter((f) => f.at < t);
+  if (piano.schermate) piano.schermate = piano.schermate.filter((x) => x.at < t - 0.3).map((x) => ({ ...x, dur: +Math.min(x.dur, t - x.at).toFixed(3) }));
 }
 
 // B-roll di repertorio (stili con "B-roll stock: sì", come il Motion): per ogni "stock" della regia

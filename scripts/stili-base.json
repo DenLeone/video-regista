@@ -13,5 +13,10 @@
     "nome": "MotionCollage",
     "tasto": "🖼️ Motion-Collage",
     "cosa": "video incollato su carta che si inclina a ogni taglio, parole chiave come ritagli (numeri in box giallo), frecce"
+  },
+  {
+    "nome": "ListaUI",
+    "tasto": "🗂️ Lista UI",
+    "cosa": "lista numerata con schermate animate stile app: cartelle No.1, chat che si scrive, finestra di file, griglia del profilo, scheda di un'app"
   }
 ]

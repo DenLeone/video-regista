@@ -4,6 +4,7 @@ import { Blueprint } from './Blueprint';
 import { Cinematico } from './Cinematico';
 import { Copertina, PropsCopertina } from './Copertina';
 import { MotionCollage } from './MotionCollage';
+import { ListaUI } from './ListaUI';
 import { SuMisura } from './SuMisura';
 import { durataTotale, FPS, fpsDi, H, Piano, W } from './piano';
 
@@ -33,6 +34,8 @@ export const Root: React.FC = () => (
       durationInFrames={90} calculateMetadata={metadati}
       defaultProps={{ ...esempio, keywords: [{ at: 0.4, dur: 2.5, word: 'ROG ALLY X', tag: 'ASUS', note: '20 anniversario' }] }} />
     <Composition id="MotionCollage" component={MotionCollage} fps={FPS} width={W} height={H}
+      durationInFrames={90} calculateMetadata={metadati} defaultProps={esempio} />
+    <Composition id="ListaUI" component={ListaUI} fps={FPS} width={W} height={H}
       durationInFrames={90} calculateMetadata={metadati} defaultProps={esempio} />
     {/* stili creati da Drive: la grafica arriva in props.grafica (scripts/stile-su-misura.mjs) */}
     <Composition id="SuMisura" component={SuMisura} fps={FPS} width={W} height={H}

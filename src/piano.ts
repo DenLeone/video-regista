@@ -65,6 +65,9 @@ export type Piano = {
   beat?: { battuta: number; bpm: number; scintille: number | null };
   // schede informative di vetro (stile reazione): scritte dall'AI su quello che Denis spiega
   schede?: { at: number; dur: number; titolo: string; colore: string; sezioni: { titolo: string; testo: string }[]; sintesi?: string }[];
+  // schermate animate dello stile ListaUI (vedi scripts/stili/ListaUI.md); media = file in public/media
+  schermate?: { at: number; dur: number; tipo: 'capitolo' | 'chat' | 'finestra' | 'griglia' | 'app' | 'pillola';
+    titolo?: string; testo?: string; numero?: number; voci?: string[]; media?: string[] }[];
   sponsor?: { material: string; test: string } | null;
   sponsorAt?: number;       // da quando mostrare il cartiglio
   note?: string;            // dubbi/scelte di Claude, finiscono in NOTE.txt
