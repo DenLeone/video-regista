@@ -661,7 +661,7 @@ export function materialePerAI(analisi) {
   for (const im of analisi.immagini || []) r.push(im.copertina
     ? `- **${im.id}** · COPERTINA del post a cui Denis risponde · va come "inserto" sulla prima frase (l'aggancio)${analisi.foglioImmagini ? ` · foglio: ${analisi.foglioImmagini}` : ''}`
     : im.icona
-    ? `- **${im.id}** · ICONA (logo di un'app, di una marca o di un prodotto) · va in \`icone\` sulla parola in cui Denis la nomina, MAI come inserto${analisi.foglioImmagini ? ` · foglio: ${analisi.foglioImmagini}` : ''}`
+    ? `- **${im.id}** · ICONA (logo di un'app, di una marca o di un prodotto) · va in \`icone\` sulla parola in cui Denis la nomina, MAI come inserto${im.libreria ? ` · logo di "${im.id}" preso dalla libreria perché lo nomini` : analisi.foglioImmagini ? ` · foglio: ${analisi.foglioImmagini}` : ''}`
     : `- **${im.id}** · immagine ${im.orient === 'v' ? 'verticale' : 'orizzontale'} · solo come "inserto"${analisi.foglioImmagini ? ` · foglio: ${analisi.foglioImmagini}` : ''}`);
   for (const p of analisi.sorgenti.filter((s) => s.principale)) {
     const fr = frasiDi(p.id);

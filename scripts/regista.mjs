@@ -24,7 +24,8 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { audioMuto, frasi, inviluppo, sincronizza, sogliaVoce } from './audio.mjs';
-import { DIR_EDITARE, DIR_FATTI, DIR_STILI } from './cartelle.mjs';
+import { DIR_ASSETS, DIR_EDITARE, DIR_FATTI, DIR_STILI } from './cartelle.mjs';
+import { loghiDetti, nomiLogo, scegliFont } from './libreria.mjs';
 import { HDR, curvaChiara, curvaEsposizione, filtroTecnico, misuraPezzo, perFiltro, probe, riconosciLog } from './colore.mjs';
 import { chiaveStock, materialePerAI, normFrase, risolviRegia, sequenzaDiscorso, usaTuttoIlMateriale } from './regia.mjs';
 import { movimento, syncMovimento } from './sync-visivo.mjs';
@@ -562,6 +563,41 @@ function preparaImmagini(foto) {
   const foglio = path.join(WORK, 'fogli', 'immagini.jpg');
   run('ffmpeg', ['-y', '-v', 'error', '-i', path.join(dir, '%03d.jpg'), '-vf', `tile=${Math.min(4, out.length)}x${Math.ceil(out.length / 4)}`, '-frames:v', '1', '-q:v', '4', foglio]);
   return { immagini: out, foglio: path.relative(ROOT, foglio).replace(/\\/g, '/') };
+}
+
+// libreria di Denis su Drive (DIR_ASSETS): elenco dei file di una sottocartella, una volta per giro.
+// Se Drive non risponde si va avanti senza (loghi e font restano quelli della cartella e dello stile)
+const elenchiLibreria = new Map();
+function elencoLibreria(sotto) {
+  if (!elenchiLibreria.has(sotto)) {
+    let files = [];
+    try { files = JSON.parse(rclone('lsjson', '-R', '--files-only', remote(DIR_ASSETS, sotto))).map((x) => x.Path); }
+    catch (e) { log(`libreria ${sotto}: non disponibile (${String(e.message).split('\n')[0]})`); }
+    elenchiLibreria.set(sotto, files);
+  }
+  return elenchiLibreria.get(sotto);
+}
+
+// loghi automatici (03/11): le marche e le app che Denis nomina e che stanno in Assets/Loghi entrano
+// come icone (bagliore sulla parola), senza metterle nella cartella del video. REGISTA_LOGHI=0 li spegne
+function loghiDallaLibreria(analisi) {
+  if (process.env.REGISTA_LOGHI === '0') return;
+  const testo = (analisi.frasi || []).map((f) => f.testo || '').join(' ');
+  if (!testo.trim()) return;
+  const gia = new Set((analisi.immagini || []).filter((im) => im.icona).flatMap((im) => nomiLogo(im.id)));
+  const detti = loghiDetti(elencoLibreria('Loghi').filter((f) => /\.(png|webp)$/i.test(f)), testo).filter((l) => !gia.has(l.nome));
+  const dir = path.join(WORK, 'loghi');
+  fs.mkdirSync(dir, { recursive: true });
+  for (const l of detti) {
+    const locale = path.join(dir, path.basename(l.file));
+    const file = `img_logo_${l.nome.replace(/[^\w]+/g, '_')}.png`;
+    try {
+      rclone('copyto', remote(DIR_ASSETS, 'Loghi', l.file), locale);
+      run('ffmpeg', ['-y', '-v', 'error', '-i', locale, '-frames:v', '1', '-vf', 'scale=512:512:force_original_aspect_ratio=decrease', path.join(MEDIA, file)]);
+      analisi.immagini = [...(analisi.immagini || []), { id: l.nome, file, originale: `Assets/Loghi/${l.file}`, orient: 'v', icona: true, libreria: true }];
+      log(`logo dalla libreria: ${l.nome} (${l.file})`);
+    } catch (e) { log(`logo ${l.file} non scaricato`, String(e.message).split('\n')[0]); }
+  }
 }
 
 // MediaPipe (segmentazione della persona) in un ambiente a parte: il Python di sistema del runner
@@ -1213,10 +1249,22 @@ function caricaStile(nome) {
   const { grafica, testoAI, musica, volumeMusica } = leggiStile(txt ? fs.readFileSync(txt, 'utf8') : '', nome);
   // font: file in asset/ con il nome indicato, altrimenti Google Fonts
   const fileFont = tutti.filter((p) => /\.(ttf|otf|woff2?)$/i.test(p));
-  for (const k of ['fontApertura', 'fontSottotitoli', 'fontTitoli']) {
+  // poi la libreria (Assets/Fonts, 03/11): "Font titoli: Apple Garamond Bold" prende AppleGaramond-Bold.ttf
+  // da lì senza copiarlo nello stile. Il peso e il corsivo scelgono il file giusto della famiglia
+  for (const k of ['fontApertura', 'fontSottotitoli', 'fontTitoli', 'fontCorsivo']) {
     const ft = grafica[k];
-    const file = fileFont.find((p) => normNome(path.parse(p).name).replace(/[-_ ]/g, '') === normNome(ft.famiglia).replace(/[-_ ]/g, ''))
-      || fileFont.find((p) => normNome(path.parse(p).name).replace(/[-_ ]/g, '').startsWith(normNome(ft.famiglia).replace(/[-_ ]/g, '')));
+    if (!ft) continue;
+    let file = scegliFont(fileFont, ft);
+    if (!file) {
+      const daLibreria = scegliFont(elencoLibreria('Fonts'), ft);
+      if (daLibreria) {
+        try {
+          file = path.join(dir, '_libreria', path.basename(daLibreria));
+          rclone('copyto', remote(DIR_ASSETS, 'Fonts', daLibreria), file);
+          log(`stile ${nome}: font ${ft.famiglia} ${ft.peso}${ft.corsivo ? ' corsivo' : ''} dalla libreria (${daLibreria})`);
+        } catch (e) { file = null; log(`font ${daLibreria} non scaricato`, String(e.message).split('\n')[0]); }
+      }
+    }
     if (file) {
       const dest = `font-${path.basename(file).replace(/[^\w.-]+/g, '_')}`;
       fs.copyFileSync(file, path.join(pub, dest));
@@ -2149,6 +2197,7 @@ async function main() {
     const analisi = await analizza(nome, brief, cache);
     const { immagini, foglio: foglioImmagini } = preparaImmagini(analisi.foto || []);
     analisi.immagini = immagini;
+    loghiDallaLibreria(analisi);
     analisiCorrente = analisi;
     analisi.foglioImmagini = foglioImmagini;
     fs.writeFileSync(path.join(WORK, 'materiale.json'), JSON.stringify(analisi, null, 1));

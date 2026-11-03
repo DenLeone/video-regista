@@ -6,3 +6,5 @@ export const DIR_EDITARE = process.env.DIR_EDITARE || '01 · Da editare';
 export const DIR_FATTI = process.env.DIR_FATTI || '02 · Fatti';
 export const DIR_PUBBLICARE = process.env.DIR_PUBBLICARE || '03 · Da pubblicare';
 export const DIR_STILI = process.env.DIR_STILI || '12 · Risorse/Stili';
+// libreria di Denis (03/11): Loghi/ (PNG trasparenti col nome della marca), Fonts/, elementi…
+export const DIR_ASSETS = process.env.DIR_ASSETS || '12 · Risorse/Assets';
