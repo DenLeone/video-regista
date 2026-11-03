@@ -191,6 +191,13 @@ Montaggio a tempo di musica (`scripts/beat.mjs`, `src/Beat.tsx`), tagli a battut
 ### Ancora da verificare sul primo giro vero
 Mappe v2, B-roll automatico, pacchetto (descrizione e copertine), uscita 4K, velocità, Whisper a lotti, import FCPXML in DaVinci.
 
+## 5-bis. NOVITÀ 30/10 – 03/11 (fatte con altri bot, controllate da Claude il 03/11)
+- **Grok, PC** (commit 8e44fd6): 8 codifiche in parallelo sui PC con almeno 16 core, analisi metadati 8 alla volta, `--solo-controllo` (controlla il piano senza codificare), clip 4K native senza ricampionamento, frase inventata su clip muta → entra come immagine muta di 4 s. V214 di Austria = B-roll muto. Nuovo piano `pc/progetti/wecanrace.json` (⚠️ usa V025/V006 invece dei nomi dei file: fragile, convertirlo).
+- **Confronto stili nel bot** (d407100): in Nuovo montaggio → "👁 Confronta 2–3 stili". Un solo scarico, anteprime da 10 s per stile, tasti `cs:<run>:<n>`, il runner aspetta fino a 12 min (`/scegli` GET/POST sul Worker), poi monta tutto nello stile scelto. Input workflow `stili` (nomi separati da `|`).
+- **Strati** (b1138bb, Ultra/Impact): `enfasiCorsivo`, `maiuscoloGrandi`, `entrata: pop`, `righe`, posizione; con `dietro` le scritte passano dietro la persona per tutto il parlato.
+- **MotionCollage**: la prima versione (02/11, altro bot) era rotta (testi fissi "SHARIA 76%", voce solo in 3 finestre da 1,5 s). Rifatta da Claude il 03/11 (1b8d0eb): video incollato su carta che si inclina a ogni taglio, voce sempre, parole chiave della regia come ritagli (numeri in box giallo, `filled` verde), frecce, titolo in apertura. Provata con fotogrammi e un render di prova.
+- **Prossimo**: stile nuovo "tipo softgirlnocode" (lista numerata con schermate UI animate: cartelle blu "No.1", chat che si scrive, finestra di file, griglia profilo, card app). Vedi la chat del 03/11.
+
 ---
 
 ## 6. Da fare (in ordine di utilità)
