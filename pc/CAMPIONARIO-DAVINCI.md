@@ -43,8 +43,8 @@ Quello che fai in DaVinci **non entra da solo** nei montaggi del bot. Le strade 
 ## 4. Contenitori modificabili in DaVinci (Titoli Fusion)
 I `.mov` del campionario sono "cotti": si spostano ma dentro non si cambiano. I **Titoli Fusion** invece
 hanno ogni pezzo separato (cartella, linguetta, numero, titolo) con testo, font, colori e posizione modificabili.
-File in `pc\davinci\*.setting`: Capitolo (provato da Denis il 03/11), Chat, App, Finestra, Griglia, Pillola capitolo, Pillola musica. Sono fermi: le animazioni le aggiungi tu.
-Tutti tranne Capitolo escono da `node pc\davinci\genera.mjs` (misure in px come in `src/ListaUI.tsx`): per cambiarli, cambia lì e rilancia.
+File in `pc\davinci\*.setting`: Capitolo (provato da Denis il 03/11), Chat, App, Finestra, Griglia, Pillola capitolo, Pillola musica. Sono animati come nel bot (entrata a molla, testo che si scrive, riquadri che compaiono): le curve si vedono e si cambiano nella pagina Fusion (Spline).
+Escono tutti da `node pc\davinci\genera.mjs` (misure in px come in `src/ListaUI.tsx`): per cambiarli, cambia lì e rilancia.
 
 Installarli (DaVinci chiuso):
 ```powershell
