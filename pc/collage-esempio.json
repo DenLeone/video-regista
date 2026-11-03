@@ -1,0 +1,201 @@
+{
+  "fps": 30,
+  "font": { "serif": "InstrumentSerif-Italic.ttf" },
+  "base": { "video": "voce.mp4", "volume": 1 },
+  "scene": [
+    {
+      "id": "prompt-ai",
+      "nota": "00:00.00-00:14.50. Tempi dei livelli dall'inizio della scena.",
+      "da": 0, "a": 14.5,
+      "fondo": "#0A0A0A",
+      "zone": [{ "t": 10.0, "zona": [0, 0, 100, 50] }],
+      "camera": [{ "t": 10.0, "scala": 1, "cx": 50, "cy": 50, "curva": "lineare" }, { "t": 10.01, "scala": 0.62, "cx": 50, "cy": 44 }],
+      "sfoca": { "da": 1.8, "dur": 0.6, "r": 15, "fino": "prompt", "togli": 4.85 },
+      "livelli": [
+        { "id": "giornale", "tipo": "rett", "file": "giornale.png", "colore": "#3b3b3b", "w": 118, "h": 112, "rot": -5, "filtro": "grayscale(1) brightness(0.42) contrast(1.15)" },
+        { "id": "carta-blu", "tipo": "rett", "dal": 4.9, "file": "carta-blu.jpg", "colore": "#1E78D6", "y": 24, "h": 48 },
+        { "id": "nero", "tipo": "rett", "dal": 11.8, "colore": "#0A0A0A", "w": 200, "h": 200 },
+        { "id": "titolo", "tipo": "testo", "testo": "Vox", "font": "serif", "colore": "#ffffff", "x": 50, "y": 22, "w": 75, "rot": -8,
+          "anim": [{ "tipo": "rivela", "verso": "dx", "da": 0, "dur": 1.2, "curva": "out" }] },
+        { "id": "cielo", "tipo": "strappo", "cielo": true, "file": "cielo.jpg", "alto": [48, 32], "basso": [72, 55], "bordo": 1.5 },
+        { "id": "gabbiani", "tipo": "img", "file": "gabbiano-{n}.png", "fotogrammi": 4, "fpsSprite": 8, "w": 7, "ar": 1.6,
+          "copie": [{ "x": 44, "y": 40 }, { "x": 52, "y": 38 }, { "x": 61, "y": 43 }, { "x": 70, "y": 39 }, { "x": 80, "y": 45 }],
+          "anim": [{ "tipo": "velocita", "da": 0, "vx": -4, "vy": -1 }] },
+        { "id": "cupola", "tipo": "img", "file": "edificio-cupola.png", "x": 50, "y": 70, "w": 85, "ar": 1.2, "al": 6.0,
+          "anim": [{ "tipo": "entra", "daY": 110, "da": 0, "dur": 0.4, "curva": "outCubic" }, { "tipo": "scala", "s0": 1, "s1": 0, "da": 5.9, "dur": 0.1, "curva": "in" }] },
+        { "id": "torre-orologio", "tipo": "img", "file": "edificio-torre.png", "dal": 5.9, "x": 50, "y": 56, "w": 60, "h": 88,
+          "anim": [{ "tipo": "scala", "s0": 0.7, "s1": 1, "da": 5.9, "dur": 0.25, "curva": "elastico" }] },
+        { "id": "prompt", "tipo": "prompt", "fisso": true, "dal": 1.8, "x": 50, "y": 52, "w": 72, "h": 6,
+          "frasi": [
+            { "t": 2.05, "testo": "Change the background to blue", "cps": 18 },
+            { "t": 4.8, "testo": "Swap out the building", "cps": 22 },
+            { "t": 11.0, "testo": "Remove the background", "cps": 22 },
+            { "t": 13.0, "testo": "Add animated falling coins", "cps": 22 }
+          ],
+          "anim": [
+            { "tipo": "scala", "s0": 0.8, "s1": 1, "da": 1.8, "dur": 0.25, "curva": "outCubic" },
+            { "tipo": "opacita", "o0": 0, "o1": 1, "da": 1.8, "dur": 0.25 },
+            { "tipo": "sposta", "y": 42, "da": 10.0, "dur": 0.3, "curva": "inout" }
+          ] }
+      ]
+    },
+    {
+      "id": "fabbrica",
+      "nota": "00:16.80-00:18.40",
+      "da": 16.8, "a": 18.4,
+      "livelli": [
+        { "tipo": "rett", "file": "pergamena.jpg", "colore": "#C9A66B" },
+        { "id": "fabbrica", "tipo": "img", "file": "fabbrica.png", "x": 45, "y": 48, "w": 85, "ar": 1.3 },
+        { "id": "fumo", "tipo": "img", "file": "fumo.png", "w": 20, "ar": 1.6, "fps": 8,
+          "copie": [{ "x": 29, "y": 14 }, { "x": 55, "y": 10, "ritardo": 0.13 }],
+          "anim": [{ "tipo": "oscilla", "asse": "y", "ampiezza": 2, "freq": 2, "da": 0 }] },
+        { "tipo": "ingranaggio", "x": 65, "y": 62, "raggio": 22, "colore": "#6f6f6f", "anim": [{ "tipo": "ruota", "vel": 15, "da": 0 }] },
+        { "tipo": "ingranaggio", "x": 12, "y": 82, "raggio": 18, "colore": "#5e5e5e", "anim": [{ "tipo": "ruota", "vel": -20, "da": 0 }] },
+        { "tipo": "ingranaggio", "x": 88, "y": 78, "raggio": 25, "colore": "#808080", "anim": [{ "tipo": "ruota", "vel": 15, "da": 0 }] },
+        { "id": "operai", "tipo": "img", "file": "operaio-{n}.png", "fotogrammi": 4, "fpsSprite": 6, "w": 3.5, "h": 6,
+          "copie": [{ "x": 35 }, { "x": 45 }, { "x": 55 }, { "x": 65 }, { "x": 75 }, { "x": 85 }, { "x": 95 }], "y": 82,
+          "anim": [{ "tipo": "velocita", "da": 0, "vx": -8 }] },
+        { "tipo": "anello", "x": 52, "y": 25, "raggio": 9, "colore": "#D4A017", "spessore": 9,
+          "anim": [{ "tipo": "traccia", "da": 0.7, "dur": 0.3, "curva": "inout" }] }
+      ]
+    },
+    {
+      "id": "petrolio",
+      "nota": "00:18.40-00:20.40, whip-pan verso sinistra",
+      "da": 18.4, "a": 20.4,
+      "entrata": { "tipo": "frusta", "verso": "sx", "dur": 0.3 },
+      "livelli": [
+        { "tipo": "rett", "file": "pergamena.jpg", "colore": "#C9A66B" },
+        { "id": "orizzonte", "tipo": "strappo", "colore": "#111111", "alto": [76, 75], "basso": [102, 102], "bordo": 0 },
+        { "id": "pompe", "tipo": "img", "file": "pompa-corpo.png", "w": 22, "ar": 1.2, "copie": [{ "x": 15, "y": 65 }, { "x": 90, "y": 62 }] },
+        { "id": "teste-pompe", "tipo": "img", "file": "pompa-testa.png", "w": 18, "ar": 3, "perno": [50, 50],
+          "copie": [{ "x": 15, "y": 57 }, { "x": 90, "y": 54, "ritardo": 0.4 }],
+          "anim": [{ "tipo": "oscilla", "asse": "rot", "ampiezza": 15, "freq": 0.8, "da": 0 }] },
+        { "id": "torre", "tipo": "img", "file": "torre-trivella.png", "x": 46, "y": 53.5, "w": 14, "h": 43,
+          "anim": [{ "tipo": "rivela", "verso": "su", "da": 0.3, "dur": 0.7, "passi": 4, "curva": "lineare" }] },
+        { "tipo": "anello", "x": 46, "y": 44, "w": 38, "h": 22, "rot": -12, "colore": "#FFD400", "spessore": 9,
+          "anim": [{ "tipo": "traccia", "da": 1.1, "dur": 0.25, "curva": "inout" }] }
+      ]
+    },
+    {
+      "id": "treno",
+      "nota": "00:20.40-00:22.40, whip-pan verticale",
+      "da": 20.4, "a": 22.4,
+      "entrata": { "tipo": "frusta", "verso": "su", "dur": 0.3 },
+      "livelli": [
+        { "tipo": "rett", "colore": "#000000" },
+        { "id": "ponte", "tipo": "img", "file": "ponte-ferroviario.png", "x": 50, "y": 69, "w": 100, "h": 18 },
+        { "id": "scia", "tipo": "img", "file": "scia-fumo.png", "x": 22, "y": 42, "w": 50, "ar": 2.4, "perno": [95, 70],
+          "anim": [{ "tipo": "scala", "s0": 0.3, "s1": 1, "da": 0, "dur": 2, "curva": "out" }, { "tipo": "velocita", "da": 0, "vx": 18 }] },
+        { "id": "treno", "tipo": "img", "file": "treno.png", "x": 26, "y": 53, "w": 52, "ar": 3,
+          "anim": [{ "tipo": "velocita", "da": 0, "vx": 18 }] },
+        { "id": "fascia", "tipo": "strappo", "colore": "#F4F1EA", "alto": [78, 78], "basso": [88, 88], "bordo": 0 },
+        { "id": "minatori", "tipo": "img", "file": "minatore-{n}.png", "fotogrammi": 4, "fpsSprite": 6, "w": 4, "h": 7, "y": 83,
+          "copie": [{ "x": 10 }, { "x": 20 }, { "x": 30 }, { "x": 40 }, { "x": 50 }],
+          "anim": [{ "tipo": "velocita", "da": 0, "vx": 10 }] }
+      ]
+    },
+    {
+      "id": "mano",
+      "nota": "00:23.80-00:28.80",
+      "da": 23.8, "a": 28.8,
+      "livelli": [
+        { "tipo": "rett", "file": "giornale.png", "colore": "#E8DFC8", "filtro": "sepia(0.35) brightness(1.05)" },
+        { "id": "sole", "tipo": "rett", "tondo": true, "file": "sole.png", "colore": "#F2C230", "x": 50, "y": 46, "w": 76 },
+        { "id": "logo", "tipo": "testo", "testo": "Vox", "font": "serif", "colore": "#F4C6C6", "x": 62, "y": 12, "w": 55, "rot": -10 },
+        { "tipo": "img", "file": "colosseo.png", "x": 16, "y": 55, "w": 30, "rot": -15, "ar": 1.4,
+          "anim": [{ "tipo": "entra", "dy": 12, "da": 0.35, "dur": 0.35, "curva": "back" }, { "tipo": "scala", "s0": 0, "s1": 1, "da": 0.35, "dur": 0.35, "curva": "back" }] },
+        { "tipo": "img", "file": "torre-pisa.png", "x": 30, "y": 40, "w": 14, "rot": -8, "ar": 0.4,
+          "anim": [{ "tipo": "entra", "dy": 20, "da": 0.43, "dur": 0.35, "curva": "back" }, { "tipo": "scala", "s0": 0, "s1": 1, "da": 0.43, "dur": 0.35, "curva": "back" }] },
+        { "tipo": "img", "file": "palazzo-cupola-verde.png", "x": 52, "y": 48, "w": 34, "ar": 1,
+          "anim": [{ "tipo": "entra", "dy": 12, "da": 0.51, "dur": 0.35, "curva": "back" }, { "tipo": "scala", "s0": 0, "s1": 1, "da": 0.51, "dur": 0.35, "curva": "back" }] },
+        { "tipo": "img", "file": "cattedrale.png", "x": 82, "y": 52, "w": 28, "rot": 12, "ar": 0.9,
+          "anim": [{ "tipo": "entra", "dy": 8, "da": 0.59, "dur": 0.35, "curva": "back" }, { "tipo": "scala", "s0": 0, "s1": 1, "da": 0.59, "dur": 0.35, "curva": "back" }] },
+        { "id": "mano", "tipo": "img", "file": "mano.png", "x": 48, "y": 68, "w": 95, "ar": 1.5,
+          "anim": [{ "tipo": "entra", "daX": -50, "da": 0, "dur": 0.4, "curva": "outCubic" }] },
+        { "id": "velo", "tipo": "rett", "colore": "#000000", "opacita": 0.35, "anim": [{ "tipo": "opacita", "o0": 0, "o1": 1, "da": 1.7, "dur": 0.3 }] },
+        { "id": "views", "tipo": "contatore", "dal": 1.7, "x": 35, "y": 51, "w": 60, "size": 6.5, "inizio": 238426, "fine": 439815, "t0": 2.2, "t1": 4.7, "formato": "{n} views" },
+        { "id": "progresso", "tipo": "barra", "dal": 1.7, "x": 37.5, "y": 53.5, "w": 55, "spessore": 12, "colore": "#2BA640", "inizio": 40, "fine": 85, "t0": 2.2, "t1": 4.7 },
+        { "id": "like", "tipo": "contatore", "dal": 1.7, "x": 18, "y": 56, "w": 30, "size": 4, "icona": "pollice", "inizio": 1192, "fine": 2199, "t0": 2.2, "t1": 4.7 }
+      ]
+    },
+    {
+      "id": "storyboard",
+      "nota": "00:33.00-00:36.80, finestra in alto",
+      "da": 33.0, "a": 36.8,
+      "zona": [5, 8, 95, 44], "raggio": 40, "fondo": "#111111",
+      "camera": [
+        { "t": 1.2, "scala": 1, "cx": 50, "cy": 26 },
+        { "t": 2.0, "scala": 3.2, "cx": 35, "cy": 26, "curva": "inout" },
+        { "t": 3.8, "scala": 3.2, "cx": 69, "cy": 26, "curva": "lineare" }
+      ],
+      "livelli": [
+        { "id": "tavole", "tipo": "img", "file": "storyboard.png", "x": 50, "y": 26, "w": 90, "h": 36 }
+      ]
+    },
+    {
+      "id": "samurai-volto", "nota": "00:41.50-00:42.50",
+      "da": 41.5, "a": 42.5, "zona": [5, 8, 95, 44], "raggio": 40, "fondo": "#EDE6D6",
+      "livelli": [
+        { "tipo": "img", "file": "samurai-volto.png", "x": 50, "y": 22, "w": 70, "ar": 1.4, "fps": 8, "perno": [50, 80],
+          "anim": [{ "tipo": "ruota", "gradi": 10, "da": 0, "dur": 1, "curva": "inout" }] }
+      ]
+    },
+    {
+      "id": "samurai-ponte", "nota": "00:42.50-00:43.80",
+      "da": 42.5, "a": 43.8, "zona": [5, 8, 95, 44], "raggio": 40, "fondo": "#EDE6D6",
+      "livelli": [
+        { "tipo": "img", "file": "ponte-carta.png", "x": 50, "y": 36, "w": 90, "ar": 4 },
+        { "tipo": "img", "file": "samurai-spalle.png", "x": 48, "y": 26, "w": 28, "ar": 0.7 },
+        { "tipo": "img", "file": "samurai-braccio.png", "x": 53, "y": 23, "w": 14, "ar": 1.5, "perno": [10, 20],
+          "anim": [{ "tipo": "ruota", "gradi": 45, "da": 0.3, "dur": 0.2, "curva": "out" }] },
+        { "id": "fendente", "tipo": "rett", "colore": "#1C4FA0", "x": 52.5, "y": 28, "w": 65, "h": 0.7, "raggio": 6,
+          "dal": 0.5, "anim": [{ "tipo": "rivela", "verso": "dx", "da": 0.5, "dur": 0.2, "curva": "lineare" }] }
+      ]
+    },
+    {
+      "id": "samurai-fronte", "nota": "00:43.80-00:44.60",
+      "da": 43.8, "a": 44.6, "zona": [5, 8, 95, 44], "raggio": 40, "fondo": "#EDE6D6",
+      "livelli": [
+        { "tipo": "img", "file": "samurai-fronte.png", "x": 46, "y": 25, "w": 34, "ar": 0.8 },
+        { "id": "squarcio", "tipo": "img", "file": "squarcio-blu.png", "x": 67.5, "y": 15, "w": 55, "h": 14,
+          "anim": [{ "tipo": "rivela", "verso": "dx", "da": 0.15, "dur": 0.15, "curva": "lineare" }] }
+      ]
+    },
+    {
+      "id": "samurai-attacco", "nota": "00:44.60-00:45.80",
+      "da": 44.6, "a": 45.8, "zona": [5, 8, 95, 44], "raggio": 40, "fondo": "#EDE6D6",
+      "livelli": [
+        { "tipo": "img", "file": "spruzzi-inchiostro.png", "x": 50, "y": 26, "w": 90, "h": 36 },
+        { "tipo": "img", "file": "samurai-attacco.png", "x": 28, "y": 26, "w": 34, "ar": 0.8 },
+        { "id": "carta", "tipo": "rett", "colore": "#E3D3B0", "x": 68, "y": 24, "w": 40, "h": 20, "rot": 2,
+          "anim": [{ "tipo": "rivela", "verso": "giu", "da": 0.1, "dur": 0.3 }] },
+        { "id": "motto", "tipo": "testo", "testo": "THE WEIGHT\nOF\nSTEEL.", "font": "serif", "colore": "#111111", "x": 68, "y": 24, "w": 32, "rot": 2, "interlinea": 0.95,
+          "anim": [{ "tipo": "rivela", "verso": "giu", "da": 0.1, "dur": 0.3 }] }
+      ]
+    },
+    {
+      "id": "finale",
+      "nota": "00:59.80-01:03.80, come 'mano' ma a tutto schermo, senza velo e contatori",
+      "da": 59.8, "a": 63.8,
+      "livelli": [
+        { "tipo": "rett", "file": "giornale.png", "colore": "#E8DFC8", "filtro": "sepia(0.35) brightness(1.05)" },
+        { "id": "sole", "tipo": "rett", "tondo": true, "file": "sole.png", "colore": "#F2C230", "x": 50, "y": 46, "w": 76,
+          "anim": [{ "tipo": "scala", "s0": 0, "s1": 1, "da": 0, "dur": 0.3, "curva": "back" }] },
+        { "id": "logo", "tipo": "testo", "testo": "Vox", "font": "serif", "colore": "#F4C6C6", "x": 62, "y": 12, "w": 55, "rot": -10,
+          "anim": [{ "tipo": "rivela", "verso": "dx", "da": 0.2, "dur": 0.8 }] },
+        { "tipo": "img", "file": "colosseo.png", "x": 16, "y": 55, "w": 30, "rot": -15, "ar": 1.4,
+          "anim": [{ "tipo": "entra", "dy": 12, "da": 0.6, "dur": 0.4, "curva": "back" }, { "tipo": "scala", "s0": 0, "s1": 1, "da": 0.6, "dur": 0.4, "curva": "back" }] },
+        { "tipo": "img", "file": "torre-pisa.png", "x": 30, "y": 40, "w": 14, "rot": -8, "ar": 0.4,
+          "anim": [{ "tipo": "entra", "dy": 20, "da": 0.8, "dur": 0.4, "curva": "back" }, { "tipo": "scala", "s0": 0, "s1": 1, "da": 0.8, "dur": 0.4, "curva": "back" }] },
+        { "tipo": "img", "file": "palazzo-cupola-verde.png", "x": 52, "y": 48, "w": 34, "ar": 1,
+          "anim": [{ "tipo": "entra", "dy": 12, "da": 1.0, "dur": 0.4, "curva": "back" }, { "tipo": "scala", "s0": 0, "s1": 1, "da": 1.0, "dur": 0.4, "curva": "back" }] },
+        { "tipo": "img", "file": "cattedrale.png", "x": 82, "y": 52, "w": 28, "rot": 12, "ar": 0.9,
+          "anim": [{ "tipo": "entra", "dy": 8, "da": 1.2, "dur": 0.4, "curva": "back" }, { "tipo": "scala", "s0": 0, "s1": 1, "da": 1.2, "dur": 0.4, "curva": "back" }] },
+        { "id": "mano", "tipo": "img", "file": "mano.png", "x": 48, "y": 68, "w": 95, "ar": 1.5,
+          "anim": [{ "tipo": "entra", "daX": -50, "da": 0, "dur": 0.4, "curva": "outCubic" }] },
+        { "id": "uccello", "tipo": "img", "file": "uccello-{n}.png", "fotogrammi": 4, "fpsSprite": 8, "x": 50, "y": 28, "w": 10, "ar": 1.6 }
+      ]
+    }
+  ]
+}

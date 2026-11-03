@@ -2,6 +2,7 @@ import React from 'react';
 import { Composition, Still } from 'remotion';
 import { Blueprint } from './Blueprint';
 import { Cinematico } from './Cinematico';
+import { Collage, durataCollage, PropsCollage } from './Collage';
 import { Copertina, PropsCopertina } from './Copertina';
 import { DocNintendo, DURATA_DOC } from './DocNintendo';
 import { PropsRotolo, Rotolo } from './Rotolo';
@@ -52,6 +53,10 @@ export const Root: React.FC = () => (
     {/* stili creati da Drive: la grafica arriva in props.grafica (scripts/stile-su-misura.mjs) */}
     <Composition id="SuMisura" component={SuMisura} fps={FPS} width={W} height={H}
       durationInFrames={90} calculateMetadata={metadati} defaultProps={esempio} />
+    {/* motion graphic a ritagli in 4K verticale: tutto in scena.json (pc/collage.mjs) */}
+    <Composition id="Collage" component={Collage} fps={30} width={2160} height={3840} durationInFrames={300}
+      defaultProps={{ cartella: 'collage/esempio', scene: [] } as PropsCollage}
+      calculateMetadata={({ props }) => ({ fps: props.fps ?? 30, durationInFrames: Math.max(1, Math.round(durataCollage(props) * (props.fps ?? 30))) })} />
     {/* documentario a piano sequenza (prova Nintendo): tutto in src/DocNintendo.tsx */}
     <Composition id="DocNintendo" component={DocNintendo} fps={30} width={2160} height={3840} durationInFrames={Math.round(DURATA_DOC * 30)} />
     {/* Rotolo: documentario a piano sequenza descritto da beats.json (pc/rotolo/LEGGIMI.md) */}
