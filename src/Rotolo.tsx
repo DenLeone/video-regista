@@ -1,6 +1,6 @@
 import React, { useMemo } from 'react';
 import { AbsoluteFill, Audio, Easing, Img, interpolate, useCurrentFrame, useVideoConfig } from 'remotion';
-import { areaImmagine, colpiDi, corpo, corpoRiga, creaCamera, Documento, fotoBN, impagina, Posato, schedeDi } from './rotolo/impagina';
+import { areaImmagine, colpiDi, corpo, corpoRiga, creaCamera, Documento, fotoBN, impagina, kanjiSotto, Posato, schedeDi } from './rotolo/impagina';
 import { Badge, Canvas, ContatoreTech, Hero, NomeTech, progBarra, Riga, Riquadro, SchedaTech, T, Vetro } from './rotolo/tech';
 import {
   Cade, CARTA, centro, Cerchio, Ciotola, Contatore, Croce, f, fontLocali, Foto, Grafico, Hanko, impostaCartella, INCHIOSTRO, Insegna,
@@ -63,9 +63,12 @@ const Pezzo: React.FC<{ p: Posato; t: number }> = ({ p, t: tempo }) => {
       return <Pennello x={x} y={y} testo={el.testo || ''} t={t} tempo={tempo} size={corpo(el)} dur={el.dur ?? 0.6} />;
     case 'kanji': {
       const conSotto = !!el.sotto;
+      // etichetta lunga (es. VIAGGIO IN OCCIDENTE): sotto i kanji invece che accanto, per non sovrapporsi
+      const sotto = conSotto && (kanjiSotto(el));
+      const sk = Math.min(230, 1300 / Math.max(1, (el.testo || '').length));
       return <>
-        <Pennello x={conSotto ? x - 260 : x} y={y} testo={el.testo || ''} t={t} tempo={tempo} size={230} font={MINCHO} peso={800} dur={el.dur ?? 0.5} />
-        {conSotto && <Macchina x={x + 330} y={y + 10} testo={el.sotto!} t={t + 0.1} tempo={tempo} size={88} />}
+        <Pennello x={conSotto && !sotto ? x - 260 : x} y={sotto ? y - 70 : y} testo={el.testo || ''} t={t} tempo={tempo} size={sk} font={MINCHO} peso={800} dur={el.dur ?? 0.5} />
+        {conSotto && <Macchina x={sotto ? x : x + 330} y={sotto ? y + 150 : y + 10} testo={el.sotto!} t={t + 0.1} tempo={tempo} size={Math.min(88, Math.floor(1300 / (el.sotto!.length * 0.64)))} />}
       </>;
     }
     case 'macchina':

@@ -1790,11 +1790,13 @@ async function onNotify(env: Env, n: Notify) {
   }
   if (!n.ok) {
     const causa = n.info?.errore || n.testo.replace(/^Errore:\s*/, '').split('\n\n')[0];
-    const cosa = n.prova ? 'Render di prova' : n.azione === 'render' ? 'Render' : 'Montaggio';
+    const doc = Boolean(n.info?.documentario);
+    const cosa = doc ? 'Documentario' : n.prova ? 'Render di prova' : n.azione === 'render' ? 'Render' : 'Montaggio';
     const s: Schermo = {
       testo: `⚠️ <b>${cosa} non riuscito</b> — ${esc(n.nome)}${n.step ? `\nFase: ${FASI.find((f) => f.id === n.step)?.nome}` : ''}\n<blockquote>${esc(tronca(causa, 700))}</blockquote>`,
       tasti: [
-        [...(n.run_id ? [tasto('🔁 Riprova', `retry:${n.run_id}`)] : []), ...(n.run_url ? [link('🔧 Log', n.run_url)] : [])],
+        // documentario: 🔁 rimanda alla scelta della cartella del documentario, non al montaggio classico (regista.yml)
+        [...(doc ? [tasto('🔁 Riprova', 'doc')] : n.run_id ? [tasto('🔁 Riprova', `retry:${n.run_id}`)] : []), ...(n.run_url ? [link('🔧 Log', n.run_url)] : [])],
         [...(/non trovo la cartella/i.test(causa) ? [tasto('🆕 Scegli la cartella', 'nuovo')] : []), MENU_TASTO],
       ],
     };

@@ -72,6 +72,9 @@ export function corpo(el: Elemento): number {
   const largo = el.tipo === 'anno' ? 0.62 : el.tipo === 'macchina' ? 0.64 : el.tipo === 'nome' ? 0.5 : 0.56;
   return Math.floor(Math.min(base, LARGO / (n * largo)));
 }
+// kanji con un'etichetta lunga: l'etichetta va sotto (accanto non ci sta)
+export const kanjiSotto = (el: Elemento) => !!el.sotto && (el.sotto.length > 9 || (el.testo || '').length > 2);
+
 // corpo di una riga del finale (testo a schermo, 2160 di larghezza)
 export const corpoRiga = (testo: string) => Math.floor(Math.min(250, 1900 / (Math.max(1, testo.length) * 0.56)));
 
@@ -91,7 +94,7 @@ export function misura(el: Elemento, mondo?: string): { w: number; h: number } {
   switch (el.tipo) {
     case 'anno': { const s = corpo(el); return { w: Math.min(LARGO, lungo(el.testo) * 0.62 * s), h: s * 0.95 }; }
     case 'titolo': { const s = corpo(el); return { w: Math.min(LARGO, lungo(el.testo) * 0.56 * s), h: s * 1.05 }; }
-    case 'kanji': return { w: 1300, h: 260 };
+    case 'kanji': return { w: 1300, h: kanjiSotto(el) ? 420 : 260 };
     case 'macchina': { const s = corpo(el); return { w: Math.min(LARGO, lungo(el.testo) * 0.64 * s), h: s * 1.3 }; }
     case 'nome': { const s = corpo(el); return { w: Math.min(LARGO, lungo(el.nome) * 0.5 * s), h: (el.ruolo ? 75 : 0) + s * 1.14 + (el.kanjiNome ? 85 : 0) }; }
     case 'foto': {
