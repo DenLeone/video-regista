@@ -1,0 +1,170 @@
+name: documentario
+
+# Documentario a piano sequenza (motore Rotolo, src/Rotolo.tsx + pc/rotolo/). Parte dal bot (🎞 Documentario)
+# o dal tab Actions. La cartella in 01 · Da editare contiene UN audio (la voce) e le foto con il nome giusto.
+# Se nella cartella c'è già beats.json (scritto da un giro prima e magari corretto a mano) si rifà solo il render.
+on:
+  workflow_dispatch:
+    inputs:
+      cartella:
+        description: 'Cartella in 01 · Da editare (audio + foto)'
+        required: true
+      risoluzione:
+        description: '1080 | 4k'
+        required: false
+        default: '1080'
+      brief:
+        description: 'Indicazioni per la regia (facoltative)'
+        required: false
+        default: ''
+
+env:
+  DIR_EDITARE: '01 · Da editare'
+  DIR_FATTI: '02 · Fatti'
+  DIR_SFX: '12 · Risorse/SFX — regista'
+
+concurrency:
+  group: documentario-${{ inputs.cartella }}
+  cancel-in-progress: false
+
+jobs:
+  documentario:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 150
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Chiavi
+        env:
+          RCLONE_CONF: ${{ secrets.RCLONE_CONF }}
+          GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+        run: |
+          manca=()
+          [ -n "$RCLONE_CONF" ] || manca+=("RCLONE_CONF")
+          [ -n "$GROQ_API_KEY" ] || manca+=("GROQ_API_KEY")
+          [ -n "$CLAUDE_CODE_OAUTH_TOKEN" ] || [ -n "$GEMINI_API_KEY" ] || manca+=("CLAUDE_CODE_OAUTH_TOKEN o GEMINI_API_KEY")
+          if [ ${#manca[@]} -gt 0 ]; then echo "::error::mancano le chiavi: ${manca[*]}"; exit 1; fi
+          echo "chiavi ok"
+
+      - name: Drive (rclone)
+        env:
+          RCLONE_CONF: ${{ secrets.RCLONE_CONF }}
+        run: |
+          command -v rclone >/dev/null 2>&1 || curl -fsSL https://rclone.org/install.sh | sudo bash > /dev/null
+          mkdir -p ~/.config/rclone
+          printf '%s\n' "$RCLONE_CONF" > ~/.config/rclone/rclone.conf
+          rclone lsf "gdrive:$DIR_EDITARE" --dirs-only > /dev/null && echo "Drive OK"
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          cache: npm
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Cache strumenti
+        uses: actions/cache@v4
+        with:
+          path: ~/opt/regista-strumenti
+          key: regista-strumenti-v2-${{ runner.os }}
+
+      - name: Dipendenze
+        timeout-minutes: 16
+        env:
+          CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+        run: |
+          bash scripts/programma-video.sh fonts-noto-color-emoji libegl1 libgles2
+          npm ci || npm install
+          pip install --quiet numpy pillow
+          [ -n "$CLAUDE_CODE_OAUTH_TOKEN" ] && npm install -g @anthropic-ai/claude-code > /dev/null 2>&1 || true
+
+      - name: Scarica cartella e suoni
+        env:
+          CARTELLA: ${{ inputs.cartella }}
+        run: |
+          mkdir -p "work/sorgente/$CARTELLA" work/sfx
+          rclone copy "gdrive:$DIR_EDITARE/$CARTELLA" "work/sorgente/$CARTELLA" --exclude "*.mp4" --exclude "*.mov" --exclude "*.MOV" --exclude "*.MP4"
+          rclone copy "gdrive:$DIR_SFX" work/sfx --exclude "*.md"
+          ls -la "work/sorgente/$CARTELLA"
+          echo "suoni: $(find work/sfx -type f | wc -l) file"
+
+      - name: Documentario
+        id: monta
+        env:
+          CARTELLA: ${{ inputs.cartella }}
+          RISOLUZIONE: ${{ inputs.risoluzione }}
+          BRIEF: ${{ inputs.brief }}
+          GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          SFX_DIR: ${{ github.workspace }}/work/sfx
+          GROQ_FORZA: '1'
+        run: |
+          set -o pipefail
+          opz=()
+          [ "$RISOLUZIONE" = "4k" ] && opz+=(--4k)
+          [ -n "$BRIEF" ] && opz+=(--brief "$BRIEF")
+          [ -f "work/sorgente/$CARTELLA/beats.json" ] && opz+=(--solo-render) && echo "beats.json già nella cartella: solo render"
+          T0=$SECONDS
+          node pc/rotolo/rotolo.mjs "work/sorgente/$CARTELLA" --nome "$CARTELLA" --uscita "out/rotolo/$CARTELLA.mp4" "${opz[@]}" 2>&1 | grep -v -E 'Rendered [0-9]+/|Encoded [0-9]+/' | tee rotolo.log
+          echo "minuti=$(( (SECONDS - T0) / 60 ))" >> "$GITHUB_OUTPUT"
+
+      - name: Carica su Drive e manda al bot
+        env:
+          CARTELLA: ${{ inputs.cartella }}
+          RISOLUZIONE: ${{ inputs.risoluzione }}
+          MINUTI: ${{ steps.monta.outputs.minuti }}
+          NOTIFY_URL: ${{ secrets.NOTIFY_URL }}
+          NOTIFY_TOKEN: ${{ secrets.NOTIFY_TOKEN }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          video="out/rotolo/$CARTELLA.mp4"
+          finale="$CARTELLA - documentario${RISOLUZIONE:+ $RISOLUZIONE}.mp4"
+          rclone copyto "$video" "gdrive:$DIR_FATTI/$CARTELLA/$finale"
+          # beats.json torna nella cartella: si può correggere e rilanciare (solo render)
+          rclone copyto "work/sorgente/$CARTELLA/beats.json" "gdrive:$DIR_EDITARE/$CARTELLA/beats.json"
+          id=$(rclone lsjson "gdrive:$DIR_FATTI/$CARTELLA/$finale" | jq -r '.[0].ID // empty')
+          [ -n "$NOTIFY_URL" ] || exit 0
+          # anteprima leggera per Telegram (il file intero è su Drive)
+          ffmpeg -v error -y -i "$video" -vf scale=720:-2 -c:v libx264 -preset veryfast -crf 30 -c:a aac -b:a 128k -movflags +faststart anteprima.mp4
+          durata=$(ffprobe -v error -show_entries format=duration -of csv=p=0 "$video")
+          beats=$(jq '.beats | length' "work/sorgente/$CARTELLA/beats.json")
+          foto=$(find "work/sorgente/$CARTELLA" -maxdepth 1 -iregex '.*\.\(jpe?g\|png\|webp\)' | wc -l)
+          note=$(jq -r '[.note // []] | flatten | join(" · ")' "work/sorgente/$CARTELLA/beats.json")
+          info=$(jq -n --arg f "$finale" --argjson d "$durata" --argjson b "$beats" --argjson s "$foto" --arg n "$note" --arg id "$id" --argjson m "${MINUTI:-0}" \
+            '{file:$f, durata:($d*10|round/10), tagli:$b, sorgenti:$s, note:$n, minuti:$m, stile:"Documentario", documentario:true} + (if $id != "" then {link:("https://drive.google.com/file/d/"+$id+"/view")} else {} end)')
+          curl -s -X POST "${NOTIFY_URL%/notify}/video" -H "x-regista-token: $NOTIFY_TOKEN" \
+            -F "nome=$CARTELLA" -F "testo=Documentario pronto" -F "durata=$durata" -F "run_id=$GITHUB_RUN_ID" -F "run_url=$RUN_URL" \
+            -F "info=$info" -F "video=@anteprima.mp4;type=video/mp4" -o /dev/null -w "bot: %{http_code}\n"
+
+      - name: Avvisa il bot se si è fermato
+        if: failure()
+        env:
+          CARTELLA: ${{ inputs.cartella }}
+          NOTIFY_URL: ${{ secrets.NOTIFY_URL }}
+          NOTIFY_TOKEN: ${{ secrets.NOTIFY_TOKEN }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          [ -n "$NOTIFY_URL" ] || exit 0
+          errore=$(grep -E 'Error|errore|⚠' rotolo.log 2>/dev/null | tail -n 3 | tr '\n' ' ' | cut -c1-400)
+          jq -n --arg n "$CARTELLA" --arg u "$RUN_URL" --arg id "$GITHUB_RUN_ID" --arg e "${errore:-vedi il log}" \
+            '{tipo:"esito", esito:"⚠️ documentario non finito", nome:$n, ok:false, run_url:$u, run_id:$id, testo:("Errore: "+$e), info:{errore:$e, documentario:true}}' \
+            | curl -s -X POST "$NOTIFY_URL" -H 'content-type: application/json' -H "x-regista-token: $NOTIFY_TOKEN" -d @- > /dev/null || true
+
+      - name: Conserva beats ed eventi (debug)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: documentario
+          path: |
+            public/collage/rotolo-*/beats.json
+            public/collage/rotolo-*/eventi.json
+            public/collage/rotolo-*/parole.json
+            rotolo.log
+          if-no-files-found: ignore

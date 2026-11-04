@@ -3,6 +3,8 @@ import { Composition, Still } from 'remotion';
 import { Blueprint } from './Blueprint';
 import { Cinematico } from './Cinematico';
 import { Copertina, PropsCopertina } from './Copertina';
+import { DocNintendo, DURATA_DOC } from './DocNintendo';
+import { PropsRotolo, Rotolo } from './Rotolo';
 import { MotionCollage } from './MotionCollage';
 import { ListaUI, Pezzo } from './ListaUI';
 import { SuMisura } from './SuMisura';
@@ -50,6 +52,12 @@ export const Root: React.FC = () => (
     {/* stili creati da Drive: la grafica arriva in props.grafica (scripts/stile-su-misura.mjs) */}
     <Composition id="SuMisura" component={SuMisura} fps={FPS} width={W} height={H}
       durationInFrames={90} calculateMetadata={metadati} defaultProps={esempio} />
+    {/* documentario a piano sequenza (prova Nintendo): tutto in src/DocNintendo.tsx */}
+    <Composition id="DocNintendo" component={DocNintendo} fps={30} width={2160} height={3840} durationInFrames={Math.round(DURATA_DOC * 30)} />
+    {/* Rotolo: documentario a piano sequenza descritto da beats.json (pc/rotolo/LEGGIMI.md) */}
+    <Composition id="Rotolo" component={Rotolo} fps={30} width={2160} height={3840} durationInFrames={300}
+      defaultProps={{ titolo: 'Esempio', cartella: 'collage/doc-nintendo', voce: 'vo.wav', durata: 10, beats: [{ t: 0.5, elementi: [{ tipo: 'anno', testo: '1889' }] }] } as PropsRotolo}
+      calculateMetadata={({ props }) => ({ fps: props.fps ?? 30, durationInFrames: Math.max(1, Math.round(props.durata * (props.fps ?? 30))) })} />
     {/* copertina per Reel e TikTok: props da scripts/regista.mjs (copertina) */}
     <Still id="Copertina" component={Copertina} width={W} height={H}
       defaultProps={{ sfondo: 'media/copertina-sfondo.jpg', testo: 'Titolo di prova', evidenzia: ['prova'], grafica: null } as PropsCopertina} />

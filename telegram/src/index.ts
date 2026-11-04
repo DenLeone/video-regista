@@ -425,6 +425,7 @@ async function pannello(env: Env): Promise<Schermo> {
     tasti: [
       [tasto('🆕 Nuovo montaggio', 'nuovo'), tasto('📦 Più video', 'lotto')],
       [tasto('📼 Ultimi video', 'video'), tasto('🎨 Stili', 'stili')],
+      [tasto('🎞 Documentario', 'doc')],
       [tasto('📊 Stato', 'stato'), tasto('⚙️ Impostazioni', 'imp')],
       [link('📂 01 · Da editare', URL_97), link('✅ 02 · Fatti', URL_98)],
       [tasto('❓ Guida', 'guida')],
@@ -791,6 +792,25 @@ function riassunto(d: Brief, imp: Imp): string {
     ...(d.note ? [`📝 <b>Note</b>        ${esc(tronca(d.note, 200))}`] : []),
     `🧠 <b>AI</b>             ${esc(motore(imp))}`,
   ].join('\n');
+}
+
+// 🎞 Documentario: la cartella in 01 · Da editare con UN audio (la voce) e le foto con il nome giusto
+async function schermoDoc(env: Env): Promise<Schermo> {
+  const c = await leggi<Cartelle>(env, 'cartelle');
+  const elenco = (c?.elenco || []).slice(0, 16);
+  const righe: Kb = [];
+  for (let i = 0; i < elenco.length; i += 2) righe.push(elenco.slice(i, i + 2).map((n, j) => tasto(`📁 ${tronca(n, 22)}`, `doc:c:${i + j}`)));
+  righe.push([tasto('🔄 Aggiorna elenco', 'doc:aggiorna'), link('📂 01 · Da editare', URL_97)], [MENU_TASTO]);
+  return {
+    testo: [
+      '🎞 <b>Documentario</b> · stile Rotolo (piano sequenza su carta, 9:16)', LINEA,
+      'Nella cartella metti <b>un file audio</b> (la tua voce) e le <b>foto</b> con il nome giusto:',
+      '<code>persona-nome-anno.jpg</code> · <code>luogo-…</code> · <code>prodotto-…</code> · <code>documento-…</code> · <code>ritaglio-….png</code>',
+      'Regia, suoni e render li fa il server. Le correzioni: <code>beats.json</code> nella cartella, poi rilancia.',
+      '', `📁 <b>Quale cartella?</b>\n${await infoElenco(env)}`,
+    ].join('\n'),
+    tasti: righe,
+  };
 }
 
 async function schermoPasso(env: Env, a: Attesa & { tipo: 'nuovo' }): Promise<Schermo> {
@@ -1189,6 +1209,39 @@ async function onCallback(env: Env, cb: Callback) {
   if (data === 'nuovo') { await avviso(); return vaiAPasso(env, chat, { tipo: 'nuovo', passo: 'cartella', dati: {} }, msgId); }
   if (data === 'lotto') { await avviso(); return mostraLotto(env, chat, { tipo: 'lotto', scelte: [] }, msgId); }
   if (data === 'video') { await avviso(); return mostra(env, chat, await schermoVideo(env), msgId); }
+  // 🎞 Documentario (motore Rotolo, documentario.yml): cartella → risoluzione → via
+  if (data === 'doc' || data === 'doc:aggiorna') {
+    await avviso(data === 'doc:aggiorna' ? 'Aggiorno l\'elenco…' : undefined);
+    await richiediElenco(env, chat, data === 'doc:aggiorna');
+    return mostra(env, chat, await schermoDoc(env), msgId);
+  }
+  const doc = /^doc:(c|v):(\d+)(?::(1080|4k))?$/.exec(data);
+  if (doc) {
+    const elenco = (await leggi<Cartelle>(env, 'cartelle'))?.elenco || [];
+    const nome = elenco[Number(doc[2])];
+    if (!nome) { await avviso('Elenco cambiato, riprova'); return mostra(env, chat, await schermoDoc(env), msgId); }
+    if (doc[1] === 'c') {
+      await avviso();
+      return mostra(env, chat, {
+        testo: `🎞 <b>Documentario</b> · ${esc(nome)}
+
+In che risoluzione?
+<i>1080: circa 10–15 min. 4K: più lento (anche 40–60 min sul server).</i>`,
+        tasti: [[tasto('📱 1080×1920', `doc:v:${doc[2]}:1080`), tasto('🖥 4K', `doc:v:${doc[2]}:4k`)], [tasto('◀ Cartelle', 'doc')]],
+      }, msgId);
+    }
+    const r = await gh(env, '/actions/workflows/documentario.yml/dispatches', { method: 'POST', body: JSON.stringify({ ref: 'main', inputs: { cartella: nome, risoluzione: doc[3] || '1080' } }) });
+    if (r.status !== 204) { await avviso(); return mostra(env, chat, { testo: `⚠️ Non parte: GitHub ${r.status}
+<code>${esc(tronca(await r.text(), 300))}</code>`, tasti: [[tasto('◀ Cartelle', 'doc'), MENU_TASTO]] }, msgId); }
+    await avviso('Partito');
+    return mostra(env, chat, {
+      testo: `🎞 <b>Documentario</b> · ${esc(nome)} · ${doc[3] === '4k' ? '4K' : '1080'}
+
+🚀 Partito. Trascrizione → regia → suoni → render.
+Ti mando il video qui quando è pronto; il file intero va in <b>02 · Fatti/${esc(nome)}</b>.`,
+      tasti: [[link('📂 02 · Fatti', URL_98), MENU_TASTO]],
+    }, msgId);
+  }
   if (data === 'stili') { await avviso(); return mostra(env, chat, await schermoStili(env), msgId); }
   if (data === 'col') { await avviso(); return mostra(env, chat, await schermoCollegamenti(env), msgId); }
 
@@ -1582,6 +1635,7 @@ type Info = {
   file?: string; durata?: number; tagli?: number; sorgenti?: number; voce?: string; keywords?: string[]; note?: string; stile?: string;
   ai?: { chi: string; modello: string; input: number; output: number; usd?: number } | null; minuti?: number; correzione?: string; errore?: string;
   pubblica?: Pubblica; prova?: number; link?: string; esempi?: number; confronta?: boolean;
+  documentario?: boolean; // giro di documentario.yml (motore Rotolo): sotto il video solo Drive e log
 };
 type SceltaStile = { nome: string; stili: string[]; scelta?: string };
 // azione: com'è partito il giro (monta, render, esempi, regia, elenco); prova: secondi del render di prova
@@ -1611,9 +1665,9 @@ function didascalia(nome: string, info?: Info, testo = ''): string {
 }
 
 // tasti sotto il video: render di prova → video intero o altro stile; video vero → tutto il resto
-function tastiRisultato(runId?: string, runUrl?: string, info?: Pick<Info, 'prova' | 'stile' | 'link'>): Kb {
+function tastiRisultato(runId?: string, runUrl?: string, info?: Pick<Info, 'prova' | 'stile' | 'link' | 'documentario'>): Kb {
   const fondo = [link('📂 Drive', info?.link || URL_98), ...(runUrl ? [link('🔧 Log', runUrl)] : [])];
-  if (!runId) return [fondo];
+  if (!runId || info?.documentario) return [fondo];
   if (info?.prova) {
     return [
       [tasto(`🎬 Video intero${info.stile ? ` · ${info.stile}` : ''}`, info.stile ? `sv:${runId}:${info.stile}` : `ren:${runId}`)],
