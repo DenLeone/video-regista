@@ -51,7 +51,8 @@ const COMUNI = path.join(ROOT, 'work', 'rotolo-comuni');
 const servono = ['washi.jpg', 'tavolo.jpg', ...[0, 1, 2, 3, 4, 5].map((i) => `grana${i}.png`)];
 if (servono.some((n) => !fs.existsSync(path.join(DIR, n)))) {
   if (servono.some((n) => !fs.existsSync(path.join(COMUNI, n)))) {
-    const py = process.platform === 'win32' ? 'python' : 'python3';
+    // PYTHON: quello con numpy e Pillow (sul server lo imposta documentario.yml)
+    const py = process.env.PYTHON || (process.platform === 'win32' ? 'python' : 'python3');
     const r = spawnSync(py, [path.join(ROOT, 'pc', 'rotolo', 'texture.py'), COMUNI], { stdio: 'inherit' });
     if (r.status !== 0) { console.error('⚠ texture non generate'); process.exit(1); }
   }

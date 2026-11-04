@@ -85,7 +85,10 @@ jobs:
         run: |
           bash scripts/programma-video.sh fonts-noto-color-emoji libegl1 libgles2
           npm ci || npm install
-          pip install --quiet numpy pillow
+          python -m pip install --quiet numpy pillow
+          # il motore usa questo Python (con numpy e Pillow), non un python3 di sistema
+          echo "PYTHON=$(python -c 'import sys; print(sys.executable)')" >> "$GITHUB_ENV"
+          "$(python -c 'import sys; print(sys.executable)')" -c 'import numpy, PIL; print("numpy", numpy.__version__, "Pillow", PIL.__version__)'
           [ -n "$CLAUDE_CODE_OAUTH_TOKEN" ] && npm install -g @anthropic-ai/claude-code > /dev/null 2>&1 || true
 
       - name: Scarica cartella e suoni

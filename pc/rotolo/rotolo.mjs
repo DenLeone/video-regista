@@ -80,7 +80,7 @@ try { fs.copyFileSync(BEATS, nelSorgente); } catch { /* cartella in sola lettura
 // ---------- suoni
 const EVENTI = path.join(LAV, 'eventi.json');
 run('node', ['--experimental-strip-types', '--no-warnings', path.join(ROOT, 'pc', 'rotolo', 'eventi.mjs'), BEATS, EVENTI]);
-run(process.platform === 'win32' ? 'python' : 'python3', [path.join(ROOT, 'pc', 'rotolo', 'suoni.py'), EVENTI, VOCE, path.join(LAV, 'mix.wav')], { env: { ...process.env, PYTHONIOENCODING: 'utf-8' } });
+run(process.env.PYTHON || (process.platform === 'win32' ? 'python' : 'python3'), [path.join(ROOT, 'pc', 'rotolo', 'suoni.py'), EVENTI, VOCE, path.join(LAV, 'mix.wav')], { env: { ...process.env, PYTHONIOENCODING: 'utf-8' } });
 
 if (ha('--senza-render')) { log(`pronto per il render: ${BEATS}`); process.exit(0); }
 
