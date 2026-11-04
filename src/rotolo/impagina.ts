@@ -14,6 +14,7 @@ export type Elemento = {
   colore?: 'rosso';
   grande?: boolean;
   dur?: number;             // durata della scritta (anno, titolo, kanji)
+  durClip?: number;         // foto che è una clip video (overlay-*.mp4): durata in secondi, la scrive prepara
   nome?: string; ruolo?: string; kanjiNome?: string;            // nome
   file?: string; files?: string[]; ar?: number; ars?: number[]; // foto, ritaglio, carte (ar = larghezza/altezza)
   bn?: boolean;             // foto in bianco e nero (default: sì per persona/luogo/documento)

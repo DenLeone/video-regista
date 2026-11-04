@@ -36,8 +36,18 @@ for (const f of file.filter((n) => /\.(jpe?g|png|webp)$/i.test(n))) {
   else fs.copyFileSync(da, path.join(LAV, f));
 }
 const audio = file.filter((n) => /\.(wav|mp3|m4a|aac|flac|ogg|opus)$/i.test(n)).sort((a, b) => /voce|vo\b|audio|narr/i.test(b) - /voce|vo\b|audio|narr/i.test(a));
+// clip overlay-*: si usano come le foto (in una card, senza audio). H.264 8 bit, larghe al massimo 1920.
+const nvenc = process.platform === 'win32' && spawnSync('ffmpeg', ['-hide_banner', '-encoders'], { encoding: 'utf8' }).stdout.includes('h264_nvenc');
+const enc = nvenc ? ['-c:v', 'h264_nvenc', '-preset', 'p5', '-cq', '21'] : ['-c:v', 'libx264', '-preset', 'veryfast', '-crf', '20'];
+const clip = file.filter((n) => /^overlay[_-]/i.test(n) && /\.(mp4|mov|m4v|mkv|webm)$/i.test(n));
+for (const c of clip) {
+  const a = path.join(LAV, c.replace(/\.[a-z0-9]+$/i, '.mp4'));
+  if (fs.existsSync(a)) continue;
+  log(`clip: ${c} → H.264`);
+  run('ffmpeg', ['-v', 'error', '-y', '-i', path.join(SORG, c), '-an', '-vf', "scale='min(1920,iw)':-2,format=yuv420p", ...enc, '-movflags', '+faststart', a]);
+}
 // un video della persona (es. alla scrivania): diventa il presentatore e la voce è il suo audio
-const video = file.filter((n) => /\.(mp4|mov|m4v|mkv)$/i.test(n)).sort((a, b) => fs.statSync(path.join(SORG, b)).size - fs.statSync(path.join(SORG, a)).size);
+const video = file.filter((n) => /\.(mp4|mov|m4v|mkv)$/i.test(n) && !clip.includes(n)).sort((a, b) => fs.statSync(path.join(SORG, b)).size - fs.statSync(path.join(SORG, a)).size);
 if (!audio.length && !video.length) throw new Error(`nessun file audio o video in ${SORG}`);
 if (audio.length > 1) log(`più audio, uso ${audio[0]}`);
 const VOCE = path.join(LAV, 'voce.wav');
@@ -48,8 +58,6 @@ if (video.length && !audio.length) {
   if (!fs.existsSync(PRES)) {
     log(`presentatore: ${video[0]} → H.264 per il render`);
     // NVENC sul PC con la scheda video, altrimenti x264; 8 bit (i 10 bit HEVC dell'iPhone rallentano Chrome)
-    const nvenc = process.platform === 'win32' && spawnSync('ffmpeg', ['-hide_banner', '-encoders'], { encoding: 'utf8' }).stdout.includes('h264_nvenc');
-    const enc = nvenc ? ['-c:v', 'h264_nvenc', '-preset', 'p5', '-cq', '21'] : ['-c:v', 'libx264', '-preset', 'veryfast', '-crf', '20'];
     run('ffmpeg', ['-v', 'error', '-y', '-i', path.join(SORG, video[0]), '-an', '-vf', 'scale=2160:-2,format=yuv420p', ...enc, '-movflags', '+faststart', PRES]);
   }
   const VISO = path.join(LAV, 'viso.json');

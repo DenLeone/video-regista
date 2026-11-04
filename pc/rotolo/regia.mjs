@@ -14,7 +14,9 @@ const [fileParole, dirImmagini, uscita] = args;
 if (!uscita) { console.error('uso: node pc/rotolo/regia.mjs <parole.json> <cartella immagini> <beats.json> [--brief "…"]'); process.exit(1); }
 const parole = JSON.parse(fs.readFileSync(fileParole, 'utf8'));
 const durata = +(parole.at(-1).e + 0.6).toFixed(2);
-const immagini = fs.readdirSync(dirImmagini).filter((f) => /\.(jpe?g|png|webp)$/i.test(f) && !/^(washi|tavolo|grana\d)\./i.test(f)).sort();
+const immagini = fs.readdirSync(dirImmagini).filter((f) => (/\.(jpe?g|png|webp)$/i.test(f) && !/^(washi|tavolo|grana\d)\./i.test(f)) || /^overlay[_-].*\.mp4$/i.test(f)).sort();
+const eClip = (f) => /\.mp4$/i.test(f);
+const durClip = (f) => +(+spawnSync('ffprobe', ['-v', 'error', '-show_entries', 'format=duration', '-of', 'csv=p=0', path.join(dirImmagini, f)], { encoding: 'utf8' }).stdout.trim() || 0).toFixed(1);
 const brief = opz('--brief');
 
 // testo con i tempi: una riga per frase, ogni parola con il suo secondo d'inizio
@@ -87,7 +89,8 @@ REGOLE
 9. Aggiungi "note": un elenco di dubbi per Denis (fatti incerti, foto mancanti utili). Può essere vuoto.
 
 ${NOTE_MONDO}${NOTE_PRESENTATORE}${brief ? `BRIEF DI DENIS: ${brief}\n` : ''}FOTO DISPONIBILI (${immagini.length}):
-${immagini.map((f) => `- ${f}`).join('\n') || '- (nessuna)'}
+${immagini.map((f) => (eClip(f) ? `- ${f}  (CLIP VIDEO di ${durClip(f)} s)` : `- ${f}`)).join('\n') || '- (nessuna)'}
+${immagini.some(eClip) ? 'Le CLIP VIDEO si usano SOLO come "foto" (mai ritaglio o carte): partono quando compaiono, senza audio, e finite restano ferme. Mettile sulla frase che descrive quello che mostrano, dove il movimento conta.\n' : ''}
 
 TESTO CON I TEMPI (secondo d'inizio di ogni parola):
 ${righe()}
@@ -110,6 +113,7 @@ function controlla(d) {
       for (const f of [el.file, ...(el.files || [])].filter(Boolean)) {
         if (!immagini.includes(f)) errori.push(`${nome}: il file "${f}" non esiste`);
         else if (usate.has(f) && el.tipo !== 'carte') errori.push(`${nome}: "${f}" usato due volte`);
+        else if (eClip(f) && el.tipo !== 'foto') errori.push(`${nome}: la clip "${f}" va usata come "foto"`);
         usate.add(f);
       }
       // i tempi si agganciano all'inizio di parola più vicino (l'AI sbaglia di qualche centesimo)

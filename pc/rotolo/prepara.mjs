@@ -28,6 +28,10 @@ const tutti = [...(doc.apertura ? [doc.apertura] : []), ...doc.beats];
 const mancano = [];
 for (const b of tutti) for (const el of b.elementi) {
   if (el.file) { el.ar = ar(el.file); if (!el.ar) mancano.push(el.file); }
+  if (el.file && /\.(mp4|mov|m4v|webm)$/i.test(el.file) && fs.existsSync(path.join(DIR, el.file))) {
+    const r = spawnSync('ffprobe', ['-v', 'error', '-show_entries', 'format=duration', '-of', 'csv=p=0', path.join(DIR, el.file)], { encoding: 'utf8' });
+    el.durClip = +(+r.stdout.trim() || 0).toFixed(2) || undefined;
+  }
   if (el.files) { el.ars = el.files.map(ar); el.files.forEach((n, i) => { if (!el.ars[i]) mancano.push(n); }); }
 }
 fs.writeFileSync(file, JSON.stringify(doc, null, 2));

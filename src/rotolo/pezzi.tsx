@@ -1,5 +1,5 @@
 import React from 'react';
-import { Easing, Img, staticFile } from 'remotion';
+import { Easing, Freeze, Img, OffthreadVideo, staticFile, useCurrentFrame, useVideoConfig } from 'remotion';
 import { loadFont as caricaCormorant } from '@remotion/google-fonts/CormorantGaramond';
 import { loadFont as caricaCourier } from '@remotion/google-fonts/CourierPrime';
 
@@ -49,12 +49,23 @@ export const Cade: React.FC<Pos & { t: number; tempo: number; children: React.Re
   return <div style={{ ...centro({ ...p, rot: r }, `scale(${s})`), opacity: o, filter: sh }}>{children}</div>;
 };
 
+// immagine o clip video (overlay-*.mp4): la clip parte quando l'elemento compare (t), senza audio,
+// e finita resta ferma sull'ultimo fotogramma
+export const eVideo = (n = '') => /\.(mp4|mov|m4v|webm)$/i.test(n);
+export const Media: React.FC<{ src: string; style?: React.CSSProperties; t?: number; dur?: number }> = ({ src, style, t = 0, dur }) => {
+  const frame = useCurrentFrame();
+  const { fps } = useVideoConfig();
+  if (!eVideo(src)) return <Img src={f(src)} style={style} />;
+  const ultimo = dur ? Math.max(0, Math.floor(dur * fps) - 2) : Infinity;
+  return <Freeze frame={Math.min(ultimo, Math.max(0, frame - Math.round(t * fps)))}><OffthreadVideo src={f(src)} muted style={style} /></Freeze>;
+};
+
 // stampa fotografica d'epoca con bordo bianco e due strisce di washi tape
-export const Foto: React.FC<{ src: string; w: number; bn?: boolean; seppia?: number; bordo?: number; nastro?: boolean; contain?: boolean; h?: number; fondo?: string }> = ({ src, w, bn = true, seppia = 0.35, bordo, nastro = true, contain, h, fondo }) => {
+export const Foto: React.FC<{ src: string; w: number; bn?: boolean; seppia?: number; bordo?: number; nastro?: boolean; contain?: boolean; h?: number; fondo?: string; t?: number; dur?: number }> = ({ src, w, bn = true, seppia = 0.35, bordo, nastro = true, contain, h, fondo, t, dur }) => {
   const b = bordo ?? w * 0.045;
   return (
     <div style={{ position: 'relative', width: w, padding: b, background: '#f4efe4', boxShadow: 'inset 0 0 0 1px rgba(0,0,0,0.08)' }}>
-      <Img src={f(src)} style={{
+      <Media src={src} t={t} dur={dur} style={{
         display: 'block', width: '100%', height: h, objectFit: contain ? 'contain' : 'cover', background: fondo,
         filter: bn ? `grayscale(1) sepia(${seppia}) contrast(1.08) brightness(0.97)` : 'saturate(0.9) contrast(1.02)',
       }} />

@@ -13,6 +13,10 @@ Una cartella con:
   - `luogo-kyoto.jpg`, `documento-giornale-1958.jpg` → bianco e nero
   - `prodotto-ultra-hand-1966.jpg` → a colori
   - `ritaglio-mario.png` → PNG trasparente, cade senza cornice
+  - `overlay-timeline-davinci.mp4` (o .mov/.mkv/.webm) → clip video usata come una foto: stessa cornice/card,
+    parte quando compare, senza audio, finita resta ferma sull'ultimo fotogramma. Va convertita in H.264
+    (al massimo 1920 di larghezza) e la regia la vede con la sua durata. Il prefisso `overlay-` la distingue
+    dal video del presentatore.
   - lato lungo almeno 1500 px (i ritratti piccoli reggono solo se mostrati piccoli).
 
 ## Dal bot (server)

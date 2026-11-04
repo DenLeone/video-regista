@@ -2,7 +2,7 @@ import React from 'react';
 import { Easing, Img } from 'remotion';
 import { loadFont as caricaGrotesk } from '@remotion/google-fonts/SpaceGrotesk';
 import { loadFont as caricaMono } from '@remotion/google-fonts/JetBrainsMono';
-import { centro, clamp01, f, inOut, outCubic, Pos, prog } from './pezzi';
+import { centro, clamp01, f, inOut, Media, outCubic, Pos, prog } from './pezzi';
 
 // Mondo "Tech" del documentario (stesso beats.json del Rotolo, altro aspetto): un canvas infinito
 // scuro a griglia blueprint, card di vetro, un bus dati con i nodi degli anni, numeri enormi,
@@ -60,7 +60,7 @@ export const Canvas: React.FC<{ altezza: number; anni: [string, number][]; tracc
 
 // ---------------------------------------------------------------- elementi
 // card di vetro con la barra in alto (tre punti + etichetta monospace) e la foto dentro
-export const Vetro: React.FC<{ src: string; w: number; etichetta: string; attivo: number }> = ({ src, w, etichetta, attivo }) => (
+export const Vetro: React.FC<{ src: string; w: number; etichetta: string; attivo: number; t?: number; dur?: number }> = ({ src, w, etichetta, attivo, t, dur }) => (
   <div style={{
     width: w, padding: CARD.pad, paddingTop: CARD.testa, borderRadius: 30, background: T.vetro, position: 'relative',
     border: `2px solid ${T.bordo}`, boxShadow: `0 40px 90px rgba(0,0,0,0.6), inset 0 1px 0 rgba(255,255,255,0.08), 0 0 ${60 * attivo}px ${hexA(T.accento, 0.18 * attivo)}`,
@@ -69,7 +69,7 @@ export const Vetro: React.FC<{ src: string; w: number; etichetta: string; attivo
       {['#ff5f57', '#febc2e', '#28c840'].map((c) => <div key={c} style={{ width: 20, height: 20, borderRadius: 10, background: c, opacity: 0.85 }} />)}
     </div>
     <div style={{ position: 'absolute', top: 14, right: 30, fontFamily: MONO, fontWeight: 700, fontSize: 30, letterSpacing: 3, color: T.spento, whiteSpace: 'nowrap' }}>{etichetta}</div>
-    <Img src={f(src)} style={{ display: 'block', width: '100%', borderRadius: 18 }} />
+    <Media src={src} t={t} dur={dur} style={{ display: 'block', width: '100%', borderRadius: 18 }} />
   </div>
 );
 
