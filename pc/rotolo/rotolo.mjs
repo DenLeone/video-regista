@@ -120,4 +120,9 @@ const cpu = Math.max(2, Math.min(8, os.cpus().length - 1));
 log(`render ${ha('--4k') ? '4K 2160×3840' : '1080×1920'} con ${cpu} processi`);
 run('npx', ['remotion', 'render', 'src/index.ts', 'Rotolo', uscita, `--props=${PROPS}`, `--concurrency=${cpu}`, '--crf=20', ...(ha('--4k') ? [] : ['--scale=0.5'])]);
 log(`fatto: ${uscita}`);
+// copertina, descrizione e hashtag per i social (in <video>-social/): se non riesce, il video resta buono
+if (!ha('--senza-social')) {
+  try { run('node', [path.join(ROOT, 'pc', 'rotolo', 'social.mjs'), BEATS, uscita, uscita.replace(/\.mp4$/i, '') + '-social']); }
+  catch (e) { log(`social non fatti: ${e.message}`); }
+}
 if (doc.note?.length) log(`note della regia:\n- ${[].concat(doc.note).join('\n- ')}`);

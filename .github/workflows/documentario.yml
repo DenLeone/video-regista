@@ -154,6 +154,15 @@ jobs:
           curl -s -X POST "${NOTIFY_URL%/notify}/video" -H "x-regista-token: $NOTIFY_TOKEN" \
             -F "nome=$CARTELLA" -F "testo=Documentario pronto" -F "durata=$durata" -F "run_id=$GITHUB_RUN_ID" -F "run_url=$RUN_URL" \
             -F "info=$info" -F "video=@anteprima.mp4;type=video/mp4" -o /dev/null -w "bot: %{http_code}\n"
+          # copertina, descrizione e 5 hashtag (pc/rotolo/social.mjs), come per gli altri video
+          social="out/rotolo/$CARTELLA-social"
+          [ -f "$social/copertina.jpg" ] && rclone copyto "$social/copertina.jpg" "gdrive:$DIR_FATTI/$CARTELLA/$CARTELLA - copertina.jpg"
+          if [ -f "$social/social.json" ]; then
+            cop=(); [ -f "$social/copertina.jpg" ] && cop=(-F "foto=@$social/copertina.jpg;type=image/jpeg")
+            curl -s -X POST "${NOTIFY_URL%/notify}/copertina" -H "x-regista-token: $NOTIFY_TOKEN" -F "nome=$CARTELLA" "${cop[@]}" \
+              --form-string "descrizione=$(jq -r '.descrizione' "$social/social.json")" --form-string "hashtag=$(jq -r '.hashtag | join(" ")' "$social/social.json")" \
+              -o /dev/null -w "copertina al bot: %{http_code}\n" || true
+          fi
 
       - name: Avvisa il bot se si è fermato
         if: failure()

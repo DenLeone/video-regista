@@ -43,6 +43,7 @@ Uscita in `out\rotolo\`. Il lavoro sta in `public\collage\rotolo-<nome>\` (non v
 | Prepara | `pc/rotolo/prepara.mjs` | proporzioni delle foto, font giapponesi ridotti ai caratteri usati, texture comuni |
 | Suoni | `pc/rotolo/eventi.mjs` + `pc/rotolo/suoni.py` | gli eventi sonori escono dalla stessa impaginazione del video; mix voce + SFX + stanza + musica, −14 LUFS |
 | Render | `src/Rotolo.tsx` | Remotion, con l'audio già mixato |
+| Social | `pc/rotolo/social.mjs` | AI sceglie il beat più forte e scrive testo di copertina, descrizione e 5 hashtag; copertina = fotogramma più nitido di quel beat + `src/Copertina.tsx` → `<video>-social/` (dal bot: su Drive e in chat). `--senza-social` lo salta |
 
 Impaginazione, camera ed eventi sonori: `src/rotolo/impagina.ts` (TypeScript puro, lo usano sia Remotion
 sia gli script). Grafica: `src/rotolo/pezzi.tsx`.
