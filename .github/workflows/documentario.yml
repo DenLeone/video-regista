@@ -13,6 +13,10 @@ on:
         description: '1080 | 4k'
         required: false
         default: '1080'
+      mondo:
+        description: 'Stile: rotolo (carta e inchiostro) | tech (canvas scuro, card di vetro)'
+        required: false
+        default: 'rotolo'
       brief:
         description: 'Indicazioni per la regia (facoltative)'
         required: false
@@ -99,6 +103,7 @@ jobs:
         env:
           CARTELLA: ${{ inputs.cartella }}
           RISOLUZIONE: ${{ inputs.risoluzione }}
+          MONDO: ${{ inputs.mondo }}
           BRIEF: ${{ inputs.brief }}
           GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
@@ -110,6 +115,7 @@ jobs:
           opz=()
           [ "$RISOLUZIONE" = "4k" ] && opz+=(--4k)
           [ -n "$BRIEF" ] && opz+=(--brief "$BRIEF")
+          opz+=(--mondo "${MONDO:-rotolo}")
           [ -f "work/sorgente/$CARTELLA/beats.json" ] && opz+=(--solo-render) && echo "beats.json già nella cartella: solo render"
           T0=$SECONDS
           node pc/rotolo/rotolo.mjs "work/sorgente/$CARTELLA" --nome "$CARTELLA" --uscita "out/rotolo/$CARTELLA.mp4" "${opz[@]}" 2>&1 | grep -v -E 'Rendered [0-9]+/|Encoded [0-9]+/' | tee rotolo.log
@@ -120,6 +126,7 @@ jobs:
           CARTELLA: ${{ inputs.cartella }}
           RISOLUZIONE: ${{ inputs.risoluzione }}
           MINUTI: ${{ steps.monta.outputs.minuti }}
+          MONDO: ${{ inputs.mondo }}
           NOTIFY_URL: ${{ secrets.NOTIFY_URL }}
           NOTIFY_TOKEN: ${{ secrets.NOTIFY_TOKEN }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
@@ -138,7 +145,7 @@ jobs:
           foto=$(find "work/sorgente/$CARTELLA" -maxdepth 1 -iregex '.*\.\(jpe?g\|png\|webp\)' | wc -l)
           note=$(jq -r '[.note // []] | flatten | join(" · ")' "work/sorgente/$CARTELLA/beats.json")
           info=$(jq -n --arg f "$finale" --argjson d "$durata" --argjson b "$beats" --argjson s "$foto" --arg n "$note" --arg id "$id" --argjson m "${MINUTI:-0}" \
-            '{file:$f, durata:($d*10|round/10), tagli:$b, sorgenti:$s, note:$n, minuti:$m, stile:"Documentario", documentario:true} + (if $id != "" then {link:("https://drive.google.com/file/d/"+$id+"/view")} else {} end)')
+            '{file:$f, durata:($d*10|round/10), tagli:$b, sorgenti:$s, note:$n, minuti:$m, stile:("Documentario " + (env.MONDO // "rotolo")), documentario:true} + (if $id != "" then {link:("https://drive.google.com/file/d/"+$id+"/view")} else {} end)')
           curl -s -X POST "${NOTIFY_URL%/notify}/video" -H "x-regista-token: $NOTIFY_TOKEN" \
             -F "nome=$CARTELLA" -F "testo=Documentario pronto" -F "durata=$durata" -F "run_id=$GITHUB_RUN_ID" -F "run_url=$RUN_URL" \
             -F "info=$info" -F "video=@anteprima.mp4;type=video/mp4" -o /dev/null -w "bot: %{http_code}\n"

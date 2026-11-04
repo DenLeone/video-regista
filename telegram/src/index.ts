@@ -803,7 +803,7 @@ async function schermoDoc(env: Env): Promise<Schermo> {
   righe.push([tasto('🔄 Aggiorna elenco', 'doc:aggiorna'), link('📂 01 · Da editare', URL_97)], [MENU_TASTO]);
   return {
     testo: [
-      '🎞 <b>Documentario</b> · stile Rotolo (piano sequenza su carta, 9:16)', LINEA,
+      '🎞 <b>Documentario</b> · piano sequenza 9:16 · stili 📜 Rotolo e 💻 Tech', LINEA,
       'Nella cartella metti <b>un file audio</b> (la tua voce) e le <b>foto</b> con il nome giusto:',
       '<code>persona-nome-anno.jpg</code> · <code>luogo-…</code> · <code>prodotto-…</code> · <code>documento-…</code> · <code>ritaglio-….png</code>',
       'Regia, suoni e render li fa il server. Le correzioni: <code>beats.json</code> nella cartella, poi rilancia.',
@@ -1215,7 +1215,7 @@ async function onCallback(env: Env, cb: Callback) {
     await richiediElenco(env, chat, data === 'doc:aggiorna');
     return mostra(env, chat, await schermoDoc(env), msgId);
   }
-  const doc = /^doc:(c|v):(\d+)(?::(1080|4k))?$/.exec(data);
+  const doc = /^doc:(c|s|v):(\d+)(?::(rotolo|tech))?(?::(1080|4k))?$/.exec(data);
   if (doc) {
     const elenco = (await leggi<Cartelle>(env, 'cartelle'))?.elenco || [];
     const nome = elenco[Number(doc[2])];
@@ -1223,19 +1223,23 @@ async function onCallback(env: Env, cb: Callback) {
     if (doc[1] === 'c') {
       await avviso();
       return mostra(env, chat, {
-        testo: `🎞 <b>Documentario</b> · ${esc(nome)}
-
-In che risoluzione?
-<i>1080: circa 10–15 min. 4K: più lento (anche 40–60 min sul server).</i>`,
-        tasti: [[tasto('📱 1080×1920', `doc:v:${doc[2]}:1080`), tasto('🖥 4K', `doc:v:${doc[2]}:4k`)], [tasto('◀ Cartelle', 'doc')]],
+        testo: `🎞 <b>Documentario</b> · ${esc(nome)}\n\nChe stile?\n📜 <b>Rotolo</b>: carta di riso, inchiostro, timbri rossi (storie, epoche)\n💻 <b>Tech</b>: canvas scuro, card di vetro, numeri enormi (prodotti, tecnologia)`,
+        tasti: [[tasto('📜 Rotolo', `doc:s:${doc[2]}:rotolo`), tasto('💻 Tech', `doc:s:${doc[2]}:tech`)], [tasto('◀ Cartelle', 'doc')]],
       }, msgId);
     }
-    const r = await gh(env, '/actions/workflows/documentario.yml/dispatches', { method: 'POST', body: JSON.stringify({ ref: 'main', inputs: { cartella: nome, risoluzione: doc[3] || '1080' } }) });
+    if (doc[1] === 's') {
+      await avviso();
+      return mostra(env, chat, {
+        testo: `🎞 <b>Documentario</b> · ${esc(nome)} · ${doc[3] === 'tech' ? '💻 Tech' : '📜 Rotolo'}\n\nIn che risoluzione?\n<i>1080: circa 10–15 min. 4K: più lento (anche 40–60 min sul server).</i>`,
+        tasti: [[tasto('📱 1080×1920', `doc:v:${doc[2]}:${doc[3]}:1080`), tasto('🖥 4K', `doc:v:${doc[2]}:${doc[3]}:4k`)], [tasto('◀ Stile', `doc:c:${doc[2]}`)]],
+      }, msgId);
+    }
+    const r = await gh(env, '/actions/workflows/documentario.yml/dispatches', { method: 'POST', body: JSON.stringify({ ref: 'main', inputs: { cartella: nome, mondo: doc[3] || 'rotolo', risoluzione: doc[4] || '1080' } }) });
     if (r.status !== 204) { await avviso(); return mostra(env, chat, { testo: `⚠️ Non parte: GitHub ${r.status}
 <code>${esc(tronca(await r.text(), 300))}</code>`, tasti: [[tasto('◀ Cartelle', 'doc'), MENU_TASTO]] }, msgId); }
     await avviso('Partito');
     return mostra(env, chat, {
-      testo: `🎞 <b>Documentario</b> · ${esc(nome)} · ${doc[3] === '4k' ? '4K' : '1080'}
+      testo: `🎞 <b>Documentario</b> · ${esc(nome)} · ${doc[3] === 'tech' ? '💻 Tech' : '📜 Rotolo'} · ${doc[4] === '4k' ? '4K' : '1080'}
 
 🚀 Partito. Trascrizione → regia → suoni → render.
 Ti mando il video qui quando è pronto; il file intero va in <b>02 · Fatti/${esc(nome)}</b>.`,

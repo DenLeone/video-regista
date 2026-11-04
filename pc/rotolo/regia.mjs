@@ -1,5 +1,5 @@
 // Rotolo, regia: dalle parole con i tempi e dall'elenco delle foto scrive beats.json.
-//   node pc/rotolo/regia.mjs <parole.json> <cartella immagini> <beats.json> [--brief "…"] [--cartella collage/x]
+//   node pc/rotolo/regia.mjs <parole.json> <cartella immagini> <beats.json> [--brief "…"] [--cartella collage/x] [--mondo rotolo|tech]
 // AI, in ordine: Claude Code (comando `claude`, abbonamento: CLAUDE_CODE_OAUTH_TOKEN sul runner), Gemini
 // (GEMINI_API_KEY), AI locale (Ollama). ROTOLO_AI=claude|gemini|locale forza la prima scelta.
 // Il risultato si controlla (tipi, file, tempi) e se ha errori si rimanda all'AI una volta con l'elenco.
@@ -28,7 +28,14 @@ function righe() {
   return out.join('\n');
 }
 
-const PROMPT = `Sei il regista di un documentario verticale (9:16, 4K) in stile "Rotolo": un unico piano sequenza su un lungo rotolo di carta di riso (kakemono) srotolato su un tavolo scuro. La camera scorre dall'alto (passato) al basso (oggi) senza tagli; sulla carta cadono foto d'epoca, carte, timbri rossi hanko, scritte a pennello e a macchina, ognuno ESATTAMENTE sulla parola che lo nomina. Il riferimento di qualità è un documentario "da Netflix": pochi elementi, grandi, leggibili, ognuno al momento giusto.
+const MONDO = opz('--mondo', 'rotolo') === 'tech' ? 'tech' : 'rotolo';
+const INTRO = MONDO === 'tech'
+  ? 'Sei il regista di un video tech esplicativo verticale (9:16, 4K) in stile "Tech": un unico piano sequenza su un canvas infinito scuro a griglia blueprint, con un bus dati e circuiti. La camera scorre senza tagli; sul canvas compaiono card di vetro con foto e screenshot, numeri enormi, etichette monospace, badge rossi sulle parole forti e riquadri che scattano sui dettagli, ognuno ESATTAMENTE sulla parola che lo nomina. Tutto quello che non è il beat in corso si spegne al 15%. Pochi elementi, grandi, leggibili su un telefono in meno di un secondo.'
+  : 'Sei il regista di un documentario verticale (9:16, 4K) in stile "Rotolo": un unico piano sequenza su un lungo rotolo di carta di riso (kakemono) srotolato su un tavolo scuro. La camera scorre dall\'alto (passato) al basso (oggi) senza tagli; sulla carta cadono foto d\'epoca, carte, timbri rossi hanko, scritte a pennello e a macchina, ognuno ESATTAMENTE sulla parola che lo nomina. Il riferimento di qualità è un documentario "da Netflix": pochi elementi, grandi, leggibili, ognuno al momento giusto.';
+const NOTE_MONDO = MONDO === 'tech'
+  ? `\nSTILE TECH (vale sopra a tutto):\n- niente "kanji" e niente "carte"; "timbro" = badge rosso con 1–2 parole in italiano (es. "Rubata", "Inaffidabile"), max 16 caratteri\n- "foto" ha anche "etichetta": testo corto in maiuscolo nella barra della card (es. "MACINTOSH · 1984"); "bn" non serve\n- "contatore" può avere "suffisso" (es. " €"); i numeri grandi sono gli eroi: usali per prezzi, quantità, specifiche dette nel parlato\n- icone delle "schede": mouse | finestra | chip | floppy | soldi | telefono\n- "macchina" = etichetta monospace (colore "rosso" per i fallimenti)\n`
+  : '';
+const PROMPT = `${INTRO}
 
 Devi scrivere il file beats.json. Rispondi SOLO con il JSON.
 
@@ -68,7 +75,7 @@ REGOLE
 8. Scritte corte: anno 4 cifre, titolo ≤ 14 lettere, macchina ≤ 26 caratteri. In italiano, giuste.
 9. Aggiungi "note": un elenco di dubbi per Denis (fatti incerti, foto mancanti utili). Può essere vuoto.
 
-${brief ? `BRIEF DI DENIS: ${brief}\n` : ''}FOTO DISPONIBILI (${immagini.length}):
+${NOTE_MONDO}${brief ? `BRIEF DI DENIS: ${brief}\n` : ''}FOTO DISPONIBILI (${immagini.length}):
 ${immagini.map((f) => `- ${f}`).join('\n') || '- (nessuna)'}
 
 TESTO CON I TEMPI (secondo d'inizio di ogni parola):
@@ -146,6 +153,7 @@ if (errori.length) {
 doc.durata = durata;
 doc.cartella = opz('--cartella', doc.cartella || '');
 doc.voce = doc.voce || 'voce.wav';
+if (MONDO === 'tech') doc.mondo = 'tech';
 fs.writeFileSync(uscita, JSON.stringify(doc, null, 2));
 console.log(`${doc.beats.length} beat → ${uscita}${errori.length ? `\n⚠ restano errori:\n- ${errori.join('\n- ')}` : ''}`);
 if (doc.note?.length) console.log(`note:\n- ${[].concat(doc.note).join('\n- ')}`);

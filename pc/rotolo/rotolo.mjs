@@ -1,5 +1,5 @@
 // Rotolo: dalla cartella con l'audio e le foto al video finito, in un comando.
-//   node pc/rotolo/rotolo.mjs <cartella> [--nome Nintendo] [--4k] [--brief "…"] [--rifai-regia] [--solo-render] [--uscita file.mp4]
+//   node pc/rotolo/rotolo.mjs <cartella> [--nome Nintendo] [--4k] [--brief "…"] [--mondo rotolo|tech] [--rifai-regia] [--solo-render] [--senza-render] [--uscita file.mp4]
 // La cartella contiene: UN file audio (la voce: wav/mp3/m4a…) e le foto con il nome giusto
 // (tipo-nome-anno, es. persona-hiroshi-yamauchi-1960.jpg; vedi pc/rotolo/LEGGIMI.md).
 // Passi: trascrizione (Whisper sul PC, o Groq) → regia AI (beats.json) → prepara → suoni → render.
@@ -68,10 +68,11 @@ const nelSorgente = path.join(SORG, 'beats.json');
 if (ha('--solo-render') && fs.existsSync(nelSorgente)) fs.copyFileSync(nelSorgente, BEATS);
 else if (!fs.existsSync(BEATS) || ha('--rifai-regia')) {
   log('regia AI');
-  run('node', [path.join(ROOT, 'pc', 'rotolo', 'regia.mjs'), PAROLE, LAV, BEATS, '--cartella', CART, ...(opz('--brief') ? ['--brief', opz('--brief')] : [])]);
+  run('node', [path.join(ROOT, 'pc', 'rotolo', 'regia.mjs'), PAROLE, LAV, BEATS, '--cartella', CART, '--mondo', opz('--mondo', 'rotolo'), ...(opz('--brief') ? ['--brief', opz('--brief')] : [])]);
 }
 const doc = JSON.parse(fs.readFileSync(BEATS, 'utf8'));
 doc.titolo = doc.titolo || nome; doc.cartella = CART; doc.voce = 'voce.wav';
+if (opz('--mondo')) doc.mondo = opz('--mondo') === 'tech' ? 'tech' : undefined;
 fs.writeFileSync(BEATS, JSON.stringify(doc, null, 2));
 run('node', [path.join(ROOT, 'pc', 'rotolo', 'prepara.mjs'), BEATS]);
 try { fs.copyFileSync(BEATS, nelSorgente); } catch { /* cartella in sola lettura: pazienza */ }
@@ -80,6 +81,8 @@ try { fs.copyFileSync(BEATS, nelSorgente); } catch { /* cartella in sola lettura
 const EVENTI = path.join(LAV, 'eventi.json');
 run('node', ['--experimental-strip-types', '--no-warnings', path.join(ROOT, 'pc', 'rotolo', 'eventi.mjs'), BEATS, EVENTI]);
 run(process.platform === 'win32' ? 'python' : 'python3', [path.join(ROOT, 'pc', 'rotolo', 'suoni.py'), EVENTI, VOCE, path.join(LAV, 'mix.wav')], { env: { ...process.env, PYTHONIOENCODING: 'utf-8' } });
+
+if (ha('--senza-render')) { log(`pronto per il render: ${BEATS}`); process.exit(0); }
 
 // ---------- render (con l'audio già mixato)
 const props = { ...JSON.parse(fs.readFileSync(BEATS, 'utf8')), voce: 'mix.wav' };

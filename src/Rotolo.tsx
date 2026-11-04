@@ -1,6 +1,7 @@
 import React, { useMemo } from 'react';
 import { AbsoluteFill, Audio, Easing, Img, interpolate, useCurrentFrame, useVideoConfig } from 'remotion';
-import { colpiDi, corpo, corpoRiga, creaCamera, Documento, fotoBN, impagina, Posato } from './rotolo/impagina';
+import { areaImmagine, colpiDi, corpo, corpoRiga, creaCamera, Documento, fotoBN, impagina, Posato, schedeDi } from './rotolo/impagina';
+import { Badge, Canvas, ContatoreTech, Hero, NomeTech, progBarra, Riga, Riquadro, SchedaTech, T, Vetro } from './rotolo/tech';
 import {
   Cade, CARTA, centro, Cerchio, Ciotola, Contatore, Croce, f, fontLocali, Foto, Grafico, Hanko, impostaCartella, INCHIOSTRO, Insegna,
   Macchina, MACCHINA, MINCHO, Nome, outCubic, Pantografo, PENNELLO, Pennello, prog, ROSSO, Scheda, SERIF, tratto, Taxi,
@@ -108,11 +109,11 @@ const Pezzo: React.FC<{ p: Posato; t: number }> = ({ p, t: tempo }) => {
       return <>
         {voci.map((v, k) => {
           const Icona = ICONE[v.icona || ''];
-          return <Cade key={k} x={x + (k % 2 ? 30 : -30)} y={top + k * 700 + 280} rot={k % 2 ? 2 : -2} t={v.t ?? t} tempo={tempo}>
+          return <Cade key={k} x={x + (k % 2 ? 30 : -30)} y={top + k * schedeDi().passo + schedeDi().alt / 2} rot={k % 2 ? 2 : -2} t={v.t ?? t} tempo={tempo}>
             <Scheda kanji={v.kanji || ''} titolo={v.titolo.toUpperCase()} icona={Icona ? <Icona /> : null} />
           </Cade>;
         })}
-        {(el.croci || []).map((c, k) => <Croce key={k} x={x + (k % 2 ? 30 : -30)} y={top + k * 700 + 280} w={820} t={c} tempo={tempo} />)}
+        {(el.croci || []).map((c, k) => <Croce key={k} x={x + (k % 2 ? 30 : -30)} y={top + k * schedeDi().passo + schedeDi().alt / 2} w={820} t={c} tempo={tempo} />)}
         {el.timbroFinale && <Hanko x={x} y={y} rot={-10} testo={el.timbroFinale.testo} sotto={el.timbroFinale.sotto} t={el.timbroFinale.t} tempo={tempo} size={330} />}
       </>;
     }
@@ -127,12 +128,70 @@ const Pezzo: React.FC<{ p: Posato; t: number }> = ({ p, t: tempo }) => {
     case 'cerchio': {
       const o = p.ospite;
       if (!o) return null;
-      const iw = o.w * 0.91, ih = o.h - o.w * 0.09;
-      return <Cerchio x={o.x - iw / 2 + (el.cx ?? 0.5) * iw} y={o.y - ih / 2 + (el.cy ?? 0.5) * ih} w={170} h={170} t={t} tempo={tempo} spessore={8} />;
+      const a = areaImmagine(o);
+      return <Cerchio x={a.x0 + (el.cx ?? 0.5) * a.w} y={a.y0 + (el.cy ?? 0.5) * a.h} w={170} h={170} t={t} tempo={tempo} spessore={8} />;
     }
   }
   return null;
 };
+
+// ---------------------------------------------------------------- mondo tech
+const nomeFile = (n = '') => n.replace(/\.[a-z0-9]+$/i, '').replace(/[_-]+/g, ' ').toUpperCase();
+const PezzoTech: React.FC<{ p: Posato; t: number }> = ({ p, t: tempo }) => {
+  const { el, x, y, w, h, t, rot } = p;
+  switch (el.tipo) {
+    case 'anno': return <Hero x={x} y={y} testo={el.testo || ''} t={t} tempo={tempo} size={corpo(el)} mono />;
+    case 'titolo': case 'kanji': return <Hero x={x} y={y} testo={el.testo || ''} t={t} tempo={tempo} size={el.tipo === 'kanji' ? 200 : corpo(el)} />;
+    case 'macchina': return <Riga x={x} y={y} testo={(el.testo || '').toUpperCase()} t={t} tempo={tempo} size={corpo(el)} colore={el.colore === 'rosso' ? T.rosso : T.accento} />;
+    case 'nome': return <NomeTech x={x} y={y} nome={el.nome || ''} ruolo={el.ruolo} t={t} tempo={tempo} size={corpo(el)} />;
+    case 'foto': return <Cade x={x} y={y} rot={rot * 0.4} t={t} tempo={tempo} dur={0.5}><Vetro src={el.file!} w={w} etichetta={el.etichetta || nomeFile(el.file)} attivo={1} /></Cade>;
+    case 'ritaglio': {
+      const o = el.sopra ? p.ospite : undefined;
+      const ww = o ? 420 : w;
+      return <Cade x={o ? o.x + o.w * 0.38 : x} y={o ? o.y + o.h * 0.42 : y} t={t} tempo={tempo} dur={0.45}>
+        <Img src={f(el.file!)} style={{ width: ww, display: 'block', filter: 'drop-shadow(0 0 60px rgba(79,209,255,0.25))' }} />
+      </Cade>;
+    }
+    case 'carte': return <>{(el.files || []).map((n, i, a) => <Cade key={i} x={x + (i - (a.length - 1) / 2) * 420} y={y} t={t + i * 0.3} tempo={tempo}><Vetro src={n} w={520} etichetta="" attivo={1} /></Cade>)}</>;
+    case 'timbro': {
+      const o = p.ospite;
+      const img = o && (o.el.tipo === 'foto' || o.el.tipo === 'ritaglio');
+      const tx = el.solo || !o ? x : img ? o.x + o.w * 0.22 : o.x;
+      const ty = el.solo || !o ? y : img ? o.y + o.h / 2 - 20 : o.y + o.h / 2 + 130;
+      return <Badge x={tx} y={ty} rot={el.solo ? -4 : -3} testo={(el.testo || '').toUpperCase()} sotto={el.sotto} t={t} tempo={tempo} size={el.grande ? 170 : 110} />;
+    }
+    case 'schede': {
+      const sc = schedeDi('tech');
+      const top = y - h / 2;
+      return <>
+        {(el.voci || []).map((v, k) => (
+          <Cade key={k} x={x} y={top + k * sc.passo + sc.alt / 2} t={v.t ?? t} tempo={tempo} dur={0.45}>
+            <SchedaTech titolo={v.titolo} icona={v.icona} barrata={progBarra(tempo, el.croci?.[k])} />
+          </Cade>
+        ))}
+        {el.timbroFinale && <Badge x={x + 200} y={y} rot={-6} testo={el.timbroFinale.testo.toUpperCase()} sotto={el.timbroFinale.sotto} t={el.timbroFinale.t} tempo={tempo} size={150} />}
+      </>;
+    }
+    case 'contatore': return <ContatoreTech x={x} y={y} t={t} tempo={tempo} valore={el.valore ?? 0} prefisso={el.prefisso ?? ''} suffisso={el.suffisso ?? ''} etichetta={(el.etichetta || '').toUpperCase()} />;
+    case 'cerchio': {
+      const o = p.ospite;
+      if (!o) return null;
+      const a = areaImmagine(o, 'tech');
+      return <Riquadro x={a.x0 + (el.cx ?? 0.5) * a.w} y={a.y0 + (el.cy ?? 0.5) * a.h} w={el.zoom ? 200 : 260} h={el.zoom ? 200 : 260} t={t} tempo={tempo} />;
+    }
+    case 'grafico': case 'schema':
+      return <div style={{ filter: 'invert(1) hue-rotate(180deg) brightness(1.2)' }}><Pezzo p={p} t={tempo} /></div>;
+  }
+  return null;
+};
+
+// regola del prompt tech: tutto quello che non è il beat attivo scende al 15% e si sfoca un po'
+function luce(doc: Documento, p: Posato, tempo: number): React.CSSProperties {
+  const inizi = doc.beats.map((b) => b.t);
+  const fine = p.beat === -1 ? inizi[0] - 0.4 : inizi[p.beat + 1] !== undefined ? inizi[p.beat + 1] - 0.2 : Infinity;
+  const k = Math.min(1, Math.max(0, (tempo - fine) / 0.45));
+  return { opacity: 1 - 0.85 * k, filter: k > 0.02 ? `blur(${(3 * k).toFixed(2)}px)` : undefined };
+}
 
 export const Rotolo: React.FC<PropsRotolo> = (doc) => {
   impostaCartella(doc.cartella);
@@ -140,20 +199,23 @@ export const Rotolo: React.FC<PropsRotolo> = (doc) => {
   const { fps, width, height } = useVideoConfig();
   const t = frame / fps;
   const imp = useMemo(() => impagina(doc), [doc]);
+  const tech = doc.mondo === 'tech';
+  // tech: una traccia dal bus a ogni beat, all'altezza del suo primo elemento
+  const tracce = useMemo(() => doc.beats.map((b, i) => ({ t: b.t, y: Math.min(...imp.posati.filter((p) => p.beat === i && p.h > 0).map((p) => p.y - p.h / 2)) + 40 })).filter((x) => Number.isFinite(x.y)), [doc, imp]);
   const cam = useMemo(() => creaCamera(imp.camera, colpiDi(imp.posati, doc)), [imp, doc]);
   const c = cam(t);
   const k = width / 2160;
 
   const pr = cam(t - 1 / fps);
   const vx = (c.x - pr.x) * c.z * k, vy = (c.y - pr.y) * c.z * k;
-  const bx = Math.min(24, Math.abs(vx) * 0.2), by = Math.min(44, Math.abs(vy) * 0.2);
+  const bx = Math.min(tech ? 14 : 24, Math.abs(vx) * (tech ? 0.12 : 0.2)), by = Math.min(tech ? 26 : 44, Math.abs(vy) * (tech ? 0.12 : 0.2));
   const mosso = bx + by > 1.2;
 
   const fin = doc.finale;
   const buio = fin ? interpolate(t, [fin.t + 2.2, fin.t + 3.0], [0, 0.6], { extrapolateLeft: 'clamp', extrapolateRight: 'clamp' }) : 0;
 
   return (
-    <AbsoluteFill style={{ background: '#120c08', overflow: 'hidden' }}>
+    <AbsoluteFill style={{ background: tech ? T.fondo : '#120c08', overflow: 'hidden' }}>
       <style>{fontLocali()}</style>
       <svg width={0} height={0} style={{ position: 'absolute' }}>
         <filter id="mosso"><feGaussianBlur stdDeviation={`${bx.toFixed(2)} ${by.toFixed(2)}`} /></filter>
@@ -162,12 +224,14 @@ export const Rotolo: React.FC<PropsRotolo> = (doc) => {
 
       <div style={{ position: 'absolute', inset: 0, filter: mosso ? 'url(#mosso)' : undefined }}>
         <div style={{ position: 'absolute', left: width / 2, top: height / 2, transformOrigin: '0 0', transform: `scale(${c.z * k}) rotate(${c.rot}deg) translate(${-c.x}px, ${-c.y}px)` }}>
-          <Fondale altezza={imp.altezza} anni={imp.anni} />
-          {imp.posati.map((p) => <Pezzo key={p.id} p={p} t={t} />)}
+          {tech ? <Canvas altezza={imp.altezza} anni={imp.anni} tempo={t} tracce={tracce} /> : <Fondale altezza={imp.altezza} anni={imp.anni} />}
+          {imp.posati.map((p) => tech
+            ? <div key={p.id} style={{ position: 'absolute', left: 0, top: 0, ...luce(doc, p, t) }}><PezzoTech p={p} t={t} /></div>
+            : <Pezzo key={p.id} p={p} t={t} />)}
         </div>
       </div>
 
-      <AbsoluteFill style={{ background: 'radial-gradient(ellipse 90% 70% at 30% 18%, rgba(255,214,160,0.16), rgba(0,0,0,0) 60%)', mixBlendMode: 'screen' }} />
+      <AbsoluteFill style={{ background: tech ? 'radial-gradient(ellipse 80% 60% at 50% 40%, rgba(79,140,255,0.10), rgba(0,0,0,0) 65%)' : 'radial-gradient(ellipse 90% 70% at 30% 18%, rgba(255,214,160,0.16), rgba(0,0,0,0) 60%)', mixBlendMode: 'screen' }} />
       <AbsoluteFill style={{ background: 'radial-gradient(ellipse 85% 75% at 50% 48%, rgba(0,0,0,0) 45%, rgba(10,6,3,0.72) 100%)' }} />
       <AbsoluteFill style={{ background: `rgba(8,5,3,${buio})` }} />
 
@@ -188,7 +252,7 @@ export const Rotolo: React.FC<PropsRotolo> = (doc) => {
         </AbsoluteFill>
       )}
 
-      <Img src={f(`grana${frame % 6}.png`)} style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', mixBlendMode: 'overlay', opacity: 0.22 }} />
+      <Img src={f(`grana${frame % 6}.png`)} style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', mixBlendMode: 'overlay', opacity: tech ? 0.12 : 0.22 }} />
       <Audio src={f(doc.voce)} />
     </AbsoluteFill>
   );

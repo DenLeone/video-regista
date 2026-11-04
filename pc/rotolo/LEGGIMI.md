@@ -58,3 +58,10 @@ varianti a caso. Le cartelle usate sono in `SUONI` dentro `src/rotolo/impagina.t
 Tipi di elemento: `anno`, `titolo`, `kanji`, `macchina`, `nome`, `foto`, `ritaglio`, `carte`, `timbro`, `schede`,
 `grafico`, `contatore`, `schema`, `cerchio`. I campi di ognuno sono descritti nel prompt di `pc/rotolo/regia.mjs`
 e nel tipo `Elemento` di `src/rotolo/impagina.ts`. `t` = secondo della parola (da `parole.json`).
+
+## Stile Tech (`"mondo": "tech"`)
+Stesso motore e stesso beats.json, aspetto da video tech esplicativo (prompt in `12 · Risorse/Prompts/Tech`):
+canvas infinito scuro a griglia blueprint con un bus dati e una traccia verso ogni beat, foto in card di vetro
+(barra con `etichetta`), numeri enormi, etichette monospace con cursore, `timbro` = badge rosso, `cerchio` =
+riquadro che scatta. Tutto ciò che non è il beat attivo scende al 15%. Suoni digitali (`SUONI_TECH`) e musica
+`10 Musica/tech`. Dal PC: `--mondo tech`; dal bot: 💻 Tech dopo la cartella. Prima prova: Apple Lisa (04/11/2026).

@@ -25,11 +25,12 @@ export type Elemento = {
   croci?: number[];         // schede: quando barrare ogni voce
   timbroFinale?: { testo: string; sotto?: string; t: number };   // schede: timbro su tutto il gruppo
   etichette?: string[]; forma?: 'crollo' | 'crescita' | 'picco'; tCambio?: number; titoloGrafico?: string; // grafico
-  valore?: number; prefisso?: string; etichetta?: string;        // contatore
+  valore?: number; prefisso?: string; etichetta?: string;        // contatore; etichetta anche: barra della card (foto, mondo tech)
   disegno?: 'pantografo';   // schema
   su?: number;              // cerchio: indice (nel beat) della foto da cerchiare
   cx?: number; cy?: number; // cerchio: punto nella foto, 0..1
   zoom?: boolean;           // cerchio: la camera ci entra dentro
+  suffisso?: string;        // contatore: dopo il numero (es. " €")
 };
 export type Beat = { t: number; elementi: Elemento[] };
 export type Finale = { t: number; righe: { testo: string; t: number; rosso?: string }[]; timbro?: { testo: string; t: number } };
@@ -39,6 +40,7 @@ export type Documento = {
   voce: string;            // file audio nella cartella
   durata: number;          // secondi
   fps?: number;
+  mondo?: 'rotolo' | 'tech'; // aspetto: carta e inchiostro (default) o canvas tech scuro
   apertura?: Beat & { fino: number };  // mostrata in fondo al rotolo; poi la camera corre all'inizio
   beats: Beat[];
   finale?: Finale;
@@ -74,7 +76,18 @@ export function corpo(el: Elemento): number {
 export const corpoRiga = (testo: string) => Math.floor(Math.min(250, 1900 / (Math.max(1, testo.length) * 0.56)));
 
 // misure di ingombro di ogni elemento (mondo)
-export function misura(el: Elemento): { w: number; h: number } {
+// voci delle schede: altezza della card e passo tra una e l'altra
+export const schedeDi = (mondo?: string) => (mondo === 'tech' ? { alt: 360, passo: 460 } : { alt: 560, passo: 700 });
+const CARD_TECH = { pad: 24, testa: 64 }; // uguale a CARD in tech.tsx
+
+// dove sta l'immagine dentro una foto posata (per cerchi e zoom)
+export function areaImmagine(p: { x: number; y: number; w: number; h: number }, mondo?: string) {
+  if (mondo === 'tech') { const iw = p.w - 2 * CARD_TECH.pad, ih = p.h - CARD_TECH.pad - CARD_TECH.testa; return { x0: p.x - p.w / 2 + CARD_TECH.pad, y0: p.y - p.h / 2 + CARD_TECH.testa, w: iw, h: ih }; }
+  const iw = p.w * 0.91, ih = p.h - p.w * 0.09;
+  return { x0: p.x - iw / 2, y0: p.y - ih / 2, w: iw, h: ih };
+}
+
+export function misura(el: Elemento, mondo?: string): { w: number; h: number } {
   switch (el.tipo) {
     case 'anno': { const s = corpo(el); return { w: Math.min(LARGO, lungo(el.testo) * 0.62 * s), h: s * 0.95 }; }
     case 'titolo': { const s = corpo(el); return { w: Math.min(LARGO, lungo(el.testo) * 0.56 * s), h: s * 1.05 }; }
@@ -85,12 +98,13 @@ export function misura(el: Elemento): { w: number; h: number } {
       const ar = el.ar || 1.4;
       let w = el.misura === 'piccola' ? 720 : el.misura === 'media' ? 1040 : 1320;
       if (ar < 0.85) w *= 0.7;
+      if (mondo === 'tech') return { w, h: (w - 2 * CARD_TECH.pad) / ar + CARD_TECH.pad + CARD_TECH.testa };
       return { w, h: (w * 0.91) / ar + w * 0.09 };
     }
     case 'ritaglio': { const ar = el.ar || 1; const w = el.grande ? 1300 : 600; return { w, h: w / ar }; }
     case 'carte': { const n = (el.files || []).length || 1; const cw = n > 2 ? 540 : 620; return { w: Math.min(LARGO, cw + (n - 1) * cw * 0.7), h: cw / (el.ars?.[0] || 0.6) + 80 }; }
     case 'timbro': return { w: 500, h: el.grande ? 500 : 300 };
-    case 'schede': { const n = (el.voci || []).length || 1; return { w: 980, h: n * 560 + (n - 1) * 140 }; }
+    case 'schede': { const n = (el.voci || []).length || 1; const sc = schedeDi(mondo); return { w: 980, h: n * sc.alt + (n - 1) * (sc.passo - sc.alt) }; }
     case 'grafico': return { w: 1400, h: 760 };
     case 'contatore': return { w: 1200, h: 340 };
     case 'schema': return { w: 1700, h: 650 };
@@ -120,11 +134,11 @@ export function impagina(doc: Documento): Impaginato {
         posati.push({ el, x: ospite?.x ?? 0, y: ospite?.y ?? y, w: 0, h: 0, t, beat: ib, id, rot: el.tipo === 'timbro' ? 6 + 6 * casuale(id) : 0, ospite });
         continue;
       }
-      const m = misura(el);
+      const m = misura(el, doc.mondo);
       const prossimo = els[i + 1];
       const affianca = el.lato && prossimo && prossimo.lato && prossimo.lato !== el.lato && !sovrapposto(prossimo);
       if (affianca) {
-        const m2 = misura(prossimo);
+        const m2 = misura(prossimo, doc.mondo);
         const k = Math.min(1, 1320 / (m.w + m2.w + 80));
         const h = Math.max(m.h, m2.h) * k;
         const a: Posato = { el, x: el.lato === 'sx' ? -340 : 340, y: y + h / 2, w: m.w * k, h: m.h * k, t, beat: ib, id, rot: rotDi(el, id) };
@@ -196,7 +210,8 @@ function calcolaCamera(doc: Documento, gruppi: { beat: number; top: number; bot:
           sch.el.voci.forEach((v, k) => {
             const tv = v.t ?? x.t;
             const tn = sch.el.voci![k + 1]?.t ?? bl[i + 1]?.t ?? succ;
-            fermate.push({ t: tv, via: tn, x: 0, y: top + k * 700 + 280, z: zFit(1000, 900, 1.5) });
+            const sc = schedeDi(doc.mondo);
+            fermate.push({ t: tv, via: tn, x: 0, y: top + k * sc.passo + sc.alt / 2, z: zFit(1000, sc.alt + 340, 1.5) });
           });
           const tz = Math.min(...(sch.el.croci || [Infinity]), sch.el.timbroFinale?.t ?? Infinity);
           if (Number.isFinite(tz)) fermate.push({ t: tz - 0.1, via: bl[i + 1]?.t ?? succ, x: 0, y: sch.y, z: zFit(1100, sch.h + 200, 1.1) });
@@ -211,8 +226,8 @@ function calcolaCamera(doc: Documento, gruppi: { beat: number; top: number; bot:
       if (el.tipo !== 'cerchio' || !el.zoom) return;
       const host = g.blocchi.flat().find((p) => p.id === `${g.beat}-${el.su ?? -1}`);
       if (!host) return;
-      const iw = host.w * 0.91, ih = host.h - host.w * 0.09;
-      const px = host.x - iw / 2 + (el.cx ?? 0.5) * iw, py = host.y - ih / 2 + (el.cy ?? 0.5) * ih;
+      const a = areaImmagine(host, doc.mondo);
+      const px = a.x0 + (el.cx ?? 0.5) * a.w, py = a.y0 + (el.cy ?? 0.5) * a.h;
       const t = el.t ?? g.t;
       fermate.push({ t: t + 0.25, via: succ, x: px, y: py, z: 2.45 });
       void i;
@@ -228,10 +243,23 @@ function calcolaCamera(doc: Documento, gruppi: { beat: number; top: number; bot:
   const primo = fermate[0];
   if (ap && doc.apertura && primo) {
     const larg = Math.max(...ap.blocchi.flat().map((p) => Math.abs(p.x) * 2 + p.w));
-    const ya = (ap.top + ap.bot) / 2, za = zFit(larg, ap.bot - ap.top, 1.45);
+    let ya = (ap.top + ap.bot) / 2, za = zFit(larg, ap.bot - ap.top, 1.45);
     const fino = doc.apertura.fino, arrivo = primo.t;
-    add(0, 0, ya + 40, za * 1.08);
-    add(Math.max(0.3, fino - 0.2), 0, ya - 20, za);
+    if (za < 1.15 && ap.blocchi.length > 1) {
+      // gancio lungo (es. tre prodotti): la camera li visita uno per uno, ognuno sulla sua parola
+      const bl = ap.blocchi.map((b) => ({ b, t: Math.max(0, Math.min(...b.map((p) => p.t))) })).sort((a, b) => a.t - b.t);
+      bl.forEach((x, i) => {
+        const y0 = Math.min(...x.b.map((p) => p.y - p.h / 2)), y1 = Math.max(...x.b.map((p) => p.y + p.h / 2));
+        const zb = zFit(Math.max(...x.b.map((p) => Math.abs(p.x) * 2 + p.w)), y1 - y0 + 500);
+        const via = bl[i + 1] ? bl[i + 1].t - 0.35 : fino - 0.2;
+        add(i === 0 ? 0 : x.t, 0, (y0 + y1) / 2 + (i === 0 ? 40 : 0), zb * (i === 0 ? 1.06 : 1));
+        if (via - x.t > 0.5) add(via, 0, (y0 + y1) / 2 - 30, zb * 1.02);
+        ya = (y0 + y1) / 2; za = zb;
+      });
+    } else {
+      add(0, 0, ya + 40, za * 1.08);
+      add(Math.max(0.3, fino - 0.2), 0, ya - 20, za);
+    }
     add(fino + 0.1, 0, ya - 250, za * 0.8);
     const durCorsa = arrivo - fino;
     add(fino + durCorsa * 0.45, 0, ya - (ya - primo.y) * 0.22, 0.3);
@@ -330,13 +358,24 @@ export const SUONI = {
   stanza: '09 Ambiente/stanza', musica: '10 Musica/giappone',
 };
 
+// mondo tech: stessi momenti, suoni digitali
+export const SUONI_TECH: typeof SUONI = {
+  ...SUONI,
+  foto: '07 Digitale/pop', fruscio: '05 Movimento/swish corto', leggera: '07 Digitale/pop', carte: '07 Digitale/pop',
+  timbro: '03 Timbri e colpi/impatto forte', sordo: '08 Cinematico/sub drop', pennello: '05 Movimento/swish corto',
+  pennarello: '06 Meccanico/scatto', matita: '05 Movimento/riser', tasto: '07 Digitale/clic interfaccia', musica: '10 Musica/tech',
+};
+export const suoniDi = (doc: { mondo?: string }) => (doc.mondo === 'tech' ? SUONI_TECH : SUONI);
+
 export const DUR_CADUTA = 0.6;
 export const CPS = 28; // lettere al secondo della macchina da scrivere
 
 function calcolaEventi(doc: Documento, posati: Posato[], camera: Chiave[]): Evento[] {
   const ev: Evento[] = [];
   const pan = (x: number) => tra(-0.5, 0.5, x / 1600);
-  const S = SUONI;
+  const S = suoniDi(doc);
+  const tech = doc.mondo === 'tech';
+  const ogniTasto = tech ? 3 : 1; // in tech un clic ogni 3 lettere, non una raffica
   for (const p of posati) {
     const { el, t } = p;
     const atterra = t + DUR_CADUTA * 0.42;
@@ -346,13 +385,13 @@ function calcolaEventi(doc: Documento, posati: Posato[], camera: Chiave[]): Even
       case 'carte':
         (el.files || []).forEach((_, i) => ev.push({ t: t + i * 0.3 + DUR_CADUTA * 0.4, suono: S.carte, db: -7, pan: pan(p.x + (i - 1) * 400) })); break;
       case 'timbro':
-        ev.push({ t: t + 0.12, suono: S.timbro, db: el.grande ? -1 : -4 }, { t: t + 0.12, suono: S.sordo, db: -12 }); break;
+        ev.push({ t: t + 0.12, suono: S.timbro, db: el.grande ? -1 : tech ? -6 : -4 }, { t: t + 0.12, suono: S.sordo, db: -12 }); break;
       case 'anno': case 'titolo': case 'kanji':
         ev.push({ t, suono: S.pennello, db: -13, durata: (el.dur ?? 0.7) + 0.15 });
         if (el.tipo === 'kanji' && el.sotto) [...el.sotto].forEach((c, i) => { if (c !== ' ') ev.push({ t: t + 0.1 + i / CPS, suono: S.tasto, db: -17 }); });
         break;
       case 'macchina':
-        [...(el.testo || '')].forEach((c, i) => { if (c !== ' ') ev.push({ t: t + i / CPS, suono: S.tasto, db: -17 }); }); break;
+        [...(el.testo || '')].forEach((c, i) => { if (c !== ' ' && i % ogniTasto === 0) ev.push({ t: t + i / (tech ? 32 : CPS), suono: S.tasto, db: tech ? -20 : -17 }); }); break;
       case 'nome':
         ev.push({ t: t - 0.05, suono: S.fruscio, db: -24 }); break;
       case 'schede':
