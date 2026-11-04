@@ -36,10 +36,27 @@ for (const f of file.filter((n) => /\.(jpe?g|png|webp)$/i.test(n))) {
   else fs.copyFileSync(da, path.join(LAV, f));
 }
 const audio = file.filter((n) => /\.(wav|mp3|m4a|aac|flac|ogg|opus)$/i.test(n)).sort((a, b) => /voce|vo\b|audio|narr/i.test(b) - /voce|vo\b|audio|narr/i.test(a));
-if (!audio.length) throw new Error(`nessun file audio in ${SORG}`);
+// un video della persona (es. alla scrivania): diventa il presentatore e la voce è il suo audio
+const video = file.filter((n) => /\.(mp4|mov|m4v|mkv)$/i.test(n)).sort((a, b) => fs.statSync(path.join(SORG, b)).size - fs.statSync(path.join(SORG, a)).size);
+if (!audio.length && !video.length) throw new Error(`nessun file audio o video in ${SORG}`);
 if (audio.length > 1) log(`più audio, uso ${audio[0]}`);
 const VOCE = path.join(LAV, 'voce.wav');
-run('ffmpeg', ['-v', 'error', '-y', '-i', path.join(SORG, audio[0]), '-ac', '2', '-ar', '48000', VOCE]);
+run('ffmpeg', ['-v', 'error', '-y', '-i', path.join(SORG, audio.length ? audio[0] : video[0]), '-vn', '-ac', '2', '-ar', '48000', VOCE]);
+let presentatore = null;
+if (video.length && !audio.length) {
+  const PRES = path.join(LAV, 'presentatore.mp4');
+  if (!fs.existsSync(PRES)) {
+    log(`presentatore: ${video[0]} → H.264 per il render`);
+    // NVENC sul PC con la scheda video, altrimenti x264; 8 bit (i 10 bit HEVC dell'iPhone rallentano Chrome)
+    const nvenc = process.platform === 'win32' && spawnSync('ffmpeg', ['-hide_banner', '-encoders'], { encoding: 'utf8' }).stdout.includes('h264_nvenc');
+    const enc = nvenc ? ['-c:v', 'h264_nvenc', '-preset', 'p5', '-cq', '21'] : ['-c:v', 'libx264', '-preset', 'veryfast', '-crf', '20'];
+    run('ffmpeg', ['-v', 'error', '-y', '-i', path.join(SORG, video[0]), '-an', '-vf', 'scale=2160:-2,format=yuv420p', ...enc, '-movflags', '+faststart', PRES]);
+  }
+  const VISO = path.join(LAV, 'viso.json');
+  if (!fs.existsSync(VISO)) run(process.env.PYTHON || (process.platform === 'win32' ? 'python' : 'python3'), [path.join(ROOT, 'pc', 'rotolo', 'viso.py'), PRES, VISO]);
+  const v = JSON.parse(fs.readFileSync(VISO, 'utf8'));
+  presentatore = { file: 'presentatore.mp4', ar: +(v.w / v.h).toFixed(4), viso: v.punti.map((q) => ({ t: q.t, x: q.x, y: q.y })) };
+}
 
 // ---------- trascrizione
 const PAROLE = path.join(LAV, 'parole.json');
@@ -68,11 +85,12 @@ const nelSorgente = path.join(SORG, 'beats.json');
 if (ha('--solo-render') && fs.existsSync(nelSorgente)) fs.copyFileSync(nelSorgente, BEATS);
 else if (!fs.existsSync(BEATS) || ha('--rifai-regia')) {
   log('regia AI');
-  run('node', [path.join(ROOT, 'pc', 'rotolo', 'regia.mjs'), PAROLE, LAV, BEATS, '--cartella', CART, '--mondo', opz('--mondo', 'rotolo'), ...(opz('--brief') ? ['--brief', opz('--brief')] : [])]);
+  run('node', [path.join(ROOT, 'pc', 'rotolo', 'regia.mjs'), PAROLE, LAV, BEATS, '--cartella', CART, '--mondo', opz('--mondo', 'rotolo'), ...(presentatore ? ['--presentatore'] : []), ...(opz('--brief') ? ['--brief', opz('--brief')] : [])]);
 }
 const doc = JSON.parse(fs.readFileSync(BEATS, 'utf8'));
 doc.titolo = doc.titolo || nome; doc.cartella = CART; doc.voce = 'voce.wav';
 if (opz('--mondo')) doc.mondo = opz('--mondo') === 'tech' ? 'tech' : undefined;
+if (presentatore) doc.presentatore = presentatore; else delete doc.presentatore;
 fs.writeFileSync(BEATS, JSON.stringify(doc, null, 2));
 run('node', [path.join(ROOT, 'pc', 'rotolo', 'prepara.mjs'), BEATS]);
 try { fs.copyFileSync(BEATS, nelSorgente); } catch { /* cartella in sola lettura: pazienza */ }

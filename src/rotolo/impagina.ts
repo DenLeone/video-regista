@@ -32,8 +32,12 @@ export type Elemento = {
   zoom?: boolean;           // cerchio: la camera ci entra dentro
   suffisso?: string;        // contatore: dopo il numero (es. " €")
 };
-export type Beat = { t: number; elementi: Elemento[] };
-export type Finale = { t: number; righe: { testo: string; t: number; rosso?: string }[]; timbro?: { testo: string; t: number } };
+// presentatore (video di Denis alla scrivania): intero = lui a tutto schermo, meta = lui sotto e grafica sopra,
+// nascosto = solo grafica. Default: meta se il beat ha elementi, intero se è vuoto.
+export type ModoLastra = 'intero' | 'meta' | 'nascosto';
+export type Beat = { t: number; elementi: Elemento[]; presentatore?: ModoLastra };
+export type Presentatore = { file: string; ar?: number; viso?: { t: number; x: number; y: number }[] };
+export type Finale = { t: number; righe: { testo: string; t: number; rosso?: string }[]; timbro?: { testo: string; t: number }; presentatore?: ModoLastra };
 export type Documento = {
   titolo: string;
   cartella: string;        // dentro public/, es. "collage/doc-nintendo"
@@ -43,6 +47,7 @@ export type Documento = {
   mondo?: 'rotolo' | 'tech'; // aspetto: carta e inchiostro (default) o canvas tech scuro
   apertura?: Beat & { fino: number };  // mostrata in fondo al rotolo; poi la camera corre all'inizio
   beats: Beat[];
+  presentatore?: Presentatore; // il video della persona: la voce è il suo audio
   finale?: Finale;
 };
 
@@ -124,6 +129,7 @@ export function impagina(doc: Documento): Impaginato {
   let y = 700;
 
   const posaBeat = (b: Beat, ib: number) => {
+    if (!b.elementi.length) return; // beat solo del presentatore: niente sul canvas
     const top = y;
     const blocchi: Posato[][] = [];
     let ultimo: Posato | undefined;
@@ -182,7 +188,8 @@ function rotDi(el: Elemento, id: string) {
 }
 
 // ---------------------------------------------------------------- camera
-const zFit = (w: number, h: number, max = 1.5) => tra(0.5, max, Math.min((0.86 * W) / Math.max(w, 400), (0.7 * H) / Math.max(h, 300)));
+// hv: altezza di schermo libera per la grafica (con la lastra a metà ne resta metà)
+const zFit = (w: number, h: number, max = 1.5, hv = H) => tra(0.45, max, Math.min((0.86 * W) / Math.max(w, 400), (0.7 * hv) / Math.max(h, 300)));
 
 function calcolaCamera(doc: Documento, gruppi: { beat: number; top: number; bot: number; blocchi: Posato[][]; t: number }[], ap: { top: number; bot: number; blocchi: Posato[][] } | undefined, altezza: number): Chiave[] {
   type Fermata = { t: number; via: number; x: number; y: number; z: number };
@@ -193,7 +200,9 @@ function calcolaCamera(doc: Documento, gruppi: { beat: number; top: number; bot:
     const succ = gruppi[gi + 1]?.t ?? fineStoria;
     const larg = Math.max(...g.blocchi.flat().map((p) => Math.abs(p.x) * 2 + p.w));
     const alt = g.bot - g.top;
-    const zG = zFit(larg, alt);
+    const hv = doc.presentatore && modoBeat(doc, g.beat) === 'meta' ? H * 0.5 : H;
+    const zf = (w: number, h: number, max = 1.5) => zFit(w, h, max, hv);
+    const zG = zf(larg, alt);
     const tBlocco = (bl: Posato[]) => Math.min(...bl.map((p) => p.t));
     const sovr = doc.beats[g.beat].elementi;
     // un gruppo che sta bene in un'inquadratura: una fermata sola
@@ -214,14 +223,14 @@ function calcolaCamera(doc: Documento, gruppi: { beat: number; top: number; bot:
             const tv = v.t ?? x.t;
             const tn = sch.el.voci![k + 1]?.t ?? bl[i + 1]?.t ?? succ;
             const sc = schedeDi(doc.mondo);
-            fermate.push({ t: tv, via: tn, x: 0, y: top + k * sc.passo + sc.alt / 2, z: zFit(1000, sc.alt + 340, 1.5) });
+            fermate.push({ t: tv, via: tn, x: 0, y: top + k * sc.passo + sc.alt / 2, z: zf(1000, sc.alt + 340, 1.5) });
           });
           const tz = Math.min(...(sch.el.croci || [Infinity]), sch.el.timbroFinale?.t ?? Infinity);
-          if (Number.isFinite(tz)) fermate.push({ t: tz - 0.1, via: bl[i + 1]?.t ?? succ, x: 0, y: sch.y, z: zFit(1100, sch.h + 200, 1.1) });
+          if (Number.isFinite(tz)) fermate.push({ t: tz - 0.1, via: bl[i + 1]?.t ?? succ, x: 0, y: sch.y, z: zf(1100, sch.h + 200, 1.1) });
           void n;
           return;
         }
-        fermate.push({ t: x.t, via: bl[i + 1]?.t ?? succ, x: 0, y: (yb + yb2) / 2, z: zFit(lb, yb2 - yb + 500) });
+        fermate.push({ t: x.t, via: bl[i + 1]?.t ?? succ, x: 0, y: (yb + yb2) / 2, z: zf(lb, yb2 - yb + 500) });
       });
     }
     // cerchio con zoom: la camera entra nel punto
@@ -297,6 +306,31 @@ function calcolaCamera(doc: Documento, gruppi: { beat: number; top: number; bot:
     add(doc.durata + 0.1, ult[1], ult[2] + 80, ult[3] * 1.03);
   }
   return k;
+}
+
+// ---------------------------------------------------------------- lastra del presentatore
+const VALORE: Record<ModoLastra, number> = { intero: 1, meta: 0.5, nascosto: 0 };
+export function modoBeat(doc: Documento, i: number): ModoLastra {
+  const b = i < 0 ? doc.apertura : doc.beats[i];
+  return b?.presentatore ?? (b && b.elementi.length ? 'meta' : 'intero');
+}
+// tratti [inizio, modo]: la lastra cambia 0,2 s prima della parola, in 0,45 s
+export function trattiLastra(doc: Documento): [number, ModoLastra][] {
+  const tr: [number, ModoLastra][] = [[0, doc.apertura ? modoBeat(doc, -1) : 'intero']];
+  doc.beats.forEach((b, i) => tr.push([Math.max(0, b.t - 0.2), modoBeat(doc, i)]));
+  if (doc.finale) tr.push([doc.finale.t, doc.finale.presentatore ?? 'intero']);
+  return tr.sort((a, b) => a[0] - b[0]);
+}
+export const DUR_LASTRA = 0.45;
+// quanto schermo occupa la lastra (0 = niente, 0,5 = metà in basso, 1 = tutto)
+export function lastra(doc: Documento, t: number, tratti = trattiLastra(doc)): number {
+  if (!doc.presentatore) return 0;
+  let i = 0;
+  while (i + 1 < tratti.length && tratti[i + 1][0] <= t) i++;
+  const cur = VALORE[tratti[i][1]], prima = i > 0 ? VALORE[tratti[i - 1][1]] : cur;
+  const k = Math.max(0, Math.min(1, (t - tratti[i][0]) / DUR_LASTRA));
+  const e = k < 0.5 ? 4 * k * k * k : 1 - Math.pow(-2 * k + 2, 3) / 2;
+  return prima + (cur - prima) * e;
 }
 
 // interpolazione cubica monotona (Fritsch–Carlson): passa per ogni chiave senza rimbalzi
@@ -424,6 +458,10 @@ function calcolaEventi(doc: Documento, posati: Posato[], camera: Chiave[]): Even
     const v = Math.hypot(c.x - prima.x, c.y - prima.y) * c.z / 0.05; // px di schermo al secondo
     if (v > 9000 && t - corsa > 2.2) { ev.push({ t: t - 0.25, suono: v > 30000 ? S.whooshVeloce : S.whooshLento, db: v > 30000 ? -6 : -10 }); corsa = t; }
     prima = c;
+  }
+  if (doc.presentatore) {
+    const tr = trattiLastra(doc);
+    for (let i = 1; i < tr.length; i++) if (tr[i][1] !== tr[i - 1][1]) ev.push({ t: tr[i][0], suono: S.fruscio, db: -14 });
   }
   if (doc.apertura) ev.push({ t: doc.apertura.fino - 0.05, suono: S.reverse, db: -8 });
   if (doc.beats[0]?.elementi[0]?.tipo === 'anno') ev.push({ t: doc.beats[0].elementi[0].t ?? doc.beats[0].t, suono: S.hit, db: -10 });

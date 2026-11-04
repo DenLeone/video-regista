@@ -32,6 +32,17 @@ const MONDO = opz('--mondo', 'rotolo') === 'tech' ? 'tech' : 'rotolo';
 const INTRO = MONDO === 'tech'
   ? 'Sei il regista di un video tech esplicativo verticale (9:16, 4K) in stile "Tech": un unico piano sequenza su un canvas infinito scuro a griglia blueprint, con un bus dati e circuiti. La camera scorre senza tagli; sul canvas compaiono card di vetro con foto e screenshot, numeri enormi, etichette monospace, badge rossi sulle parole forti e riquadri che scattano sui dettagli, ognuno ESATTAMENTE sulla parola che lo nomina. Tutto quello che non è il beat in corso si spegne al 15%. Pochi elementi, grandi, leggibili su un telefono in meno di un secondo.'
   : 'Sei il regista di un documentario verticale (9:16, 4K) in stile "Rotolo": un unico piano sequenza su un lungo rotolo di carta di riso (kakemono) srotolato su un tavolo scuro. La camera scorre dall\'alto (passato) al basso (oggi) senza tagli; sulla carta cadono foto d\'epoca, carte, timbri rossi hanko, scritte a pennello e a macchina, ognuno ESATTAMENTE sulla parola che lo nomina. Il riferimento di qualità è un documentario "da Netflix": pochi elementi, grandi, leggibili, ognuno al momento giusto.';
+// c'è il video di Denis che parla (alla scrivania): ogni beat dice dove sta lui
+const PRESENTATORE = args.includes('--presentatore');
+const NOTE_PRESENTATORE = PRESENTATORE
+  ? `
+PRESENTATORE: la voce viene dal video di Denis che parla in camera. Ogni beat ha anche "presentatore":
+- "meta" (default per i beat con elementi): Denis nella metà bassa, la grafica nella metà alta. Massimo 2 elementi per beat.
+- "intero": Denis a tutto schermo. Usalo con un beat SENZA elementi ({"t":…, "presentatore":"intero", "elementi":[]}) sulle frasi personali, battute, opinioni, saluti e sull'inizio (i primi 2–3 secondi lo mostrano già intero).
+- "nascosto": solo grafica a tutto schermo, quando un'immagine o un numero deve essere grande (usalo poco).
+Alterna: non più di ~10 secondi di fila senza vedere Denis intero, e non lasciarlo intero più di ~8 secondi se il parlato nomina cose da mostrare.
+`
+  : '';
 const NOTE_MONDO = MONDO === 'tech'
   ? `\nSTILE TECH (vale sopra a tutto):\n- niente "kanji" e niente "carte"; "timbro" = badge rosso con 1–2 parole in italiano (es. "Rubata", "Inaffidabile"), max 16 caratteri\n- "foto" ha anche "etichetta": testo corto in maiuscolo nella barra della card (es. "MACINTOSH · 1984"); "bn" non serve\n- "contatore" può avere "suffisso" (es. " €"); i numeri grandi sono gli eroi: usali per prezzi, quantità, specifiche dette nel parlato\n- icone delle "schede": mouse | finestra | chip | floppy | soldi | telefono\n- "macchina" = etichetta monospace (colore "rosso" per i fallimenti)\n`
   : '';
@@ -75,7 +86,7 @@ REGOLE
 8. Scritte corte: anno 4 cifre, titolo ≤ 14 lettere, macchina ≤ 26 caratteri. In italiano, giuste.
 9. Aggiungi "note": un elenco di dubbi per Denis (fatti incerti, foto mancanti utili). Può essere vuoto.
 
-${NOTE_MONDO}${brief ? `BRIEF DI DENIS: ${brief}\n` : ''}FOTO DISPONIBILI (${immagini.length}):
+${NOTE_MONDO}${NOTE_PRESENTATORE}${brief ? `BRIEF DI DENIS: ${brief}\n` : ''}FOTO DISPONIBILI (${immagini.length}):
 ${immagini.map((f) => `- ${f}`).join('\n') || '- (nessuna)'}
 
 TESTO CON I TEMPI (secondo d'inizio di ogni parola):
@@ -92,7 +103,8 @@ function controlla(d) {
   const usate = new Set();
   const blocchi = [...(d.apertura ? [['apertura', d.apertura]] : []), ...d.beats.map((b, i) => [`beat ${i + 1}`, b])];
   for (const [nome, b] of blocchi) {
-    if (!Array.isArray(b.elementi) || !b.elementi.length) { errori.push(`${nome}: nessun elemento`); continue; }
+    if (!Array.isArray(b.elementi)) { errori.push(`${nome}: manca "elementi"`); continue; }
+    if (!b.elementi.length) { if (!(PRESENTATORE && b.presentatore === 'intero')) errori.push(`${nome}: nessun elemento`); continue; }
     for (const el of b.elementi) {
       if (!TIPI.has(el.tipo)) errori.push(`${nome}: tipo sconosciuto "${el.tipo}"`);
       for (const f of [el.file, ...(el.files || [])].filter(Boolean)) {

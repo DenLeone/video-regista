@@ -1,6 +1,6 @@
 import React, { useMemo } from 'react';
-import { AbsoluteFill, Audio, Easing, Img, interpolate, useCurrentFrame, useVideoConfig } from 'remotion';
-import { areaImmagine, colpiDi, corpo, corpoRiga, creaCamera, Documento, fotoBN, impagina, kanjiSotto, Posato, schedeDi } from './rotolo/impagina';
+import { AbsoluteFill, Audio, Easing, Img, interpolate, OffthreadVideo, useCurrentFrame, useVideoConfig } from 'remotion';
+import { areaImmagine, colpiDi, corpo, corpoRiga, creaCamera, Documento, fotoBN, impagina, kanjiSotto, lastra, Posato, Presentatore, schedeDi, trattiLastra } from './rotolo/impagina';
 import { Badge, Canvas, ContatoreTech, Hero, NomeTech, progBarra, Riga, Riquadro, SchedaTech, T, Vetro } from './rotolo/tech';
 import {
   Cade, CARTA, centro, Cerchio, Ciotola, Contatore, Croce, f, fontLocali, Foto, Grafico, Hanko, impostaCartella, INCHIOSTRO, Insegna,
@@ -196,6 +196,44 @@ function luce(doc: Documento, p: Posato, tempo: number): React.CSSProperties {
   return { opacity: 1 - 0.85 * k, filter: k > 0.02 ? `blur(${(3 * k).toFixed(2)}px)` : undefined };
 }
 
+// ---------------------------------------------------------------- lastra del presentatore
+// Il video della persona occupa il fondo dello schermo (p = quota: 1 tutto, 0,5 metà). Non si taglia al
+// centro: si sposta perché il viso resti dentro con spazio sopra la testa, anche mentre la lastra si stringe.
+function visoA(pres: Presentatore, t: number) {
+  const v = pres.viso;
+  if (!v?.length) return { x: 0.5, y: 0.42 };
+  let i = 0;
+  while (i + 1 < v.length && v[i + 1].t <= t) i++;
+  const a = v[i], b = v[Math.min(v.length - 1, i + 1)];
+  const k = b.t > a.t ? Math.min(1, Math.max(0, (t - a.t) / (b.t - a.t))) : 0;
+  return { x: a.x + (b.x - a.x) * k, y: a.y + (b.y - a.y) * k };
+}
+const Lastra: React.FC<{ pres: Presentatore; p: number; v: number; t: number; tech: boolean }> = ({ pres, p, v, t, tech }) => {
+  const { width: W, height: H } = useVideoConfig();
+  const alta = p * H;
+  const ar = pres.ar || W / H;
+  // il video copre la larghezza; da metà schermo in giù si avvicina un po' (zoom 1 → 1,18)
+  const zoom = 1 + 0.18 * Math.max(0, Math.min(1, (1 - p) / 0.5));
+  const vw = W * zoom, vh = vw / ar;
+  const viso = visoA(pres, t);
+  // dove deve stare il viso nella lastra: a tutto schermo dov'è nel video, a metà schermo al 46% della lastra
+  const q = Math.max(0, Math.min(1, (p - 0.5) / 0.5));
+  const yViso = 0.46 * alta + (viso.y * vh - 0.46 * alta) * q;
+  let top = yViso - viso.y * vh;
+  top = Math.min(0, Math.max(alta - vh, top));
+  let left = W / 2 - viso.x * vw;
+  left = Math.min(0, Math.max(W - vw, left));
+  const mosso = Math.min(18, Math.abs(v) * 30);
+  const bordo = tech ? '#4fd1ff' : '#b79a5a';
+  return (
+    <div style={{ position: 'absolute', left: 0, right: 0, bottom: 0, height: alta, overflow: 'hidden', background: '#000',
+      boxShadow: p < 0.999 ? '0 -30px 80px rgba(0,0,0,0.65)' : undefined, filter: mosso > 0.5 ? `blur(${mosso.toFixed(1)}px)` : undefined }}>
+      <OffthreadVideo src={f(pres.file)} muted style={{ position: 'absolute', left, top, width: vw, height: vh }} />
+      {p < 0.999 && <div style={{ position: 'absolute', left: 0, right: 0, top: 0, height: 6, background: bordo, boxShadow: `0 0 30px ${bordo}`, opacity: 0.9 }} />}
+    </div>
+  );
+};
+
 export const Rotolo: React.FC<PropsRotolo> = (doc) => {
   impostaCartella(doc.cartella);
   const frame = useCurrentFrame();
@@ -203,6 +241,7 @@ export const Rotolo: React.FC<PropsRotolo> = (doc) => {
   const t = frame / fps;
   const imp = useMemo(() => impagina(doc), [doc]);
   const tech = doc.mondo === 'tech';
+  const tratti = useMemo(() => trattiLastra(doc), [doc]);
   // tech: una traccia dal bus a ogni beat, all'altezza del suo primo elemento
   const tracce = useMemo(() => doc.beats.map((b, i) => ({ t: b.t, y: Math.min(...imp.posati.filter((p) => p.beat === i && p.h > 0).map((p) => p.y - p.h / 2)) + 40 })).filter((x) => Number.isFinite(x.y)), [doc, imp]);
   const cam = useMemo(() => creaCamera(imp.camera, colpiDi(imp.posati, doc)), [imp, doc]);
@@ -214,6 +253,8 @@ export const Rotolo: React.FC<PropsRotolo> = (doc) => {
   const bx = Math.min(tech ? 14 : 24, Math.abs(vx) * (tech ? 0.12 : 0.2)), by = Math.min(tech ? 26 : 44, Math.abs(vy) * (tech ? 0.12 : 0.2));
   const mosso = bx + by > 1.2;
 
+  const pl = lastra(doc, t, tratti); // quota di schermo del presentatore
+  const plPrima = lastra(doc, t - 1 / fps, tratti);
   const fin = doc.finale;
   const buio = fin ? interpolate(t, [fin.t + 2.2, fin.t + 3.0], [0, 0.6], { extrapolateLeft: 'clamp', extrapolateRight: 'clamp' }) : 0;
 
@@ -226,7 +267,7 @@ export const Rotolo: React.FC<PropsRotolo> = (doc) => {
       </svg>
 
       <div style={{ position: 'absolute', inset: 0, filter: mosso ? 'url(#mosso)' : undefined }}>
-        <div style={{ position: 'absolute', left: width / 2, top: height / 2, transformOrigin: '0 0', transform: `scale(${c.z * k}) rotate(${c.rot}deg) translate(${-c.x}px, ${-c.y}px)` }}>
+        <div style={{ position: 'absolute', left: width / 2, top: (height * (1 - pl)) / 2, transformOrigin: '0 0', transform: `scale(${c.z * k}) rotate(${c.rot}deg) translate(${-c.x}px, ${-c.y}px)` }}>
           {tech ? <Canvas altezza={imp.altezza} anni={imp.anni} tempo={t} tracce={tracce} /> : <Fondale altezza={imp.altezza} anni={imp.anni} />}
           {imp.posati.map((p) => tech
             ? <div key={p.id} style={{ position: 'absolute', left: 0, top: 0, ...luce(doc, p, t) }}><PezzoTech p={p} t={t} /></div>
@@ -234,6 +275,7 @@ export const Rotolo: React.FC<PropsRotolo> = (doc) => {
         </div>
       </div>
 
+      {doc.presentatore && pl > 0.001 && <Lastra pres={doc.presentatore} p={pl} v={(pl - plPrima) * fps} t={t} tech={tech} />}
       <AbsoluteFill style={{ background: tech ? 'radial-gradient(ellipse 80% 60% at 50% 40%, rgba(79,140,255,0.10), rgba(0,0,0,0) 65%)' : 'radial-gradient(ellipse 90% 70% at 30% 18%, rgba(255,214,160,0.16), rgba(0,0,0,0) 60%)', mixBlendMode: 'screen' }} />
       <AbsoluteFill style={{ background: 'radial-gradient(ellipse 85% 75% at 50% 48%, rgba(0,0,0,0) 45%, rgba(10,6,3,0.72) 100%)' }} />
       <AbsoluteFill style={{ background: `rgba(8,5,3,${buio})` }} />

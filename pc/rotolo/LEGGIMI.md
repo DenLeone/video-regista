@@ -65,3 +65,11 @@ canvas infinito scuro a griglia blueprint con un bus dati e una traccia verso og
 (barra con `etichetta`), numeri enormi, etichette monospace con cursore, `timbro` = badge rosso, `cerchio` =
 riquadro che scatta. Tutto ciò che non è il beat attivo scende al 15%. Suoni digitali (`SUONI_TECH`) e musica
 `10 Musica/tech`. Dal PC: `--mondo tech`; dal bot: 💻 Tech dopo la cartella. Prima prova: Apple Lisa (04/11/2026).
+
+## Presentatore (tu che parli in camera)
+Se nella cartella c'è **un video** invece dell'audio, il video diventa il presentatore: la voce è il suo audio e
+il video entra come "lastra" dal basso. Ogni beat ha `"presentatore"`: `meta` (tu sotto, grafica sopra: default),
+`intero` (tu a tutto schermo, beat senza elementi: frasi personali) o `nascosto` (solo grafica). La lastra non
+taglia al centro: segue il viso (`pc/rotolo/viso.py`, YuNet in `pc/rotolo/modelli/`) e lascia spazio sopra la
+testa anche quando si stringe. Il video viene convertito in H.264 8 bit (`presentatore.mp4`) per il render.
+Senza modello il viso è fisso (`VISO_FISSO="0.55,0.47"`). Prima prova: Test tech (04/11/2026).

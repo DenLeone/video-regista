@@ -1,7 +1,8 @@
 name: documentario
 
 # Documentario a piano sequenza (motore Rotolo, src/Rotolo.tsx + pc/rotolo/). Parte dal bot (🎞 Documentario)
-# o dal tab Actions. La cartella in 01 · Da editare contiene UN audio (la voce) e le foto con il nome giusto.
+# o dal tab Actions. La cartella in 01 · Da editare contiene UN audio (la voce) o UN video di Denis che parla
+# (presentatore), e le foto con il nome giusto.
 # Se nella cartella c'è già beats.json (scritto da un giro prima e magari corretto a mano) si rifà solo il render.
 on:
   workflow_dispatch:
@@ -85,7 +86,7 @@ jobs:
         run: |
           bash scripts/programma-video.sh fonts-noto-color-emoji libegl1 libgles2
           npm ci || npm install
-          python -m pip install --quiet numpy pillow
+          python -m pip install --quiet numpy pillow opencv-python-headless
           # il motore usa questo Python (con numpy e Pillow), non un python3 di sistema
           echo "PYTHON=$(python -c 'import sys; print(sys.executable)')" >> "$GITHUB_ENV"
           "$(python -c 'import sys; print(sys.executable)')" -c 'import numpy, PIL; print("numpy", numpy.__version__, "Pillow", PIL.__version__)'
@@ -96,7 +97,8 @@ jobs:
           CARTELLA: ${{ inputs.cartella }}
         run: |
           mkdir -p "work/sorgente/$CARTELLA" work/sfx
-          rclone copy "gdrive:$DIR_EDITARE/$CARTELLA" "work/sorgente/$CARTELLA" --exclude "*.mp4" --exclude "*.mov" --exclude "*.MOV" --exclude "*.MP4"
+          # anche i video: un video di Denis che parla diventa il presentatore (la voce è il suo audio)
+          rclone copy "gdrive:$DIR_EDITARE/$CARTELLA" "work/sorgente/$CARTELLA"
           rclone copy "gdrive:$DIR_SFX" work/sfx --exclude "*.md"
           ls -la "work/sorgente/$CARTELLA"
           echo "suoni: $(find work/sfx -type f | wc -l) file"
