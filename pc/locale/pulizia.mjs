@@ -1,12 +1,13 @@
 // Passo 2 del flusso locale: pulizia del parlato. Dal video (o audio) e dalle parole di Whisper trova
 // cosa togliere e scrive i tagli, con i tempi precisi.
 //   node pc/locale/pulizia.mjs <video o audio> [--parole parole.json] [--uscita cartella] [--modello qwen3.8:27b]
-//                              [--silenzio 0.6] [--senza-ai] [--senza-anteprima]
+//                              [--silenzio 0.6] [--senza-ai] [--rifai-ai] [--senza-allinea] [--senza-anteprima]
 // - silenzi: buchi tra le parole più lunghi di --silenzio secondi (niente AI)
 // - ripetizioni, false partenze, autocorrezioni, intercalari: AI locale (Ollama) su un elenco di parole
 //   numerate; risponde con intervalli di parole da togliere, che il codice controlla
 // Scrive nella cartella di uscita (default: accanto al file, <nome>-pulizia/):
 //   parole.json          trascrizione (se non c'era: Whisper sul PC, pc/trascrivi.py)
+//   parole-allineate.json  le stesse parole con i tempi precisi (allineamento forzato, pc/locale/allinea.py)
 //   tagli.json           { sorgente, durata, tieni:[{da,a}], togli:[{da,a,motivo,testo}] } in secondi del file originale
 //   parole-pulite.json   le parole tenute, con i tempi già spostati sul video tagliato (per i passi dopo)
 //   anteprima.mp4        720p tagliato, per ascoltare se i tagli sono giusti
@@ -42,7 +43,16 @@ if (!fs.existsSync(PAROLE)) {
   if (r.status !== 0) throw new Error('trascrizione non riuscita');
   fs.rmSync(wav, { force: true });
 }
-const parole = JSON.parse(fs.readFileSync(PAROLE, 'utf8')).map((w) => ({ ...w, w: w.w.trim() }));
+// tempi precisi: allineamento forzato del testo sull'audio (pc/locale/allinea.py, modello MMS).
+// I tempi di Whisper sbagliano anche di 0,3 s e i tagli lascerebbero pezzi di sillaba.
+const ALLINEATE = path.join(OUT, 'parole-allineate.json');
+if (!ha('--senza-allinea') && !fs.existsSync(ALLINEATE)) {
+  const py = path.join(ROOT, '.venv', process.platform === 'win32' ? 'Scripts/python.exe' : 'bin/python');
+  const r = spawnSync(py, [path.join(ROOT, 'pc', 'locale', 'allinea.py'), SORG, PAROLE, ALLINEATE], { stdio: ['ignore', 'inherit', 'ignore'] });
+  if (r.status !== 0) log('allineamento non riuscito: uso i tempi di Whisper (tagli meno precisi)');
+}
+const parole = JSON.parse(fs.readFileSync(!ha('--senza-allinea') && fs.existsSync(ALLINEATE) ? ALLINEATE : PAROLE, 'utf8'))
+  .map(({ w, s, e }) => ({ w: w.trim(), s, e }));
 log(`${parole.length} parole, ${DURATA.toFixed(1)} s`);
 
 // ---------- 2. cosa togliere secondo l'AI (intervalli di indici di parola)
@@ -84,10 +94,19 @@ async function chiediLocale(prompt, pensa) {
 let tagliAI = [];
 if (!ha('--senza-ai')) {
   const t0 = Date.now();
-  let t = await chiediLocale(PROMPT);
-  // alcuni modelli (Gemma) ragionano fino a finire lo spazio e non scrivono la risposta: si riprova senza ragionamento
-  if (!t.includes('{')) { log('risposta vuota, riprovo senza ragionamento'); t = await chiediLocale(PROMPT, false); }
-  fs.writeFileSync(path.join(OUT, 'ai.txt'), t);
+  // la risposta si riusa finché testo e modello sono gli stessi (--rifai-ai per chiederla di nuovo)
+  const CACHE = path.join(OUT, 'ai.json');
+  const chiave = `${MODELLO}
+${PROMPT}`;
+  const vecchia = fs.existsSync(CACHE) ? JSON.parse(fs.readFileSync(CACHE, 'utf8')) : null;
+  let t;
+  if (vecchia?.chiave === chiave && !ha('--rifai-ai')) { t = vecchia.risposta; log('AI: risposta già pronta (stesso testo)'); }
+  else {
+    t = await chiediLocale(PROMPT);
+    // alcuni modelli (Gemma) ragionano fino a finire lo spazio e non scrivono la risposta: si riprova senza ragionamento
+    if (!t.includes('{')) { log('risposta vuota, riprovo senza ragionamento'); t = await chiediLocale(PROMPT, false); }
+    fs.writeFileSync(CACHE, JSON.stringify({ chiave, risposta: t }));
+  }
   log(`AI (${MODELLO}) in ${((Date.now() - t0) / 1000).toFixed(0)} s`);
   const d = JSON.parse(t.slice(t.indexOf('{'), t.lastIndexOf('}') + 1));
   // controllo: indici veri, in ordine, non più di 15 parole per taglio, niente sovrapposizioni
@@ -118,7 +137,11 @@ for (const w of tenute) {
 tieni.forEach((x, k) => {
   const prima = k > 0 ? tieni[k - 1].fine : 0, dopo = k < tieni.length - 1 ? tieni[k + 1].inizio : DURATA;
   // Whisper mette le parole attaccate: l'aria non deve mai entrare nella parola vicina (tolta o no)
-  const finePrec = x.prima > 0 ? parole[x.prima - 1].e : 0, inizioSucc = x.ultima < parole.length - 1 ? parole[x.ultima + 1].s : DURATA;
+  // il limite è a metà dell'aria tra le due parole: gli attacchi (s, f, l) hanno poca energia e
+  // l'allineamento li colloca un po' tardi; tagliare proprio sul bordo ne lascerebbe un pezzo
+  const finePrec = x.prima > 0 ? (parole[x.prima - 1].e + x.inizio) / 2 : 0;
+  const inizioSucc = x.ultima < parole.length - 1 ? (x.fine + parole[x.ultima + 1].s) / 2 : DURATA;
+  x.finePrec = finePrec; x.inizioSucc = inizioSucc;
   x.da = +Math.max(0, x.inizio - MARGINE, (prima + x.inizio) / 2, finePrec).toFixed(3);
   x.a = +Math.min(DURATA, x.fine + MARGINE, (x.fine + dopo) / 2, inizioSucc).toFixed(3);
 });
@@ -146,8 +169,9 @@ tieni.forEach((x, k) => {
   };
   tieni.forEach((x, k) => {
     const prec = k > 0 ? tieni[k - 1].a : 0, succ = k < tieni.length - 1 ? tieni[k + 1].da : DURATA;
-    if (x.da > 0) x.da = quieto(x.da, prec + 0.02, x.inizio + 0.03);
-    if (x.a < DURATA) x.a = quieto(x.a, x.fine - 0.03, succ - 0.02);
+    // mai dentro la parola vicina (tolta o tenuta): solo nell'aria tra le due
+    if (x.da > 0) x.da = quieto(x.da, Math.max(prec + 0.02, x.finePrec), x.inizio);
+    if (x.a < DURATA) x.a = quieto(x.a, x.fine, Math.min(succ - 0.02, x.inizioSucc));
   });
 }
 const togli = [];
