@@ -180,7 +180,7 @@ const righeStili = (fai: (x: Stile) => Button): Kb => {
 // prova = come esce il Reel: reel di prova che passa ai follower quando lo decide Denis (manuale)
 // o da solo se va bene con i non follower (auto), oppure Reel normale (no)
 type Imp = { versione: 'stabile' | 'beta'; ai: 'gemini' | 'claude'; modello: 'haiku' | 'sonnet' | 'opus'; gemini: 'flash' | 'pro'; stile: string; prova: 'manuale' | 'auto' | 'no' };
-const IMP_BASE: Imp = { versione: 'stabile', ai: 'gemini', modello: 'sonnet', gemini: 'flash', stile: 'Blueprint', prova: 'manuale' };
+const IMP_BASE: Imp = { versione: 'stabile', ai: 'gemini', modello: 'sonnet', gemini: 'flash', stile: 'Cinematico', prova: 'manuale' };
 const PROVA: Record<Imp['prova'], { nome: string; api: string }> = {
   manuale: { nome: 'reel di prova · ai follower quando decidi tu', api: 'MANUAL' },
   auto: { nome: 'reel di prova · ai follower da solo se va bene', api: 'SS_PERFORMANCE' },

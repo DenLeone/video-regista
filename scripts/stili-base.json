@@ -1,18 +1,8 @@
 [
   {
-    "nome": "Blueprint",
-    "tasto": "📐 Blueprint",
-    "cosa": "tavola tecnica, parole chiave in box, effetti digitali"
-  },
-  {
     "nome": "Cinematico",
     "tasto": "🎬 Cinematico",
     "cosa": "spot di prodotto, sottotitoli parola per parola, titoli grandi"
-  },
-  {
-    "nome": "MotionCollage",
-    "tasto": "🖼️ Motion-Collage",
-    "cosa": "video incollato su carta che si inclina a ogni taglio, parole chiave come ritagli (numeri in box giallo), frecce"
   },
   {
     "nome": "ListaUI",
