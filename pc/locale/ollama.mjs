@@ -32,9 +32,10 @@ async function una(prompt, { modello, pensa, temperatura, contesto }) {
 }
 
 export async function chiediLocale(prompt, { modello = 'qwen3.8:27b', pensa = process.env.LOCALE_PENSA || 'low', temperatura = 0.1 } = {}) {
-  // ~2 caratteri per token con i numeri delle parole (misurato: 6451 token per un prompt di 3 minuti di parlato);
-  // + 10k per ragionamento e risposta. Se la risposta esce troncata (contesto pieno) si riprova con il doppio.
-  let contesto = Math.max(8192, Math.ceil((prompt.length / 2 + 10240) / 2048) * 2048);
+  // ~2,6 caratteri per token con i numeri delle parole (misurato: 6451 token per un prompt di 3 minuti di parlato);
+  // + 7k per ragionamento e risposta (meno contesto = più modello sulla scheda video). Se la risposta esce troncata
+  // (contesto pieno) si riprova con il doppio.
+  let contesto = Math.max(8192, Math.ceil((prompt.length / 2.6 + 7168) / 2048) * 2048);
   const t0 = Date.now();
   let { testo, fine } = await una(prompt, { modello, pensa, temperatura, contesto });
   if (fine?.done_reason === 'length' || (testo.includes('{') && !testo.trim().endsWith('}'))) {

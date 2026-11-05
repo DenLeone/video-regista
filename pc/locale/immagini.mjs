@@ -1,8 +1,8 @@
 // Passo 4 del flusso locale: quali immagini vanno su quali parole, sul video già pulito.
-//   node pc/locale/immagini.mjs <cartella -pulizia> <cartella immagini> [--modello qwen3.8:27b] [--pensa low] [--rifai-ai] [--max 3.5]
+//   node pc/locale/immagini.mjs <cartella -pulizia> <cartella immagini> [--modello qwen3.8:27b] [--pensa no|low] [--rifai-ai] [--max 3.5]
 // 1. codice: per ogni immagine le parole del nome (tipo-nome.ext, passo 1) e dove il parlato le dice
-// 2. AI locale (Ollama): sceglie quali immagini usare e su quale parola, anche per sinonimi e descrizioni;
-//    risponde con indici di parola che il codice controlla (file vero, una volta sola, distanze minime)
+// 2. AI locale (Ollama), un tratto di ~10 s alla volta: sceglie quali immagini usare e su quale parola, anche per
+//    sinonimi e descrizioni; risponde con indici di parola che il codice controlla (file vero, una volta sola, distanze)
 // Scrive <cartella -pulizia>/immagini.json: { cartella, elementi: [{ file, i, parola, inizio, durata, motivo }] }
 // con i tempi sul video tagliato (parole-pulite.json), pronti per la timeline.
 import fs from 'node:fs';
@@ -21,8 +21,6 @@ const OLLAMA = process.env.OLLAMA_HOST || 'http://127.0.0.1:11434';
 const MODELLO = opz('--modello', process.env.MODELLO_IMMAGINI || 'qwen3.8:27b');
 const MAX = Number(opz('--max', '3.5')); // secondi al massimo per immagine
 const MIN = 1.2;                          // secondi minimi: meno non si legge
-// ragionamento del modello (qwen3.8: low|medium|xhigh, no = spento): low basta per questo compito ed è molto più veloce
-const PENSA = opz('--pensa', 'low');
 const log = (...a) => console.log('[immagini]', ...a);
 
 const parole = JSON.parse(fs.readFileSync(path.join(dirPulizia, 'parole-pulite.json'), 'utf8'));
@@ -45,41 +43,68 @@ const indizi = immagini.map((f) => {
   const dove = pr.map((w, i) => (w && k.includes(w) ? i : -1)).filter((i) => i >= 0);
   return { file: f, chiavi: chiavi(f), dove };
 });
-for (const x of indizi) log(`${x.file}: ${x.dove.length ? `detto in ${x.dove.map((i) => `${i}:${parole[i].w}`).join(', ')}` : 'mai nominato per nome'}`);
+if (immagini.length <= 30) for (const x of indizi) log(`${x.file}: ${x.dove.length ? `detto in ${x.dove.map((i) => `${i}:${parole[i].w}`).join(', ')}` : 'mai nominato per nome'}`);
 
-// ---------- 2. scelta dell'AI
-const PROMPT = `Sei il montatore di un video parlato di Denis. Devi mettere delle immagini sopra il video, ognuna nel momento in cui il parlato nomina o descrive quello che mostra.
-Ti do la trascrizione parola per parola (ogni parola col suo numero) e le immagini disponibili, con le parole del parlato che corrispondono al loro nome (se ci sono).${immagini.filter((n) => /^\d+[_-]/.test(n)).length > immagini.length / 2 ? '\nIl numero all\'inizio del nome (01_, 02_…) è l\'ordine in cui Denis parla degli argomenti: le immagini con lo stesso numero vanno nello stesso tratto del parlato e i numeri crescono con il tempo.' : ''}
+// ---------- 2. scelta dell'AI, a tratti di ~10 s
+// Una richiesta per tratto con poche parole e le immagini non ancora usate: risposte brevi, niente contesto pieno.
+// (Una richiesta unica con 115 immagini faceva ragionare il modello per 20+ minuti e riempiva il contesto.)
+const TRATTO = 10;
+const tratti = [];
+{
+  let cur = [];
+  parole.forEach((w, i) => {
+    cur.push(i);
+    const lungo = w.e - parole[cur[0]].s;
+    const finale = /[.!?]$/.test(w.w.trim());
+    if ((lungo >= TRATTO && finale) || lungo >= TRATTO * 1.6) { tratti.push(cur); cur = []; }
+  });
+  if (cur.length) tratti.push(cur);
+}
+const ORDINE = immagini.filter((n) => /^\d+[_-]/.test(n)).length > immagini.length / 2
+  ? '\nIl numero all\'inizio del nome (01_, 02_…) è l\'ordine in cui Denis parla degli argomenti: preferisci immagini con numeri vicini a quelli già usati prima.' : '';
+const domanda = (tr, libere, prima) => `Sei il montatore di un video parlato di Denis. Metti immagini sopra il video, ognuna nel momento in cui il parlato nomina o descrive quello che mostra.
+Questo è un TRATTO del parlato (${parole[tr[0]].s.toFixed(1)}–${parole[tr.at(-1)].e.toFixed(1)} s), parola per parola con il numero:
+${tr.map((i) => `${i}:${parole[i].w}`).join(' ')}
+${prima ? `\nNel tratto prima avevi messo: ${prima}.` : ''}${ORDINE}
 
-Regole:
-- metti un'immagine SOLO dove il parlato parla davvero di quello che mostra (la persona, il luogo, l'oggetto); va bene anche un sinonimo o una descrizione ("edifici antichi" → foto di palazzi storici)
-- "i" = il numero della parola su cui l'immagine compare (la parola che la nomina, o l'inizio della frase che la descrive)
-- ogni immagine al massimo una volta; immagini che non c'entrano con niente di detto: non usarle
-- il video deve essere PIENO: punta a un'immagine circa ogni 3–4 secondi di parlato (in tutto circa ${Math.round(FINE / 3.5)}), scegliendo per ogni frase l'immagine più adatta tra tutte; un tratto resta senza immagine solo se nessuna c'entra davvero (lì andrà una scritta)
-- i file .mp4/.gif sono clip in movimento: preferiscile quando mostrano proprio quello che si dice
-- di norma almeno 1,5 secondi tra un'immagine e la successiva (guarda i tempi delle parole); ECCEZIONE: quando il parlato elenca più persone, luoghi o cose di fila ("sia Lenin che Hitler"), ognuno ha la sua immagine sulla sua parola anche se sono vicine
+Scegli ${Math.max(1, Math.round((parole[tr.at(-1)].e - parole[tr[0]].s) / 3.5))} immagini (circa una ogni 3–4 s) tra quelle sotto, ognuna su una parola diversa, lontane almeno 1,5 s (tranne negli elenchi di nomi, dove ognuno ha la sua). Solo immagini che mostrano davvero quello che si dice (anche sinonimi o descrizioni; i nomi dei file possono essere in inglese). Se nessuna c'entra, non metterne. I file .mp4/.gif sono clip in movimento.
+"i" = numero della parola su cui compare (quella che la nomina o l'inizio della frase che la descrive).
 
-Rispondi SOLO con JSON: {"immagini": [{"file": "<nome esatto del file>", "i": <numero parola>, "motivo": "<cosa dice il parlato>"}]}
+Rispondi SOLO con JSON: {"immagini": [{"file": "<nome esatto>", "i": <numero>, "motivo": "<cosa dice>"}]}
 
 IMMAGINI:
-${indizi.map((x) => `- ${x.file}${x.dove.length ? `  (nominata alle parole ${x.dove.join(', ')})` : ''}`).join('\n')}
-
-TRASCRIZIONE (numero:parola@secondo):
-${parole.map((w, i) => `${i}:${w.w}@${w.s.toFixed(1)}`).join(' ')}`;
+${libere.join('\n')}`;
 
 const CACHE = path.join(dirPulizia, 'immagini-ai.json');
-const chiave = `${MODELLO}\n${PROMPT}`;
-const vecchia = fs.existsSync(CACHE) ? JSON.parse(fs.readFileSync(CACHE, 'utf8')) : null;
-let t;
-if (vecchia?.chiave === chiave && !ha('--rifai-ai')) { t = vecchia.risposta; log('AI: risposta già pronta'); }
-else {
-  const t0 = Date.now();
-  t = await chiediLocale(PROMPT, { modello: MODELLO, temperatura: 0.1, pensa: PENSA });
-  log(`AI (${MODELLO}) in ${((Date.now() - t0) / 1000).toFixed(0)} s`);
-  // in cache solo una risposta che è JSON valido (una troncata si richiede al giro dopo)
-  try { JSON.parse(t.slice(t.indexOf('{'), t.lastIndexOf('}') + 1)); fs.writeFileSync(CACHE, JSON.stringify({ chiave, risposta: t })); } catch { console.log('[cache] risposta non valida, non la salvo'); }
+const cache = (() => { try { const c = JSON.parse(fs.readFileSync(CACHE, 'utf8')); return c && !c.chiave ? c : {}; } catch { return {}; } })();
+const PENSA_TRATTI = opz('--pensa', 'no');
+const d = { immagini: [] };
+const usate = new Set();
+const t0 = Date.now();
+let prima = '';
+for (const [k, tr] of tratti.entries()) {
+  const libere = immagini.filter((n) => !usate.has(n));
+  if (!libere.length) break;
+  const prompt = domanda(tr, libere, prima);
+  const chiave = `${MODELLO}|${PENSA_TRATTI}\n${prompt}`;
+  let t = !ha('--rifai-ai') && cache[chiave];
+  if (!t) {
+    t = await chiediLocale(prompt, { modello: MODELLO, temperatura: 0.1, pensa: PENSA_TRATTI });
+    try { JSON.parse(t.slice(t.indexOf('{'), t.lastIndexOf('}') + 1)); cache[chiave] = t; fs.writeFileSync(CACHE, JSON.stringify(cache)); } catch { log(`tratto ${k}: risposta non valida`); continue; }
+  }
+  const r = JSON.parse(t.slice(t.indexOf('{'), t.lastIndexOf('}') + 1));
+  const messe = [];
+  for (const x of [].concat(r.immagini || [])) {
+    const i = Math.round(x.i);
+    if (!tr.includes(i)) continue; // parola fuori dal tratto
+    d.immagini.push(x);
+    const f = immagini.find((n) => n.toLowerCase() === String(x.file || '').toLowerCase());
+    if (f) { usate.add(f); messe.push(f); }
+  }
+  prima = messe.join(', ');
+  log(`tratto ${k + 1}/${tratti.length} (${parole[tr[0]].s.toFixed(0)}–${parole[tr.at(-1)].e.toFixed(0)} s): ${messe.length ? messe.join(', ') : 'nessuna'}`);
 }
-const d = JSON.parse(t.slice(t.indexOf('{'), t.lastIndexOf('}') + 1));
+log(`AI (${MODELLO}, ragionamento ${PENSA_TRATTI}) in ${((Date.now() - t0) / 1000).toFixed(0)} s per ${tratti.length} tratti`);
 
 // ---------- 3. controllo e tempi
 const scelte = [];
