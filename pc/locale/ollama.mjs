@@ -8,19 +8,29 @@
 // Restituisce il testo e scrive in console il tempo e i token.
 const OLLAMA = process.env.OLLAMA_HOST || 'http://127.0.0.1:11434';
 
-async function una(prompt, { modello, pensa, temperatura, contesto }) {
+async function una(prompt, { modello, pensa, temperatura, contesto, maxRisposta }) {
   const r = await fetch(`${OLLAMA}/api/chat`, {
     method: 'POST', headers: { 'content-type': 'application/json' },
     body: JSON.stringify({
       model: modello, stream: true, format: 'json', ...(pensa ? { think: pensa === 'no' ? false : pensa } : {}),
-      messages: [{ role: 'user', content: prompt }], options: { temperature: temperatura, num_ctx: contesto },
+      messages: [{ role: 'user', content: prompt }], options: { temperature: temperatura, num_ctx: contesto, num_predict: maxRisposta },
     }),
-    signal: AbortSignal.timeout(40 * 60 * 1000),
+    signal: AbortSignal.timeout(20 * 60 * 1000),
   });
   if (!r.ok) throw new Error(`Ollama ${r.status}: ${(await r.text()).slice(0, 200)}`);
   let testo = '', resto = '', fine = null;
   const dec = new TextDecoder();
-  const riga = (l) => { if (!l.trim()) return; const j = JSON.parse(l); testo += j.message?.content || ''; if (j.done) fine = j; };
+  let pensati = 0, scritti = 0, ultimo = Date.now();
+  const t0 = Date.now();
+  const riga = (l) => {
+    if (!l.trim()) return;
+    const j = JSON.parse(l);
+    testo += j.message?.content || '';
+    if (j.message?.thinking) pensati++; else if (j.message?.content) scritti++;
+    if (j.done) fine = j;
+    // segno di vita ogni minuto: chi guarda il log vede che il modello sta ancora scrivendo
+    if (Date.now() - ultimo > 60000) { ultimo = Date.now(); console.log(`[ollama] … ${((ultimo - t0) / 60000).toFixed(0)} min, ${pensati} token di ragionamento, ${scritti} di risposta`); }
+  };
   for await (const pezzo of r.body) {
     resto += dec.decode(pezzo, { stream: true });
     const righe = resto.split('\n');
@@ -37,15 +47,18 @@ export async function chiediLocale(prompt, { modello = 'qwen3.8:27b', pensa = pr
   // (contesto pieno) si riprova con il doppio.
   let contesto = Math.max(8192, Math.ceil((prompt.length / 2.6 + 7168) / 2048) * 2048);
   const t0 = Date.now();
-  let { testo, fine } = await una(prompt, { modello, pensa, temperatura, contesto });
+  // tetto ai token scritti (ragionamento + risposta): senza, un modello che gira a vuoto non finisce mai
+  // (successo sulla regia di Test 2: 40 minuti senza risposta)
+  const maxRisposta = () => (pensa === 'no' ? 6144 : contesto - Math.ceil(prompt.length / 2.6));
+  let { testo, fine } = await una(prompt, { modello, pensa, temperatura, contesto, maxRisposta: maxRisposta() });
   if (fine?.done_reason === 'length' || (testo.includes('{') && !testo.trim().endsWith('}'))) {
     contesto *= 2;
     console.log(`[ollama] ${modello}: risposta troncata (contesto pieno), riprovo con contesto ${contesto}`);
-    ({ testo, fine } = await una(prompt, { modello, pensa, temperatura, contesto }));
+    ({ testo, fine } = await una(prompt, { modello, pensa, temperatura, contesto, maxRisposta: maxRisposta() }));
   }
   if (!testo.includes('{') && pensa !== 'no') {
     console.log(`[ollama] ${modello}: risposta vuota, riprovo senza ragionamento`);
-    ({ testo, fine } = await una(prompt, { modello, pensa: 'no', temperatura, contesto }));
+    ({ testo, fine } = await una(prompt, { modello, pensa: 'no', temperatura, contesto, maxRisposta: 6144 }));
   }
   const s = ((Date.now() - t0) / 1000).toFixed(0);
   const tok = fine ? `, ${fine.prompt_eval_count ?? '?'} token letti, ${fine.eval_count ?? '?'} scritti (${fine.eval_duration ? (fine.eval_count / (fine.eval_duration / 1e9)).toFixed(1) : '?'} token/s)` : '';

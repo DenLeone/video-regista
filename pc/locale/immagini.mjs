@@ -121,7 +121,8 @@ const elementi = [];
 for (const s of scelte) {
   const inizio = parole[s.i].s;
   const prima = elementi.at(-1);
-  if (prima && inizio - prima.inizio < 0.6) { log(`scartata: ${s.file} troppo vicina a ${prima.file}`); continue; }
+  // almeno MIN secondi dall'immagine prima: sotto non si legge
+  if (prima && inizio - prima.inizio < MIN) { log(`scartata: ${s.file} troppo vicina a ${prima.file}`); continue; }
   elementi.push({ ...s, parola: parole[s.i].w, inizio: +inizio.toFixed(3) });
 }
 // durata: fino all'immagine dopo (con 0,2 s di stacco, attaccate se sono un elenco), al massimo MAX, mai oltre la fine
