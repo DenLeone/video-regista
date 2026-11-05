@@ -1,0 +1,92 @@
+// Flusso locale completo, un comando: dal tuo video (tu che parli) e da una cartella di immagini alla timeline
+// in DaVinci con il video tagliato che si muove e la grafica Rotolo/Tech sopra. Niente token: AI locali (Ollama).
+//   node pc/locale/documentario.mjs <video> <cartella immagini> [--mondo tech|rotolo] [--titolo X] [--4k]
+//                                   [--rinomina] [--uscita cartella] [--senza-davinci]
+// Passi (ognuno salta se ha già il risultato, le risposte delle AI si riusano):
+//   [--rinomina] 1. nomi delle immagini (gemma4: le rinomina davvero, --annulla con rinomina.mjs)
+//   2. pulizia del parlato (Whisper + allineamento + qwen3.8) → tagli
+//   3. immagini sulle parole (qwen3.8)
+//   4. regia (beats.json, testi da qwen3.8)
+//   5. grafica trasparente (Remotion, ProRes 4444; 1080×1920, --4k per la piena risoluzione)
+//   6. movimento del presentatore (stessa geometria della lastra)
+//   7. suoni: eventi dalla regia, SFX + musica (con ducking sotto la voce) + ambiente come tracce separate
+//   8. timeline in DaVinci (deve essere aperto, External scripting: Local): V1 tu, V2 grafica, A1 voce, A2–A4 suoni
+// Lavoro in work/locale/<nome>/ (o --uscita), grafica in out/locale/.
+import fs from 'node:fs';
+import path from 'node:path';
+import { spawnSync } from 'node:child_process';
+import { fileURLToPath } from 'node:url';
+
+const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
+const args = process.argv.slice(2);
+const opz = (k, d = '') => (args.includes(k) ? args[args.indexOf(k) + 1] : d);
+const ha = (k) => args.includes(k);
+const VIDEO = path.resolve(args[0] || ''), IMM = path.resolve(args[1] || '');
+if (!args[1] || !fs.existsSync(VIDEO) || !fs.existsSync(IMM)) {
+  console.error('uso: node pc/locale/documentario.mjs <video> <cartella immagini> [--mondo tech|rotolo] [--titolo X] [--4k] [--rinomina]'); process.exit(1);
+}
+const titolo = opz('--titolo', path.basename(path.dirname(VIDEO)));
+const slug = titolo.normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^a-zA-Z0-9]+/g, '-').replace(/^-|-$/g, '').toLowerCase();
+const LAV = path.resolve(opz('--uscita', path.join(ROOT, 'work', 'locale', slug)));
+const PUL = path.join(LAV, 'pulizia');
+fs.mkdirSync(PUL, { recursive: true });
+const PY = path.join(ROOT, '.venv', process.platform === 'win32' ? 'Scripts/python.exe' : 'bin/python');
+const t00 = Date.now();
+const passo = (n, testo) => console.log(`\n[documentario] ${n}. ${testo}  (${((Date.now() - t00) / 60000).toFixed(1)} min)`);
+const run = (cmd, a, o = {}) => {
+  const r = spawnSync(cmd, a, { stdio: 'inherit', cwd: ROOT, shell: process.platform === 'win32' && cmd === 'npx', ...o });
+  if (r.status !== 0) { console.error(`[documentario] fermo: ${path.basename(cmd)} ${a[0] ? path.basename(String(a[0])) : ''} è uscito con ${r.status}`); process.exit(1); }
+};
+const node = (script, a, o) => run('node', [path.join(ROOT, 'pc', 'locale', script), ...a], o);
+
+// misure e frame rate del video
+const info = JSON.parse(spawnSync('ffprobe', ['-v', 'error', '-select_streams', 'v:0', '-show_entries', 'stream=width,height,r_frame_rate', '-of', 'json', VIDEO], { encoding: 'utf8' }).stdout).streams[0];
+const [fn, fd] = info.r_frame_rate.split('/').map(Number);
+const FPS = fn / (fd || 1);
+console.log(`[documentario] ${path.basename(VIDEO)}: ${info.width}×${info.height} a ${FPS.toFixed(3)} fps → ${LAV}`);
+
+if (ha('--rinomina')) { passo(1, 'nomi delle immagini'); node('rinomina.mjs', [IMM, '--applica']); }
+
+passo(2, 'pulizia del parlato');
+node('pulizia.mjs', [VIDEO, '--uscita', PUL, '--senza-anteprima']);
+
+passo(3, 'immagini sulle parole');
+node('immagini.mjs', [PUL, IMM]);
+
+passo(4, 'regia');
+node('regia.mjs', [PUL, '--mondo', opz('--mondo', 'tech'), '--titolo', titolo]);
+const beats = JSON.parse(fs.readFileSync(path.join(PUL, 'beats.json'), 'utf8'));
+
+passo(5, 'grafica trasparente (Remotion)');
+const PROPS = path.join(LAV, 'props-grafica.json');
+fs.writeFileSync(PROPS, JSON.stringify({ ...beats, soloGrafica: true, fps: FPS }));
+fs.mkdirSync(path.join(ROOT, 'out', 'locale'), { recursive: true });
+// nome nuovo a ogni render: un .mov già importato in DaVinci è bloccato e non si sovrascrive
+const GRAFICA = path.join(ROOT, 'out', 'locale', `${slug}-grafica-${new Date().toISOString().slice(0, 16).replace(/[-:T]/g, '')}.mov`);
+const cpu = Math.max(2, Math.min(8, (await import('node:os')).cpus().length - 1));
+run('npx', ['remotion', 'render', 'src/index.ts', 'Rotolo', GRAFICA, `--props=${PROPS}`, '--codec=prores', '--prores-profile=4444',
+  '--pixel-format=yuva444p10le', '--image-format=png', `--concurrency=${cpu}`, ...(ha('--4k') ? [] : ['--scale=0.5'])]);
+
+passo(6, 'movimento del presentatore');
+const LASTRA = path.join(PUL, 'lastra.json');
+run('node', ['--experimental-strip-types', '--no-warnings', path.join(ROOT, 'pc', 'locale', 'lastra.mjs'), path.join(PUL, 'beats.json'), LASTRA,
+  '--fps', String(FPS), '--w', String(info.width), '--h', String(info.height)]);
+
+passo(7, 'suoni: SFX, musica e ambiente (tracce separate)');
+const EVENTI = path.join(PUL, 'eventi.json');
+run('node', ['--experimental-strip-types', '--no-warnings', path.join(ROOT, 'pc', 'rotolo', 'eventi.mjs'), path.join(PUL, 'beats.json'), EVENTI]);
+// la voce tagliata serve solo per abbassare la musica quando parli
+const tieni = JSON.parse(fs.readFileSync(path.join(PUL, 'tagli.json'), 'utf8')).tieni;
+const VOCE = path.join(PUL, 'voce-tagliata.wav');
+const filtri = tieni.map((x, k) => `[0:a]atrim=${x.da}:${x.a},asetpts=PTS-STARTPTS[a${k}]`).join(';') + ';' + tieni.map((_, k) => `[a${k}]`).join('') + `concat=n=${tieni.length}:v=0:a=1[a]`;
+fs.writeFileSync(path.join(PUL, 'filtri-voce.txt'), filtri);
+run('ffmpeg', ['-v', 'error', '-y', '-i', VIDEO, '-/filter_complex', path.join(PUL, 'filtri-voce.txt'), '-map', '[a]', '-ac', '2', '-ar', '48000', VOCE]);
+const STEMS = path.join(PUL, 'suoni');
+run(process.env.PYTHON || (process.platform === 'win32' ? 'python' : 'python3'), [path.join(ROOT, 'pc', 'rotolo', 'suoni.py'), EVENTI, VOCE, path.join(PUL, 'mix.wav'), '--stems', STEMS],
+  { env: { ...process.env, PYTHONIOENCODING: 'utf-8' } });
+const AUDIO = ['sfx', 'musica', 'ambiente'].map((n) => path.join(STEMS, `${n}.wav`)).join(',');
+
+if (ha('--senza-davinci')) { console.log(`\n[documentario] pronto per DaVinci: ${GRAFICA}`); process.exit(0); }
+passo(8, 'timeline in DaVinci');
+run(PY, [path.join(ROOT, 'pc', 'locale', 'livelli.py'), VIDEO, GRAFICA, '--tagli', path.join(PUL, 'tagli.json'), '--lastra', LASTRA, '--audio', AUDIO, '--nome', titolo]);
+console.log(`\n[documentario] fatto in ${((Date.now() - t00) / 60000).toFixed(1)} min: progetto "Regista locale", timeline "${titolo}"`);

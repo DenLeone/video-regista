@@ -1,6 +1,7 @@
 # Timeline DaVinci a livelli: il video vero sotto (V1, con il suo audio) e la grafica trasparente sopra (V2,
 # ProRes 4444 con alfa renderizzato da Remotion con "soloGrafica").
 #   python pc/locale/livelli.py <video> <grafica.mov> [--tagli tagli.json] [--lastra lastra.json] [--nome X] [--progetto "Regista locale"]
+# --audio sfx.wav,musica.wav,ambiente.wav: su A2, A3, A4.
 # --tagli: il video su V1 (e l'audio su A1) è quello tagliato dal passo 2; la grafica e la lastra sono sui tempi tagliati.
 # --lastra: tratti da pc/locale/lastra.mjs; il video su V1 si sposta e si ingrandisce come la lastra di Remotion.
 # DaVinci Resolve Studio aperto, Preferenze → Sistema → Generale → External scripting using: Local.
@@ -115,6 +116,15 @@ if file_lastra or segmenti:
 else:
     mp.AppendToTimeline([{'mediaPoolItem': cv, 'trackIndex': 1, 'recordFrame': inizio}])
 mp.AppendToTimeline([{'mediaPoolItem': cg, 'trackIndex': 2, 'mediaType': 1, 'recordFrame': inizio}])
+# --audio a.wav,b.wav,…: tracce di suono (sfx, musica, ambiente da pc/rotolo/suoni.py --stems) su A2, A3…, dall'inizio
+for k, f in enumerate([x for x in (opz('--audio') or '').split(',') if x]):
+    f = os.path.abspath(f)
+    while tl.GetTrackCount('audio') < k + 2:
+        tl.AddTrack('audio', 'stereo')
+    c = prendi(f)
+    ok = c and mp.AppendToTimeline([{'mediaPoolItem': c, 'trackIndex': k + 2, 'mediaType': 2, 'recordFrame': inizio}])
+    tl.SetTrackName('audio', k + 2, os.path.splitext(os.path.basename(f))[0])
+    print(f'[livelli] A{k + 2}: {os.path.basename(f)}' + ('' if ok else ' NON messa'))
 v1, v2 = tl.GetItemListInTrack('video', 1) or [], tl.GetItemListInTrack('video', 2) or []
 
 print(f'[livelli] timeline "{nome_tl}" ({iv["width"]}x{iv["height"]}, {fps_resolve} fps): V1 {len(v1)} clip, V2 {len(v2)} clip'

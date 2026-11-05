@@ -1,5 +1,5 @@
 # Rotolo: sonorizzazione. Mixa voce + effetti + ambiente + musica e normalizza a -14 LUFS.
-#   python pc/rotolo/suoni.py <eventi.json> <voce> <uscita.wav> [cartella SFX]
+#   python pc/rotolo/suoni.py <eventi.json> <voce> <uscita.wav> [cartella SFX] [--stems cartella]
 # eventi.json lo scrive pc/rotolo/eventi.mjs (stessi tempi del video). I suoni stanno nella cartella SFX
 # (default "G:/Il mio Drive/12 · Risorse/SFX — regista", o la variabile SFX_DIR): una cartella = un suono,
 # i file dentro sono varianti scelte a caso. Le registrazioni lunghe (raffiche di tasti, carte lanciate)
@@ -9,7 +9,7 @@ import numpy as np
 
 SR = 48000
 ev_file, voce_file, uscita = sys.argv[1:4]
-SFX = (sys.argv[4] if len(sys.argv) > 4 else os.environ.get('SFX_DIR', 'G:/Il mio Drive/12 · Risorse/SFX — regista')).rstrip('/') + '/'
+SFX = (sys.argv[4] if len(sys.argv) > 4 and not sys.argv[4].startswith('--') else os.environ.get('SFX_DIR', 'G:/Il mio Drive/12 · Risorse/SFX — regista')).rstrip('/') + '/'
 dati = json.load(open(ev_file, encoding='utf8'))
 DUR = float(dati['durata'])
 random.seed(3)
@@ -100,6 +100,15 @@ n = np.arange(len(M)) / SR
 fade = np.clip(np.minimum(n / 1.5, (DUR + 0.6 - n) / 2.5), 0, 1)
 M *= (duck * fade)[:, None]
 A *= np.clip(np.minimum(n / 1.0, (DUR + 0.6 - n) / 1.5), 0, 1)[:, None]
+
+# --stems <cartella>: le tre tracce separate (sfx, musica, ambiente) senza voce, ai livelli del mix, per DaVinci
+if '--stems' in sys.argv:
+    cart = sys.argv[sys.argv.index('--stems') + 1]
+    os.makedirs(cart, exist_ok=True)
+    for nome, traccia in (('sfx', sfx), ('musica', M), ('ambiente', A)):
+        x = traccia[:int(DUR * SR)].astype(np.float32)
+        subprocess.run(['ffmpeg', '-v', 'error', '-y', '-f', 'f32le', '-ar', str(SR), '-ac', '2', '-i', '-', '-c:a', 'pcm_s24le', os.path.join(cart, nome + '.wav')], input=x.tobytes(), check=True)
+    print(f'stems → {cart} (sfx, musica, ambiente)')
 
 mix = (v + sfx + M + A)[:int(DUR * SR)].astype(np.float32)
 tmp = uscita + '.grezzo.wav'

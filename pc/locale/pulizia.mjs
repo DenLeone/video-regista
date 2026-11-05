@@ -13,6 +13,7 @@
 //   anteprima.mp4        720p tagliato, per ascoltare se i tagli sono giusti
 import fs from 'node:fs';
 import path from 'node:path';
+import { chiediLocale } from './ollama.mjs';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 
@@ -71,25 +72,6 @@ Se non c'è niente da togliere: {"tagli": []}
 TRASCRIZIONE:
 ${parole.map((w, i) => `${i}:${w.w}`).join(' ')}`;
 
-async function chiediLocale(prompt, pensa) {
-  const r = await fetch(`${OLLAMA}/api/chat`, {
-    method: 'POST', headers: { 'content-type': 'application/json' },
-    // in streaming: senza, fetch di Node smette di aspettare dopo 300 s
-    body: JSON.stringify({ model: MODELLO, stream: true, format: 'json', ...(pensa === false ? { think: false } : {}), messages: [{ role: 'user', content: prompt }], options: { temperature: 0.1, num_ctx: 16384 } }),
-    signal: AbortSignal.timeout(30 * 60 * 1000),
-  });
-  if (!r.ok) throw new Error(`Ollama ${r.status}: ${(await r.text()).slice(0, 200)}`);
-  let testo = '', resto = '';
-  const dec = new TextDecoder();
-  for await (const pezzo of r.body) {
-    resto += dec.decode(pezzo, { stream: true });
-    const righe = resto.split('\n');
-    resto = righe.pop();
-    for (const riga of righe) if (riga.trim()) testo += JSON.parse(riga).message?.content || '';
-  }
-  if (resto.trim()) testo += JSON.parse(resto).message?.content || '';
-  return testo;
-}
 
 let tagliAI = [];
 if (!ha('--senza-ai')) {
@@ -102,9 +84,7 @@ ${PROMPT}`;
   let t;
   if (vecchia?.chiave === chiave && !ha('--rifai-ai')) { t = vecchia.risposta; log('AI: risposta già pronta (stesso testo)'); }
   else {
-    t = await chiediLocale(PROMPT);
-    // alcuni modelli (Gemma) ragionano fino a finire lo spazio e non scrivono la risposta: si riprova senza ragionamento
-    if (!t.includes('{')) { log('risposta vuota, riprovo senza ragionamento'); t = await chiediLocale(PROMPT, false); }
+    t = await chiediLocale(PROMPT, { modello: MODELLO, temperatura: 0.1 });
     fs.writeFileSync(CACHE, JSON.stringify({ chiave, risposta: t }));
   }
   log(`AI (${MODELLO}) in ${((Date.now() - t0) / 1000).toFixed(0)} s`);

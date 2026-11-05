@@ -10,6 +10,7 @@
 // nella cartella -pulizia.
 import fs from 'node:fs';
 import path from 'node:path';
+import { chiediLocale } from './ollama.mjs';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 
@@ -70,25 +71,6 @@ ${beats.map((b, n) => `${n}. immagine ${b.elementi[0].file} — parole: ${frase(
 PARLATO (numero:parola@secondo):
 ${parole.map((w, i) => `${i}:${w.w}@${w.s.toFixed(1)}`).join(' ')}`;
 
-async function chiedi(prompt) {
-  const r = await fetch(`${OLLAMA}/api/chat`, {
-    method: 'POST', headers: { 'content-type': 'application/json' },
-    // in streaming: senza, fetch di Node smette di aspettare dopo 300 s
-    body: JSON.stringify({ model: MODELLO, stream: true, format: 'json', think: 'low', messages: [{ role: 'user', content: prompt }], options: { temperature: 0.2, num_ctx: 16384 } }),
-    signal: AbortSignal.timeout(30 * 60 * 1000),
-  });
-  if (!r.ok) throw new Error(`Ollama ${r.status}: ${(await r.text()).slice(0, 200)}`);
-  let testo = '', resto = '';
-  const dec = new TextDecoder();
-  for await (const pezzo of r.body) {
-    resto += dec.decode(pezzo, { stream: true });
-    const righe = resto.split('\n');
-    resto = righe.pop();
-    for (const riga of righe) if (riga.trim()) testo += JSON.parse(riga).message?.content || '';
-  }
-  if (resto.trim()) testo += JSON.parse(resto).message?.content || '';
-  return testo;
-}
 const CACHE = path.join(DIR, 'regia-ai.json');
 const chiave = `${MODELLO}\n${PROMPT}`;
 const vecchia = fs.existsSync(CACHE) ? JSON.parse(fs.readFileSync(CACHE, 'utf8')) : null;
@@ -96,7 +78,7 @@ let t;
 if (vecchia?.chiave === chiave && !ha('--rifai-ai')) { t = vecchia.risposta; log('AI: risposta già pronta'); }
 else {
   const t0 = Date.now();
-  t = await chiedi(PROMPT);
+  t = await chiediLocale(PROMPT, { modello: MODELLO, temperatura: 0.2 });
   log(`AI (${MODELLO}) in ${((Date.now() - t0) / 1000).toFixed(0)} s`);
   fs.writeFileSync(CACHE, JSON.stringify({ chiave, risposta: t }));
 }
