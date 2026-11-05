@@ -1,6 +1,7 @@
 # Timeline DaVinci a livelli: il video vero sotto (V1, con il suo audio) e la grafica trasparente sopra (V2,
 # ProRes 4444 con alfa renderizzato da Remotion con "soloGrafica").
-#   python pc/locale/livelli.py <video> <grafica.mov> [--lastra chiavi.json] [--nome X] [--progetto "Regista locale"]
+#   python pc/locale/livelli.py <video> <grafica.mov> [--tagli tagli.json] [--lastra lastra.json] [--nome X] [--progetto "Regista locale"]
+# --tagli: il video su V1 (e l'audio su A1) è quello tagliato dal passo 2; la grafica e la lastra sono sui tempi tagliati.
 # --lastra: tratti da pc/locale/lastra.mjs; il video su V1 si sposta e si ingrandisce come la lastra di Remotion.
 # DaVinci Resolve Studio aperto, Preferenze → Sistema → Generale → External scripting using: Local.
 # Timeline con la risoluzione del video; la grafica (anche a risoluzione più bassa) si adatta allo schermo.
@@ -64,21 +65,53 @@ tl.SetSetting('timelineResolutionHeight', str(iv['height']))
 while tl.GetTrackCount('video') < 2:
     tl.AddTrack('video')
 inizio = tl.GetStartFrame()
+import math
 file_lastra = opz('--lastra')
-if file_lastra:
+file_tagli = opz('--tagli')
+# tagli (pc/locale/pulizia.mjs): i tratti tenuti del video, in fotogrammi della sorgente, uno dopo l'altro sul video
+# tagliato. Arrotondamento come in timeline.py: mai dentro il parlato.
+segmenti = []  # (inizio sul tagliato, fine sul tagliato, inizio nella sorgente)
+if file_tagli:
+    cum = 0
+    for t in json.load(open(file_tagli, encoding='utf8'))['tieni']:
+        a_, b_ = round(t['da'] * fps), round(t['a'] * fps)
+        if 'parlaDa' in t and a_ / fps > t['parlaDa'] - 0.005: a_ = math.floor(t['da'] * fps)
+        if 'parlaA' in t and b_ / fps < t['parlaA'] + 0.005: b_ = math.ceil(t['a'] * fps)
+        if b_ > a_:
+            segmenti.append((cum, cum + b_ - a_, a_)); cum += b_ - a_
+    print(f'[livelli] tagli: {len(segmenti)} tratti tenuti, {cum / float(fps):.1f} s')
+def sorgente(da, a):
+    # [da, a) sul video tagliato → pezzi (inizio, fine) nella sorgente; senza tagli è lo stesso intervallo
+    if not segmenti: return [(da, a, da)]
+    out = []
+    for ca, cb, sa in segmenti:
+        x, y = max(da, ca), min(a, cb)
+        if y > x: out.append((sa + x - ca, sa + y - ca, x))
+    return out
+if file_lastra or segmenti:
     # il presentatore si muove come la lastra di Remotion (pc/locale/lastra.mjs): V1 a pezzi, ognuno con la sua
     # trasformazione (Zoom/Pan/Tilt della pagina Edit); l'audio intero su A1
-    tratti = json.load(open(file_lastra, encoding='utf8'))['tratti']
-    durata_v = cv.GetClipProperty('Frames')
-    pezzi = [{'mediaPoolItem': cv, 'startFrame': t['da'], 'endFrame': t['a'], 'trackIndex': 1, 'mediaType': 1, 'recordFrame': inizio + t['da']}
-             for t in tratti if durata_v in (None, '') or t['da'] < int(durata_v)]
+    if file_lastra:
+        tratti = json.load(open(file_lastra, encoding='utf8'))['tratti']
+    else:
+        tot = segmenti[-1][1]
+        tratti = [{'da': 0, 'a': tot, 'zoom': 1.0, 'pan': 0, 'tilt': 0}]
+    # V1: ogni tratto di movimento incrociato con i tratti tenuti; ogni pezzo con la sua trasformazione
+    pezzi, trasf = [], []
+    for t in tratti:
+        for sa, sb, ca in sorgente(t['da'], t['a']):
+            pezzi.append({'mediaPoolItem': cv, 'startFrame': sa, 'endFrame': sb, 'trackIndex': 1, 'mediaType': 1, 'recordFrame': inizio + ca})
+            trasf.append(t)
     messi = mp.AppendToTimeline(pezzi) or []
     sbagliati = 0
-    for it, t in zip(messi, tratti):
+    for it, t in zip(messi, trasf):
         if not it.SetProperties({'ZoomX': t['zoom'], 'ZoomY': t['zoom'], 'Pan': float(t['pan']), 'Tilt': float(t['tilt'])}):
             sbagliati += 1
-    mp.AppendToTimeline([{'mediaPoolItem': cv, 'trackIndex': 1, 'mediaType': 2, 'recordFrame': inizio}])
-    print(f'[livelli] presentatore: {len(messi)} pezzi su V1 (attesi {len(pezzi)})' + (f', {sbagliati} senza trasformazione' if sbagliati else ', tutti trasformati'))
+    # A1: l'audio, un pezzo per tratto tenuto (o intero senza tagli)
+    audio = [{'mediaPoolItem': cv, 'startFrame': sa, 'endFrame': sa + cb - ca, 'trackIndex': 1, 'mediaType': 2, 'recordFrame': inizio + ca} for ca, cb, sa in segmenti]         or [{'mediaPoolItem': cv, 'trackIndex': 1, 'mediaType': 2, 'recordFrame': inizio}]
+    am = mp.AppendToTimeline(audio) or []
+    print(f'[livelli] presentatore: {len(messi)} pezzi su V1 (attesi {len(pezzi)})' + (f', {sbagliati} senza trasformazione' if sbagliati else ', tutti trasformati')
+          + f'; audio: {len(am)} pezzi su A1 (attesi {len(audio)})')
 else:
     mp.AppendToTimeline([{'mediaPoolItem': cv, 'trackIndex': 1, 'recordFrame': inizio}])
 mp.AppendToTimeline([{'mediaPoolItem': cg, 'trackIndex': 2, 'mediaType': 1, 'recordFrame': inizio}])
