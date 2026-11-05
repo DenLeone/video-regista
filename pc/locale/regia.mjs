@@ -1,5 +1,6 @@
 // Passo 5 del flusso locale: la regia del documentario (beats.json per src/Rotolo.tsx) senza Claude, a pezzi:
-//   node pc/locale/regia.mjs <cartella -pulizia> [--mondo tech|rotolo] [--titolo "…"] [--modello qwen3.8:27b] [--rifai-ai]
+//   node pc/locale/regia.mjs <cartella -pulizia> [--mondo tech|rotolo] [--titolo "…"] [--modello qwen3.8:27b] [--pensa no|low] [--rifai-ai]
+//   l'AI lavora a tratti di ~30 s (una richiesta per tratto, in cache in regia-ai.json)
 // - beat con le immagini: da immagini.json (passo 3), uno per immagine, sulla sua parola
 // - presentatore (intero / metà): regole nel codice: metà sui beat con grafica, intero nelle pause lunghe senza
 // - testi (etichette delle card, scritte a macchina, badge, numeri): AI locale su un elenco breve di frasi,
@@ -70,39 +71,60 @@ const vuoti = [];
 // tutto schermo: al massimo il 5% del video (inizio compreso), solo sulle parole più forti, per 1–2,5 s prima di un'immagine
 const BUDGET = DURATA * 0.05 - (beats.length ? Math.min(beats[0].t, 3) : 0);
 const MAX_FORTI = Math.max(0, Math.floor(BUDGET / 1.8));
-const PROMPT = `Sei il grafico di un video tech verticale di Denis (stile "Tech": card di vetro con un'etichetta monospace, scritte a macchina, badge rossi, numeri grandi).
-Ti do i momenti con un'immagine (con le parole dette mentre è in scena) e tutto il parlato numerato.
+// Una richiesta per tratto di ~30 s (momenti, vuoti e parole di quel tratto): prompt corti che stanno nella scheda
+// video. (Una richiesta unica con tutto il parlato su Test 2: 11k token letti, 25 minuti a 4,5 token/s.)
+const domanda = (momenti, vuotiQui, paroleQui, maxForti) => `Sei il grafico di un video tech verticale di Denis (stile "Tech": card di vetro con un'etichetta monospace, scritte a macchina, badge rossi, numeri grandi).
+Ti do un TRATTO del video: i momenti con un'immagine (con le parole dette mentre è in scena), i tratti vuoti e il parlato del tratto, numerato.
 Per ogni momento scrivi:
 - "etichetta": 1–4 parole IN MAIUSCOLO per la barra della card (cosa mostra o il punto chiave, es. "CLAUDE · ANTHROPIC")
 - facoltativo "scritta": una parola chiave detta in quel momento, da far comparire sotto la card: {"tipo": "macchina" (2–4 parole, monospace) o "timbro" (badge rosso, 1–2 parole forti o un giudizio, max 16 caratteri), "testo": "…", "parola": <numero della parola su cui compare, tra quelle del momento>}
-Poi "extra": riempi i TRATTI VUOTI (elenco sotto, senza immagini) con una scritta ciascuno (due se il tratto è più lungo di 7 s), sulla parola più importante del tratto: {"parola": <numero>, "tipo": "titolo" (2–4 parole) | "macchina" (frase chiave, monospace) | "contatore" (solo se il parlato dice un numero: "valore": <numero>, "suffisso": "…"), "testo": "…"}
-Infine "forti": fino a ${MAX_FORTI} numeri di parola dove Denis dice la cosa più forte del video (una rivelazione, un numero clamoroso, una frase-chiave): lì per un attimo si vede solo lui a tutto schermo. Scegli parole che cadono poco prima di un'immagine (1–2,5 s prima).
+Poi "extra": riempi i TRATTI VUOTI (senza immagini) con una scritta ciascuno (due se il tratto è più lungo di 7 s), sulla parola più importante del tratto: {"parola": <numero>, "tipo": "titolo" (2–4 parole) | "macchina" (frase chiave, monospace) | "contatore" (solo se il parlato dice un numero: "valore": <numero>, "suffisso": "…"), "testo": "…"}
+${maxForti ? `Infine "forti": al massimo ${maxForti} numero di parola dove Denis dice la cosa più forte del tratto (una rivelazione, un numero clamoroso, una frase-chiave), solo se c'è davvero: lì per un attimo si vede solo lui a tutto schermo. Meglio una parola poco prima di un'immagine (1–2,5 s prima).` : 'Lascia "forti" vuoto.'}
 Usa SOLO cose dette nel parlato. La trascrizione può scrivere male i nomi: "Cloud" detto da Denis è "Claude" (di Anthropic).
 
 Rispondi SOLO con JSON: {"momenti": [{"n": <numero momento>, "etichetta": "…", "scritta": {…} | null}], "extra": [ … ], "forti": [ … ]}
 
 MOMENTI:
-${beats.map((b, n) => `${n}. immagine ${b.elementi[0].file} — parole: ${frase(b.t, confini[n]).map((w) => `${w.i}:${w.w}`).join(' ')}`).join('\n')}
+${momenti.map((n) => `${n}. immagine ${beats[n].elementi[0].file} — parole: ${frase(beats[n].t, confini[n]).map((w) => `${w.i}:${w.w}`).join(' ')}`).join('\n') || '(nessuno)'}
 
 TRATTI VUOTI:
-${vuoti.map((v, k) => `${k}. ${v.da.toFixed(1)}–${v.a.toFixed(1)} s: ${frase(v.da, v.a).map((w) => `${w.i}:${w.w}`).join(' ')}`).join('\n') || '(nessuno)'}
+${vuotiQui.map((v) => `${v.da.toFixed(1)}–${v.a.toFixed(1)} s: ${frase(v.da, v.a).map((w) => `${w.i}:${w.w}`).join(' ')}`).join('\n') || '(nessuno)'}
 
-PARLATO (numero:parola@secondo):
-${parole.map((w, i) => `${i}:${w.w}@${w.s.toFixed(1)}`).join(' ')}`;
+PARLATO DEL TRATTO (numero:parola@secondo):
+${paroleQui.map((w) => `${w.i}:${w.w}@${w.s.toFixed(1)}`).join(' ')}`;
 
+// tratti di ~30 s, tagliati dove inizia un momento o un vuoto (così ognuno sta tutto in un tratto)
+const TRATTO = 30;
+const inizi = [...beats.map((b) => b.t), ...vuoti.map((v) => v.da)].sort((a, b) => a - b);
+const tagliTratti = [0];
+for (const t of inizi) if (t - tagliTratti.at(-1) >= TRATTO) tagliTratti.push(t);
+tagliTratti.push(DURATA + 1);
 const CACHE = path.join(DIR, 'regia-ai.json');
-const chiave = `${MODELLO}\n${PROMPT}`;
-const vecchia = fs.existsSync(CACHE) ? JSON.parse(fs.readFileSync(CACHE, 'utf8')) : null;
-let t;
-if (vecchia?.chiave === chiave && !ha('--rifai-ai')) { t = vecchia.risposta; log('AI: risposta già pronta'); }
-else {
-  const t0 = Date.now();
-  t = await chiediLocale(PROMPT, { modello: MODELLO, temperatura: 0.2 });
-  log(`AI (${MODELLO}) in ${((Date.now() - t0) / 1000).toFixed(0)} s`);
-  // in cache solo una risposta che è JSON valido (una troncata si richiede al giro dopo)
-  try { JSON.parse(t.slice(t.indexOf('{'), t.lastIndexOf('}') + 1)); fs.writeFileSync(CACHE, JSON.stringify({ chiave, risposta: t })); } catch { console.log('[cache] risposta non valida, non la salvo'); }
+const cache = (() => { try { const c = JSON.parse(fs.readFileSync(CACHE, 'utf8')); return c && !c.chiave ? c : {}; } catch { return {}; } })();
+const PENSA = opz('--pensa', 'no');
+const d = { momenti: [], extra: [], forti: [] };
+const t0 = Date.now();
+for (let k = 0; k < tagliTratti.length - 1; k++) {
+  const A = tagliTratti[k], B = tagliTratti[k + 1];
+  const momenti = beats.map((b, n) => n).filter((n) => beats[n].t >= A && beats[n].t < B);
+  const vuotiQui = vuoti.filter((v) => v.da >= A && v.da < B);
+  const paroleQui = frase(A, Math.max(B, ...vuotiQui.map((v) => v.a)));
+  if (!paroleQui.length) continue;
+  const prompt = domanda(momenti, vuotiQui, paroleQui, MAX_FORTI ? 1 : 0);
+  const chiave = `${MODELLO}|${PENSA}\n${prompt}`;
+  let t = !ha('--rifai-ai') && cache[chiave];
+  if (!t) {
+    t = await chiediLocale(prompt, { modello: MODELLO, temperatura: 0.2, pensa: PENSA });
+    try { JSON.parse(t.slice(t.indexOf('{'), t.lastIndexOf('}') + 1)); cache[chiave] = t; fs.writeFileSync(CACHE, JSON.stringify(cache)); } catch { log(`tratto ${k + 1}: risposta non valida, salto`); continue; }
+  }
+  const r = JSON.parse(t.slice(t.indexOf('{'), t.lastIndexOf('}') + 1));
+  // ogni tratto risponde solo per i suoi momenti
+  for (const m of [].concat(r.momenti || [])) if (momenti.includes(Math.round(m?.n))) d.momenti.push(m);
+  d.extra.push(...[].concat(r.extra || []));
+  d.forti.push(...[].concat(r.forti || []));
+  log(`tratto ${k + 1}/${tagliTratti.length - 1} (${A.toFixed(0)}–${Math.min(B, DURATA).toFixed(0)} s): ${momenti.length} momenti, ${vuotiQui.length} vuoti`);
 }
-const d = JSON.parse(t.slice(t.indexOf('{'), t.lastIndexOf('}') + 1));
+log(`AI (${MODELLO}, ragionamento ${PENSA}) in ${((Date.now() - t0) / 1000).toFixed(0)} s per ${tagliTratti.length - 1} tratti`);
 
 const MAIUSC = (s, n) => String(s || '').toUpperCase().trim().slice(0, n);
 for (const m of [].concat(d.momenti || [])) {
@@ -115,6 +137,8 @@ for (const m of [].concat(d.momenti || [])) {
     const nelMomento = frase(b.t, confini[m.n]).some((w) => w.i === i);
     if (!nelMomento) { log(`scritta scartata (parola ${s.parola} fuori dal momento ${m.n}): ${s.testo}`); continue; }
     const tt = Math.max(parole[i].s, b.t + 0.6); // dopo la card, non insieme
+    // timbro oltre 16 caratteri: diventa scritta a macchina invece di uscire tagliato
+    if (s.tipo === 'timbro' && String(s.testo).length > 16) s.tipo = 'macchina';
     b.elementi.push(s.tipo === 'timbro' ? { tipo: 'timbro', testo: String(s.testo).slice(0, 16), t: +tt.toFixed(2) } : { tipo: 'macchina', testo: MAIUSC(s.testo, 30), t: +tt.toFixed(2) });
   }
 }

@@ -3,7 +3,7 @@
 Montaggio sul PC, separato da Telegram e dal server: niente token, AI locali (Ollama) sulla scheda video.
 Un passo alla volta, ognuno si lancia e si controlla da solo. Comandi da `C:\regista`.
 
-**Tutto in un comando** (DaVinci aperto):
+**Tutto in un comando** (DaVinci CHIUSO: lo apre lo script all'ultimo passo; aperto occupa ~6 GB della scheda video e l'AI va fino a 50 volte più lenta):
 ```
 node pc/locale/documentario.mjs "<video>" "<cartella immagini>" [--mondo tech|rotolo] [--titolo X] [--4k] [--rinomina]
 ```

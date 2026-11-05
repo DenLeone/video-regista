@@ -1,7 +1,8 @@
 // Flusso locale completo, un comando: dal tuo video (tu che parli) e da una cartella di immagini alla timeline
 // in DaVinci con il video tagliato che si muove e la grafica Rotolo/Tech sopra. Niente token: AI locali (Ollama).
 //   node pc/locale/documentario.mjs <video> <cartella immagini> [--mondo tech|rotolo] [--titolo X] [--4k]
-//                                   [--rinomina] [--uscita cartella] [--senza-davinci]
+//                                   [--rinomina] [--uscita cartella] [--senza-davinci] [--con-davinci] [--sottotitoli WATER|no]
+// DaVinci va tenuto CHIUSO: lo apre lo script all'ultimo passo (aperto, rallenta l'AI fino a 50 volte).
 // Passi (ognuno salta se ha già il risultato, le risposte delle AI si riusano):
 //   1. voce: se nella cartella del video c'è un file audio (o --voce), si sincronizza e sostituisce l'audio della camera
 //   [--rinomina] nomi delle immagini (gemma4: le rinomina davvero, --annulla con rinomina.mjs)
@@ -15,7 +16,7 @@
 // Lavoro in work/locale/<nome>/ (o --uscita), grafica in out/locale/.
 import fs from 'node:fs';
 import path from 'node:path';
-import { spawnSync } from 'node:child_process';
+import { spawn, spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
@@ -39,6 +40,16 @@ const run = (cmd, a, o = {}) => {
   if (r.status !== 0) { console.error(`[documentario] fermo: ${path.basename(cmd)} ${a[0] ? path.basename(String(a[0])) : ''} è uscito con ${r.status}`); process.exit(1); }
 };
 const node = (script, a, o) => run('node', [path.join(ROOT, 'pc', 'locale', script), ...a], o);
+
+// DaVinci aperto tiene ~6 GB della scheda video: il modello AI non ci sta più e Windows lo sposta nella RAM.
+// Misurato su RTX 5070 Ti 16 GB: qwen3.8:27b 28 → 4,5 token/s, gpt-oss:20b 156 → 3 token/s. Quindi DaVinci si apre
+// solo all'ultimo passo (lo apre questo script); se è già aperto ci si ferma, salvo --con-davinci.
+const RESOLVE_EXE = 'C:\\Program Files\\Blackmagic Design\\DaVinci Resolve\\Resolve.exe';
+const davinciAperto = () => process.platform === 'win32' && /Resolve\.exe/i.test(spawnSync('tasklist', ['/FI', 'IMAGENAME eq Resolve.exe'], { encoding: 'utf8' }).stdout || '');
+if (davinciAperto() && !ha('--con-davinci') && !ha('--senza-davinci')) {
+  console.error("[documentario] fermo: DaVinci Resolve è aperto e occupa la scheda video (l'AI andrebbe fino a 50 volte più lenta). Chiudilo: lo apro io all'ultimo passo. Per andare avanti lo stesso: --con-davinci");
+  process.exit(1);
+}
 
 // misure e frame rate del video
 const info = JSON.parse(spawnSync('ffprobe', ['-v', 'error', '-select_streams', 'v:0', '-show_entries', 'stream=width,height,r_frame_rate', '-of', 'json', VIDEO], { encoding: 'utf8' }).stdout).streams[0];
@@ -103,5 +114,27 @@ const AUDIO = ['sfx', 'musica', 'ambiente'].map((n) => path.join(STEMS, `${n}.wa
 
 if (ha('--senza-davinci')) { console.log(`\n[documentario] pronto per DaVinci: ${GRAFICA}`); process.exit(0); }
 passo(8, 'timeline in DaVinci');
+// libera la scheda video dai modelli AI, poi apre DaVinci se è chiuso (livelli.py aspetta che risponda)
+try {
+  const ps = await (await fetch(`${process.env.OLLAMA_HOST || 'http://127.0.0.1:11434'}/api/ps`)).json();
+  for (const m of ps.models || []) spawnSync('ollama', ['stop', m.name]);
+} catch {}
+if (!davinciAperto() && fs.existsSync(RESOLVE_EXE)) {
+  console.log('[documentario] apro DaVinci Resolve');
+  spawn(RESOLVE_EXE, [], { detached: true, stdio: 'ignore' }).unref();
+}
 run(PY, [path.join(ROOT, 'pc', 'locale', 'livelli.py'), VIDEO, GRAFICA, '--tagli', path.join(PUL, 'tagli.json'), '--lastra', LASTRA, '--audio', AUDIO, ...(VOCE_SYNC ? ['--voce', VOCE_SYNC] : []), '--nome', titolo]);
-console.log(`\n[documentario] fatto in ${((Date.now() - t00) / 60000).toFixed(1)} min: progetto "Regista locale", timeline "${titolo}"`);
+// 9. sottotitoli: lo script di Denis (davinci-automation/auto_captions.py, non modificato) sulla timeline appena creata,
+//    preset ClashiVFX: WATER per tech (resta blu), --sottotitoli NOME per un altro, --sottotitoli no per saltare
+const SOTTO_DIR = process.env.DAVINCI_AUTOMAZIONE || path.join(process.env.USERPROFILE || '', 'Desktop', 'my-video', 'davinci-automation');
+const PRESET = opz('--sottotitoli', 'WATER');
+if (PRESET !== 'no' && fs.existsSync(path.join(SOTTO_DIR, 'auto_captions.py'))) {
+  passo(9, `sottotitoli (${PRESET})`);
+  run(PY, [path.join(ROOT, 'pc', 'locale', 'sottotitoli.py')]); // genera e aspetta la traccia, poi auto_captions.py la riusa
+  const API = path.join(process.env.PROGRAMDATA || 'C:\\ProgramData', 'Blackmagic Design', 'DaVinci Resolve', 'Support', 'Developer', 'Scripting');
+  run('py', ['-3', 'auto_captions.py', '--preset', PRESET, '--all'], {
+    cwd: SOTTO_DIR,
+    env: { ...process.env, PYTHONIOENCODING: 'utf-8', RESOLVE_SCRIPT_API: API, RESOLVE_SCRIPT_LIB: 'C:\\Program Files\\Blackmagic Design\\DaVinci Resolve\\fusionscript.dll', PYTHONPATH: path.join(API, 'Modules') },
+  });
+} else if (PRESET !== 'no') console.log(`[documentario] sottotitoli saltati: manca ${path.join(SOTTO_DIR, 'auto_captions.py')}`);
+console.log(`\n[documentario] fatto in${((Date.now() - t00) / 60000).toFixed(1)} min: progetto "Regista locale", timeline "${titolo}"`);

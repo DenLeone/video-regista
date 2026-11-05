@@ -25,7 +25,16 @@ if sys.platform == 'win32':
     os.environ.setdefault('RESOLVE_SCRIPT_LIB', r'C:\Program Files\Blackmagic Design\DaVinci Resolve\fusionscript.dll')
 sys.path.append(os.path.join(os.environ['RESOLVE_SCRIPT_API'], 'Modules'))
 import DaVinciResolveScript as dvr
-resolve = dvr.scriptapp('Resolve')
+# DaVinci può essere appena stato aperto (pc/locale/documentario.mjs): si aspetta fino a 3 minuti che risponda
+import time
+resolve = None
+for prova in range(60):
+    resolve = dvr.scriptapp('Resolve')
+    if resolve and resolve.GetProjectManager():
+        break
+    if prova == 0:
+        print('[livelli] aspetto che DaVinci Resolve risponda…', flush=True)
+    time.sleep(3)
 if not resolve:
     sys.exit('DaVinci Resolve non risponde: aprilo e controlla External scripting using: Local')
 
