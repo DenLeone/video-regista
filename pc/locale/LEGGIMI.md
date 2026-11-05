@@ -7,7 +7,11 @@ Un passo alla volta, ognuno si lancia e si controlla da solo. Comandi da `C:\reg
 ```
 node pc/locale/documentario.mjs "<video>" "<cartella immagini>" [--mondo tech|rotolo] [--titolo X] [--4k] [--rinomina]
 ```
-Pulizia → immagini → regia → grafica (Remotion) → movimento → suoni (SFX, musica, ambiente) → timeline:
+Dal Desktop: **Documentario locale** (collegamento a `pc/locale/Documentario locale.bat`): trascinaci sopra il video, o doppio
+clic e sceglilo. Immagini, GIF, clip e voce registrata a parte stanno nella cartella del video.
+
+Pulizia → immagini → regia → grafica (Remotion) → movimento → suoni (SFX, musica, ambiente) → timeline → sottotitoli
+(WATER di ClashiVFX con auto_captions.py di Denis, testo dalla nostra trascrizione, spostati fuori dal viso):
 V1 tu (tagliato, che si muove), V2 grafica, A1 voce, A2 sfx, A3 musica (abbassata sotto la voce), A4 ambiente.
 Test tech (42 s): 4,6 minuti in tutto. Le AI ragionano a livello "low" (`LOCALE_PENSA=medium` per alzarlo):
 con il livello medio la stessa cosa richiedeva oltre 20 minuti, con gli stessi tagli e le stesse immagini.

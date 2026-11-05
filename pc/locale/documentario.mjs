@@ -130,11 +130,12 @@ const SOTTO_DIR = process.env.DAVINCI_AUTOMAZIONE || path.join(process.env.USERP
 const PRESET = opz('--sottotitoli', 'WATER');
 if (PRESET !== 'no' && fs.existsSync(path.join(SOTTO_DIR, 'auto_captions.py'))) {
   passo(9, `sottotitoli (${PRESET})`);
-  run(PY, [path.join(ROOT, 'pc', 'locale', 'sottotitoli.py')]); // genera e aspetta la traccia, poi auto_captions.py la riusa
-  const API = path.join(process.env.PROGRAMDATA || 'C:\\ProgramData', 'Blackmagic Design', 'DaVinci Resolve', 'Support', 'Developer', 'Scripting');
-  run('py', ['-3', 'auto_captions.py', '--preset', PRESET, '--all'], {
-    cwd: SOTTO_DIR,
-    env: { ...process.env, PYTHONIOENCODING: 'utf-8', RESOLVE_SCRIPT_API: API, RESOLVE_SCRIPT_LIB: 'C:\\Program Files\\Blackmagic Design\\DaVinci Resolve\\fusionscript.dll', PYTHONPATH: path.join(API, 'Modules') },
-  });
+  // testo dalla nostra trascrizione dentro auto_captions.py, poi titoli spostati fuori dal viso. Se fallisce, la
+  // timeline resta buona: si avvisa e si chiude lo stesso (i sottotitoli si rifanno con "Avvia Sottotitoli.bat").
+  const SOTTO = path.join(ROOT, 'pc', 'locale', 'sottotitoli.py');
+  const env = { ...process.env, PYTHONIOENCODING: 'utf-8' };
+  const ok = spawnSync(PY, [SOTTO, 'titoli', PUL, '--preset', PRESET, '--cartella', SOTTO_DIR], { stdio: 'inherit', cwd: ROOT, env }).status === 0
+    && spawnSync(PY, [SOTTO, 'posiziona', PUL], { stdio: 'inherit', cwd: ROOT, env }).status === 0;
+  if (!ok) console.log('[documentario] ATTENZIONE: sottotitoli non riusciti, la timeline è pronta senza');
 } else if (PRESET !== 'no') console.log(`[documentario] sottotitoli saltati: manca ${path.join(SOTTO_DIR, 'auto_captions.py')}`);
-console.log(`\n[documentario] fatto in${((Date.now() - t00) / 60000).toFixed(1)} min: progetto "Regista locale", timeline "${titolo}"`);
+console.log(`\n[documentario] fatto in ${((Date.now() - t00) / 60000).toFixed(1)} min: progetto "Regista locale", timeline "${titolo}"`);
