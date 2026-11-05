@@ -3,6 +3,16 @@
 Montaggio sul PC, separato da Telegram e dal server: niente token, AI locali (Ollama) sulla scheda video.
 Un passo alla volta, ognuno si lancia e si controlla da solo. Comandi da `C:\regista`.
 
+**Tutto in un comando** (DaVinci aperto):
+```
+node pc/locale/documentario.mjs "<video>" "<cartella immagini>" [--mondo tech|rotolo] [--titolo X] [--4k] [--rinomina]
+```
+Pulizia → immagini → regia → grafica (Remotion) → movimento → suoni (SFX, musica, ambiente) → timeline:
+V1 tu (tagliato, che si muove), V2 grafica, A1 voce, A2 sfx, A3 musica (abbassata sotto la voce), A4 ambiente.
+Test tech (42 s): 4,6 minuti in tutto. Le AI ragionano a livello "low" (`LOCALE_PENSA=medium` per alzarlo):
+con il livello medio la stessa cosa richiedeva oltre 20 minuti, con gli stessi tagli e le stesse immagini.
+Il mix in DaVinci non è normalizzato (Test tech: -17 LUFS): per -14 usa Normalize Audio Levels in Fairlight o in Deliver.
+
 | Passo | Comando | Cosa fa | AI |
 |---|---|---|---|
 | 1. Rinomina | `node pc/locale/rinomina.mjs <cartella> [--applica] [--annulla]` | dà alle immagini il nome `tipo-nome.ext` guardandole | gemma4:12b (vede) |
