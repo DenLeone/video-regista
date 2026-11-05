@@ -257,15 +257,21 @@ export const Rotolo: React.FC<PropsRotolo> = (doc) => {
   const plPrima = lastra(doc, t - 1 / fps, tratti);
   const fin = doc.finale;
   const buio = fin ? interpolate(t, [fin.t + 2.2, fin.t + 3.0], [0, 0.6], { extrapolateLeft: 'clamp', extrapolateRight: 'clamp' }) : 0;
+  // solo grafica (livello per DaVinci, ProRes 4444): il mondo sta nel suo riquadro in alto, sotto è trasparente
+  // e lì DaVinci mette il video vero del presentatore
+  const sg = !!doc.soloGrafica;
+  const hMondo = sg && doc.presentatore ? height * (1 - pl) : height;
+  const fondo = tech ? T.fondo : '#120c08';
 
   return (
-    <AbsoluteFill style={{ background: tech ? T.fondo : '#120c08', overflow: 'hidden' }}>
+    <AbsoluteFill style={{ background: sg ? 'transparent' : fondo, overflow: 'hidden' }}>
       <style>{fontLocali()}</style>
       <svg width={0} height={0} style={{ position: 'absolute' }}>
         <filter id="mosso"><feGaussianBlur stdDeviation={`${bx.toFixed(2)} ${by.toFixed(2)}`} /></filter>
         <filter id="inchiostro"><feTurbulence type="fractalNoise" baseFrequency="0.9" numOctaves={2} seed={4} /><feColorMatrix values="0 0 0 0 0  0 0 0 0 0  0 0 0 0 0  0 0 0 -2.2 1.7" /><feComposite in="SourceGraphic" operator="in" /></filter>
       </svg>
 
+      <div style={{ position: 'absolute', left: 0, top: 0, width, height: hMondo, overflow: 'hidden', background: sg ? fondo : undefined, display: hMondo < 1 ? 'none' : undefined }}>
       <div style={{ position: 'absolute', inset: 0, filter: mosso ? 'url(#mosso)' : undefined }}>
         <div style={{ position: 'absolute', left: width / 2, top: (height * (1 - pl)) / 2, transformOrigin: '0 0', transform: `scale(${c.z * k}) rotate(${c.rot}deg) translate(${-c.x}px, ${-c.y}px)` }}>
           {tech ? <Canvas altezza={imp.altezza} anni={imp.anni} tempo={t} tracce={tracce} /> : <Fondale altezza={imp.altezza} anni={imp.anni} />}
@@ -275,10 +281,17 @@ export const Rotolo: React.FC<PropsRotolo> = (doc) => {
         </div>
       </div>
 
-      {doc.presentatore && pl > 0.001 && <Lastra pres={doc.presentatore} p={pl} v={(pl - plPrima) * fps} t={t} tech={tech} />}
+      {!sg && doc.presentatore && pl > 0.001 && <Lastra pres={doc.presentatore} p={pl} v={(pl - plPrima) * fps} t={t} tech={tech} />}
       <AbsoluteFill style={{ background: tech ? 'radial-gradient(ellipse 80% 60% at 50% 40%, rgba(79,140,255,0.10), rgba(0,0,0,0) 65%)' : 'radial-gradient(ellipse 90% 70% at 30% 18%, rgba(255,214,160,0.16), rgba(0,0,0,0) 60%)', mixBlendMode: 'screen' }} />
       <AbsoluteFill style={{ background: 'radial-gradient(ellipse 85% 75% at 50% 48%, rgba(0,0,0,0) 45%, rgba(10,6,3,0.72) 100%)' }} />
       <AbsoluteFill style={{ background: `rgba(8,5,3,${buio})` }} />
+      {sg && <Img src={f(`grana${frame % 6}.png`)} style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', mixBlendMode: 'overlay', opacity: tech ? 0.12 : 0.22 }} />}
+      </div>
+      {/* bordo e ombra della lastra sopra il video vero (con la trasparenza passano a DaVinci) */}
+      {sg && doc.presentatore && pl > 0.001 && pl < 0.999 && <>
+        <div style={{ position: 'absolute', left: 0, right: 0, top: hMondo, height: 160 * k, background: 'linear-gradient(rgba(0,0,0,0.55), rgba(0,0,0,0))' }} />
+        <div style={{ position: 'absolute', left: 0, right: 0, top: hMondo, height: 6 * k, background: tech ? '#4fd1ff' : '#b79a5a', boxShadow: `0 0 ${30 * k}px ${tech ? '#4fd1ff' : '#b79a5a'}`, opacity: 0.9 }} />
+      </>}
 
       {fin && t > fin.righe[0]?.t - 0.2 && (
         <AbsoluteFill style={{ alignItems: 'center', justifyContent: 'center', flexDirection: 'column' }}>
@@ -297,8 +310,8 @@ export const Rotolo: React.FC<PropsRotolo> = (doc) => {
         </AbsoluteFill>
       )}
 
-      <Img src={f(`grana${frame % 6}.png`)} style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', mixBlendMode: 'overlay', opacity: tech ? 0.12 : 0.22 }} />
-      <Audio src={f(doc.voce)} />
+      {!sg && <Img src={f(`grana${frame % 6}.png`)} style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', mixBlendMode: 'overlay', opacity: tech ? 0.12 : 0.22 }} />}
+      {!sg && <Audio src={f(doc.voce)} />}
     </AbsoluteFill>
   );
 };

@@ -49,6 +49,7 @@ export type Documento = {
   apertura?: Beat & { fino: number };  // mostrata in fondo al rotolo; poi la camera corre all'inizio
   beats: Beat[];
   presentatore?: Presentatore; // il video della persona: la voce è il suo audio
+  soloGrafica?: boolean;       // per DaVinci: niente video del presentatore né audio, trasparente dove c'è lui
   finale?: Finale;
 };
 
