@@ -105,3 +105,32 @@ print(f'[timeline] progetto "{nome_progetto}", timeline "{nome_tl}": {len(video)
       f'{durata:.1f} s (attesi {tagli["durataPulita"]:.1f} s), {W}x{H} a {fps_resolve} fps')
 if len(video) != len(pezzi):
     sys.exit('[timeline] ATTENZIONE: il numero di clip non torna')
+
+# ---------- immagini (passo 4, immagini.json nella cartella -pulizia): su V2, ognuna sulla sua parola
+file_imm = os.path.join(os.path.dirname(file_tagli), 'immagini.json')
+if os.path.exists(file_imm) and '--senza-immagini' not in args:
+    imm = json.load(open(file_imm, encoding='utf8'))
+    while tl.GetTrackCount('video') < 2:
+        tl.AddTrack('video')
+    inizio_tl = tl.GetStartFrame()
+    messe = 0
+    for e in imm['elementi']:
+        f = os.path.join(imm['cartella'], e['file'])
+        trovati = [c for c in (mp.GetRootFolder().GetClipList() or []) if os.path.normcase(c.GetClipProperty('File Path') or '') == os.path.normcase(f)]
+        mpi = trovati[0] if trovati else (mp.ImportMedia([f]) or [None])[0]
+        if not mpi:
+            print(f'[timeline] non importata: {f}'); continue
+        durata_f = max(1, round(e['durata'] * fps))
+        r = mp.AppendToTimeline([{'mediaPoolItem': mpi, 'startFrame': 0, 'endFrame': durata_f, 'trackIndex': 2, 'mediaType': 1,
+                                  'recordFrame': inizio_tl + round(e['inizio'] * fps)}])
+        if not r:
+            print(f'[timeline] non messa: {e["file"]}'); continue
+        # le immagini fisse entrano con la durata predefinita di Resolve (5 s): si accorcia il bordo destro
+        # subito, prima di mettere la successiva, così non la spinge più avanti
+        it = r[0]
+        if it.GetDuration() != durata_f:
+            it.SetRightOffset(it.GetRightOffset() + it.GetDuration() - durata_f)
+        messe += 1
+    v2 = tl.GetItemListInTrack('video', 2) or []
+    sbagliate = [x.GetName() for x, e in zip(v2, imm['elementi']) if abs(x.GetStart() - inizio_tl - round(e['inizio'] * fps)) > 1 or abs(x.GetDuration() - round(e['durata'] * fps)) > 1]
+    print(f'[timeline] immagini su V2: {len(v2)} (attese {len(imm["elementi"])})' + (f'; fuori posto: {", ".join(sbagliate)}' if sbagliate else ', tutte al loro posto'))

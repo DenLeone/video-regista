@@ -100,4 +100,6 @@ if (ha('--applica')) {
   }
   log(`rinominate ${proposte.filter((p) => p.applicato).length}; per tornare indietro: --annulla`);
 } else log('solo proposta: rilancia con --applica per rinominare');
-fs.writeFileSync(ELENCO, JSON.stringify(proposte, null, 2));
+// le rinomine di prima restano nell'elenco (--annulla le disfa tutte, dalla più recente)
+const precedenti = fs.existsSync(ELENCO) ? JSON.parse(fs.readFileSync(ELENCO, 'utf8')).filter((x) => x.applicato) : [];
+fs.writeFileSync(ELENCO, JSON.stringify([...precedenti, ...proposte], null, 2));
