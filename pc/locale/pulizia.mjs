@@ -1,7 +1,7 @@
 // Passo 2 del flusso locale: pulizia del parlato. Dal video (o audio) e dalle parole di Whisper trova
 // cosa togliere e scrive i tagli, con i tempi precisi.
 //   node pc/locale/pulizia.mjs <video o audio> [--parole parole.json] [--uscita cartella] [--modello qwen3.8:27b]
-//                              [--silenzio 0.6] [--senza-ai] [--rifai-ai] [--senza-allinea] [--senza-anteprima]
+//                              [--voce voce-sincronizzata.wav] [--silenzio 0.6] [--senza-ai] [--rifai-ai] [--senza-allinea] [--senza-anteprima]
 // - silenzi: buchi tra le parole più lunghi di --silenzio secondi (niente AI)
 // - ripetizioni, false partenze, autocorrezioni, intercalari: AI locale (Ollama) su un elenco di parole
 //   numerate; risponde con intervalli di parole da togliere, che il codice controlla
@@ -32,6 +32,8 @@ const MARGINE = 0.12; // aria lasciata prima e dopo il parlato intorno a ogni ta
 const log = (...a) => console.log('[pulizia]', ...a);
 const durataDi = (f) => Number(spawnSync('ffprobe', ['-v', 'error', '-show_entries', 'format=duration', '-of', 'csv=p=0', f], { encoding: 'utf8' }).stdout.trim());
 const DURATA = durataDi(SORG);
+// --voce: voce registrata a parte e già sincronizzata (pc/locale/sincronizza.py): si ascolta quella, non l'audio della camera
+const AUDIO = opz('--voce') ? path.resolve(opz('--voce')) : SORG;
 
 // ---------- 1. parole con i tempi
 const PAROLE = path.join(OUT, 'parole.json');
@@ -39,7 +41,7 @@ if (opz('--parole')) fs.copyFileSync(path.resolve(opz('--parole')), PAROLE);
 if (!fs.existsSync(PAROLE)) {
   const py = path.join(ROOT, '.venv', process.platform === 'win32' ? 'Scripts/python.exe' : 'bin/python');
   const wav = path.join(OUT, 'voce16.wav');
-  spawnSync('ffmpeg', ['-v', 'error', '-y', '-i', SORG, '-vn', '-ac', '1', '-ar', '16000', wav], { stdio: 'inherit' });
+  spawnSync('ffmpeg', ['-v', 'error', '-y', '-i', AUDIO, '-vn', '-ac', '1', '-ar', '16000', wav], { stdio: 'inherit' });
   const r = spawnSync(py, [path.join(ROOT, 'pc', 'trascrivi.py'), wav, PAROLE, '--lingua', 'it'], { stdio: 'inherit' });
   if (r.status !== 0) throw new Error('trascrizione non riuscita');
   fs.rmSync(wav, { force: true });
@@ -49,7 +51,7 @@ if (!fs.existsSync(PAROLE)) {
 const ALLINEATE = path.join(OUT, 'parole-allineate.json');
 if (!ha('--senza-allinea') && !fs.existsSync(ALLINEATE)) {
   const py = path.join(ROOT, '.venv', process.platform === 'win32' ? 'Scripts/python.exe' : 'bin/python');
-  const r = spawnSync(py, [path.join(ROOT, 'pc', 'locale', 'allinea.py'), SORG, PAROLE, ALLINEATE], { stdio: ['ignore', 'inherit', 'ignore'] });
+  const r = spawnSync(py, [path.join(ROOT, 'pc', 'locale', 'allinea.py'), AUDIO, PAROLE, ALLINEATE], { stdio: ['ignore', 'inherit', 'ignore'] });
   if (r.status !== 0) log('allineamento non riuscito: uso i tempi di Whisper (tagli meno precisi)');
 }
 const parole = JSON.parse(fs.readFileSync(!ha('--senza-allinea') && fs.existsSync(ALLINEATE) ? ALLINEATE : PAROLE, 'utf8'))
@@ -85,7 +87,8 @@ ${PROMPT}`;
   if (vecchia?.chiave === chiave && !ha('--rifai-ai')) { t = vecchia.risposta; log('AI: risposta già pronta (stesso testo)'); }
   else {
     t = await chiediLocale(PROMPT, { modello: MODELLO, temperatura: 0.1 });
-    fs.writeFileSync(CACHE, JSON.stringify({ chiave, risposta: t }));
+    // in cache solo una risposta che è JSON valido (una troncata si richiede al giro dopo)
+    try { JSON.parse(t.slice(t.indexOf('{'), t.lastIndexOf('}') + 1)); fs.writeFileSync(CACHE, JSON.stringify({ chiave, risposta: t })); } catch { console.log('[cache] risposta non valida, non la salvo'); }
   }
   log(`AI (${MODELLO}) in ${((Date.now() - t0) / 1000).toFixed(0)} s`);
   const d = JSON.parse(t.slice(t.indexOf('{'), t.lastIndexOf('}') + 1));
@@ -129,7 +132,7 @@ tieni.forEach((x, k) => {
 // sbagliano di qualche centesimo e un taglio esatto sulla parola rischia di mangiare una sillaba
 {
   const SR = 16000;
-  const pcm = spawnSync('ffmpeg', ['-v', 'error', '-i', SORG, '-vn', '-ac', '1', '-ar', String(SR), '-f', 's16le', '-'], { maxBuffer: 1 << 30 }).stdout;
+  const pcm = spawnSync('ffmpeg', ['-v', 'error', '-i', AUDIO, '-vn', '-ac', '1', '-ar', String(SR), '-f', 's16le', '-'], { maxBuffer: 1 << 30 }).stdout;
   const campioni = new Int16Array(pcm.buffer, pcm.byteOffset, pcm.length >> 1);
   const energia = (t) => { // RMS su 10 ms centrati in t
     const c = Math.round(t * SR), m = 80;
@@ -166,7 +169,7 @@ for (const t of togli) {
   t.testo = dentro.map((w) => w.w).join(' ');
 }
 const tenuto = tieni.reduce((s, x) => s + x.a - x.da, 0);
-fs.writeFileSync(path.join(OUT, 'tagli.json'), JSON.stringify({ sorgente: SORG, durata: +DURATA.toFixed(3), durataPulita: +tenuto.toFixed(3), modello: ha('--senza-ai') ? null : MODELLO,
+fs.writeFileSync(path.join(OUT, 'tagli.json'), JSON.stringify({ sorgente: SORG, ...(AUDIO !== SORG ? { voce: AUDIO } : {}), durata: +DURATA.toFixed(3), durataPulita: +tenuto.toFixed(3), modello: ha('--senza-ai') ? null : MODELLO,
   // parlaDa/parlaA: dove inizia e finisce il parlato del tratto (per arrotondare ai fotogrammi senza tagliarlo)
   tieni: tieni.map(({ da, a, inizio, fine }) => ({ da, a, parlaDa: +inizio.toFixed(3), parlaA: +fine.toFixed(3) })), togli }, null, 2));
 
@@ -188,14 +191,14 @@ if (!ha('--senza-anteprima')) {
   const f = [];
   tieni.forEach((x, k) => {
     if (video) f.push(`[0:v]trim=${x.da}:${x.a},setpts=PTS-STARTPTS,scale=-2:720[v${k}]`);
-    f.push(`[0:a]atrim=${x.da}:${x.a},asetpts=PTS-STARTPTS,afade=t=in:d=0.01,afade=t=out:st=${Math.max(0, x.a - x.da - 0.01).toFixed(3)}:d=0.01[a${k}]`);
+    f.push(`[${AUDIO !== SORG ? 1 : 0}:a]atrim=${x.da}:${x.a},asetpts=PTS-STARTPTS,afade=t=in:d=0.01,afade=t=out:st=${Math.max(0, x.a - x.da - 0.01).toFixed(3)}:d=0.01[a${k}]`);
   });
   f.push(`${tieni.map((_, k) => (video ? `[v${k}][a${k}]` : `[a${k}]`)).join('')}concat=n=${tieni.length}:v=${video ? 1 : 0}:a=1${video ? '[v]' : ''}[a]`);
   const uscita = path.join(OUT, video ? 'anteprima.mp4' : 'anteprima.m4a');
   const fileFiltri = path.join(OUT, 'filtri.txt');
   fs.writeFileSync(fileFiltri, f.join(';\n'));
   const enc = video ? ['-map', '[v]', '-c:v', 'libx264', '-preset', 'veryfast', '-crf', '24'] : [];
-  const r = spawnSync('ffmpeg', ['-v', 'error', '-y', '-i', SORG, '-/filter_complex', fileFiltri, ...enc, '-map', '[a]', '-c:a', 'aac', '-b:a', '160k', '-movflags', '+faststart', uscita], { stdio: 'inherit' });
+  const r = spawnSync('ffmpeg', ['-v', 'error', '-y', '-i', SORG, ...(AUDIO !== SORG ? ['-i', AUDIO] : []), '-/filter_complex', fileFiltri, ...enc, '-map', '[a]', '-c:a', 'aac', '-b:a', '160k', '-movflags', '+faststart', uscita], { stdio: 'inherit' });
   fs.rmSync(fileFiltri, { force: true });
   log(r.status === 0 ? `anteprima: ${uscita}` : 'anteprima non riuscita');
 }

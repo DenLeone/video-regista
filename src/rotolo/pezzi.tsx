@@ -52,20 +52,22 @@ export const Cade: React.FC<Pos & { t: number; tempo: number; children: React.Re
 // immagine o clip video (overlay-*.mp4): la clip parte quando l'elemento compare (t), senza audio,
 // e finita resta ferma sull'ultimo fotogramma
 export const eVideo = (n = '') => /\.(mp4|mov|m4v|webm)$/i.test(n);
-export const Media: React.FC<{ src: string; style?: React.CSSProperties; t?: number; dur?: number }> = ({ src, style, t = 0, dur }) => {
+// loop: la clip ricomincia invece di fermarsi (le GIF, convertite in mp4 dalla regia locale)
+export const Media: React.FC<{ src: string; style?: React.CSSProperties; t?: number; dur?: number; loop?: boolean }> = ({ src, style, t = 0, dur, loop }) => {
   const frame = useCurrentFrame();
   const { fps } = useVideoConfig();
   if (!eVideo(src)) return <Img src={f(src)} style={style} />;
-  const ultimo = dur ? Math.max(0, Math.floor(dur * fps) - 2) : Infinity;
-  return <Freeze frame={Math.min(ultimo, Math.max(0, frame - Math.round(t * fps)))}><OffthreadVideo src={f(src)} muted style={style} /></Freeze>;
+  const n = dur ? Math.max(1, Math.floor(dur * fps) - 1) : Infinity;
+  const k = Math.max(0, frame - Math.round(t * fps));
+  return <Freeze frame={loop && Number.isFinite(n) ? k % n : Math.min(n - 1, k)}><OffthreadVideo src={f(src)} muted style={style} /></Freeze>;
 };
 
 // stampa fotografica d'epoca con bordo bianco e due strisce di washi tape
-export const Foto: React.FC<{ src: string; w: number; bn?: boolean; seppia?: number; bordo?: number; nastro?: boolean; contain?: boolean; h?: number; fondo?: string; t?: number; dur?: number }> = ({ src, w, bn = true, seppia = 0.35, bordo, nastro = true, contain, h, fondo, t, dur }) => {
+export const Foto: React.FC<{ src: string; w: number; bn?: boolean; seppia?: number; bordo?: number; nastro?: boolean; contain?: boolean; h?: number; fondo?: string; t?: number; dur?: number; loop?: boolean }> = ({ src, w, bn = true, seppia = 0.35, bordo, nastro = true, contain, h, fondo, t, dur, loop }) => {
   const b = bordo ?? w * 0.045;
   return (
     <div style={{ position: 'relative', width: w, padding: b, background: '#f4efe4', boxShadow: 'inset 0 0 0 1px rgba(0,0,0,0.08)' }}>
-      <Media src={src} t={t} dur={dur} style={{
+      <Media src={src} t={t} dur={dur} loop={loop} style={{
         display: 'block', width: '100%', height: h, objectFit: contain ? 'contain' : 'cover', background: fondo,
         filter: bn ? `grayscale(1) sepia(${seppia}) contrast(1.08) brightness(0.97)` : 'saturate(0.9) contrast(1.02)',
       }} />

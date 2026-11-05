@@ -3,7 +3,8 @@
 //   node pc/locale/documentario.mjs <video> <cartella immagini> [--mondo tech|rotolo] [--titolo X] [--4k]
 //                                   [--rinomina] [--uscita cartella] [--senza-davinci]
 // Passi (ognuno salta se ha già il risultato, le risposte delle AI si riusano):
-//   [--rinomina] 1. nomi delle immagini (gemma4: le rinomina davvero, --annulla con rinomina.mjs)
+//   1. voce: se nella cartella del video c'è un file audio (o --voce), si sincronizza e sostituisce l'audio della camera
+//   [--rinomina] nomi delle immagini (gemma4: le rinomina davvero, --annulla con rinomina.mjs)
 //   2. pulizia del parlato (Whisper + allineamento + qwen3.8) → tagli
 //   3. immagini sulle parole (qwen3.8)
 //   4. regia (beats.json, testi da qwen3.8)
@@ -42,13 +43,27 @@ const node = (script, a, o) => run('node', [path.join(ROOT, 'pc', 'locale', scri
 // misure e frame rate del video
 const info = JSON.parse(spawnSync('ffprobe', ['-v', 'error', '-select_streams', 'v:0', '-show_entries', 'stream=width,height,r_frame_rate', '-of', 'json', VIDEO], { encoding: 'utf8' }).stdout).streams[0];
 const [fn, fd] = info.r_frame_rate.split('/').map(Number);
-const FPS = fn / (fd || 1);
-console.log(`[documentario] ${path.basename(VIDEO)}: ${info.width}×${info.height} a ${FPS.toFixed(3)} fps → ${LAV}`);
+const FPS_VIDEO = fn / (fd || 1);
+// timeline e grafica: verticale 2160×3840 a 29,97 (o --fps); il video può essere orizzontale e a 59,94
+const FPS = Number(opz('--fps', 30000 / 1001));
+const TW = 2160, TH = 3840;
+console.log(`[documentario] ${path.basename(VIDEO)}: ${info.width}×${info.height} a ${FPS_VIDEO.toFixed(3)} fps → timeline ${TW}×${TH} a ${FPS.toFixed(3)} fps, lavoro in ${LAV}`);
+
+// voce registrata a parte: un file audio nella cartella del video (o --voce). Si sincronizza con l'audio della camera.
+const audioCartella = fs.readdirSync(path.dirname(VIDEO)).filter((n) => /\.(wav|mp3|m4a|aac|flac)$/i.test(n));
+const VOCE_EXT = opz('--voce') ? path.resolve(opz('--voce')) : audioCartella.length === 1 ? path.join(path.dirname(VIDEO), audioCartella[0]) : null;
+if (!opz('--voce') && audioCartella.length > 1) console.log(`[documentario] più file audio nella cartella (${audioCartella.join(', ')}): uso l'audio della camera. Scegli con --voce`);
+let VOCE_SYNC = null;
+if (VOCE_EXT && !ha('--senza-voce')) {
+  passo(1, `sincronizzazione della voce (${path.basename(VOCE_EXT)})`);
+  VOCE_SYNC = path.join(LAV, 'voce-sincronizzata.wav');
+  if (!fs.existsSync(VOCE_SYNC)) run(process.env.PYTHON || (process.platform === 'win32' ? 'python' : 'python3'), [path.join(ROOT, 'pc', 'locale', 'sincronizza.py'), VIDEO, VOCE_EXT, VOCE_SYNC]);
+}
 
 if (ha('--rinomina')) { passo(1, 'nomi delle immagini'); node('rinomina.mjs', [IMM, '--applica']); }
 
 passo(2, 'pulizia del parlato');
-node('pulizia.mjs', [VIDEO, '--uscita', PUL, '--senza-anteprima']);
+node('pulizia.mjs', [VIDEO, '--uscita', PUL, '--senza-anteprima', ...(VOCE_SYNC ? ['--voce', VOCE_SYNC] : [])]);
 
 passo(3, 'immagini sulle parole');
 node('immagini.mjs', [PUL, IMM]);
@@ -70,7 +85,7 @@ run('npx', ['remotion', 'render', 'src/index.ts', 'Rotolo', GRAFICA, `--props=${
 passo(6, 'movimento del presentatore');
 const LASTRA = path.join(PUL, 'lastra.json');
 run('node', ['--experimental-strip-types', '--no-warnings', path.join(ROOT, 'pc', 'locale', 'lastra.mjs'), path.join(PUL, 'beats.json'), LASTRA,
-  '--fps', String(FPS), '--w', String(info.width), '--h', String(info.height)]);
+  '--fps', String(FPS), '--w', String(TW), '--h', String(TH)]);
 
 passo(7, 'suoni: SFX, musica e ambiente (tracce separate)');
 const EVENTI = path.join(PUL, 'eventi.json');
@@ -80,7 +95,7 @@ const tieni = JSON.parse(fs.readFileSync(path.join(PUL, 'tagli.json'), 'utf8')).
 const VOCE = path.join(PUL, 'voce-tagliata.wav');
 const filtri = tieni.map((x, k) => `[0:a]atrim=${x.da}:${x.a},asetpts=PTS-STARTPTS[a${k}]`).join(';') + ';' + tieni.map((_, k) => `[a${k}]`).join('') + `concat=n=${tieni.length}:v=0:a=1[a]`;
 fs.writeFileSync(path.join(PUL, 'filtri-voce.txt'), filtri);
-run('ffmpeg', ['-v', 'error', '-y', '-i', VIDEO, '-/filter_complex', path.join(PUL, 'filtri-voce.txt'), '-map', '[a]', '-ac', '2', '-ar', '48000', VOCE]);
+run('ffmpeg', ['-v', 'error', '-y', '-i', VOCE_SYNC || VIDEO, '-/filter_complex', path.join(PUL, 'filtri-voce.txt'), '-map', '[a]', '-ac', '2', '-ar', '48000', VOCE]);
 const STEMS = path.join(PUL, 'suoni');
 run(process.env.PYTHON || (process.platform === 'win32' ? 'python' : 'python3'), [path.join(ROOT, 'pc', 'rotolo', 'suoni.py'), EVENTI, VOCE, path.join(PUL, 'mix.wav'), '--stems', STEMS],
   { env: { ...process.env, PYTHONIOENCODING: 'utf-8' } });
@@ -88,5 +103,5 @@ const AUDIO = ['sfx', 'musica', 'ambiente'].map((n) => path.join(STEMS, `${n}.wa
 
 if (ha('--senza-davinci')) { console.log(`\n[documentario] pronto per DaVinci: ${GRAFICA}`); process.exit(0); }
 passo(8, 'timeline in DaVinci');
-run(PY, [path.join(ROOT, 'pc', 'locale', 'livelli.py'), VIDEO, GRAFICA, '--tagli', path.join(PUL, 'tagli.json'), '--lastra', LASTRA, '--audio', AUDIO, '--nome', titolo]);
+run(PY, [path.join(ROOT, 'pc', 'locale', 'livelli.py'), VIDEO, GRAFICA, '--tagli', path.join(PUL, 'tagli.json'), '--lastra', LASTRA, '--audio', AUDIO, ...(VOCE_SYNC ? ['--voce', VOCE_SYNC] : []), '--nome', titolo]);
 console.log(`\n[documentario] fatto in ${((Date.now() - t00) / 60000).toFixed(1)} min: progetto "Regista locale", timeline "${titolo}"`);

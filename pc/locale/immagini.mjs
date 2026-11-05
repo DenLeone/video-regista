@@ -6,6 +6,7 @@
 // Scrive <cartella -pulizia>/immagini.json: { cartella, elementi: [{ file, i, parola, inizio, durata, motivo }] }
 // con i tempi sul video tagliato (parole-pulite.json), pronti per la timeline.
 import fs from 'node:fs';
+import { spawnSync } from 'node:child_process';
 import path from 'node:path';
 import { chiediLocale } from './ollama.mjs';
 
@@ -27,7 +28,9 @@ const log = (...a) => console.log('[immagini]', ...a);
 const parole = JSON.parse(fs.readFileSync(path.join(dirPulizia, 'parole-pulite.json'), 'utf8'));
 const tagli = JSON.parse(fs.readFileSync(path.join(dirPulizia, 'tagli.json'), 'utf8'));
 const FINE = tagli.durataPulita;
-const immagini = fs.readdirSync(dirImmagini).filter((n) => /\.(jpe?g|png|webp)$/i.test(n)).sort();
+// immagini, GIF e clip brevi (fino a 20 s: il video principale e le registrazioni lunghe restano fuori)
+const durata = (f) => Number(spawnSync('ffprobe', ['-v', 'error', '-show_entries', 'format=duration', '-of', 'csv=p=0', f], { encoding: 'utf8' }).stdout.trim()) || 0;
+const immagini = fs.readdirSync(dirImmagini).filter((n) => /\.(jpe?g|png|webp|gif)$/i.test(n) || (/\.(mp4|mov|m4v|webm)$/i.test(n) && durata(path.join(dirImmagini, n)) <= 20)).sort();
 if (!immagini.length) { log('nessuna immagine nella cartella'); process.exit(1); }
 
 // ---------- 1. corrispondenze dal nome (senza AI)
@@ -35,7 +38,7 @@ const norm = (s) => String(s).toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g,
 const radice = (w) => (w.length > 4 ? w.replace(/[aeio]$/, '') : w); // vienna/vienn, edifici/edific
 const TIPI = new Set(['persona', 'luogo', 'documento', 'prodotto', 'ritaglio', 'logo', 'schermata', 'icona', 'grafica', 'overlay']);
 const VUOTE = new Set('di a da in con su per tra fra il lo la i gli le un uno una e ed o del della dei nel nella sul che jpg png webp'.split(' '));
-const chiavi = (n) => norm(n.replace(/\.[^.]+$/, '')).split(' ').filter((w) => w.length > 2 && !TIPI.has(w) && !VUOTE.has(w) && !/^\d+$/.test(w));
+const chiavi = (n) => norm(n.replace(/\.[^.]+$/, '').replace(/^\d+[_-]/, '')).split(' ').filter((w) => w.length > 2 && !TIPI.has(w) && !VUOTE.has(w) && !/^\d+$/.test(w));
 const pr = parole.map((w) => radice(norm(w.w)));
 const indizi = immagini.map((f) => {
   const k = chiavi(f).map(radice);
@@ -46,12 +49,14 @@ for (const x of indizi) log(`${x.file}: ${x.dove.length ? `detto in ${x.dove.map
 
 // ---------- 2. scelta dell'AI
 const PROMPT = `Sei il montatore di un video parlato di Denis. Devi mettere delle immagini sopra il video, ognuna nel momento in cui il parlato nomina o descrive quello che mostra.
-Ti do la trascrizione parola per parola (ogni parola col suo numero) e le immagini disponibili, con le parole del parlato che corrispondono al loro nome (se ci sono).
+Ti do la trascrizione parola per parola (ogni parola col suo numero) e le immagini disponibili, con le parole del parlato che corrispondono al loro nome (se ci sono).${immagini.filter((n) => /^\d+[_-]/.test(n)).length > immagini.length / 2 ? '\nIl numero all\'inizio del nome (01_, 02_…) è l\'ordine in cui Denis parla degli argomenti: le immagini con lo stesso numero vanno nello stesso tratto del parlato e i numeri crescono con il tempo.' : ''}
 
 Regole:
 - metti un'immagine SOLO dove il parlato parla davvero di quello che mostra (la persona, il luogo, l'oggetto); va bene anche un sinonimo o una descrizione ("edifici antichi" → foto di palazzi storici)
 - "i" = il numero della parola su cui l'immagine compare (la parola che la nomina, o l'inizio della frase che la descrive)
 - ogni immagine al massimo una volta; immagini che non c'entrano con niente di detto: non usarle
+- il video deve essere PIENO: punta a un'immagine circa ogni 3–4 secondi di parlato (in tutto circa ${Math.round(FINE / 3.5)}), scegliendo per ogni frase l'immagine più adatta tra tutte; un tratto resta senza immagine solo se nessuna c'entra davvero (lì andrà una scritta)
+- i file .mp4/.gif sono clip in movimento: preferiscile quando mostrano proprio quello che si dice
 - di norma almeno 1,5 secondi tra un'immagine e la successiva (guarda i tempi delle parole); ECCEZIONE: quando il parlato elenca più persone, luoghi o cose di fila ("sia Lenin che Hitler"), ognuno ha la sua immagine sulla sua parola anche se sono vicine
 
 Rispondi SOLO con JSON: {"immagini": [{"file": "<nome esatto del file>", "i": <numero parola>, "motivo": "<cosa dice il parlato>"}]}
@@ -71,7 +76,8 @@ else {
   const t0 = Date.now();
   t = await chiediLocale(PROMPT, { modello: MODELLO, temperatura: 0.1, pensa: PENSA });
   log(`AI (${MODELLO}) in ${((Date.now() - t0) / 1000).toFixed(0)} s`);
-  fs.writeFileSync(CACHE, JSON.stringify({ chiave, risposta: t }));
+  // in cache solo una risposta che è JSON valido (una troncata si richiede al giro dopo)
+  try { JSON.parse(t.slice(t.indexOf('{'), t.lastIndexOf('}') + 1)); fs.writeFileSync(CACHE, JSON.stringify({ chiave, risposta: t })); } catch { console.log('[cache] risposta non valida, non la salvo'); }
 }
 const d = JSON.parse(t.slice(t.indexOf('{'), t.lastIndexOf('}') + 1));
 

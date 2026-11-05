@@ -76,7 +76,7 @@ const Pezzo: React.FC<{ p: Posato; t: number }> = ({ p, t: tempo }) => {
     case 'nome':
       return <Nome x={x} y={y} nome={el.nome || ''} kanji={el.kanjiNome} ruolo={el.ruolo} t={t} tempo={tempo} size={corpo(el)} />;
     case 'foto':
-      return <Cade x={x} y={y} rot={rot} t={t} tempo={tempo}><Foto src={el.file!} w={w} bn={fotoBN(el)} t={t} dur={el.durClip} /></Cade>;
+      return <Cade x={x} y={y} rot={rot} t={t} tempo={tempo}><Foto src={el.file!} w={w} bn={fotoBN(el)} t={t} dur={el.durClip} loop={el.loop} /></Cade>;
     case 'ritaglio': {
       // "sopra": sull'angolo in basso a destra dell'elemento prima, un po' fuori
       const o = el.sopra ? p.ospite : undefined;
@@ -147,7 +147,7 @@ const PezzoTech: React.FC<{ p: Posato; t: number }> = ({ p, t: tempo }) => {
     case 'titolo': case 'kanji': return <Hero x={x} y={y} testo={el.testo || ''} t={t} tempo={tempo} size={el.tipo === 'kanji' ? 200 : corpo(el)} />;
     case 'macchina': return <Riga x={x} y={y} testo={(el.testo || '').toUpperCase()} t={t} tempo={tempo} size={corpo(el)} colore={el.colore === 'rosso' ? T.rosso : T.accento} />;
     case 'nome': return <NomeTech x={x} y={y} nome={el.nome || ''} ruolo={el.ruolo} t={t} tempo={tempo} size={corpo(el)} />;
-    case 'foto': return <Cade x={x} y={y} rot={rot * 0.4} t={t} tempo={tempo} dur={0.5}><Vetro src={el.file!} w={w} etichetta={el.etichetta || nomeFile(el.file)} attivo={1} t={t} dur={el.durClip} /></Cade>;
+    case 'foto': return <Cade x={x} y={y} rot={rot * 0.4} t={t} tempo={tempo} dur={0.5}><Vetro src={el.file!} w={w} etichetta={el.etichetta || nomeFile(el.file)} attivo={1} t={t} dur={el.durClip} loop={el.loop} /></Cade>;
     case 'ritaglio': {
       const o = el.sopra ? p.ospite : undefined;
       const ww = o ? 420 : w;

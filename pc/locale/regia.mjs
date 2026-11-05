@@ -42,31 +42,50 @@ const beats = [];
 for (const e of imm.elementi) {
   let file = e.file;
   const da = path.join(imm.cartella, e.file);
-  if (/\.webp$/i.test(file)) {
+  if (/\.(gif|mp4|mov|m4v|webm)$/i.test(file)) {
+    // GIF e clip → mp4 H.264 al massimo 1920 di lato (Remotion le legge veloci; GIF in loop, clip ferme alla fine)
+    file = file.replace(/\.[^.]+$/i, '-clip.mp4');
+    if (!fs.existsSync(path.join(PUB, file))) spawnSync('ffmpeg', ['-v', 'error', '-y', '-i', da, '-movflags', '+faststart', '-pix_fmt', 'yuv420p', '-an', '-vf', "scale='min(1920,iw)':'min(1920,ih)':force_original_aspect_ratio=decrease,scale=trunc(iw/2)*2:trunc(ih/2)*2", '-c:v', 'libx264', '-crf', '18', path.join(PUB, file)]);
+  } else if (/\.webp$/i.test(file)) {
     file = file.replace(/\.webp$/i, '.png');
     if (!fs.existsSync(path.join(PUB, file))) spawnSync('ffmpeg', ['-v', 'error', '-y', '-i', da, path.join(PUB, file)]);
   } else fs.copyFileSync(da, path.join(PUB, file));
-  beats.push({ t: e.inizio, i: e.i, elementi: [{ tipo: 'foto', file, misura: 'grande', t: e.inizio }] });
+  beats.push({ t: e.inizio, i: e.i, elementi: [{ tipo: 'foto', file, misura: 'grande', t: e.inizio, ...(/\.gif$/i.test(e.file) ? { loop: true } : {}) }] });
 }
 
 // ---------- 2. testi dall'AI: etichetta per ogni card, al massimo una scritta per beat, pochi beat solo testo
 const frase = (da, a) => parole.map((w, i) => ({ ...w, i })).filter((w) => w.s >= da - 0.01 && w.s < a);
-// ogni momento finisce dove il presentatore torna intero (pausa lunga: dopo 3,5 s) o al beat dopo:
-// le scritte devono cadere mentre la grafica è in scena
-const PAUSA = 5, IN_SCENA = 3.5;
-const confini = beats.map((b, n) => { const dopo = n < beats.length - 1 ? beats[n + 1].t : DURATA; return dopo - b.t > PAUSA ? b.t + IN_SCENA : dopo; });
+// ogni momento (la grafica di un'immagine) dura fino al beat dopo, al massimo 6 s: lì cadono le sue scritte
+const FINE_MOMENTO = 6;
+const confini = beats.map((b, n) => Math.min(n < beats.length - 1 ? beats[n + 1].t : DURATA, b.t + FINE_MOMENTO));
+// tratti senza immagini (più di 4,5 s tra un'immagine e la dopo, o all'inizio/fine): li riempiono le scritte
+const vuoti = [];
+{
+  const punti = [0, ...beats.map((b) => b.t), DURATA];
+  for (let k = 0; k < punti.length - 1; k++) {
+    const da = k === 0 ? 2.5 : punti[k] + 3.5, a = punti[k + 1] - 0.8; // dopo la card precedente, prima della successiva
+    if (a - da > 1.2) vuoti.push({ da: +da.toFixed(2), a: +a.toFixed(2) });
+  }
+}
+// tutto schermo: al massimo il 5% del video (inizio compreso), solo sulle parole più forti, per 1–2,5 s prima di un'immagine
+const BUDGET = DURATA * 0.05 - (beats.length ? Math.min(beats[0].t, 3) : 0);
+const MAX_FORTI = Math.max(0, Math.floor(BUDGET / 1.8));
 const PROMPT = `Sei il grafico di un video tech verticale di Denis (stile "Tech": card di vetro con un'etichetta monospace, scritte a macchina, badge rossi, numeri grandi).
 Ti do i momenti con un'immagine (con le parole dette mentre è in scena) e tutto il parlato numerato.
 Per ogni momento scrivi:
 - "etichetta": 1–4 parole IN MAIUSCOLO per la barra della card (cosa mostra o il punto chiave, es. "CLAUDE · ANTHROPIC")
 - facoltativo "scritta": una parola chiave detta in quel momento, da far comparire sotto la card: {"tipo": "macchina" (2–4 parole, monospace) o "timbro" (badge rosso, 1–2 parole forti o un giudizio, max 16 caratteri), "testo": "…", "parola": <numero della parola su cui compare, tra quelle del momento>}
-Poi, facoltativi, al massimo 2 "extra": momenti SENZA immagine dove una scritta da sola rende il punto (un numero, un nome, una frase forte): {"parola": <numero>, "tipo": "titolo" (2–4 parole) | "macchina" | "contatore" (solo se il parlato dice un numero: "valore": <numero>, "suffisso": "…"), "testo": "…"}
+Poi "extra": riempi i TRATTI VUOTI (elenco sotto, senza immagini) con una scritta ciascuno (due se il tratto è più lungo di 7 s), sulla parola più importante del tratto: {"parola": <numero>, "tipo": "titolo" (2–4 parole) | "macchina" (frase chiave, monospace) | "contatore" (solo se il parlato dice un numero: "valore": <numero>, "suffisso": "…"), "testo": "…"}
+Infine "forti": fino a ${MAX_FORTI} numeri di parola dove Denis dice la cosa più forte del video (una rivelazione, un numero clamoroso, una frase-chiave): lì per un attimo si vede solo lui a tutto schermo. Scegli parole che cadono poco prima di un'immagine (1–2,5 s prima).
 Usa SOLO cose dette nel parlato. La trascrizione può scrivere male i nomi: "Cloud" detto da Denis è "Claude" (di Anthropic).
 
-Rispondi SOLO con JSON: {"momenti": [{"n": <numero momento>, "etichetta": "…", "scritta": {…} | null}], "extra": [ … ]}
+Rispondi SOLO con JSON: {"momenti": [{"n": <numero momento>, "etichetta": "…", "scritta": {…} | null}], "extra": [ … ], "forti": [ … ]}
 
 MOMENTI:
-${beats.map((b, n) => `${n}. immagine ${b.elementi[0].file} — parole: ${frase(b.t, confini[n + 1]).map((w) => `${w.i}:${w.w}`).join(' ')}`).join('\n')}
+${beats.map((b, n) => `${n}. immagine ${b.elementi[0].file} — parole: ${frase(b.t, confini[n]).map((w) => `${w.i}:${w.w}`).join(' ')}`).join('\n')}
+
+TRATTI VUOTI:
+${vuoti.map((v, k) => `${k}. ${v.da.toFixed(1)}–${v.a.toFixed(1)} s: ${frase(v.da, v.a).map((w) => `${w.i}:${w.w}`).join(' ')}`).join('\n') || '(nessuno)'}
 
 PARLATO (numero:parola@secondo):
 ${parole.map((w, i) => `${i}:${w.w}@${w.s.toFixed(1)}`).join(' ')}`;
@@ -80,7 +99,8 @@ else {
   const t0 = Date.now();
   t = await chiediLocale(PROMPT, { modello: MODELLO, temperatura: 0.2 });
   log(`AI (${MODELLO}) in ${((Date.now() - t0) / 1000).toFixed(0)} s`);
-  fs.writeFileSync(CACHE, JSON.stringify({ chiave, risposta: t }));
+  // in cache solo una risposta che è JSON valido (una troncata si richiede al giro dopo)
+  try { JSON.parse(t.slice(t.indexOf('{'), t.lastIndexOf('}') + 1)); fs.writeFileSync(CACHE, JSON.stringify({ chiave, risposta: t })); } catch { console.log('[cache] risposta non valida, non la salvo'); }
 }
 const d = JSON.parse(t.slice(t.indexOf('{'), t.lastIndexOf('}') + 1));
 
@@ -98,27 +118,42 @@ for (const m of [].concat(d.momenti || [])) {
     b.elementi.push(s.tipo === 'timbro' ? { tipo: 'timbro', testo: String(s.testo).slice(0, 16), t: +tt.toFixed(2) } : { tipo: 'macchina', testo: MAIUSC(s.testo, 30), t: +tt.toFixed(2) });
   }
 }
-for (const x of [].concat(d.extra || []).slice(0, 2)) {
+const messiNelVuoto = new Map();
+for (const x of [].concat(d.extra || [])) {
   const i = Math.round(x.parola);
   if (!(i >= 0 && i < parole.length)) continue;
   const tx = parole[i].s;
-  if (beats.some((b) => Math.abs(b.t - tx) < 2.5)) { log(`extra scartato (troppo vicino a un'immagine): ${x.testo ?? x.valore}`); continue; }
+  const v = vuoti.findIndex((u) => tx >= u.da - 0.3 && tx <= u.a + 0.3);
+  if (v < 0) { log(`extra scartato (fuori dai tratti vuoti): ${x.testo ?? x.valore}`); continue; }
+  const quanti = messiNelVuoto.get(v) || 0;
+  if (quanti >= (vuoti[v].a - vuoti[v].da > 7 ? 2 : 1)) continue;
+  if (beats.some((b) => Math.abs(b.t - tx) < 1.5)) { log(`extra scartato (troppo vicino a un altro beat): ${x.testo ?? x.valore}`); continue; }
   const el = x.tipo === 'contatore' && Number.isFinite(Number(x.valore)) ? { tipo: 'contatore', valore: Number(x.valore), suffisso: String(x.suffisso || '').slice(0, 6), t: tx }
     : x.tipo === 'titolo' ? { tipo: 'titolo', testo: String(x.testo || '').slice(0, 30), t: tx } : { tipo: 'macchina', testo: MAIUSC(x.testo, 30), t: tx };
   if (el.tipo !== 'contatore' && !el.testo) continue;
   beats.push({ t: tx, i, elementi: [el] });
+  messiNelVuoto.set(v, quanti + 1);
 }
 beats.sort((a, b) => a.t - b.t);
 
-// ---------- 3. presentatore: metà sui beat con grafica; intero nelle pause lunghe (dopo ~3,5 s di grafica)
-const fine = (b, k) => (k < beats.length - 1 ? beats[k + 1].t : DURATA);
+// ---------- 3. presentatore: metà con la grafica; tutto schermo solo sulle parole forti scelte dall'AI, fino al beat dopo
+// (1–2,5 s), finché resta budget (5% del video, inizio compreso)
 const tutti = [];
-beats.forEach((b, k) => {
-  b.presentatore = 'meta';
-  tutti.push(b);
-  const libero = fine(b, k) - b.t;
-  if (libero > PAUSA) tutti.push({ t: +inizioParola(b.t + IN_SCENA).toFixed(2), presentatore: 'intero', elementi: [] });
-});
+beats.forEach((b) => { b.presentatore = 'meta'; tutti.push(b); });
+let speso = 0;
+for (const f of [].concat(d.forti || []).map(Number).filter(Number.isFinite).sort((a, b) => a - b)) {
+  const w = parole[Math.round(f)];
+  if (!w) continue;
+  const dopo = beats.find((b) => b.t > w.s + 0.5);
+  const lung = (dopo ? dopo.t : DURATA) - w.s;
+  if (lung < 0.8 || lung > 2.5) { log(`forte scartata (${lung.toFixed(1)} s prima dell'immagine dopo): "${w.w}"`); continue; }
+  if (beats.some((b) => b.t <= w.s && b.t > w.s - 1.5)) { log(`forte scartata (card appena entrata): "${w.w}"`); continue; }
+  if (speso + lung > BUDGET) { log(`forte scartata (budget del 5% finito): "${w.w}"`); continue; }
+  tutti.push({ t: +w.s.toFixed(2), presentatore: 'intero', elementi: [] });
+  speso += lung;
+}
+tutti.sort((a, b) => a.t - b.t);
+log(`tutto schermo: ${(speso + (beats.length ? Math.min(beats[0].t, 3) : 0)).toFixed(1)} s su ${DURATA.toFixed(0)} (${(((speso + (beats.length ? Math.min(beats[0].t, 3) : 0)) / DURATA) * 100).toFixed(1)}%)`);
 const doc = {
   titolo: nome, mondo: MONDO === 'tech' ? 'tech' : undefined, durata: DURATA, cartella: CART, voce: 'voce.wav',
   beats: tutti.map(({ i, ...b }) => ({ ...b, t: +b.t.toFixed(2) })),

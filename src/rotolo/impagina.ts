@@ -15,6 +15,7 @@ export type Elemento = {
   grande?: boolean;
   dur?: number;             // durata della scritta (anno, titolo, kanji)
   durClip?: number;         // foto che è una clip video (overlay-*.mp4): durata in secondi, la scrive prepara
+  loop?: boolean;           // la clip ricomincia invece di fermarsi sull'ultimo fotogramma (GIF)
   nome?: string; ruolo?: string; kanjiNome?: string;            // nome
   file?: string; files?: string[]; ar?: number; ars?: number[]; // foto, ritaglio, carte (ar = larghezza/altezza)
   bn?: boolean;             // foto in bianco e nero (default: sì per persona/luogo/documento)
@@ -340,8 +341,11 @@ export function visoA(pres: Presentatore, t: number) {
 export function geometriaLastra(pres: Presentatore, p: number, t: number, W: number, H: number) {
   const alta = p * H;
   const ar = pres.ar || W / H;
-  // il video copre la larghezza; da metà schermo in giù si avvicina un po' (zoom 1 → 1,18)
-  const zoom = 1 + 0.18 * Math.max(0, Math.min(1, (1 - p) / 0.5));
+  // il video copre la larghezza; da metà schermo in giù si avvicina un po' (zoom 1 → 1,18).
+  // Un video più largo dello schermo (orizzontale in un verticale) si ingrandisce finché copre anche l'altezza
+  // della lastra: si ritaglia ai lati, seguendo il viso.
+  const copre = Math.max(1, alta / (W / ar));
+  const zoom = copre * (1 + 0.18 * Math.max(0, Math.min(1, (1 - p) / 0.5)));
   const vw = W * zoom, vh = vw / ar;
   const viso = visoA(pres, t);
   // dove deve stare il viso nella lastra: a tutto schermo dov'è nel video, a metà schermo al 46% della lastra
