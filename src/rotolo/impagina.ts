@@ -324,6 +324,35 @@ export function trattiLastra(doc: Documento): [number, ModoLastra][] {
   return tr.sort((a, b) => a[0] - b[0]);
 }
 export const DUR_LASTRA = 0.45;
+// dove sta il viso nel video del presentatore al secondo t (frazioni del fotogramma, da viso.py)
+export function visoA(pres: Presentatore, t: number) {
+  const v = pres.viso;
+  if (!v?.length) return { x: 0.5, y: 0.42 };
+  let i = 0;
+  while (i + 1 < v.length && v[i + 1].t <= t) i++;
+  const a = v[i], b = v[Math.min(v.length - 1, i + 1)];
+  const k = b.t > a.t ? Math.min(1, Math.max(0, (t - a.t) / (b.t - a.t))) : 0;
+  return { x: a.x + (b.x - a.x) * k, y: a.y + (b.y - a.y) * k };
+}
+// geometria della lastra in uno schermo W×H con quota p (1 tutto, 0,5 metà): il pannello è alto `alta` in fondo
+// allo schermo; dentro, il video (vw×vh) sta a left/top (relativi al pannello). Non si taglia al centro: si
+// sposta perché il viso resti dentro con aria sopra la testa. La usano Rotolo.tsx e i keyframe di DaVinci.
+export function geometriaLastra(pres: Presentatore, p: number, t: number, W: number, H: number) {
+  const alta = p * H;
+  const ar = pres.ar || W / H;
+  // il video copre la larghezza; da metà schermo in giù si avvicina un po' (zoom 1 → 1,18)
+  const zoom = 1 + 0.18 * Math.max(0, Math.min(1, (1 - p) / 0.5));
+  const vw = W * zoom, vh = vw / ar;
+  const viso = visoA(pres, t);
+  // dove deve stare il viso nella lastra: a tutto schermo dov'è nel video, a metà schermo al 46% della lastra
+  const q = Math.max(0, Math.min(1, (p - 0.5) / 0.5));
+  const yViso = 0.46 * alta + (viso.y * vh - 0.46 * alta) * q;
+  let top = yViso - viso.y * vh;
+  top = Math.min(0, Math.max(alta - vh, top));
+  let left = W / 2 - viso.x * vw;
+  left = Math.min(0, Math.max(W - vw, left));
+  return { alta, left, top, vw, vh, zoom };
+}
 // quanto schermo occupa la lastra (0 = niente, 0,5 = metà in basso, 1 = tutto)
 export function lastra(doc: Documento, t: number, tratti = trattiLastra(doc)): number {
   if (!doc.presentatore) return 0;

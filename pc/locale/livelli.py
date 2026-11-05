@@ -1,6 +1,7 @@
 # Timeline DaVinci a livelli: il video vero sotto (V1, con il suo audio) e la grafica trasparente sopra (V2,
 # ProRes 4444 con alfa renderizzato da Remotion con "soloGrafica").
-#   python pc/locale/livelli.py <video> <grafica.mov> [--nome X] [--progetto "Regista locale"]
+#   python pc/locale/livelli.py <video> <grafica.mov> [--lastra chiavi.json] [--nome X] [--progetto "Regista locale"]
+# --lastra: tratti da pc/locale/lastra.mjs; il video su V1 si sposta e si ingrandisce come la lastra di Remotion.
 # DaVinci Resolve Studio aperto, Preferenze → Sistema → Generale → External scripting using: Local.
 # Timeline con la risoluzione del video; la grafica (anche a risoluzione più bassa) si adatta allo schermo.
 import json, os, subprocess, sys
@@ -63,8 +64,25 @@ tl.SetSetting('timelineResolutionHeight', str(iv['height']))
 while tl.GetTrackCount('video') < 2:
     tl.AddTrack('video')
 inizio = tl.GetStartFrame()
-a = mp.AppendToTimeline([{'mediaPoolItem': cv, 'trackIndex': 1, 'recordFrame': inizio}])
-b = mp.AppendToTimeline([{'mediaPoolItem': cg, 'trackIndex': 2, 'mediaType': 1, 'recordFrame': inizio}])
+file_lastra = opz('--lastra')
+if file_lastra:
+    # il presentatore si muove come la lastra di Remotion (pc/locale/lastra.mjs): V1 a pezzi, ognuno con la sua
+    # trasformazione (Zoom/Pan/Tilt della pagina Edit); l'audio intero su A1
+    tratti = json.load(open(file_lastra, encoding='utf8'))['tratti']
+    durata_v = cv.GetClipProperty('Frames')
+    pezzi = [{'mediaPoolItem': cv, 'startFrame': t['da'], 'endFrame': t['a'], 'trackIndex': 1, 'mediaType': 1, 'recordFrame': inizio + t['da']}
+             for t in tratti if durata_v in (None, '') or t['da'] < int(durata_v)]
+    messi = mp.AppendToTimeline(pezzi) or []
+    sbagliati = 0
+    for it, t in zip(messi, tratti):
+        if not it.SetProperties({'ZoomX': t['zoom'], 'ZoomY': t['zoom'], 'Pan': float(t['pan']), 'Tilt': float(t['tilt'])}):
+            sbagliati += 1
+    mp.AppendToTimeline([{'mediaPoolItem': cv, 'trackIndex': 1, 'mediaType': 2, 'recordFrame': inizio}])
+    print(f'[livelli] presentatore: {len(messi)} pezzi su V1 (attesi {len(pezzi)})' + (f', {sbagliati} senza trasformazione' if sbagliati else ', tutti trasformati'))
+else:
+    mp.AppendToTimeline([{'mediaPoolItem': cv, 'trackIndex': 1, 'recordFrame': inizio}])
+mp.AppendToTimeline([{'mediaPoolItem': cg, 'trackIndex': 2, 'mediaType': 1, 'recordFrame': inizio}])
 v1, v2 = tl.GetItemListInTrack('video', 1) or [], tl.GetItemListInTrack('video', 2) or []
+
 print(f'[livelli] timeline "{nome_tl}" ({iv["width"]}x{iv["height"]}, {fps_resolve} fps): V1 {len(v1)} clip, V2 {len(v2)} clip'
-      + (f', durate {v1[0].GetDuration()} e {v2[0].GetDuration()} fotogrammi' if v1 and v2 else ''))
+      + (f', fine V1 {v1[-1].GetEnd() - inizio} e V2 {v2[0].GetDuration()} fotogrammi' if v1 and v2 else ''))

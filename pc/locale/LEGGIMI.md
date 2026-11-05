@@ -43,3 +43,15 @@ Se c'è `immagini.json` le immagini vanno su V2, ognuna sulla sua parola e con l
 - Ollama con `gemma4:12b` e `qwen3.8:27b`
 - `.venv` con faster-whisper, `torch==2.8.0` e `torchaudio==2.8.0` (cu128: `--index-url https://download.pytorch.org/whl/cu128`)
 - ffmpeg 7+ (usa `-/filter_complex`)
+
+## Grafica Rotolo/Tech sopra il video vero (livelli)
+Per i documentari con te in camera: il video resta vero in DaVinci (gradabile), la grafica arriva da Remotion.
+1. Livello grafica trasparente (beats.json con `"soloGrafica": true` e `"fps"` del video, es. 30000/1001):
+   `npx remotion render src/index.ts Rotolo grafica.mov --props=props.json --codec=prores --prores-profile=4444 --pixel-format=yuva444p10le --image-format=png`
+2. Movimento del presentatore (stessa geometria della lastra di Remotion, `geometriaLastra` in `src/rotolo/impagina.ts`):
+   `node --experimental-strip-types --no-warnings pc/locale/lastra.mjs beats.json lastra.json --fps 29.97002997`
+3. Timeline: `.venv\Scripts\python.exe pc/locale/livelli.py <video> grafica.mov --lastra lastra.json`
+   V1 = il video a pezzi (uno per fotogramma nelle transizioni), ognuno con Zoom/Pan/Tilt della pagina Edit; A1 = audio
+   intero; V2 = grafica. Verificato con un render da Deliver: inquadratura identica a Remotion.
+Note: il Transform in Fusion messo da script NON arriva al render (fotogramma identico all'originale), per questo i pezzi.
+Se DaVinci ha già importato un .mov, Remotion non può sovrascriverlo (file bloccato): rendere con un altro nome.

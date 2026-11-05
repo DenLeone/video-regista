@@ -1,6 +1,6 @@
 import React, { useMemo } from 'react';
 import { AbsoluteFill, Audio, Easing, Img, interpolate, OffthreadVideo, useCurrentFrame, useVideoConfig } from 'remotion';
-import { areaImmagine, colpiDi, corpo, corpoRiga, creaCamera, Documento, fotoBN, impagina, kanjiSotto, lastra, Posato, Presentatore, schedeDi, trattiLastra } from './rotolo/impagina';
+import { areaImmagine, colpiDi, corpo, corpoRiga, creaCamera, Documento, fotoBN, geometriaLastra, impagina, kanjiSotto, lastra, Posato, Presentatore, schedeDi, trattiLastra } from './rotolo/impagina';
 import { Badge, Canvas, ContatoreTech, Hero, NomeTech, progBarra, Riga, Riquadro, SchedaTech, T, Vetro } from './rotolo/tech';
 import {
   Cade, CARTA, centro, Cerchio, Ciotola, Contatore, Croce, f, fontLocali, Foto, Grafico, Hanko, impostaCartella, INCHIOSTRO, Insegna,
@@ -199,30 +199,10 @@ function luce(doc: Documento, p: Posato, tempo: number): React.CSSProperties {
 // ---------------------------------------------------------------- lastra del presentatore
 // Il video della persona occupa il fondo dello schermo (p = quota: 1 tutto, 0,5 metà). Non si taglia al
 // centro: si sposta perché il viso resti dentro con spazio sopra la testa, anche mentre la lastra si stringe.
-function visoA(pres: Presentatore, t: number) {
-  const v = pres.viso;
-  if (!v?.length) return { x: 0.5, y: 0.42 };
-  let i = 0;
-  while (i + 1 < v.length && v[i + 1].t <= t) i++;
-  const a = v[i], b = v[Math.min(v.length - 1, i + 1)];
-  const k = b.t > a.t ? Math.min(1, Math.max(0, (t - a.t) / (b.t - a.t))) : 0;
-  return { x: a.x + (b.x - a.x) * k, y: a.y + (b.y - a.y) * k };
-}
 const Lastra: React.FC<{ pres: Presentatore; p: number; v: number; t: number; tech: boolean }> = ({ pres, p, v, t, tech }) => {
   const { width: W, height: H } = useVideoConfig();
-  const alta = p * H;
-  const ar = pres.ar || W / H;
-  // il video copre la larghezza; da metà schermo in giù si avvicina un po' (zoom 1 → 1,18)
-  const zoom = 1 + 0.18 * Math.max(0, Math.min(1, (1 - p) / 0.5));
-  const vw = W * zoom, vh = vw / ar;
-  const viso = visoA(pres, t);
-  // dove deve stare il viso nella lastra: a tutto schermo dov'è nel video, a metà schermo al 46% della lastra
-  const q = Math.max(0, Math.min(1, (p - 0.5) / 0.5));
-  const yViso = 0.46 * alta + (viso.y * vh - 0.46 * alta) * q;
-  let top = yViso - viso.y * vh;
-  top = Math.min(0, Math.max(alta - vh, top));
-  let left = W / 2 - viso.x * vw;
-  left = Math.min(0, Math.max(W - vw, left));
+  // stessa geometria dei keyframe di DaVinci (pc/locale/lastra.mjs): sta in impagina.ts
+  const { alta, left, top, vw, vh } = geometriaLastra(pres, p, t, W, H);
   const mosso = Math.min(18, Math.abs(v) * 30);
   const bordo = tech ? '#4fd1ff' : '#b79a5a';
   return (
