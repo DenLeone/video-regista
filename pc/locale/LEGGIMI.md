@@ -8,6 +8,7 @@ Un passo alla volta, ognuno si lancia e si controlla da solo. Comandi da `C:\reg
 | 1. Rinomina | `node pc/locale/rinomina.mjs <cartella> [--applica] [--annulla]` | dà alle immagini il nome `tipo-nome.ext` guardandole | gemma4:12b (vede) |
 | 2. Pulizia | `node pc/locale/pulizia.mjs <video>` | trascrive, allinea le parole all'audio, toglie silenzi, ripetizioni, false partenze, autocorrezioni | qwen3.8:27b |
 | 3. Immagini | `node pc/locale/immagini.mjs <video>-pulizia <cartella immagini>` | sceglie quali immagini mettere su quali parole → `immagini.json` | qwen3.8:27b |
+| 5. Regia | `node pc/locale/regia.mjs <video>-pulizia [--mondo tech\|rotolo] [--titolo X]` | beats.json per Rotolo/Tech: beat dalle immagini, intero/metà con regole, testi dall'AI | qwen3.8:27b |
 | 4. Timeline | `.venv\Scripts\python.exe pc/locale/timeline.py <video>-pulizia` | crea in DaVinci la timeline: video originale tagliato su V1, immagini su V2 | — |
 
 ## 1. Rinomina
@@ -55,3 +56,10 @@ Per i documentari con te in camera: il video resta vero in DaVinci (gradabile), 
    intero; V2 = grafica. Verificato con un render da Deliver: inquadratura identica a Remotion.
 Note: il Transform in Fusion messo da script NON arriva al render (fotogramma identico all'originale), per questo i pezzi.
 Se DaVinci ha già importato un .mov, Remotion non può sovrascriverlo (file bloccato): rendere con un altro nome.
+
+## 5. Regia locale
+Beat = le immagini di `immagini.json`, sulla loro parola. Presentatore: metà sui beat con grafica, intero dopo 3,5 s se
+la pausa prima del beat dopo supera i 5 s. L'AI scrive solo i testi (etichetta della card, una scritta a macchina o un
+badge per beat, al massimo 2 scritte da sole) e il codice scarta quelli che cadrebbero quando la grafica non è in scena.
+Il viso (pc/rotolo/viso.py sul video originale) si riporta sui tempi del video tagliato. Esce
+`public/collage/locale-<titolo>/beats.json` (con immagini, font e texture) e una copia nella cartella -pulizia.
