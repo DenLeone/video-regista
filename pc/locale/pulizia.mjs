@@ -187,7 +187,8 @@ for (const t of togli) {
 }
 const tenuto = tieni.reduce((s, x) => s + x.a - x.da, 0);
 fs.writeFileSync(path.join(OUT, 'tagli.json'), JSON.stringify({ sorgente: SORG, durata: +DURATA.toFixed(3), durataPulita: +tenuto.toFixed(3), modello: ha('--senza-ai') ? null : MODELLO,
-  tieni: tieni.map(({ da, a }) => ({ da, a })), togli }, null, 2));
+  // parlaDa/parlaA: dove inizia e finisce il parlato del tratto (per arrotondare ai fotogrammi senza tagliarlo)
+  tieni: tieni.map(({ da, a, inizio, fine }) => ({ da, a, parlaDa: +inizio.toFixed(3), parlaA: +fine.toFixed(3) })), togli }, null, 2));
 
 // parole sul video tagliato: ogni tratto si sposta indietro di quanto è stato tolto prima
 let spost = 0;
