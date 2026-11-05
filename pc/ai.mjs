@@ -8,11 +8,22 @@ async function locale(prompt, json) {
   if (!t?.models?.some((m) => m.name === MODELLO_LOCALE || m.name.startsWith(MODELLO_LOCALE))) return null;
   const r = await fetch(`${OLLAMA}/api/chat`, {
     method: 'POST', headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ model: MODELLO_LOCALE, stream: false, ...(json ? { format: 'json' } : {}), messages: [{ role: 'user', content: prompt }], options: { temperature: 0.5, num_ctx: 32768 } }),
-    signal: AbortSignal.timeout(20 * 60 * 1000),
+    // in streaming: senza, fetch di Node smette di aspettare la risposta dopo 300 s (headersTimeout)
+    // e i modelli grandi (27B in parte nella RAM) non arrivano mai in fondo
+    body: JSON.stringify({ model: MODELLO_LOCALE, stream: true, ...(json ? { format: 'json' } : {}), messages: [{ role: 'user', content: prompt }], options: { temperature: 0.5, num_ctx: 32768 } }),
+    signal: AbortSignal.timeout(40 * 60 * 1000),
   });
-  const j = await r.json();
-  return r.ok ? j.message?.content || null : null;
+  if (!r.ok) return null;
+  let testo = '', resto = '';
+  const dec = new TextDecoder();
+  for await (const pezzo of r.body) {
+    resto += dec.decode(pezzo, { stream: true });
+    const righe = resto.split('\n');
+    resto = righe.pop();
+    for (const riga of righe) if (riga.trim()) testo += JSON.parse(riga).message?.content || '';
+  }
+  if (resto.trim()) testo += JSON.parse(resto).message?.content || '';
+  return testo || null;
 }
 async function gemini(prompt, json) {
   const chiave = process.env.GEMINI_API_KEY;
