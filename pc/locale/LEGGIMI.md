@@ -26,6 +26,24 @@ numero, icona Tabler, o solo testo; le immagini di `immagini.json` diventano sch
 parole più forti (max 5%). Escono `presentazione.json`, `beats.json` (per lastra.mjs) ed `eventi.json` (suoni).
 Test 2 (3 min): AI ~3 minuti per 6 tratti.
 
+**Stile Unboxing** (`node pc/locale/unboxing.mjs <cartella>`, dal Desktop: **Unboxing locale**, ci trascini la cartella):
+niente presentatore, solo le riprese del prodotto (una ripresa lunga, tante clip o tutte e due, in ordine di ripresa).
+Nella cartella anche le immagini delle caratteristiche (il nome del file è il testo della scheda: `50 db.jpg` → "50 dB";
+un'immagine con "colori" nel nome va nella chiusura) o `prodotto.txt` (prima riga il nome, poi una caratteristica per
+riga). Nome del prodotto: `--titolo`, `prodotto.txt` o le cartelle (`HONOR\Earbuds 4` → "HONOR Earbuds 4").
+1. analisi di ogni clip ogni 0,5 s (movimento, nitidezza, volume) e battiti della musica (`10 Musica/unboxing` se
+   c'è qualcosa, se no `10 Musica/tech`; stesso prodotto = stesso brano)
+2. qwen3-vl:8b guarda un fotogramma ogni 2 s: fase (scatola, apertura, interno, prodotto, dettaglio, accessori, app,
+   uso), cosa si vede, prodotto visibile / nitidezza / gesto (0–3). Più affidabile di gemma4:12b sulle fasi.
+3. montaggio (`--durata 40`): gancio col titolo e chiusura scelti dall'AI confrontando i 12 candidati migliori in una
+   griglia (i voti assoluti escono quasi tutti al massimo), il resto a quote per fase in ordine di ripresa, tagli sui
+   battiti, colpo di zoom alternato sui salti della stessa ripresa; qwen3.8 mette ogni scheda sull'inquadratura giusta
+4. grafica `Unboxing` (`src/unboxing/`): titolo, schede (immagine + testo, ~2,4 s), chiusura
+5. audio: suoni veri (riduzione rumore + compressione, al massimo +24 dB), musica, whoosh/pop/swish, somma ~-14 LUFS
+6. DaVinci: V1 pezzi delle clip, V2 grafica, A1 suoni veri, A2 musica, A3 effetti
+Voce fuori campo: non ancora gestita (un file audio nella cartella viene ignorato con un avviso).
+Earbuds 4 (2 clip, 145 s di 4K verticale): ~3 minuti la prima volta, AI comprese.
+
 | Passo | Comando | Cosa fa | AI |
 |---|---|---|---|
 | 1. Rinomina | `node pc/locale/rinomina.mjs <cartella> [--applica] [--annulla]` | dà alle immagini il nome `tipo-nome.ext` guardandole | gemma4:12b (vede) |

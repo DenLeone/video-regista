@@ -12,6 +12,7 @@ import { SuMisura } from './SuMisura';
 import { ProvaFont } from './presentazione/ProvaFont';
 import { ProvaScene } from './presentazione/ProvaScene';
 import { Presentazione, PropsPresentazione } from './presentazione/Presentazione';
+import { Unboxing, PropsUnboxing } from './unboxing/Unboxing';
 import { Racconto } from './racconto/Racconto';
 import { Racconto as PropsRacconto } from './racconto/tipi';
 import { durataTotale, FPS, fpsDi, H, Piano, W } from './piano';
@@ -41,6 +42,10 @@ export const Root: React.FC = () => (
     {/* stile Presentazione del flusso locale: livello trasparente sopra il video vero (pc/locale/presentazione.mjs) */}
     <Composition id="Presentazione" component={Presentazione} fps={30} width={2160} height={3840} durationInFrames={300}
       defaultProps={{ durata: 10, cartella: "presentazione/esempio", scene: [] } as PropsPresentazione}
+      calculateMetadata={({ props }) => ({ fps: props.fps ?? 30, durationInFrames: Math.max(1, Math.round(props.durata * (props.fps ?? 30))) })} />
+    {/* stile Unboxing del flusso locale: titolo, schede e chiusura sopra le riprese del prodotto (pc/locale/unboxing.mjs) */}
+    <Composition id="Unboxing" component={Unboxing} fps={30} width={2160} height={3840} durationInFrames={300}
+      defaultProps={{ durata: 10, cartella: "unboxing/esempio", titolo: "Prodotto", schede: [] } as PropsUnboxing}
       calculateMetadata={({ props }) => ({ fps: props.fps ?? 30, durationInFrames: Math.max(1, Math.round(props.durata * (props.fps ?? 30))) })} />
     <Composition id="Blueprint" component={Blueprint} fps={FPS} width={W} height={H}
       durationInFrames={90} defaultProps={esempio} calculateMetadata={metadati} />
