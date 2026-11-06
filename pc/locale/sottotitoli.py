@@ -68,6 +68,16 @@ if MODO == 'titoli':
     sys.path.insert(0, cartella)
     os.chdir(cartella)  # il suo script cerca i preset accanto a sé
     import auto_captions as ac
+    # il bin dei preset nel Media Pool: se manca (progetto nuovo o perso dopo un crash) si reimporta dal .drb
+    mp = progetto.GetMediaPool()
+    if ac.find_subfolder(mp.GetRootFolder(), ac.CLASHI_BIN_NAME) is None:
+        drb = None
+        for base in (cartella, os.path.join(cartella, 'Preset')):
+            if os.path.exists(os.path.join(base, ac.CLASHI_BIN_NAME + '.drb')):
+                drb = os.path.join(base, ac.CLASHI_BIN_NAME + '.drb')
+        if not drb or not mp.ImportFolderFromFile(drb):
+            sys.exit(f'bin "{ac.CLASHI_BIN_NAME}" assente e non importabile ({drb or "manca il .drb"})')
+        log(f'bin "{ac.CLASHI_BIN_NAME}" reimportato da {drb}')
     ac.generate_subtitles = lambda resolve, timeline: voci
     ac.generate_word_segments = lambda resolve, timeline: [(w['w'], fr(w['s']), fr(w['e'])) for w in parole]
     log(f'"{tl.GetName()}": {len(voci)} frasi dalla nostra trascrizione ({len(parole)} parole), preset {opz("--preset", "WATER")}')
@@ -114,11 +124,18 @@ for c in clip:
     if not testo:
         continue
     yBase = (1 - testo.GetInput('Center')[2]) * H  # centro della scritta senza Tilt, dall'alto
-    t = (c.GetStart() - INIZIO) / FPS + 0.3
-    fronte, mento, p = faccia(t)
-    y = mento + MARGINE
-    if y > BASSO:  # niente spazio sotto: sopra la testa, sotto la grafica (che occupa l'alto quando p < 1)
-        y = max(fronte - MARGINE, H * (1 - p) + 0.05 * H)
+    # il viso all'inizio, a metà e alla fine del titolo: un titolo può cominciare a metà schermo e finire a tutto
+    # schermo (Test 2: "ma esplodono." messo sopra la testa a metà schermo finiva sulla bocca a tutto schermo)
+    da, a = (c.GetStart() - INIZIO) / FPS, (c.GetEnd() - INIZIO) / FPS
+    visi = [faccia(t) for t in (da + 0.1, (da + a) / 2, max(da + 0.1, a - 0.1))]
+    libero = lambda y: all(y + MARGINE <= f or y - MARGINE >= m for f, m, _ in visi)  # la scritta non tocca nessun viso
+    sotto = max(m for _, m, _ in visi) + MARGINE
+    alto = min(f for f, _, _ in visi) - MARGINE
+    giunta = H * (1 - min(p for _, _, p in visi)) + 0.05 * H  # appena sotto la grafica (che occupa l'alto se p < 1)
+    if sotto <= BASSO:
+        y = sotto
+    else:  # sopra la testa: sotto la grafica se ci sta, altrimenti più su (sopra la grafica, ma mai sul viso)
+        y = max(alto, giunta) if libero(max(alto, giunta)) else alto
         sopra += 1
     c.SetProperty('Tilt', round(yBase - y, 1))
     spostate += 1
