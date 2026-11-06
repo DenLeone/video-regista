@@ -109,11 +109,37 @@ ${PROMPT}`;
 // ---------- 3. tempi: parole tenute → tratti da tenere, con i silenzi accorciati
 const via = new Set(tagliAI.flatMap((x) => Array.from({ length: x.a - x.da + 1 }, (_, k) => x.da + k)));
 const tenute = parole.map((w, i) => ({ ...w, i })).filter((w) => !via.has(w.i));
-// tratti: parole tenute consecutive (nell'originale) e vicine nel tempo stanno nello stesso tratto
+// audio a 16 kHz: serve per i buchi qui sotto e per le giunture (punto più silenzioso)
+const SR = 16000;
+const pcm = spawnSync('ffmpeg', ['-v', 'error', '-i', AUDIO, '-vn', '-ac', '1', '-ar', String(SR), '-f', 's16le', '-'], { maxBuffer: 1 << 30 }).stdout;
+const campioni = new Int16Array(pcm.buffer, pcm.byteOffset, pcm.length >> 1);
+// parlato non trascritto: Whisper a volte salta parole (Test 2: "addetti ai lavori [con GPT]-3") e il buco sembrava un
+// silenzio da tagliare. Un buco si taglia solo se l'audio è quieto: finestre da 20 ms sopra la soglia per meno di 0,15 s.
+// Soglia: un quinto del livello tipico delle parole (mediana delle finestre dentro le parole).
+const RMS = (() => {
+  const n = 320, out = new Float32Array(Math.floor(campioni.length / n));
+  for (let k = 0; k < out.length; k++) { let e = 0; for (let i = k * n; i < (k + 1) * n; i++) e += campioni[i] * campioni[i]; out[k] = Math.sqrt(e / n); }
+  return out;
+})();
+const SOGLIA = (() => {
+  const dentro = [];
+  for (const w of parole) for (let k = Math.floor(w.s / 0.02); k < Math.floor(w.e / 0.02) && k < RMS.length; k++) dentro.push(RMS[k]);
+  dentro.sort((x, y) => x - y);
+  return (dentro[Math.floor(dentro.length / 2)] || 0) / 5;
+})();
+const parlaNelBuco = (da, a) => {
+  let n = 0;
+  for (let k = Math.ceil(da / 0.02); k < Math.floor(a / 0.02) && k < RMS.length; k++) if (RMS[k] > SOGLIA) n++;
+  return n * 0.02 >= 0.15;
+};
+// tratti: parole tenute consecutive (nell'originale) e vicine nel tempo stanno nello stesso tratto; anche lontane,
+// se nel buco c'è parlato che Whisper non ha scritto
 const tieni = [];
 for (const w of tenute) {
   const u = tieni.at(-1);
-  if (u && w.i === u.ultima + 1 && w.s - u.fine <= SILENZIO) { u.fine = w.e; u.ultima = w.i; }
+  const unisci = u && w.i === u.ultima + 1 && (w.s - u.fine <= SILENZIO || parlaNelBuco(u.fine, w.s));
+  if (unisci && w.s - u.fine > SILENZIO) log(`tengo ${u.fine.toFixed(2)}–${w.s.toFixed(2)}: c'è parlato non trascritto`);
+  if (unisci) { u.fine = w.e; u.ultima = w.i; }
   else tieni.push({ inizio: w.s, fine: w.e, prima: w.i, ultima: w.i });
 }
 // aria intorno al parlato, senza superare il tratto vicino né i bordi del file
@@ -131,9 +157,6 @@ tieni.forEach((x, k) => {
 // ogni giuntura dentro il parlato si sposta sul punto più silenzioso entro ±80 ms: i tempi di Whisper
 // sbagliano di qualche centesimo e un taglio esatto sulla parola rischia di mangiare una sillaba
 {
-  const SR = 16000;
-  const pcm = spawnSync('ffmpeg', ['-v', 'error', '-i', AUDIO, '-vn', '-ac', '1', '-ar', String(SR), '-f', 's16le', '-'], { maxBuffer: 1 << 30 }).stdout;
-  const campioni = new Int16Array(pcm.buffer, pcm.byteOffset, pcm.length >> 1);
   const energia = (t) => { // RMS su 10 ms centrati in t
     const c = Math.round(t * SR), m = 80;
     let e = 0;
