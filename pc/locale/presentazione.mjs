@@ -7,8 +7,9 @@
 // - AI (a tratti di ~30 s, in cache in presentazione-ai.json): per ogni scena la parola chiave (riga enorme), se va
 //   in corallo, la grafica; per le scene con immagine solo l'etichetta della scheda. Il codice controlla tutto
 //   (icone che esistono, numeri detti davvero, parole della scena).
-// - presentatore: a metà schermo sotto il pannello; a tutto schermo all'inizio e sulle parole più forti, in tutto
-//   al massimo il 5% del video (come regia.mjs).
+// - tre modi, come il reel di riferimento: lui a tutto schermo con una parola alla volta sotto il mento (il grosso
+//   del video), diviso (immagine sopra, lui sotto) e grafica piena Tiffany a raffiche sui passaggi chiave (~1/3).
+//   Si comincia e si finisce con lui: il video si rivede in loop senza stacco.
 // Scrive nella cartella -pulizia: presentazione.json (props della composizione Presentazione), beats.json (modi del
 // presentatore per lastra.mjs) ed eventi.json (suoni per pc/rotolo/suoni.py). Immagini in public/presentazione/<nome>/.
 import fs from 'node:fs';
@@ -89,7 +90,7 @@ for (const g of gruppi) {
   else frasi.push(g);
 }
 // inizio: il presentatore a tutto schermo sulla prima frase (al massimo 3 s), poi il pannello
-const INTRO = frasi.length > 1 && frasi[0].at(-1).e < 3 ? frasi[1][0].s - 0.05 : 0;
+const INTRO = 0; // si comincia con lui a tutto schermo: la prima scena non va mai a grafica piena
 const scene = frasi.filter((g) => !(INTRO && g[0].s < INTRO)).map((g) => ({ parole: g, foto: g.foto }));
 scene.forEach((s, n) => {
   s.da = +(n === 0 ? Math.max(INTRO, s.parole[0].s - 0.15) : s.parole[0].s - 0.12).toFixed(3);
@@ -101,12 +102,13 @@ log(`${parole.length} parole → ${scene.length} scene (${foto.length} immagini)
 const ICONE = 'IconPlane IconRocket IconCar IconTruck IconShip IconTrain IconBike IconRun IconBrain IconCpu IconRobot IconCode IconDeviceMobile IconDeviceLaptop IconDeviceTv IconDeviceGamepad2 IconCamera IconVideo IconPhoto IconHeadphones IconMicrophone IconMusic IconBolt IconBattery IconWifi IconCloud IconDatabase IconLock IconKey IconShieldCheck IconWorld IconMap IconPlanet IconAtom IconDna IconPill IconCoin IconMoneybag IconShoppingCart IconChartLine IconUsers IconMessage IconSearch IconClock IconBulb IconAlertTriangle IconHeart IconEye IconSchool IconBook IconBuilding IconHome IconFlame IconLeaf IconSettings IconTrophy IconScale IconGavel IconTarget IconPuzzle IconSparkles IconPrinter IconBrandOpenai';
 const VEICOLI = ['IconPlane', 'IconRocket', 'IconCar', 'IconTruck', 'IconShip', 'IconTrain', 'IconBike', 'IconRun'];
 const testoScena = (s) => s.parole.map((w) => `${w.i}:${w.w}`).join(' ');
-const domanda = (nn) => `Sei il grafico di un video verticale di Denis in stile "Presentazione": fondo Tiffany, testo enorme che si accumula parola per parola, un'infografica per scena che cambia col TEMA di cui parla.
+const domanda = (nn) => `Sei il grafico di un video verticale di Denis in stile "Presentazione". Per la maggior parte del tempo si vede Denis a tutto schermo che parla; nei passaggi chiave lo schermo diventa una grafica a tutto schermo (fondo Tiffany, testo enorme che si accumula parola per parola e un'infografica che cambia col TEMA di cui parla); con le immagini si vede l'immagine sopra e lui sotto.
 Ti do le SCENE di un tratto del video, numerate, con le parole dette (numero:parola). Per ognuna rispondi:
+- "peso": da 1 a 5, quanto la scena guadagna da una grafica a tutto schermo (5 = passaggio chiave, concetto da spiegare, numero, confronto, sigla, frase d'effetto; 1 = frase di passaggio). Le scene con IMMAGINE: 0.
 - "chiave": il numero della parola più importante della scena (sarà la riga enorme)
 - "accento": true solo se la scena contiene una cosa davvero forte (una rivelazione, un numero clamoroso): la parola chiave diventa corallo. Al massimo una scena su quattro.
 - per le scene con IMMAGINE: "etichetta": 1–3 parole IN MAIUSCOLO per la scheda della foto (cosa mostra), niente grafica.
-- per le altre: "grafica", la più adatta al TEMA della scena, una di queste:
+- per le scene senza immagine: "grafica", la più adatta al TEMA della scena, una di queste:
   {"tipo": "barre", "etichette": ["…", "…"]}  quantità che crescono o un confronto (1–2 etichette brevi IN MAIUSCOLO, dette nella scena)
   {"tipo": "curva"}  crescita esplosiva, esponenziale, "esplode", "decolla" come numeri
   {"tipo": "onda"}  suono, audio, voce, musica, microfoni, rumore
@@ -118,9 +120,8 @@ Ti do le SCENE di un tratto del video, numerate, con le parole dette (numero:par
   null  solo testo: va benissimo, il testo enorme è già la grafica. Almeno una scena su tre senza immagine resta null.
 Varia: non ripetere la stessa grafica in due scene di fila. Usa SOLO cose dette.
 La trascrizione può scrivere male i nomi: "Cloud" detto da Denis è "Claude" (di Anthropic).
-Infine "forti": al massimo 1 numero di parola dove Denis dice la cosa più forte del tratto (solo se c'è davvero): lì per un attimo si vede solo lui a tutto schermo.
 
-Rispondi SOLO con JSON: {"scene": [{"n": <numero scena>, "chiave": <numero parola>, "accento": false, "etichetta": "…" | "grafica": {…} | null}], "forti": [ … ]}
+Rispondi SOLO con JSON: {"scene": [{"n": <numero scena>, "peso": 3, "chiave": <numero parola>, "accento": false, "etichetta": "…" | "grafica": {…} | null}]}
 
 SCENE:
 ${nn.map((n) => `${n}.${scene[n].foto ? ` [IMMAGINE ${scene[n].foto.file}]` : ''} ${testoScena(scene[n])}`).join('\n')}`;
@@ -142,7 +143,9 @@ for (const [k, nn] of blocchi.entries()) {
   let t = !ha('--rifai-ai') && cache[chiave];
   if (!t) {
     try {
-      t = await chiediLocale(prompt, { modello: MODELLO, temperatura: 0.3, pensa: PENSA });
+      // un secondo tentativo: Ollama a volte cade (llama-server terminato) e al giro dopo risponde
+      try { t = await chiediLocale(prompt, { modello: MODELLO, temperatura: 0.3, pensa: PENSA }); JSON.parse(t.slice(t.indexOf('{'), t.lastIndexOf('}') + 1)); }
+      catch (e) { log(`tratto ${k + 1}: ${e.message.slice(0, 80)}, riprovo`); t = await chiediLocale(prompt, { modello: MODELLO, temperatura: 0.3, pensa: PENSA }); }
       JSON.parse(t.slice(t.indexOf('{'), t.lastIndexOf('}') + 1));
       cache[chiave] = t; fs.writeFileSync(CACHE, JSON.stringify(cache));
     } catch (e) { log(`tratto ${k + 1}: risposta non valida (${e.message}), solo testo`); continue; }
@@ -154,12 +157,28 @@ for (const [k, nn] of blocchi.entries()) {
 }
 log(`AI (${MODELLO}, ragionamento ${PENSA}) in ${((Date.now() - t0) / 1000).toFixed(0)} s per ${blocchi.length} tratti`);
 
+// ---------- 4a. grafica piena: le scene col peso più alto fino a ~30% del video (mai la prima né l'ultima, mai le
+// immagini); a parità di peso vince chi è vicino a una già scelta, così vengono raffiche di 2–3 scene
+const QUOTA = Number(opz('--quota-grafica', 0.3));
+const piene = new Set();
+{
+  const cand = scene.map((s, n) => ({ n, p: Number(risposte.get(n)?.peso) || 0, d: s.a - s.da })).filter((c) => c.n > 0 && c.n < scene.length - 1 && !scene[c.n].foto && c.p >= 2);
+  let usato = 0;
+  while (usato < DURATA * QUOTA) {
+    const libere = cand.filter((c) => !piene.has(c.n));
+    if (!libere.length) break;
+    const voto = (c) => c.p + (piene.has(c.n - 1) || piene.has(c.n + 1) ? 0.6 : 0);
+    const c = libere.sort((a, b) => voto(b) - voto(a))[0];
+    piene.add(c.n); usato += c.d;
+  }
+}
+
 // ---------- 4. scene finali: righe del testo e grafica, controllate
 const icone = new Set(Object.keys(await import('@tabler/icons-react')));
 const MAIUSC = (s, n) => String(s || '').toUpperCase().replace(/\s+/g, ' ').trim().slice(0, n);
 const norm = (s) => String(s).toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^a-z0-9]/g, '');
 const RIGA = 16; // caratteri per riga (le parole lunghe stanno da sole)
-let ultimoAccento = -99, ultimaBarriera = -99, tipoPrima = '';
+let ultimoAccento = -99, ultimaBarriera = -99, ultimaIcona = -99, tipoPrima = '';
 const fuori = [];
 for (const [n, s] of scene.entries()) {
   const r = risposte.get(n) || {};
@@ -169,10 +188,13 @@ for (const [n, s] of scene.entries()) {
   const parolaChiave = scelta && scelta.w.replace(/[^\p{L}\d]/gu, '').length > 2 ? scelta : [...s.parole].sort((a, b) => b.w.length - a.w.length)[0];
   const accento = !!r.accento && s.da - ultimoAccento > 8;
   if (accento) ultimoAccento = s.da;
-  const scena = { da: s.da, a: +s.a.toFixed(3), parole: [] };
+  // tre modi: diviso (immagine sopra, lui sotto), tiffany (grafica a tutto schermo), lui (a tutto schermo)
+  const modo = s.foto ? 'diviso' : piene.has(n) ? 'tiffany' : 'lui';
+  const scena = { da: s.da, a: +s.a.toFixed(3), modo, parole: [] };
   // grafica
   let g = null;
   const t0g = +(s.da + 0.25).toFixed(2);
+  if (modo === 'lui') { s.finale = scena; tipoPrima = 'lui'; continue; }
   if (s.foto) g = { tipo: 'foto', file: s.foto.file, t0: +Math.max(s.da, s.foto.t - 0.1).toFixed(2), ...(r.etichetta ? { etichetta: MAIUSC(r.etichetta, 22) } : {}) };
   else if (r.grafica && typeof r.grafica === 'object') {
     const x = r.grafica;
@@ -199,23 +221,28 @@ for (const [n, s] of scene.entries()) {
       }
       case 'numero': {
         const v = Number(String(x.valore).replace(',', '.'));
-        if (Number.isFinite(v) && dette.some((d) => d.includes(norm(String(x.valore)).replace(/\D/g, '')) && /\d/.test(d))) {
+        // il numero dev'essere detto come numero, non dentro un nome (GPT-1, M4)
+        const soloNumeri = s.parole.filter((w) => /^[\d.,%€$]+[.,]?$/.test(w.w)).map((w) => norm(w.w));
+        if (Number.isFinite(v) && soloNumeri.some((d) => d.includes(norm(String(x.valore)).replace(/\D/g, '')))) {
           const w = s.parole.find((q) => /\d/.test(q.w)) || parolaChiave;
           g = { tipo: 'numero', valore: v, suffisso: String(x.suffisso || '').toUpperCase().slice(0, 6), t0: +Math.max(s.da + 0.2, w.s - 0.1).toFixed(2) };
         } else fuori.push(`numero ${x.valore} non detto nella scena ${n}`);
         break;
       }
       case 'icona':
-        if (icone.has(x.icona)) g = { tipo: 'icona', icona: x.icona, t0: t0g, ...(x.etichetta ? { etichetta: MAIUSC(x.etichetta, 16) } : {}) };
+        // icone ripetute stancano (Test 3: 10 cerchi uguali su concetti astratti): una ogni 12 s, le altre scene
+        // restano testo enorme
+        if (s.da - ultimaIcona < 12) break;
+        if (icone.has(x.icona)) { ultimaIcona = s.da; g = { tipo: 'icona', icona: x.icona, t0: t0g, ...(x.etichetta ? { etichetta: MAIUSC(x.etichetta, 16) } : {}) }; }
         else fuori.push(`icona inesistente ${x.icona}`);
         break;
     }
   }
   if (g) scena.grafica = g;
-  // righe: la parola chiave da sola, enorme; le altre a righe di ~13 caratteri, grandi se corte
+  // righe (solo nella grafica piena): la parola chiave da sola, enorme; le altre a righe di ~16 caratteri, grandi se corte
   let riga = 0, lun = 0;
   const pp = [];
-  for (const w of s.parole) {
+  for (const w of modo === 'tiffany' ? s.parole : []) {
     const W = w.w.toUpperCase();
     const ch = w === parolaChiave;
     if (pp.length && (ch || pp.at(-1).chiave || lun + W.length + 1 > RIGA)) { riga++; lun = 0; }
@@ -234,30 +261,22 @@ for (const [n, s] of scene.entries()) {
   // mai sopra il culmine della scena prima (curva che esplode, parola enorme detta negli ultimi istanti)
   const prima = scene[n - 1]?.finale;
   const culmine = prima ? Math.max(prima.grafica?.tipo === 'curva' ? prima.grafica.esplode + 0.6 : 0, ...prima.parole.filter((p) => p.taglia === 'enorme').map((p) => p.t + 0.5)) : 0;
-  if (n > 0 && tipo !== tipoPrima && s.da - ultimaBarriera >= 4 && culmine < s.da - 0.3) { scena.barriera = true; ultimaBarriera = s.da; }
+  // (solo tra due scene di grafica piena: entrando e uscendo lavora il pannello che si apre e si chiude)
+  if (modo === 'tiffany' && prima?.modo === 'tiffany' && tipo !== tipoPrima && s.da - ultimaBarriera >= 4 && culmine < s.da - 0.3) { scena.barriera = true; ultimaBarriera = s.da; }
   tipoPrima = tipo;
   s.finale = scena;
 }
 for (const f of fuori) log('scartato:', f);
 
-// ---------- 5. presentatore: tutto schermo all'inizio e sulle parole forti, al massimo il 5% del video
-const BUDGET = DURATA * 0.05;
-let speso = INTRO;
-const modi = [{ t: 0, presentatore: INTRO ? 'intero' : 'meta', elementi: [] }];
-if (INTRO) modi.push({ t: +INTRO.toFixed(2), presentatore: 'meta', elementi: [] });
-for (const f of [...new Set(forti)].sort((a, b) => a - b)) {
-  const w = parole.find((q) => q.i === Math.round(f));
-  if (!w) continue;
-  const dopo = scene.find((s) => s.da > w.s + 0.5);
-  const fine = dopo ? dopo.da : DURATA;
-  const lung = fine - w.s;
-  if (lung < 0.8 || lung > 2.5) { log(`forte scartata (${lung.toFixed(1)} s fino alla scena dopo): "${w.w}"`); continue; }
-  if (speso + lung > BUDGET) { log(`forte scartata (budget del 5% finito): "${w.w}"`); continue; }
-  modi.push({ t: +w.s.toFixed(2), presentatore: 'intero', elementi: [] }, { t: +fine.toFixed(2), presentatore: 'meta', elementi: [] });
-  speso += lung;
-}
-modi.sort((a, b) => a.t - b.t);
-log(`tutto schermo: ${speso.toFixed(1)} s su ${DURATA.toFixed(0)} (${((speso / DURATA) * 100).toFixed(1)}%)`);
+// ---------- 5. presentatore: lui a tutto schermo, a metà sotto le immagini, nascosto nella grafica piena.
+// L'ultima scena è sempre lui: il video finisce come comincia (si rivede in loop senza stacco).
+const fin = scene.at(-1)?.finale;
+if (fin && fin.modo !== 'lui') { fin.modo = 'lui'; delete fin.grafica; fin.parole = []; delete fin.barriera; }
+const PRES = { lui: 'intero', diviso: 'meta', tiffany: 'nascosto' };
+const modi = [{ t: 0, presentatore: 'intero', elementi: [] }];
+for (const s of scene) if (PRES[s.finale.modo] !== modi.at(-1).presentatore) modi.push({ t: +s.finale.da.toFixed(2), presentatore: PRES[s.finale.modo], elementi: [] });
+const quota = (m) => scene.filter((s) => s.finale.modo === m).reduce((x, s) => x + s.finale.a - s.finale.da, 0) / DURATA * 100;
+log(`tempo: lui ${(100 - quota('diviso') - quota('tiffany')).toFixed(0)}%, diviso ${quota('diviso').toFixed(0)}%, grafica piena ${quota('tiffany').toFixed(0)}%`);
 
 // viso del presentatore sui tempi del video tagliato (come regia.mjs)
 const VISO = path.join(DIR, 'viso.json');
@@ -268,7 +287,7 @@ if (fs.existsSync(VISO)) {
   const punti = [];
   let cum = 0;
   for (const x of tagli.tieni) {
-    for (const p of v.punti) if (p.t >= x.da && p.t < x.a && p.x !== null) punti.push({ t: +(cum + p.t - x.da).toFixed(3), x: p.x, y: p.y });
+    for (const p of v.punti) if (p.t >= x.da && p.t < x.a && p.x !== null) punti.push({ t: +(cum + p.t - x.da).toFixed(3), x: p.x, y: p.y, s: p.s });
     cum += x.a - x.da;
   }
   presentatore = { file: 'presentatore.mp4', ar: +(v.w / v.h).toFixed(4), viso: punti.length ? punti : [{ t: 0, x: 0.5, y: 0.42 }] };
@@ -277,7 +296,7 @@ const beatsDoc = { titolo: nome, durata: DURATA, fps: FPS, cartella: CART, voce:
 fs.writeFileSync(path.join(DIR, 'beats.json'), JSON.stringify(beatsDoc, null, 1));
 
 const finali = scene.map((s) => s.finale);
-const props = { durata: DURATA, fps: FPS, cartella: CART, scene: finali, lastra: { durata: DURATA, presentatore, beats: modi } };
+const props = { durata: DURATA, fps: FPS, cartella: CART, scene: finali, parole: parole.map((w) => ({ w: w.w, s: +w.s.toFixed(3), e: +w.e.toFixed(3) })), lastra: { durata: DURATA, presentatore, beats: modi } };
 fs.writeFileSync(path.join(DIR, 'presentazione.json'), JSON.stringify(props));
 
 // ---------- 6. suoni (stessi tempi del video): uscite, entrate delle grafiche, cambi del presentatore

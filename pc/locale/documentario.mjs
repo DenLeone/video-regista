@@ -2,7 +2,7 @@
 // in DaVinci con il video tagliato che si muove e la grafica Rotolo/Tech sopra. Niente token: AI locali (Ollama).
 //   node pc/locale/documentario.mjs <video> <cartella immagini> [--mondo tech|rotolo] [--titolo X] [--4k]
 //                                   [--rinomina] [--uscita cartella] [--senza-davinci] [--con-davinci] [--sottotitoli WATER|no]
-//                                   [--stile tech|presentazione]
+//                                   [--stile tech|presentazione] [--gia-montato]
 // --stile presentazione: al posto della regia Rotolo/Tech, pc/locale/presentazione.mjs (pannello Tiffany in alto con il
 // testo che si accumula e un'infografica per scena, composizione Presentazione); il resto del flusso è lo stesso.
 // DaVinci va tenuto CHIUSO: lo apre lo script all'ultimo passo (aperto, rallenta l'AI fino a 50 volte).
@@ -77,7 +77,8 @@ if (VOCE_EXT && !ha('--senza-voce')) {
 if (ha('--rinomina')) { passo(1, 'nomi delle immagini'); node('rinomina.mjs', [IMM, '--applica']); }
 
 passo(2, 'pulizia del parlato');
-node('pulizia.mjs', [VIDEO, '--uscita', PUL, '--senza-anteprima', ...(VOCE_SYNC ? ['--voce', VOCE_SYNC] : [])]);
+// --gia-montato: video già tagliato a mano (es. in DaVinci): niente tagli dei silenzi (ripetizioni e false partenze sì)
+node('pulizia.mjs', [VIDEO, '--uscita', PUL, '--senza-anteprima', ...(VOCE_SYNC ? ['--voce', VOCE_SYNC] : []), ...(ha('--gia-montato') ? ['--silenzio', '999'] : [])]);
 
 passo(3, 'immagini sulle parole');
 node('immagini.mjs', [PUL, IMM]);
@@ -138,7 +139,8 @@ run(PY, [path.join(ROOT, 'pc', 'locale', 'livelli.py'), VIDEO, GRAFICA, '--tagli
 // 9. sottotitoli: lo script di Denis (davinci-automation/auto_captions.py, non modificato) sulla timeline appena creata,
 //    preset ClashiVFX: WATER per tech (resta blu), --sottotitoli NOME per un altro, --sottotitoli no per saltare
 const SOTTO_DIR = process.env.DAVINCI_AUTOMAZIONE || path.join(process.env.USERPROFILE || '', 'Desktop', 'my-video', 'davinci-automation');
-const PRESET = opz('--sottotitoli', 'WATER');
+// Presentazione: il testo è già nel pannello, niente sottotitoli (salvo --sottotitoli NOME)
+const PRESET = opz('--sottotitoli', PRESENTAZIONE ? 'no' : 'WATER');
 if (PRESET !== 'no' && fs.existsSync(path.join(SOTTO_DIR, 'auto_captions.py'))) {
   passo(9, `sottotitoli (${PRESET})`);
   // testo dalla nostra trascrizione dentro auto_captions.py, poi titoli spostati fuori dal viso. Se fallisce, la
