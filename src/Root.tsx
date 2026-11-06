@@ -9,6 +9,8 @@ import { PropsRotolo, Rotolo } from './Rotolo';
 import { MotionCollage } from './MotionCollage';
 import { ListaUI, Pezzo } from './ListaUI';
 import { SuMisura } from './SuMisura';
+import { ProvaFont } from './presentazione/ProvaFont';
+import { ProvaScene } from './presentazione/ProvaScene';
 import { Racconto } from './racconto/Racconto';
 import { Racconto as PropsRacconto } from './racconto/tipi';
 import { durataTotale, FPS, fpsDi, H, Piano, W } from './piano';
@@ -33,6 +35,8 @@ const metadati = ({ props }: { props: Piano }) => ({
 
 export const Root: React.FC = () => (
   <>
+    <Still id="PresentazioneFont" component={ProvaFont} width={2160} height={3840} />
+    <Composition id="PresentazioneProva" component={ProvaScene} fps={30} width={2160} height={3840} durationInFrames={480} />
     <Composition id="Blueprint" component={Blueprint} fps={FPS} width={W} height={H}
       durationInFrames={90} defaultProps={esempio} calculateMetadata={metadati} />
     <Composition id="Cinematico" component={Cinematico} fps={FPS} width={W} height={H}

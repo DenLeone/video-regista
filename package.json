@@ -11,10 +11,12 @@
     "app:check": "npx --yes -p typescript@5.9.3 tsc -p telegram/tsconfig.json --noEmit && node --experimental-strip-types --import ./telegram/test/register.mjs --test telegram/test/*.test.ts"
   },
   "dependencies": {
+    "@remotion/bundler": "4.0.520",
     "@remotion/cli": "4.0.520",
     "@remotion/google-fonts": "4.0.520",
+    "@remotion/layout-utils": "^4.0.520",
     "@remotion/renderer": "4.0.520",
-    "@remotion/bundler": "4.0.520",
+    "@tabler/icons-react": "^3.31.0",
     "react": "19.2.1",
     "react-dom": "19.2.1",
     "remotion": "4.0.520"
