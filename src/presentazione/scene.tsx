@@ -2,7 +2,7 @@
 // parlato, infografiche che cambiano col tema (barre, curva, prompt, acronimo, oggetto su percorso) e uscita a barre.
 // Tutti i tempi sono in secondi sul video; i componenti stanno dentro una composizione 2160×3840.
 import React from 'react';
-import { AbsoluteFill, Img, OffthreadVideo, interpolate, spring, staticFile, useCurrentFrame, useVideoConfig, Easing } from 'remotion';
+import { AbsoluteFill, Img, OffthreadVideo, Sequence, interpolate, spring, staticFile, useCurrentFrame, useVideoConfig, Easing } from 'remotion';
 import { fitText, measureText } from '@remotion/layout-utils';
 import * as Icone from '@tabler/icons-react';
 import { COLORI, FONT } from './tema';
@@ -299,5 +299,115 @@ export const Foto: React.FC<{ file: string; t0: number; y: number; h: number; et
         <span style={{ display: 'inline-block', width: 26, height: 26, borderRadius: 13, background: COLORI.accento, marginRight: 22, verticalAlign: 'middle' }} />{etichetta}
       </div>}
     </div>
+  );
+};
+
+// ---------------------------------------------------------------- il video vero di Denis dentro la grafica
+// tu: il proxy del video sorgente (public) e i pezzi tenuti (tagli.json): al secondo t del video montato corrisponde
+// il secondo giusto della sorgente. Il video copre il riquadro w×h con il viso (viso.py) al centro.
+export type Tu = { video: string; tieni: { da: number; a: number }[]; ar: number; viso?: { t: number; x: number; y: number }[] };
+const visoTu = (tu: Tu, t: number) => {
+  const v = tu.viso;
+  if (!v?.length) return { x: 0.5, y: 0.42 };
+  let i = 0;
+  while (i + 1 < v.length && v[i + 1].t <= t) i++;
+  return v[i];
+};
+export const TuVideo: React.FC<{ tu: Tu; w: number; h: number; zoom?: number; yViso?: number }> = ({ tu, w, h, zoom = 1.15, yViso = 0.42 }) => {
+  const { t, fps } = useT();
+  const vw = Math.max(w, h * tu.ar) * zoom, vh = vw / tu.ar;
+  const v = visoTu(tu, t);
+  const left = Math.min(0, Math.max(w - vw, w / 2 - v.x * vw));
+  const top = Math.min(0, Math.max(h - vh, h * yViso - v.y * vh));
+  let cum = 0;
+  return (
+    <div style={{ position: 'absolute', inset: 0, overflow: 'hidden' }}>
+      {tu.tieni.map((x, i) => {
+        const da = cum; cum += x.a - x.da;
+        // solo il pezzo in corso (con mezzo secondo di margine): niente decodifica inutile
+        if (t < da - 0.5 || t > cum + 0.5) return null;
+        return (
+          <Sequence key={i} from={Math.round(da * fps)} durationInFrames={Math.max(1, Math.round((x.a - x.da) * fps))} layout="none">
+            <OffthreadVideo src={staticFile(tu.video)} startFrom={Math.round(x.da * fps)} muted style={{ position: 'absolute', left, top, width: vw, height: vh }} />
+          </Sequence>
+        );
+      })}
+    </div>
+  );
+};
+
+// ---------------------------------------------------------------- riquadro: il contorno si disegna, poi dentro c'è lui
+export const Riquadro: React.FC<{ tu: Tu; t0: number; y: number; w?: number; h?: number }> = ({ tu, t0, y, w = 1920, h = 1240 }) => {
+  const { t } = useT();
+  const linea = interpolate(t, [t0, t0 + 0.35], [0, 1], { extrapolateLeft: 'clamp', extrapolateRight: 'clamp', easing: Easing.inOut(Easing.cubic) });
+  const pieno = entra(t, t0 + 0.3, 0.25);
+  const video = entra(t, t0 + 0.45, 0.3);
+  const per = 2 * (w + h);
+  return (
+    <div style={{ position: 'absolute', left: (2160 - w) / 2, top: y, width: w, height: h }}>
+      <div style={{ position: 'absolute', inset: 0, borderRadius: 40, overflow: 'hidden', background: COLORI.scheda, opacity: pieno, transform: `scale(${0.96 + 0.04 * pieno})` }}>
+        <div style={{ position: 'absolute', inset: 0, opacity: video, filter: `blur(${(1 - video) * 20}px)` }}><TuVideo tu={tu} w={w} h={h} /></div>
+      </div>
+      <svg width={w + 20} height={h + 20} style={{ position: 'absolute', left: -10, top: -10, overflow: 'visible' }}>
+        <rect x={10} y={10} width={w} height={h} rx={40} fill="none" stroke={COLORI.linea} strokeWidth={8} strokeDasharray={per} strokeDashoffset={per * (1 - linea)} opacity={1 - pieno * 0.85} />
+      </svg>
+      <div style={{ position: 'absolute', right: -26, top: -26, width: 52, height: 52, borderRadius: 26, background: COLORI.accento, transform: `scale(${pieno})` }} />
+    </div>
+  );
+};
+
+// ---------------------------------------------------------------- parola-finestra: parola enorme, nella O c'è lui
+export const ParolaFinestra: React.FC<{ tu: Tu; parola: string; t0: number; y: number }> = ({ tu, parola, t0, y }) => {
+  const { t } = useT();
+  const W = parola.toUpperCase();
+  const k = W.indexOf('O') >= 0 ? W.indexOf('O') : -1;
+  const fs = Math.min(560, fitText({ text: W, withinWidth: LARGO, fontFamily: FONT.bricolage, fontWeight: '800' }).fontSize * 0.98);
+  const e = entra(t, t0, 0.32);
+  const capW = measureText({ text: 'O', fontFamily: FONT.bricolage, fontSize: fs, fontWeight: '800' }).width * 0.92;
+  const capH = fs * 0.74;
+  const aperta = entra(t, t0 + 0.25, 0.3);
+  return (
+    <div style={{
+      position: 'absolute', left: SX, top: y, whiteSpace: 'nowrap', fontFamily: FONT.bricolage, fontWeight: 800, fontSize: fs, lineHeight: 1,
+      letterSpacing: -fs * 0.02, color: COLORI.testo, transform: `translateX(${(1 - e) * -500}px) skewX(${(1 - e) * -12}deg)`, filter: `blur(${(1 - e) * 24}px)`, opacity: Math.min(1, e * 2),
+    }}>
+      {k < 0 ? W : <>
+        {W.slice(0, k)}
+        <span style={{ display: 'inline-block', position: 'relative', width: capW, height: capH, borderRadius: capW / 2, overflow: 'hidden', background: COLORI.testo, verticalAlign: 'baseline', margin: `0 ${fs * 0.02}px`, transform: `translateY(${fs * 0.02}px)` }}>
+          <div style={{ position: 'absolute', inset: 0, opacity: aperta }}><TuVideo tu={tu} w={capW} h={capH} zoom={1.6} yViso={0.45} /></div>
+        </span>
+        {W.slice(k + 1)}
+      </>}
+    </div>
+  );
+};
+
+// ---------------------------------------------------------------- collage: foto sparse su fondo crema, si accumulano
+const CREMA = '#F4EFE4';
+export const Collage: React.FC<{ foto: { file: string; t0: number }[]; cartella: string }> = ({ foto, cartella }) => {
+  const { t } = useT();
+  // posizioni fisse e ruotate, alternate a sinistra e a destra, dall'alto in basso
+  const posti = [
+    { x: 160, y: 340, r: -6, w: 1280 }, { x: 760, y: 1050, r: 5, w: 1240 }, { x: 120, y: 1850, r: -3, w: 1300 },
+    { x: 700, y: 2550, r: 7, w: 1200 }, { x: 260, y: 700, r: 3, w: 1500 }, { x: 600, y: 1500, r: -7, w: 1350 },
+  ];
+  return (
+    <AbsoluteFill style={{ background: CREMA }}>
+      {foto.filter((f) => t >= f.t0 - 0.05).map((f, i) => {
+        const p = posti[i % posti.length];
+        const e = entra(t, f.t0, 0.35);
+        const video = /\.mp4$/i.test(f.file);
+        return (
+          <div key={f.file + i} style={{
+            position: 'absolute', left: p.x, top: p.y, width: p.w, padding: 22, background: '#fff', boxShadow: '0 40px 80px rgba(40,30,10,0.28)',
+            transform: `rotate(${p.r + (1 - e) * 14}deg) scale(${1.25 - 0.25 * e}) translateY(${(1 - e) * 200}px)`, opacity: e, filter: `blur(${(1 - e) * 22}px)`,
+          }}>
+            {video
+              ? <OffthreadVideo src={staticFile(`${cartella}/${f.file}`)} muted style={{ width: '100%', display: 'block' }} />
+              : <Img src={staticFile(`${cartella}/${f.file}`)} style={{ width: '100%', display: 'block' }} />}
+          </div>
+        );
+      })}
+    </AbsoluteFill>
   );
 };

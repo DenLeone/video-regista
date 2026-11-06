@@ -7,7 +7,7 @@ import React from 'react';
 import { AbsoluteFill, Audio, OffthreadVideo, Sequence, staticFile, useCurrentFrame, useVideoConfig } from 'remotion';
 import { geometriaLastra, lastra, trattiLastra, type Documento, type Presentatore } from '../rotolo/impagina';
 import { COLORI, FONT } from './tema';
-import { Acronimo, altezzaRighe, Barre, Barriera, Curva, Foto, Griglia, IconaGrande, Numero, Onda, Parola, Percorso, Prompt, Righe } from './scene';
+import { Acronimo, altezzaRighe, Barre, Barriera, Collage, Curva, Foto, Griglia, IconaGrande, Numero, Onda, Parola, ParolaFinestra, Percorso, Prompt, Riquadro, Righe, type Tu } from './scene';
 
 export type Grafica =
   | { tipo: 'barre'; gruppi: { etichetta: string; t: number }[] }
@@ -18,15 +18,20 @@ export type Grafica =
   | { tipo: 'acronimo'; parole: { w: string; t: number }[] }
   | { tipo: 'numero'; valore: number; suffisso?: string; t0: number }
   | { tipo: 'icona'; icona: string; t0: number; etichetta?: string }
-  | { tipo: 'foto'; file: string; t0: number; etichetta?: string };
+  | { tipo: 'foto'; file: string; t0: number; etichetta?: string }
+  | { tipo: 'riquadro'; t0: number }                 // lui in un riquadro sotto il testo
+  | { tipo: 'parola'; parola: string; t0: number };  // parola enorme, lui dentro la O
 // modo: lui (a tutto schermo: niente pannello, solo la parola singola), diviso (immagine sopra, lui sotto),
 // tiffany (grafica a tutto schermo, lui nascosto)
-export type Scena = { da: number; a: number; modo?: 'lui' | 'diviso' | 'tiffany'; parole: Parola[]; grafica?: Grafica; barriera?: boolean };
+// collage: foto sparse su fondo crema a tutto schermo (immagini ravvicinate), uscita3d: la scena si inclina e vola via
+export type Scena = { da: number; a: number; modo?: 'lui' | 'diviso' | 'tiffany' | 'collage'; parole: Parola[]; grafica?: Grafica; barriera?: boolean;
+  collage?: { file: string; t0: number }[]; uscita3d?: boolean };
 export type PropsPresentazione = {
   durata: number; fps?: number; cartella: string; scene: Scena[];
   parole?: { w: string; s: number; e: number }[]; // la parola singola quando si vede lui
   // anteprima senza DaVinci: il video vero sotto la grafica (stessa geometria di lastra.mjs), pezzi di tagli.json
   anteprima?: { video: string; voce?: string; tieni: { da: number; a: number }[] };
+  tu?: Tu; // il video di Denis per riquadro e parola-finestra (proxy in public)
   lastra?: Pick<Documento, 'presentatore' | 'beats' | 'durata'>; // modi del presentatore (beats.json)
 };
 
@@ -35,10 +40,12 @@ const TESTO_Y = 110;
 const SCALA_TESTO = 0.82;
 const MAX_TESTO = 760;
 // altezza naturale di ogni grafica (px a 2160 di larghezza): si rimpicciolisce se lo spazio sotto il testo è meno
-const NATURALE: Record<Grafica['tipo'], number> = { barre: 1260, curva: 1250, onda: 700, percorso: 1100, prompt: 560, acronimo: 1290, numero: 620, icona: 900, foto: 0 };
+const NATURALE: Record<Grafica['tipo'], number> = { barre: 1260, curva: 1250, onda: 700, percorso: 1100, prompt: 560, acronimo: 1290, numero: 620, icona: 900, foto: 0, riquadro: 1240, parola: 600 };
 
-const Grafico: React.FC<{ g: Grafica; cartella: string; spazio: number }> = ({ g, cartella, spazio }) => {
+const Grafico: React.FC<{ g: Grafica; cartella: string; spazio: number; tu?: Tu }> = ({ g, cartella, spazio, tu }) => {
   switch (g.tipo) {
+    case 'riquadro': return tu ? <Riquadro tu={tu} y={0} t0={g.t0} /> : null;
+    case 'parola': return tu ? <ParolaFinestra tu={tu} parola={g.parola} y={0} t0={g.t0} /> : null;
     case 'barre': return <Barre y={0} gruppi={g.gruppi} />;
     case 'curva': return <Curva y={0} lineare={g.lineare} esplode={g.esplode} />;
     case 'onda': return <Onda y={0} t0={g.t0} />;
@@ -52,9 +59,9 @@ const Grafico: React.FC<{ g: Grafica; cartella: string; spazio: number }> = ({ g
 };
 
 // impaginazione per modo: la grafica piena usa tutto lo schermo, il diviso la metà alta
-const layout = (s: Scena) => (s.modo === 'tiffany' ? { ph: 3840, testoY: 300, scalaTesto: 1, maxTesto: 1500 } : { ph: PH, testoY: TESTO_Y, scalaTesto: SCALA_TESTO, maxTesto: MAX_TESTO });
+const layout = (s: Scena) => (s.modo === 'tiffany' || s.modo === 'collage' ? { ph: 3840, testoY: 300, scalaTesto: 1, maxTesto: 1500 } : { ph: PH, testoY: TESTO_Y, scalaTesto: SCALA_TESTO, maxTesto: MAX_TESTO });
 
-const Contenuto: React.FC<{ s: Scena; cartella: string }> = ({ s, cartella }) => {
+const Contenuto: React.FC<{ s: Scena; cartella: string; tu?: Tu }> = ({ s, cartella, tu }) => {
   const { ph, testoY, scalaTesto, maxTesto } = layout(s);
   if (s.modo === 'diviso' && s.grafica?.tipo === 'foto') {
     // immagine grande nella metà alta, senza testo (le parole le dice lui, sotto)
@@ -70,17 +77,28 @@ const Contenuto: React.FC<{ s: Scena; cartella: string }> = ({ s, cartella }) =>
   const spazio = ph - (s.modo === 'tiffany' ? 300 : 90) - y0;
   const g = s.grafica;
   const nat = g ? NATURALE[g.tipo] : 0;
-  const k = nat ? Math.min(s.modo === 'tiffany' ? 1.25 : 1, spazio / nat) : 1;
+  // ingrandire oltre 1 solo le grafiche strette al centro: le altre sono già larghe quanto lo schermo e uscirebbero dai
+  // bordi (Test 3: "TORTURANDO" tagliata)
+  const k = nat ? Math.min(s.modo === 'tiffany' && (g?.tipo === 'icona' || g?.tipo === 'numero') ? 1.25 : 1, spazio / nat) : 1;
   return (
     <>
       {s.parole.length > 0 && <Righe y={yT} parole={s.parole} scala={scala} />}
       {g && (g.tipo === 'foto'
-        ? <div style={{ position: 'absolute', left: 0, top: y0, width: 2160 }}><Grafico g={g} cartella={cartella} spazio={spazio} /></div>
+        ? <div style={{ position: 'absolute', left: 0, top: y0, width: 2160 }}><Grafico g={g} cartella={cartella} spazio={spazio} tu={tu} /></div>
         : <div style={{ position: 'absolute', left: (2160 - 2160 * k) / 2, top: y0 + (spazio - nat * k) / 2, width: 2160, height: nat, transform: `scale(${k})`, transformOrigin: '0 0' }}>
-          <Grafico g={g} cartella={cartella} spazio={spazio} />
+          <Grafico g={g} cartella={cartella} spazio={spazio} tu={tu} />
         </div>)}
     </>
   );
+};
+
+// fine di una raffica: la scena si inclina all'indietro, ruota e vola via sfocata (come le schede del reel)
+const uscita3d = (s: Scena, t: number): React.CSSProperties => {
+  if (!s.uscita3d) return {};
+  const k = Math.max(0, Math.min(1, (t - (s.a - 0.42)) / 0.42));
+  if (k <= 0) return {};
+  const e = k * k;
+  return { transform: `translateY(${-e * 900}px) rotateX(${e * 48}deg) rotateZ(${-e * 9}deg) scale(${1 - e * 0.35})`, transformOrigin: '50% 30%', filter: `blur(${e * 14}px)`, opacity: 1 - e * 0.6 };
 };
 
 // grandezza del viso (frazione dell'altezza del video) al secondo t: il punto più vicino di viso.py
@@ -139,8 +157,9 @@ export const Presentazione: React.FC<PropsPresentazione> = (p) => {
         {hP >= 1 && <div style={{ position: 'absolute', left: 0, top: 0, width: 2160, height: hP, overflow: 'hidden' }}>
           <Griglia />
           {/* il contenuto scorre col bordo del pannello mentre si apre */}
-          <div style={{ position: 'absolute', left: 0, top: Math.min(0, hP - ph), width: 2160, height: ph }}>
-            {s && s.modo !== 'lui' && <Contenuto key={s.da} s={s} cartella={p.cartella} />}
+          <div style={{ position: 'absolute', left: 0, top: Math.min(0, hP - ph), width: 2160, height: ph, perspective: 2400 }}>
+            {s?.modo === 'collage' && s.collage && <Collage foto={s.collage} cartella={p.cartella} />}
+            {s && s.modo !== 'lui' && s.modo !== 'collage' && <div style={{ position: 'absolute', inset: 0, ...uscita3d(s, t) }}><Contenuto key={s.da} s={s} cartella={p.cartella} tu={p.tu} /></div>}
             {p.scene.filter((x) => x.barriera).map((x) => <Barriera key={x.da} t0={x.da - 0.27} />)}
           </div>
         </div>}

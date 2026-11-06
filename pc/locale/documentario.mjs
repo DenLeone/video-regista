@@ -133,7 +133,9 @@ try {
 } catch {}
 if (!davinciAperto() && fs.existsSync(RESOLVE_EXE)) {
   console.log('[documentario] apro DaVinci Resolve');
-  spawn(RESOLVE_EXE, [], { detached: true, stdio: 'ignore' }).unref();
+  // tramite Explorer, come un doppio clic: aperto direttamente da Node (ambiente ereditato) DaVinci partiva ma lo
+  // scripting restava spento (Test 3: scriptapp None anche dopo 10 minuti; dal menu Start risponde in 30 s)
+  spawn('explorer.exe', [RESOLVE_EXE], { detached: true, stdio: 'ignore' }).unref();
 }
 run(PY, [path.join(ROOT, 'pc', 'locale', 'livelli.py'), VIDEO, GRAFICA, '--tagli', path.join(PUL, 'tagli.json'), '--lastra', LASTRA, '--audio', AUDIO, ...(VOCE_SYNC ? ['--voce', VOCE_SYNC] : []), '--nome', titolo]);
 // 9. sottotitoli: lo script di Denis (davinci-automation/auto_captions.py, non modificato) sulla timeline appena creata,

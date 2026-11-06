@@ -116,6 +116,8 @@ Ti do le SCENE di un tratto del video, numerate, con le parole dette (numero:par
   {"tipo": "prompt", "testo": "…"}  intelligenza artificiale, chatbot, ricerche, comandi scritti (testo: max 14 caratteri, detto nella scena)
   {"tipo": "acronimo", "parole": ["…", "…"]}  SOLO se la scena scioglie una sigla parola per parola
   {"tipo": "numero", "valore": <numero>, "suffisso": "…"}  SOLO se la scena dice un numero importante (suffisso: "%", " €", "x", " ANNI"…)
+  {"tipo": "riquadro"}  Denis appare in un riquadro sotto il testo: opinioni, frasi in prima persona, domande al pubblico, battute
+  {"tipo": "parola", "parola": <numero di una parola della scena con la lettera O, 4–9 lettere>}  quella parola diventa enorme e nella O si vede Denis: per la parola-simbolo della scena
   {"tipo": "icona", "icona": <una di: ${ICONE}>, "etichetta": "1–2 PAROLE"}  SOLO per un oggetto o una cosa concreta nominata nella scena (un telefono, un chip, un libro, un'azienda), mai per verbi o concetti astratti
   null  solo testo: va benissimo, il testo enorme è già la grafica. Almeno una scena su tre senza immagine resta null.
 Varia: non ripetere la stessa grafica in due scene di fila. Usa SOLO cose dette.
@@ -173,6 +175,26 @@ const piene = new Set();
   }
 }
 
+// ---------- 4b. collage: immagini ravvicinate (una nuova entro 4,5 s dalla precedente) si accumulano sparse su fondo
+// crema a tutto schermo, anche nelle scene in mezzo; al massimo 6 per collage
+const collageDi = new Map(); // indice scena → elenco foto del collage
+{
+  const conFoto = scene.map((s, n) => (s.foto ? n : -1)).filter((n) => n >= 0);
+  let gruppo = [];
+  const chiudi = () => {
+    if (gruppo.length >= 2) {
+      const foto = gruppo.map((n) => ({ file: scene[n].foto.file, t0: +Math.max(scene[n].da, scene[n].foto.t - 0.1).toFixed(2) }));
+      for (let n = gruppo[0]; n <= gruppo.at(-1); n++) collageDi.set(n, foto);
+    }
+    gruppo = [];
+  };
+  for (const n of conFoto) {
+    if (gruppo.length && (scene[n].foto.t - scene[gruppo.at(-1)].foto.t > 4.5 || gruppo.length >= 6)) chiudi();
+    gruppo.push(n);
+  }
+  chiudi();
+}
+
 // ---------- 4. scene finali: righe del testo e grafica, controllate
 const icone = new Set(Object.keys(await import('@tabler/icons-react')));
 const MAIUSC = (s, n) => String(s || '').toUpperCase().replace(/\s+/g, ' ').trim().slice(0, n);
@@ -189,12 +211,13 @@ for (const [n, s] of scene.entries()) {
   const accento = !!r.accento && s.da - ultimoAccento > 8;
   if (accento) ultimoAccento = s.da;
   // tre modi: diviso (immagine sopra, lui sotto), tiffany (grafica a tutto schermo), lui (a tutto schermo)
-  const modo = s.foto ? 'diviso' : piene.has(n) ? 'tiffany' : 'lui';
+  const modo = collageDi.has(n) ? 'collage' : s.foto ? 'diviso' : piene.has(n) ? 'tiffany' : 'lui';
   const scena = { da: s.da, a: +s.a.toFixed(3), modo, parole: [] };
   // grafica
   let g = null;
   const t0g = +(s.da + 0.25).toFixed(2);
   if (modo === 'lui') { s.finale = scena; tipoPrima = 'lui'; continue; }
+  if (modo === 'collage') { scena.collage = collageDi.get(n); s.finale = scena; tipoPrima = 'collage'; continue; }
   if (s.foto) g = { tipo: 'foto', file: s.foto.file, t0: +Math.max(s.da, s.foto.t - 0.1).toFixed(2), ...(r.etichetta ? { etichetta: MAIUSC(r.etichetta, 22) } : {}) };
   else if (r.grafica && typeof r.grafica === 'object') {
     const x = r.grafica;
@@ -227,6 +250,15 @@ for (const [n, s] of scene.entries()) {
           const w = s.parole.find((q) => /\d/.test(q.w)) || parolaChiave;
           g = { tipo: 'numero', valore: v, suffisso: String(x.suffisso || '').toUpperCase().slice(0, 6), t0: +Math.max(s.da + 0.2, w.s - 0.1).toFixed(2) };
         } else fuori.push(`numero ${x.valore} non detto nella scena ${n}`);
+        break;
+      }
+      case 'riquadro': g = { tipo: 'riquadro', t0: +(s.da + 0.15).toFixed(2) }; break;
+      case 'parola': {
+        const w = nella(x.parola);
+        if (w && /o/i.test(w.w) && w.w.replace(/[^\p{L}]/gu, '').length >= 3) {
+          g = { tipo: 'parola', parola: w.w.replace(/[^\p{L}\d'-]/gu, '').toUpperCase(), t0: +Math.max(s.da + 0.1, w.s - 0.15).toFixed(2) };
+          s.parole = s.parole.filter((q) => q !== w); // la parola sta nella grafica
+        }
         break;
       }
       case 'icona':
@@ -267,12 +299,36 @@ for (const [n, s] of scene.entries()) {
   s.finale = scena;
 }
 for (const f of fuori) log('scartato:', f);
+{
+  const fin = scene.map((s) => s.finale);
+  let n = 0;
+  while (n < fin.length) {
+    if (fin[n].modo !== 'tiffany') { n++; continue; }
+    let m = n;
+    while (m + 1 < fin.length && fin[m + 1].modo === 'tiffany') m++;
+    const raffica = fin.slice(n, m + 1);
+    // ogni raffica ha almeno una mossa con lui dentro la grafica: parola-finestra se c'è una parola con la O, se no riquadro
+    if (!raffica.some((x) => ['riquadro', 'parola'].includes(x.grafica?.tipo))) {
+      const k = raffica.findIndex((x) => !x.grafica || x.grafica.tipo === 'icona') >= 0 ? raffica.findIndex((x) => !x.grafica || x.grafica.tipo === 'icona') : 0;
+      const x = raffica[k], sc = scene[n + k];
+      const conO = sc.parole.filter((w) => /o/i.test(w.w) && w.w.replace(/[^\p{L}]/gu, '').length >= 4 && w.w.replace(/[^\p{L}]/gu, '').length <= 9);
+      const w = conO.sort((a, b) => b.w.length - a.w.length)[0];
+      if (w && k % 2 === 0) {
+        x.grafica = { tipo: 'parola', parola: w.w.replace(/[^\p{L}\d'-]/gu, '').toUpperCase(), t0: +Math.max(x.da + 0.1, w.s - 0.15).toFixed(2) };
+        x.parole = x.parole.filter((p) => !(p.t === +w.s.toFixed(2) && p.w === w.w.toUpperCase()));
+      } else x.grafica = { tipo: 'riquadro', t0: +(x.da + 0.15).toFixed(2) };
+    }
+    raffica.at(-1).uscita3d = true;
+    delete raffica.at(-1).barriera;
+    n = m + 1;
+  }
+}
 
 // ---------- 5. presentatore: lui a tutto schermo, a metà sotto le immagini, nascosto nella grafica piena.
 // L'ultima scena è sempre lui: il video finisce come comincia (si rivede in loop senza stacco).
 const fin = scene.at(-1)?.finale;
 if (fin && fin.modo !== 'lui') { fin.modo = 'lui'; delete fin.grafica; fin.parole = []; delete fin.barriera; }
-const PRES = { lui: 'intero', diviso: 'meta', tiffany: 'nascosto' };
+const PRES = { lui: 'intero', diviso: 'meta', tiffany: 'nascosto', collage: 'nascosto' };
 const modi = [{ t: 0, presentatore: 'intero', elementi: [] }];
 for (const s of scene) if (PRES[s.finale.modo] !== modi.at(-1).presentatore) modi.push({ t: +s.finale.da.toFixed(2), presentatore: PRES[s.finale.modo], elementi: [] });
 const quota = (m) => scene.filter((s) => s.finale.modo === m).reduce((x, s) => x + s.finale.a - s.finale.da, 0) / DURATA * 100;
@@ -296,7 +352,16 @@ const beatsDoc = { titolo: nome, durata: DURATA, fps: FPS, cartella: CART, voce:
 fs.writeFileSync(path.join(DIR, 'beats.json'), JSON.stringify(beatsDoc, null, 1));
 
 const finali = scene.map((s) => s.finale);
-const props = { durata: DURATA, fps: FPS, cartella: CART, scene: finali, parole: parole.map((w) => ({ w: w.w, s: +w.s.toFixed(3), e: +w.e.toFixed(3) })), lastra: { durata: DURATA, presentatore, beats: modi } };
+// il video di Denis per riquadro e parola-finestra: proxy 1080p H.264 in public (NVENC, se no x264)
+const TU = path.join(PUB, 'tu.mp4');
+if (!fs.existsSync(TU)) {
+  const base = ['-v', 'error', '-y', '-i', tagli.sorgente, '-vf', 'scale=-2:1080', '-an', '-movflags', '+faststart', '-g', '30'];
+  const nv = spawnSync('ffmpeg', [...base.slice(0, 2), '-hwaccel', 'cuda', ...base.slice(2), '-c:v', 'h264_nvenc', '-preset', 'p5', '-cq', '21', TU]);
+  if (nv.status !== 0) spawnSync('ffmpeg', [...base, '-c:v', 'libx264', '-crf', '20', '-preset', 'veryfast', TU]);
+  log(`proxy del video per la grafica: ${TU}`);
+}
+const tu = presentatore ? { video: `${CART}/tu.mp4`, tieni: tagli.tieni.map((x) => ({ da: x.da, a: x.a })), ar: presentatore.ar, viso: presentatore.viso.map(({ t, x, y }) => ({ t, x, y })) } : undefined;
+const props = { durata: DURATA, fps: FPS, cartella: CART, scene: finali, tu, parole: parole.map((w) => ({ w: w.w, s: +w.s.toFixed(3), e: +w.e.toFixed(3) })), lastra: { durata: DURATA, presentatore, beats: modi } };
 fs.writeFileSync(path.join(DIR, 'presentazione.json'), JSON.stringify(props));
 
 // ---------- 6. suoni (stessi tempi del video): uscite, entrate delle grafiche, cambi del presentatore

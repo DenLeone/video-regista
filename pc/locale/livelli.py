@@ -28,7 +28,7 @@ import DaVinciResolveScript as dvr
 # DaVinci può essere appena stato aperto (pc/locale/documentario.mjs): si aspetta fino a 3 minuti che risponda
 import time
 resolve = None
-for prova in range(60):
+for prova in range(120):  # DaVinci appena aperto può metterci più di 3 minuti a rispondere (Test 3)
     resolve = dvr.scriptapp('Resolve')
     if resolve and resolve.GetProjectManager():
         break
