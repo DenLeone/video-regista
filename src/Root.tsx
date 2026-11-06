@@ -11,6 +11,7 @@ import { ListaUI, Pezzo } from './ListaUI';
 import { SuMisura } from './SuMisura';
 import { ProvaFont } from './presentazione/ProvaFont';
 import { ProvaScene } from './presentazione/ProvaScene';
+import { Presentazione, PropsPresentazione } from './presentazione/Presentazione';
 import { Racconto } from './racconto/Racconto';
 import { Racconto as PropsRacconto } from './racconto/tipi';
 import { durataTotale, FPS, fpsDi, H, Piano, W } from './piano';
@@ -37,6 +38,10 @@ export const Root: React.FC = () => (
   <>
     <Still id="PresentazioneFont" component={ProvaFont} width={2160} height={3840} />
     <Composition id="PresentazioneProva" component={ProvaScene} fps={30} width={2160} height={3840} durationInFrames={480} />
+    {/* stile Presentazione del flusso locale: livello trasparente sopra il video vero (pc/locale/presentazione.mjs) */}
+    <Composition id="Presentazione" component={Presentazione} fps={30} width={2160} height={3840} durationInFrames={300}
+      defaultProps={{ durata: 10, cartella: "presentazione/esempio", scene: [] } as PropsPresentazione}
+      calculateMetadata={({ props }) => ({ fps: props.fps ?? 30, durationInFrames: Math.max(1, Math.round(props.durata * (props.fps ?? 30))) })} />
     <Composition id="Blueprint" component={Blueprint} fps={FPS} width={W} height={H}
       durationInFrames={90} defaultProps={esempio} calculateMetadata={metadati} />
     <Composition id="Cinematico" component={Cinematico} fps={FPS} width={W} height={H}

@@ -2,7 +2,7 @@
 // parlato, infografiche che cambiano col tema (barre, curva, prompt, acronimo, oggetto su percorso) e uscita a barre.
 // Tutti i tempi sono in secondi sul video; i componenti stanno dentro una composizione 2160×3840.
 import React from 'react';
-import { AbsoluteFill, interpolate, spring, useCurrentFrame, useVideoConfig, Easing } from 'remotion';
+import { AbsoluteFill, Img, OffthreadVideo, interpolate, spring, staticFile, useCurrentFrame, useVideoConfig, Easing } from 'remotion';
 import { fitText, measureText } from '@remotion/layout-utils';
 import * as Icone from '@tabler/icons-react';
 import { COLORI, FONT } from './tema';
@@ -30,7 +30,16 @@ export const Griglia: React.FC = () => (
 export type Parola = { w: string; t: number; riga: number; taglia?: 'piccolo' | 'grande' | 'enorme'; accento?: boolean };
 const BASE = { piccolo: 170, grande: 330, enorme: 440 };
 
-export const Righe: React.FC<{ parole: Parola[]; y: number }> = ({ parole, y }) => {
+// altezza che occupano le righe (per impaginare la grafica sotto)
+export const altezzaRighe = (parole: Parola[], scala = 1) => {
+  const righe = [...new Set(parole.map((p) => p.riga))].map((r) => parole.filter((p) => p.riga === r));
+  return righe.reduce((h, riga) => {
+    const testo = riga.map((p) => p.w).join(' ');
+    return h + Math.min(BASE[riga[0].taglia ?? 'grande'] * scala, fitText({ text: testo, withinWidth: LARGO, fontFamily: FONT.bricolage, fontWeight: '800' }).fontSize * 0.98) * 0.98;
+  }, 0);
+};
+
+export const Righe: React.FC<{ parole: Parola[]; y: number; scala?: number }> = ({ parole, y, scala = 1 }) => {
   const { t } = useT();
   const righe = [...new Set(parole.map((p) => p.riga))].sort((a, b) => a - b).map((r) => parole.filter((p) => p.riga === r));
   let cursore = y;
@@ -39,7 +48,7 @@ export const Righe: React.FC<{ parole: Parola[]; y: number }> = ({ parole, y }) 
       {righe.map((riga, k) => {
         const testo = riga.map((p) => p.w).join(' ');
         const taglia = riga[0].taglia ?? 'grande';
-        const fs = Math.min(BASE[taglia], fitText({ text: testo, withinWidth: LARGO, fontFamily: FONT.bricolage, fontWeight: '800' }).fontSize * 0.98);
+        const fs = Math.min(BASE[taglia] * scala, fitText({ text: testo, withinWidth: LARGO, fontFamily: FONT.bricolage, fontWeight: '800' }).fontSize * 0.98);
         const top = cursore;
         cursore += fs * 0.98;
         const larghezza = measureText({ text: testo, fontFamily: FONT.bricolage, fontSize: fs, fontWeight: '800' }).width;
@@ -214,5 +223,81 @@ export const Barriera: React.FC<{ t0: number }> = ({ t0 }) => {
       })}
       <div style={{ position: 'absolute', left: 1500, top: 0, width: 8, height: 3840, background: COLORI.fondo, opacity: interpolate(t, [t0 + 0.2, t0 + 0.32, t0 + 0.45], [0, 1, 0], { extrapolateLeft: 'clamp', extrapolateRight: 'clamp' }) }} />
     </AbsoluteFill>
+  );
+};
+
+// ---------------------------------------------------------------- onda sonora (suono, voce, musica, audio)
+export const Onda: React.FC<{ t0: number; y: number }> = ({ t0, y }) => {
+  const { t } = useT();
+  const n = 56;
+  return (
+    <svg width={1920} height={700} style={{ position: 'absolute', left: 120, top: y }}>
+      {Array.from({ length: n }, (_, i) => {
+        const e = entra(t, t0 + i * 0.012, 0.3);
+        // le barre "suonano": l'altezza vive col tempo
+        const vivo = 0.75 + 0.25 * Math.sin(t * 9 + i * 0.8);
+        const h = (60 + Math.abs(Math.sin(i * 1.7) * 220 + Math.sin(i * 0.43) * 150)) * e * vivo;
+        return <rect key={i} x={i * 34} y={350 - h / 2} width={18} height={Math.max(4, h)} rx={9} fill={COLORI.testo} />;
+      })}
+      {/* testina che scorre */}
+      <rect x={interpolate(t, [t0, t0 + 3], [0, 1880], { extrapolateLeft: 'clamp', extrapolateRight: 'clamp' })} y={20} width={8} height={660} fill={COLORI.accento} opacity={entra(t, t0, 0.3)} />
+    </svg>
+  );
+};
+
+// ---------------------------------------------------------------- icona grande (concetto generico), con anello che pulsa
+export const IconaGrande: React.FC<{ icona: string; t0: number; y: number; etichetta?: string }> = ({ icona, t0, y, etichetta }) => {
+  const { t, fps } = useT();
+  const Icona = ((Icone as unknown) as Record<string, React.FC<{ size: number; color: string; stroke: number }>>)[icona] ?? Icone.IconBulb;
+  const s = spring({ frame: Math.round((t - t0) * fps), fps, config: { damping: 12, stiffness: 140 } });
+  const anello = ((t - t0) % 1.6) / 1.6;
+  return (
+    <div style={{ position: 'absolute', left: 0, top: y, width: 2160, height: 900 }}>
+      <div style={{ position: 'absolute', left: 1080 - 330, top: 70, width: 660, height: 660, borderRadius: 330, background: COLORI.scheda, transform: `scale(${s})`, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+        <Icona size={400} color={COLORI.schedaTesto} stroke={1.6} />
+      </div>
+      {t > t0 && <div style={{ position: 'absolute', left: 1080 - 330, top: 70, width: 660, height: 660, borderRadius: 330, border: `10px solid ${COLORI.accento}`, transform: `scale(${1 + anello * 0.45})`, opacity: (1 - anello) * s }} />}
+      {etichetta && <div style={{ position: 'absolute', left: 0, right: 0, top: 790, textAlign: 'center', fontFamily: FONT.mono, fontWeight: 700, fontSize: 72, color: COLORI.testo, opacity: entra(t, t0 + 0.25, 0.3), letterSpacing: 4 }}>{etichetta}</div>}
+    </div>
+  );
+};
+
+// ---------------------------------------------------------------- numero che conta
+export const Numero: React.FC<{ valore: number; suffisso?: string; t0: number; y: number }> = ({ valore, suffisso = '', t0, y }) => {
+  const { t } = useT();
+  const k = interpolate(t, [t0, t0 + 1.1], [0, 1], { extrapolateLeft: 'clamp', extrapolateRight: 'clamp', easing: Easing.out(Easing.cubic) });
+  const decimali = Number.isInteger(valore) ? 0 : 1;
+  const testo = (valore * k).toLocaleString('it-IT', { minimumFractionDigits: decimali, maximumFractionDigits: decimali }) + suffisso;
+  const fs = Math.min(560, fitText({ text: valore.toLocaleString('it-IT') + suffisso, withinWidth: LARGO, fontFamily: FONT.bricolage, fontWeight: '800' }).fontSize);
+  return (
+    <div style={{ position: 'absolute', left: SX, top: y, width: LARGO, opacity: entra(t, t0 - 0.1, 0.25) }}>
+      <div style={{ fontFamily: FONT.bricolage, fontWeight: 800, fontSize: fs, lineHeight: 1, color: COLORI.testo, letterSpacing: -fs * 0.03, whiteSpace: 'nowrap', fontVariantNumeric: 'tabular-nums' }}>{testo}</div>
+      <div style={{ marginTop: 30, height: 16, width: `${k * 100}%`, background: COLORI.accento, borderRadius: 8 }} />
+    </div>
+  );
+};
+
+// ---------------------------------------------------------------- foto o clip in una scheda scura con etichetta monospace
+export const Foto: React.FC<{ file: string; t0: number; y: number; h: number; etichetta?: string }> = ({ file, t0, y, h, etichetta }) => {
+  const { t } = useT();
+  const e = entra(t, t0, 0.4);
+  const video = /\.mp4$/i.test(file);
+  const barra = etichetta ? 110 : 0;
+  // leggero zoom lento dentro la scheda
+  const z = 1.04 + 0.04 * Math.min(1, Math.max(0, (t - t0) / 4));
+  return (
+    <div style={{
+      position: 'absolute', left: SX, top: y, width: LARGO, height: h, borderRadius: 48, background: COLORI.scheda, overflow: 'hidden',
+      opacity: e, transform: `translateY(${(1 - e) * 140}px) rotate(${(1 - e) * -2}deg)`, boxShadow: '0 30px 0 rgba(11,31,36,0.18)',
+    }}>
+      <div style={{ position: 'absolute', left: 24, top: 24, right: 24, bottom: 24 + barra, borderRadius: 30, overflow: 'hidden' }}>
+        {video
+          ? <OffthreadVideo src={staticFile(file)} muted style={{ width: '100%', height: '100%', objectFit: 'cover', transform: `scale(${z})` }} />
+          : <Img src={staticFile(file)} style={{ width: '100%', height: '100%', objectFit: 'cover', transform: `scale(${z})` }} />}
+      </div>
+      {etichetta && <div style={{ position: 'absolute', left: 50, bottom: 34, fontFamily: FONT.mono, fontWeight: 700, fontSize: 58, color: COLORI.schedaTesto, letterSpacing: 3, whiteSpace: 'nowrap' }}>
+        <span style={{ display: 'inline-block', width: 26, height: 26, borderRadius: 13, background: COLORI.accento, marginRight: 22, verticalAlign: 'middle' }} />{etichetta}
+      </div>}
+    </div>
   );
 };

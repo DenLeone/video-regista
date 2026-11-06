@@ -2,6 +2,9 @@
 // in DaVinci con il video tagliato che si muove e la grafica Rotolo/Tech sopra. Niente token: AI locali (Ollama).
 //   node pc/locale/documentario.mjs <video> <cartella immagini> [--mondo tech|rotolo] [--titolo X] [--4k]
 //                                   [--rinomina] [--uscita cartella] [--senza-davinci] [--con-davinci] [--sottotitoli WATER|no]
+//                                   [--stile tech|presentazione]
+// --stile presentazione: al posto della regia Rotolo/Tech, pc/locale/presentazione.mjs (pannello Tiffany in alto con il
+// testo che si accumula e un'infografica per scena, composizione Presentazione); il resto del flusso è lo stesso.
 // DaVinci va tenuto CHIUSO: lo apre lo script all'ultimo passo (aperto, rallenta l'AI fino a 50 volte).
 // Passi (ognuno salta se ha già il risultato, le risposte delle AI si riusano):
 //   1. voce: se nella cartella del video c'è un file audio (o --voce), si sincronizza e sostituisce l'audio della camera
@@ -79,18 +82,25 @@ node('pulizia.mjs', [VIDEO, '--uscita', PUL, '--senza-anteprima', ...(VOCE_SYNC 
 passo(3, 'immagini sulle parole');
 node('immagini.mjs', [PUL, IMM]);
 
-passo(4, 'regia');
-node('regia.mjs', [PUL, '--mondo', opz('--mondo', 'tech'), '--titolo', titolo]);
-const beats = JSON.parse(fs.readFileSync(path.join(PUL, 'beats.json'), 'utf8'));
+const PRESENTAZIONE = opz('--stile', 'tech') === 'presentazione';
+const PROPS = path.join(LAV, 'props-grafica.json');
+if (PRESENTAZIONE) {
+  passo(4, 'scene Presentazione');
+  node('presentazione.mjs', [PUL, '--titolo', titolo, '--fps', String(FPS)]);
+  fs.copyFileSync(path.join(PUL, 'presentazione.json'), PROPS);
+} else {
+  passo(4, 'regia');
+  node('regia.mjs', [PUL, '--mondo', opz('--mondo', 'tech'), '--titolo', titolo]);
+  const beats = JSON.parse(fs.readFileSync(path.join(PUL, 'beats.json'), 'utf8'));
+  fs.writeFileSync(PROPS, JSON.stringify({ ...beats, soloGrafica: true, fps: FPS }));
+}
 
 passo(5, 'grafica trasparente (Remotion)');
-const PROPS = path.join(LAV, 'props-grafica.json');
-fs.writeFileSync(PROPS, JSON.stringify({ ...beats, soloGrafica: true, fps: FPS }));
 fs.mkdirSync(path.join(ROOT, 'out', 'locale'), { recursive: true });
 // nome nuovo a ogni render: un .mov già importato in DaVinci è bloccato e non si sovrascrive
 const GRAFICA = path.join(ROOT, 'out', 'locale', `${slug}-grafica-${new Date().toISOString().slice(0, 16).replace(/[-:T]/g, '')}.mov`);
 const cpu = Math.max(2, Math.min(8, (await import('node:os')).cpus().length - 1));
-run('npx', ['remotion', 'render', 'src/index.ts', 'Rotolo', GRAFICA, `--props=${PROPS}`, '--codec=prores', '--prores-profile=4444',
+run('npx', ['remotion', 'render', 'src/index.ts', PRESENTAZIONE ? 'Presentazione' : 'Rotolo', GRAFICA, `--props=${PROPS}`, '--codec=prores', '--prores-profile=4444',
   '--pixel-format=yuva444p10le', '--image-format=png', `--concurrency=${cpu}`, ...(ha('--4k') ? [] : ['--scale=0.5'])]);
 
 passo(6, 'movimento del presentatore');
@@ -100,7 +110,8 @@ run('node', ['--experimental-strip-types', '--no-warnings', path.join(ROOT, 'pc'
 
 passo(7, 'suoni: SFX, musica e ambiente (tracce separate)');
 const EVENTI = path.join(PUL, 'eventi.json');
-run('node', ['--experimental-strip-types', '--no-warnings', path.join(ROOT, 'pc', 'rotolo', 'eventi.mjs'), path.join(PUL, 'beats.json'), EVENTI]);
+// Presentazione: eventi.json l'ha già scritto presentazione.mjs
+if (!PRESENTAZIONE) run('node', ['--experimental-strip-types', '--no-warnings', path.join(ROOT, 'pc', 'rotolo', 'eventi.mjs'), path.join(PUL, 'beats.json'), EVENTI]);
 // la voce tagliata serve solo per abbassare la musica quando parli
 const tieni = JSON.parse(fs.readFileSync(path.join(PUL, 'tagli.json'), 'utf8')).tieni;
 const VOCE = path.join(PUL, 'voce-tagliata.wav');

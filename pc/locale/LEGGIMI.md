@@ -17,6 +17,15 @@ Test tech (42 s): 4,6 minuti in tutto. Le AI ragionano a livello "low" (`LOCALE_
 con il livello medio la stessa cosa richiedeva oltre 20 minuti, con gli stessi tagli e le stesse immagini.
 Il mix in DaVinci non è normalizzato (Test tech: -17 LUFS): per -14 usa Normalize Audio Levels in Fairlight o in Deliver.
 
+**Stile Presentazione** (`--stile presentazione`, dal Desktop: **Presentazione locale**): al posto della regia Tech,
+`pc/locale/presentazione.mjs` divide il parlato in scene (frasi di max 7 parole / 3,5 s, una nuova a ogni immagine) e
+l'AI sceglie per ogni scena la parola chiave (riga enorme, corallo se forte) e un'infografica in base al tema: barre,
+curva che esplode, onda sonora, oggetto su percorso (aereo che decolla, auto…), prompt che si scrive, acronimo,
+numero, icona Tabler, o solo testo; le immagini di `immagini.json` diventano schede foto. Pannello Tiffany in alto
+(composizione `Presentazione`, `src/presentazione/`), tu a metà schermo sotto; a tutto schermo all'inizio e sulle
+parole più forti (max 5%). Escono `presentazione.json`, `beats.json` (per lastra.mjs) ed `eventi.json` (suoni).
+Test 2 (3 min): AI ~3 minuti per 6 tratti.
+
 | Passo | Comando | Cosa fa | AI |
 |---|---|---|---|
 | 1. Rinomina | `node pc/locale/rinomina.mjs <cartella> [--applica] [--annulla]` | dà alle immagini il nome `tipo-nome.ext` guardandole | gemma4:12b (vede) |
