@@ -26,6 +26,20 @@ numero, icona Tabler, o solo testo; le immagini di `immagini.json` diventano sch
 parole più forti (max 5%). Escono `presentazione.json`, `beats.json` (per lastra.mjs) ed `eventi.json` (suoni).
 Test 2 (3 min): AI ~3 minuti per 6 tratti.
 
+**Stile Documentario** (`--stile documentario`, dal Desktop: **Documentario piano sequenza**): un solo piano sequenza
+verticale su un mondo d'archivio (scrivania scura, stampe, documenti, cartellini), niente tagli; Denis in camera sta
+DENTRO una stampa sulla scrivania e la camera ci entra finché è a tutto schermo (prompt di riferimento e video in
+`12 · Risorse\Stili\Documentario`). Dopo pulizia e immagini, `pc/locale/doc-flusso.mjs`:
+4. `doc-regia.mjs`: qwen3.8 (senza ragionamento, ~2 min) divide in scene "tu" / mondo con protagonista ed eventi
+   (formato e modello: `pc/locale/esempi/documentario-test-2-scene.json`); il codice controlla parole e immagini,
+   unisce le scene corte, porta Denis in camera verso il 45% (max 12 s di fila) → `scene.json`
+5. proxy verticale del video tagliato, ritagliato sul viso (`public/documentario/<nome>/tu.mp4`), voce a -15 LUFS
+6. `doc-mondo.mjs`: oggetti nelle celle del mondo (a serpentina), chiavi di camera, eventi dei suoni
+7. render della composizione `Documentario` (`src/documentario/`, 1080×1920 con il video dentro, ~3 min per 3 min)
+8. suoni (`pc/rotolo/suoni.py`): carta, pennarello, timbri, macchina da scrivere, whoosh, musica `documentario`
+9. DaVinci (`doc-timeline.py`): V1 video, A1 voce, A2 sfx, A3 musica, A4 ambiente
+Test 2 (3 min): 5–7 minuti dal passo 4. Il video di Denis è dentro il render (non si grada in DaVinci).
+
 **Stile Unboxing** (`node pc/locale/unboxing.mjs <cartella>`, dal Desktop: **Unboxing locale**, ci trascini la cartella):
 niente presentatore, solo le riprese del prodotto (una ripresa lunga, tante clip o tutte e due, in ordine di ripresa).
 Nella cartella anche le immagini delle caratteristiche (il nome del file è il testo della scheda: `50 db.jpg` → "50 dB";

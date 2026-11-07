@@ -166,5 +166,31 @@ for (const o of oggetti) delete o._t;
 const mondo = { w: CELLA.w * COLONNE, h: CELLA.h * Math.ceil(scene.length / COLONNE), tema: doc.tema || 'archivio' };
 const props = { durata: DURATA, fps: FPS, voce: `${CART}/voce.wav`, vista: VISTA, mondo, camera: pulita, oggetti, eventi };
 fs.writeFileSync(uscita, JSON.stringify(props, null, 1));
+// suoni (pc/rotolo/suoni.py): carta che cade, pennarello, timbro, macchina da scrivere, whoosh nei viaggi e nei tuffi
+// dentro la stampa di Denis, tick del contatore; letto: archivio + musica documentario
+if (opz('--eventi')) {
+  const S = { foto: '01 Carta/caduta foto', carta: '01 Carta/caduta leggera', pennarello: '04 Scrittura/pennarello', timbro: '03 Timbri e colpi/timbro',
+    tasto: '04 Scrittura/macchina da scrivere tasto', lento: '05 Movimento/whoosh lento', veloce: '05 Movimento/whoosh veloce', swish: '05 Movimento/swish corto',
+    tick: '07 Digitale/tick contatore', riser: '05 Movimento/riser', hit: '08 Cinematico/hit', fruscio: '01 Carta/fruscio' };
+  const ev = [];
+  for (const o of oggetti) {
+    if (o.entra > 0.1) ev.push({ t: o.entra + 0.25, suono: o.tipo === 'foto' || o.tipo === 'tu' ? S.foto : S.carta, db: -13 });
+    if (o.tipo === 'frase' && o.modo === 'sequenza') o.parole.forEach((p) => ev.push({ t: p.t, suono: S.tasto, db: -19 }));
+    if (o.tipo === 'frase' && o.modo === 'fili') (o.fili || []).forEach(([, , t]) => ev.push({ t, suono: S.fruscio, db: -14, durata: 0.6 }));
+    if (o.tipo === 'curva') ev.push({ t: o.t0 - 0.9, suono: S.riser, db: -18, durata: 0.9 }, { t: o.t0, suono: S.hit, db: -10 });
+    if (o.tipo === 'acronimo') o.lettere.forEach((l) => ev.push({ t: l.t, suono: S.tasto, db: -14 }));
+    if (o.tipo === 'contatore') ev.push({ t: o.t0, suono: S.tick, db: -12, durata: Math.max(0.5, o.t1 - o.t0) });
+  }
+  for (const e of eventi) {
+    if (e.tipo === 'timbro') ev.push({ t: e.t, suono: S.timbro, db: -6 });
+    else if (e.tipo === 'fili') ev.push({ t: e.t, suono: S.lento, db: -10 });
+    else ev.push({ t: e.t, suono: S.pennarello, db: -12, durata: 0.7 });
+  }
+  // tuffi nella stampa e viaggi veloci della camera
+  for (const s of scene.filter((x) => x.modo === 'tu')) ev.push({ t: s.da - 0.6, suono: S.veloce, db: -11 }, { t: s.a, suono: S.swish, db: -14 });
+  ev.sort((a, b) => a.t - b.t);
+  fs.writeFileSync(opz('--eventi'), JSON.stringify({ durata: DURATA, letto: { stanza: '09 Ambiente/archivio', musica: '10 Musica/documentario' }, eventi: ev.filter((e) => e.t >= 0) }, null, 1));
+}
+
 const tu = scene.filter((s) => s.modo === 'tu').reduce((x, s) => x + s.a - s.da, 0);
 console.log(`[doc-mondo] ${scene.length} scene, ${oggetti.length} oggetti, ${eventi.length} eventi, ${pulita.length} chiavi di camera; Denis in camera ${(100 * tu / DURATA).toFixed(0)}% → ${uscita}`);

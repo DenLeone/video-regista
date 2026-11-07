@@ -186,7 +186,8 @@ const Contenuto: React.FC<{ o: Oggetto; t: number }> = ({ o, t }) => {
     case 'foto':
       return (
         <div style={{ width: '100%', height: '100%', background: '#FBFAF7', padding: '4% 4% 16%', boxSizing: 'border-box', position: 'relative' }}>
-          {o.foto ? <Img src={staticFile(o.foto)} style={{ width: '100%', height: '100%', objectFit: 'cover', filter: 'contrast(1.05) saturate(0.85) sepia(0.12)' }} /> : null}
+          {/* foto vere a tutta cornice; loghi e schemi (png, svg, webp) interi, su carta */}
+          {o.foto ? <Img src={staticFile(o.foto)} style={{ width: '100%', height: '100%', objectFit: /\.(png|svg|webp)$/i.test(o.foto) ? 'contain' : 'cover', background: '#FBFAF7', filter: 'contrast(1.05) saturate(0.85) sepia(0.12)' }} /> : null}
           {o.sotto ? <div style={{ position: 'absolute', left: 0, right: 0, bottom: '3%', textAlign: 'center', fontFamily: MANO, fontWeight: 700, fontSize: o.h * 0.085, color: INCHIOSTRO }}>{o.sotto}</div> : null}
         </div>
       );

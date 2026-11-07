@@ -2,7 +2,7 @@
 // in DaVinci con il video tagliato che si muove e la grafica Rotolo/Tech sopra. Niente token: AI locali (Ollama).
 //   node pc/locale/documentario.mjs <video> <cartella immagini> [--mondo tech|rotolo] [--titolo X] [--4k]
 //                                   [--rinomina] [--uscita cartella] [--senza-davinci] [--con-davinci] [--sottotitoli WATER|no]
-//                                   [--stile tech|presentazione] [--gia-montato]
+//                                   [--stile tech|presentazione|documentario] [--gia-montato]
 // --stile presentazione: al posto della regia Rotolo/Tech, pc/locale/presentazione.mjs (pannello Tiffany in alto con il
 // testo che si accumula e un'infografica per scena, composizione Presentazione); il resto del flusso è lo stesso.
 // DaVinci va tenuto CHIUSO: lo apre lo script all'ultimo passo (aperto, rallenta l'AI fino a 50 volte).
@@ -83,6 +83,14 @@ node('pulizia.mjs', [VIDEO, '--uscita', PUL, '--senza-anteprima', ...(VOCE_SYNC 
 passo(3, 'immagini sulle parole');
 node('immagini.mjs', [PUL, IMM]);
 
+// --stile documentario: piano sequenza verticale con Denis dentro il mondo, tutto il resto in pc/locale/doc-flusso.mjs
+if (opz('--stile') === 'documentario') {
+  run('node', [path.join(ROOT, 'pc', 'locale', 'doc-flusso.mjs'), VIDEO, PUL, '--slug', slug, '--titolo', titolo, ...(VOCE_SYNC ? ['--voce', VOCE_SYNC] : []),
+    ...(ha('--senza-davinci') ? ['--senza-davinci'] : []), ...(ha('--rifai-ai') ? ['--rifai-ai'] : [])]);
+  console.log(`
+[documentario] fatto in ${((Date.now() - t00) / 60000).toFixed(1)} min`);
+  process.exit(0);
+}
 const PRESENTAZIONE = opz('--stile', 'tech') === 'presentazione';
 const PROPS = path.join(LAV, 'props-grafica.json');
 if (PRESENTAZIONE) {
