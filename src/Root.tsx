@@ -13,6 +13,8 @@ import { ProvaFont } from './presentazione/ProvaFont';
 import { ProvaScene } from './presentazione/ProvaScene';
 import { Presentazione, PropsPresentazione } from './presentazione/Presentazione';
 import { Unboxing, PropsUnboxing } from './unboxing/Unboxing';
+import { Documentario } from './documentario/Documentario';
+import type { PropsDocumentario } from './documentario/tipi';
 import { Racconto } from './racconto/Racconto';
 import { Racconto as PropsRacconto } from './racconto/tipi';
 import { durataTotale, FPS, fpsDi, H, Piano, W } from './piano';
@@ -42,6 +44,10 @@ export const Root: React.FC = () => (
     {/* stile Presentazione del flusso locale: livello trasparente sopra il video vero (pc/locale/presentazione.mjs) */}
     <Composition id="Presentazione" component={Presentazione} fps={30} width={2160} height={3840} durationInFrames={300}
       defaultProps={{ durata: 10, cartella: "presentazione/esempio", scene: [] } as PropsPresentazione}
+      calculateMetadata={({ props }) => ({ fps: props.fps ?? 30, durationInFrames: Math.max(1, Math.round(props.durata * (props.fps ?? 30))) })} />
+    {/* stile Documentario del flusso locale: piano sequenza verticale con Denis dentro il mondo (pc/locale/doc-mondo.mjs) */}
+    <Composition id="Documentario" component={Documentario} fps={30} width={1080} height={1920} durationInFrames={300}
+      defaultProps={{ durata: 10, vista: 1600, mondo: { w: 4000, h: 4000, tema: 'archivio' }, camera: [{ t: 0, x: 2000, y: 2000, zoom: 1 }], oggetti: [], eventi: [] } as PropsDocumentario}
       calculateMetadata={({ props }) => ({ fps: props.fps ?? 30, durationInFrames: Math.max(1, Math.round(props.durata * (props.fps ?? 30))) })} />
     {/* stile Unboxing del flusso locale: titolo, schede e chiusura sopra le riprese del prodotto (pc/locale/unboxing.mjs) */}
     <Composition id="Unboxing" component={Unboxing} fps={30} width={2160} height={3840} durationInFrames={300}
