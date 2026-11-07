@@ -181,13 +181,10 @@ def timeline(file_montaggio, grafica, cartella_audio, opz):
         os.environ.setdefault('RESOLVE_SCRIPT_LIB', r'C:\Program Files\Blackmagic Design\DaVinci Resolve\fusionscript.dll')
     sys.path.append(os.path.join(os.environ['RESOLVE_SCRIPT_API'], 'Modules'))
     import DaVinciResolveScript as dvr
-    resolve = None
-    for prova in range(120):
-        resolve = dvr.scriptapp('Resolve')
-        if resolve and resolve.GetProjectManager(): break
-        if prova == 0: print('[unboxing] aspetto che DaVinci Resolve risponda…', flush=True)
-        time.sleep(3)
-    if not resolve: sys.exit('DaVinci Resolve non risponde: aprilo e controlla External scripting using: Local')
+    # se DaVinci resta bloccato all'avvio lo chiude e lo riapre (pc/locale/davinci_locale.py)
+    sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+    from davinci_locale import connetti
+    resolve = connetti()
     m = json.load(open(file_montaggio, encoding='utf8'))
     fps = Fraction(m['fps']).limit_denominator(1001)
     NOMI = {Fraction(24000, 1001): '23.976', Fraction(30000, 1001): '29.97', Fraction(60000, 1001): '59.94'}

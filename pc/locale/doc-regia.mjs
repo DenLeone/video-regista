@@ -1,10 +1,14 @@
 // Stile Documentario, regia: dal parlato pulito e dalle immagini sulle parole alle scene del piano sequenza
-// (scene.json, formato di pc/locale/esempi/documentario-test-2-scene.json, poi pc/locale/doc-mondo.mjs).
-//   node pc/locale/doc-regia.mjs <cartella -pulizia> [--modello qwen3.8:27b] [--pensa low] [--rifai-ai] [--quota-tu 0.45]
-// L'AI (una sola richiesta, in cache in doc-regia-ai.json) decide per ogni pezzo di parlato se va su Denis in camera
-// (gancio, opinioni, commenti, battute, chiusura) o sul mondo, e per il mondo il protagonista (foto, documento, data,
-// frase a macchina, curva, acronimo, contatore…) e l'evento sulla parola. Il codice controlla tutto: scene contigue,
-// parole che esistono, immagini che esistono, durate minime, quota di Denis in camera.
+// (scene.json per pc/locale/doc-mondo.mjs; formato in pc/locale/esempi/documentario-test-2-scene.json).
+//   node pc/locale/doc-regia.mjs <cartella -pulizia> [--modello qwen3.8:27b] [--rifai-ai] [--quota-tu 0.25]
+// Come la vuole Denis (07/11): immagini che si alternano spesso (ogni immagine è una fermata della camera, una ogni
+// 2–3 s) e lui in camera SOLO nei momenti salienti (gancio, battute, opinioni forti, chiusura).
+// A. AI (una richiesta): per ogni frase il ruolo (gancio, fatto, spiegazione, numero, data, opinione, battuta, chiusura)
+//    e la forza; il codice manda in camera il gancio, la chiusura e le battute/opinioni più forti, fino a --quota-tu.
+// B. Fermate: le immagini di immagini.json in ordine di tempo (almeno 1,8 s l'una dall'altra) dove non c'è Denis.
+// C. AI (una richiesta): nei buchi senza immagini una mossa (data, frase a macchina, curva, contatore, acronimo,
+//    parola), gli eventi sulle immagini (cerchio, timbro, barra) e le etichette scritte a mano sotto le foto.
+// Il codice controlla tutto (parole che esistono, tipi validi) e ha regole di riserva (anni → cartellino, ecc.).
 import fs from 'node:fs';
 import path from 'node:path';
 import { chiediLocale } from './ollama.mjs';
@@ -15,17 +19,42 @@ const ha = (k) => args.includes(k);
 const DIR = path.resolve(args[0] || '');
 if (!args[0] || !fs.existsSync(path.join(DIR, 'parole-pulite.json'))) { console.error('uso: node pc/locale/doc-regia.mjs <cartella -pulizia>'); process.exit(1); }
 const MODELLO = opz('--modello', process.env.MODELLO_REGIA || 'qwen3.8:27b');
-const QUOTA_TU = Number(opz('--quota-tu', 0.45));
+const QUOTA_TU = Number(opz('--quota-tu', 0.25));
+const SPAZIO = 1.8;          // secondi minimi tra due fermate
+const BUCO = 4.0;            // oltre questo senza immagini serve una mossa
 const log = (...a) => console.log('[doc-regia]', ...a);
 const leggi = (n) => JSON.parse(fs.readFileSync(path.join(DIR, n), 'utf8'));
 
 const parole = leggi('parole-pulite.json');
 const DURATA = +(parole.at(-1).e + 0.3).toFixed(3);
 const immagini = fs.existsSync(path.join(DIR, 'immagini.json')) ? leggi('immagini.json') : { cartella: '', elementi: [] };
-// solo immagini ferme (le GIF e le clip non sono oggetti di carta)
-const foto = immagini.elementi.filter((x) => /\.(jpe?g|png|webp)$/i.test(x.file));
+const foto = immagini.elementi.filter((x) => /\.(jpe?g|png|webp)$/i.test(x.file)).sort((a, b) => a.inizio - b.inizio);
+const norm = (s) => String(s).normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().replace(/[^a-z0-9]/g, '');
+const testo = (ws) => ws.map((w) => w.w).join(' ').replace(/ (['-])/g, '$1');
+const paroleIn = (da, a) => parole.filter((w) => w.s >= da - 0.05 && w.s < a);
+// tempo della prima parola del parlato che comincia così, dentro [da, a)
+const trova = (p, da, a) => {
+  if (typeof p === 'number') return p;
+  const n = norm(p);
+  if (!n) return null;
+  const w = parole.find((x) => x.s >= da - 0.3 && x.s < a && norm(x.w).startsWith(n));
+  return w ? w.s : null;
+};
+async function chiedi(nome, prompt) {
+  const file = path.join(DIR, `doc-regia-${nome}.json`);
+  if (fs.existsSync(file) && !ha('--rifai-ai')) { const c = JSON.parse(fs.readFileSync(file, 'utf8')); if (c.prompt === prompt) return c.risposta; }
+  for (let prova = 0; prova < 2; prova++) {
+    try {
+      const t = await chiediLocale(prompt, { modello: MODELLO, temperatura: 0.3, pensa: 'no' });
+      const r = JSON.parse(t.slice(t.indexOf('{'), t.lastIndexOf('}') + 1));
+      fs.writeFileSync(file, JSON.stringify({ prompt, risposta: r }, null, 1));
+      return r;
+    } catch (e) { log(`${nome}: risposta non valida (${e.message.slice(0, 80)}), riprovo`); }
+  }
+  return {};
+}
 
-// frasi: punteggiatura forte o pause lunghe
+// ---------- frasi
 const frasi = [];
 let cur = [];
 for (const [i, w] of parole.entries()) {
@@ -34,159 +63,198 @@ for (const [i, w] of parole.entries()) {
   if (/[.?!]$/.test(w.w) || pausa > 0.7 || (cur.length > 28 && /[,;:]$/.test(w.w))) { frasi.push(cur); cur = []; }
 }
 if (cur.length) frasi.push(cur);
-const testo = (ws) => ws.map((w) => w.w).join(' ').replace(/ (['-])/g, '$1');
+const F = frasi.map((ws, i) => ({ i, da: i === 0 ? 0 : ws[0].s, testo: testo(ws) }));
+F.forEach((f, i) => { f.a = i + 1 < F.length ? F[i + 1].da : DURATA; });
 
-// esempio compatto (prime 12 scene, JSON su una riga per scena): con l'esempio intero il contesto non stava più sulla
-// scheda video e qwen3.8 andava a 5 token/s invece di 25
-const esempio = JSON.parse(fs.readFileSync(path.join(path.dirname(new URL(import.meta.url).pathname.replace(/^\/([A-Z]:)/, '$1')), 'esempi', 'documentario-test-2-scene.json'), 'utf8'));
-const ESEMPIO = '{"tema": "archivio", "scene": [\n' + esempio.scene.slice(0, 12).map((x) => JSON.stringify(x)).join(',\n') + ',\n…]}';
-const prompt = `Sei il regista di un video documentario verticale per i social. Il video è UN SOLO piano sequenza: una camera che scorre su un mondo (una scrivania d'archivio con stampe, documenti, cartellini) senza mai tagliare. Il narratore (Denis) è anche in camera: quando parla "in camera" la camera entra in una sua foto appoggiata sulla scrivania finché lui è a tutto schermo.
+// ---------- A. ruolo delle frasi → chi va in camera
+const ruoli = await chiedi('ruoli', `Frasi di un video documentario (il narratore è in camera solo nei momenti salienti, il resto sono immagini).
+Per ogni frase indica il ruolo e la forza.
+- ruolo, uno di: gancio (apre il video e incuriosisce), fatto (evento, nome, scoperta), spiegazione (come funziona qualcosa), numero, data, opinione (giudizio personale del narratore), battuta (ironia, commento leggero), chiusura (morale finale, frase che chiude)
+- forza da 1 a 3: quanto è un momento saliente da dire guardando in camera (3 = assolutamente, 1 = per niente)
 
-Dividi il parlato in scene contigue (da 0 alla fine, senza buchi) e per ognuna decidi:
-- "modo": "tu" (Denis in camera) per il gancio iniziale, le opinioni, i commenti, le battute, i passaggi personali, la chiusura. Circa il ${Math.round(QUOTA_TU * 100)}% del tempo, scene "tu" da 3 a 12 secondi.
-- oppure il mondo: per fatti, date, nomi, numeri, spiegazioni tecniche. Ogni scena del mondo ha 1 o 2 protagonisti ("eroi"), 4 solo per un elenco di cose. Scene del mondo da 3 a 12 secondi.
+${F.map((f) => `${f.i}. ${f.testo}`).join('\n')}
 
-Protagonisti possibili (campo "tipo"):
-- "foto": {"file": immagine dalla lista, "sotto": 1-3 parole scritte a mano sotto}
-- "documento": {"file": immagine dalla lista (paper, articolo, pagina)} oppure {"titolo": max 3 parole, "sotto": etichetta}
-- "cartellino": {"titolo": una data o un anno, es. "2017" o "30.11.2022"}
-- "parola": {"titolo": UNA parola chiave enorme}
-- "frase": {"modo": "sequenza", "testo": una frase d'esempio inventata, 12-22 parole, che illustra il concetto, "via": parola del parlato da cui parte l'evidenziatore} oppure {"modo": "fili", "testo": frase d'esempio, "fili": [[indice parola, indice parola, "parola del parlato"]]} (fili tra parole legate)
-- "curva": {"sotto": etichetta dell'asse, "esplode": parola del parlato su cui la curva schizza in alto} (crescita, esplosione)
-- "acronimo": {"lettere": [{"l": "G", "resto": "enerative", "parola": parola del parlato}]}
-- "contatore": {"valore": numero intero, "sotto": unità in maiuscolo, "da": parola, "a": parola}
-Ogni protagonista ha "parola": la parola del parlato su cui diventa protagonista (deve esserci in quella scena).
-Eventi facoltativi sulla parola ("eventi"): {"tipo": "cerchio"|"timbro"|"barra", "parola": parola del parlato, "testo": solo per timbro (max 2 parole), "su": indice del protagonista}.
-L'ultima scena può essere {"finale": {"parola": parola del parlato, "ancora": id di un protagonista importante}, "eroi": []} per chiudere tornando su di lui con dei fili verso tutto il resto (dai "id" a quel protagonista).
-
-Regole di leggibilità (le più importanti):
-1. Un'idea per scena, un protagonista alla volta.
-2. Non scrivere a schermo le frasi che il narratore dice: solo date, nomi, numeri e la parola chiave.
-3. Meno è meglio: niente decorazioni inutili.
-4. Usa le immagini della lista quando parlano della stessa cosa (sono già sulla parola giusta).
-5. Si comincia con "tu" (gancio).
-
-Esempio completo di un altro video (stesso formato):
-${ESEMPIO}
-
-PARLATO (tempi in secondi):
-${frasi.map((f) => `[${f[0].s.toFixed(1)}–${f.at(-1).e.toFixed(1)}] ${testo(f)}`).join('\n')}
-
-IMMAGINI DISPONIBILI (file → parola e tempo in cui sono nominate):
-${foto.map((x) => `${x.file} → "${x.parola}" a ${x.inizio.toFixed(1)} s (${x.motivo})`).join('\n') || '(nessuna)'}
-
-Durata totale: ${DURATA} s. Rispondi SOLO con il JSON {"tema": "archivio", "scene": [...]}.`;
-
-const CACHE = path.join(DIR, 'doc-regia-ai.json');
-let risposta = null;
-if (fs.existsSync(CACHE) && !ha('--rifai-ai')) {
-  const c = JSON.parse(fs.readFileSync(CACHE, 'utf8'));
-  if (c.prompt === prompt) risposta = c.risposta;
-}
-if (!risposta) {
-  log(`chiedo la regia a ${MODELLO} (${frasi.length} frasi, ${foto.length} immagini)`);
-  for (let prova = 0; prova < 2 && !risposta; prova++) {
-    try {
-      const t = await chiediLocale(prompt, { modello: MODELLO, temperatura: 0.3, pensa: opz('--pensa', 'no') });
-      risposta = JSON.parse(t.slice(t.indexOf('{'), t.lastIndexOf('}') + 1));
-    } catch (e) { log(`risposta non valida (${e.message.slice(0, 80)}), riprovo`); }
-  }
-  if (!risposta) { console.error('[doc-regia] l\'AI non ha dato una regia valida'); process.exit(1); }
-  fs.writeFileSync(CACHE, JSON.stringify({ prompt, risposta }, null, 1));
+Rispondi SOLO con JSON: {"frasi": [{"i": 0, "ruolo": "...", "forza": N}]}`);
+const ruolo = new Map((ruoli.frasi || []).map((r) => [Number(r.i), r]));
+const inCamera = new Set([0]);   // il gancio si dice in camera
+// candidati: chiusura, battute, opinioni (e qualunque frase con forza 3), dalla più forte; max 9 s ciascuna
+const cand = F.slice(1).filter((f) => { const r = ruolo.get(f.i); return r && ['chiusura', 'battuta', 'opinione'].includes(r.ruolo) && r.forza >= 2 && f.a - f.da <= 9; })
+  .sort((x, y) => (ruolo.get(y.i).forza - ruolo.get(x.i).forza) || ((ruolo.get(y.i).ruolo === 'chiusura') - (ruolo.get(x.i).ruolo === 'chiusura')));
+const tempoTu = () => F.filter((f) => inCamera.has(f.i)).reduce((x, f) => x + f.a - f.da, 0);
+for (const f of cand) {
+  if (tempoTu() + (f.a - f.da) > QUOTA_TU * DURATA) continue;
+  // mai due momenti in camera troppo vicini (meno di 8 s di immagini in mezzo), tranne frasi attaccate
+  const vicino = [...inCamera].some((j) => Math.abs(j - f.i) > 1 && Math.min(Math.abs(F[j].a - f.da), Math.abs(f.a - F[j].da)) < 8);
+  if (vicino) continue;
+  // al massimo 12 s di fila in camera (frasi attaccate comprese)
+  let fila = f.a - f.da;
+  for (let j = f.i - 1; j >= 0 && inCamera.has(j); j--) fila += F[j].a - F[j].da;
+  for (let j = f.i + 1; j < F.length && inCamera.has(j); j++) fila += F[j].a - F[j].da;
+  if (fila > 12) continue;
+  inCamera.add(f.i);
 }
 
-// ---------- controlli ----------
-const norm = (s) => String(s).normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().replace(/[^a-z0-9]/g, '');
-const esisteParola = (p, da, a) => typeof p === 'number' || parole.some((w) => w.s >= da - 0.6 && w.s <= a + 0.2 && norm(w.w).startsWith(norm(p)));
-const fileOk = new Set(foto.map((x) => x.file));
-// confine di scena sull'inizio della parola più vicina
-const sullaParola = (t) => parole.reduce((b, w) => (Math.abs(w.s - t) < Math.abs(b - t) ? w.s : b), 0);
-let scene = (risposta.scene || []).filter((s) => Number.isFinite(+s.da)).sort((x, y) => x.da - y.da);
-scene.forEach((s, i) => { s.da = i === 0 ? 0 : +sullaParola(+s.da).toFixed(3); });
-scene = scene.filter((s, i) => i === 0 || s.da > scene[i - 1].da + 0.5);
-scene.forEach((s, i) => { s.a = i + 1 < scene.length ? scene[i + 1].da : DURATA; });
+// ---------- segmenti: frasi consecutive con lo stesso modo
+const segmenti = [];
+for (const f of F) {
+  const modo = inCamera.has(f.i) ? 'tu' : 'mondo';
+  const u = segmenti.at(-1);
+  if (u && u.modo === modo) { u.a = f.a; u.frasi.push(f.i); } else segmenti.push({ modo, da: f.da, a: f.a, frasi: [f.i] });
+}
+// un momento in camera troppo corto per entrare e uscire dalla stampa torna al mondo
+for (const s of segmenti) if (s.modo === 'tu' && s.a - s.da < 2.4) s.modo = 'mondo';
+for (let i = segmenti.length - 1; i > 0; i--) if (segmenti[i].modo === segmenti[i - 1].modo) { segmenti[i - 1].a = segmenti[i].a; segmenti[i - 1].frasi.push(...segmenti[i].frasi); segmenti.splice(i, 1); }
 
-const TIPI = new Set(['foto', 'documento', 'cartellino', 'parola', 'frase', 'curva', 'acronimo', 'contatore']);
-let corretti = 0;
-for (const s of scene) {
-  if (s.modo === 'tu') { delete s.eroi; delete s.eventi; continue; }
-  if (s.finale) {
-    if (!s.finale.ancora || !scene.some((x) => (x.eroi || []).some((e) => e.id === s.finale.ancora))) {
-      // ancora che non esiste: il primo cartellino o la prima foto diventa l'ancora
-      const e = scene.flatMap((x) => x.eroi || []).find((e) => e.tipo === 'cartellino') || scene.flatMap((x) => x.eroi || [])[0];
-      if (e) { e.id = e.id || 'ancora'; s.finale.ancora = e.id; } else delete s.finale;
-    }
-    if (s.finale && !esisteParola(s.finale.parola, s.da, s.a)) s.finale.parola = s.da + 1;
-    if (s.finale) { s.eroi = []; delete s.eventi; continue; }
+// ---------- B. fermate: le immagini in ordine di tempo
+const tipoFoto = (f) => (/paper|pagina|page|arxiv|articolo|annuncio|documento|giornale/i.test(f) ? 'documento' : 'foto');
+for (const s of segmenti.filter((x) => x.modo === 'mondo')) {
+  s.fermate = [];
+  for (const x of foto) {
+    const t = Math.max(x.inizio, s.da + 0.1);
+    if (x.inizio < s.da - 0.3 || t > s.a - 1.2) continue;
+    if (s.fermate.length && t - s.fermate.at(-1).t < SPAZIO) continue;
+    if (s.fermate.some((y) => y.file === x.file)) continue;
+    s.fermate.push({ tipo: tipoFoto(x.file), file: x.file, t: +t.toFixed(3), motivo: x.motivo });
   }
-  s.eroi = (s.eroi || []).filter((e) => {
-    if (!TIPI.has(e.tipo)) return false;
-    if ((e.tipo === 'foto' || (e.tipo === 'documento' && e.file)) && !fileOk.has(e.file)) return false;
-    if (e.tipo === 'frase' && (!e.testo || e.testo.split(/\s+/).length < 4)) return false;
-    if (e.tipo === 'acronimo' && !(e.lettere || []).length) return false;
-    if (e.tipo === 'contatore' && !Number.isFinite(+e.valore)) return false;
-    if (e.tipo === 'parola' && !e.titolo) return false;
-    if (e.tipo === 'cartellino' && !e.titolo) return false;
-    return true;
-  }).slice(0, 4);
-  for (const e of s.eroi) {
-    if (e.parola !== undefined && !esisteParola(e.parola, s.da, s.a)) { e.parola = s.da; corretti++; }
-    for (const k of ['via', 'esplode', 'da', 'a']) if (typeof e[k] === 'string' && e.tipo !== 'contatore' && !esisteParola(e[k], s.da, s.a)) { e[k] = s.da + 0.5; corretti++; }
-    if (e.tipo === 'contatore') for (const k of ['da', 'a']) if (!esisteParola(e[k] ?? '', s.da, s.a)) { e[k] = k === 'da' ? s.da + 0.3 : s.a - 0.3; corretti++; }
-    if (e.tipo === 'frase' && e.modo === 'fili') {
-      const n = e.testo.split(/\s+/).length;
-      e.fili = (e.fili || []).filter(([a, b]) => a >= 0 && b >= 0 && a < n && b < n && a !== b).map(([a, b, p]) => [a, b, esisteParola(p, s.da, s.a) ? p : s.da + 1]);
-      if (!e.fili.length) e.modo = 'sequenza';
-    }
-    if (e.tipo === 'acronimo') e.lettere = e.lettere.map((l) => ({ ...l, parola: esisteParola(l.parola, s.da, s.a) ? l.parola : s.da + 0.5 }));
-    e.valore = e.valore !== undefined ? Math.round(+e.valore) : undefined;
-  }
-  s.eventi = (s.eventi || []).filter((ev) => ['cerchio', 'timbro', 'barra'].includes(ev.tipo) && esisteParola(ev.parola, s.da, s.a) && (ev.su ?? 0) < s.eroi.length);
-  // nessun protagonista valido: la foto di immagini.json più vicina, o Denis in camera
-  if (!s.eroi.length) {
-    const f = foto.find((x) => x.inizio >= s.da - 0.3 && x.inizio < s.a);
-    if (f) s.eroi = [{ tipo: 'foto', file: f.file, parola: f.parola }];
-    else { s.modo = 'tu'; delete s.eroi; delete s.eventi; }
-    corretti++;
+  // buchi: tratti di più di BUCO secondi senza un protagonista nuovo
+  s.buchi = [];
+  const punti = [s.da, ...s.fermate.map((x) => x.t), s.a];
+  for (let k = 0; k + 1 < punti.length; k++) {
+    const da = k === 0 ? s.da : punti[k] + SPAZIO, a = punti[k + 1] - (k + 1 < punti.length - 1 ? 0.3 : 0);
+    if ((k === 0 ? punti[1] - s.da > 2.5 : a - da > BUCO - SPAZIO) && a - da > 1.6) s.buchi.push({ da: +da.toFixed(3), a: +a.toFixed(3), testo: testo(paroleIn(da, a)) });
   }
 }
-// scene del mondo troppo corte (Test 2: "RLHF" per 1,4 s): diventano il secondo protagonista della scena prima
-for (let i = scene.length - 1; i > 0; i--) {
-  const s = scene[i], p = scene[i - 1];
-  if (s.modo !== 'tu' && !s.finale && s.a - s.da < 2.5 && p.modo !== 'tu' && !p.finale && (p.eroi.length + s.eroi.length) <= 2) {
-    const off = p.eroi.length;
-    p.eroi.push(...s.eroi.map((e) => ({ ...e, parola: e.parola ?? s.da })));
-    p.eventi = [...(p.eventi || []), ...(s.eventi || []).map((ev) => ({ ...ev, su: (ev.su ?? 0) + off }))];
-    p.a = s.a; scene.splice(i, 1); corretti++;
+
+// ---------- C. mosse nei buchi, eventi, etichette
+const mondo = segmenti.filter((x) => x.modo === 'mondo');
+const promptC = `Video documentario: una camera scorre su una scrivania d'archivio e si ferma su un protagonista alla volta (stampe, documenti, cartellini). Ti do i tratti del video, con le immagini già messe e i "buchi" senza immagini.
+
+Per ogni BUCO scegli UN protagonista disegnato (campo "tipo"), quello che illustra meglio il parlato del buco:
+- "cartellino": {"titolo": una data o un anno detto nel buco}
+- "contatore": {"valore": numero intero detto, "sotto": unità in MAIUSCOLO}
+- "curva": {"sotto": etichetta corta dell'asse, "esplode": parola su cui la curva schizza in alto} per crescita, esplosione, aumento
+- "acronimo": {"lettere": [{"l": "G", "resto": "enerative", "parola": parola detta}]} se si spiega una sigla
+- "frase": {"modo": "sequenza", "testo": frase d'esempio inventata di 12-20 parole che mostra il concetto, "via": parola detta da cui parte} oppure {"modo": "fili", "testo": frase d'esempio, "fili": [[indice parola, indice parola, "parola detta"]]} per spiegare un meccanismo
+- "parola": {"titolo": UNA parola chiave} solo se niente altro va bene
+- "documento": {"titolo": max 3 parole, "sotto": etichetta} per un nome di legge, paper, progetto
+Ogni protagonista ha "parola": una parola detta nel buco su cui compare.
+
+Per le IMMAGINI già messe (numero n):
+- "etichette": 1-3 parole scritte a mano sotto la foto (nome, luogo, anno: non ripetere la frase detta)
+- "eventi": al massimo uno per immagine e solo dove serve: {"n": numero, "tipo": "cerchio"|"timbro"|"barra", "parola": parola detta mentre è in vista, "testo": per timbro max 2 parole}. Cerchio per evidenziare un titolo o un dettaglio, timbro per un verdetto o un nome che "nasce", barra per qualcosa che fallisce o è sbagliato.
+
+${mondo.map((s, si) => `TRATTO ${si} [${s.da.toFixed(1)}–${s.a.toFixed(1)} s]: ${F.filter((f) => s.frasi.includes(f.i)).map((f) => f.testo).join(' ')}
+${s.fermate.map((x, n) => `  immagine ${n}: ${x.file} a ${x.t.toFixed(1)} s (${x.motivo})`).join('\n') || '  (nessuna immagine)'}
+${s.buchi.map((b, bi) => `  BUCO ${bi} [${b.da.toFixed(1)}–${b.a.toFixed(1)} s]: "${b.testo}"`).join('\n')}`).join('\n\n')}
+
+Rispondi SOLO con JSON: {"tratti": [{"tratto": 0, "buchi": [{"buco": 0, "eroe": {...}}], "etichette": {"0": "..."}, "eventi": [{...}]}]}`;
+const risC = await chiedi('mosse', promptC);
+const perTratto = new Map((risC.tratti || []).map((x) => [Number(x.tratto), x]));
+
+// regole di riserva per un buco senza mossa valida
+function riserva(b) {
+  const ws = paroleIn(b.da, b.a);
+  const anno = ws.find((w) => /^(1[89]\d\d|20\d\d)[.,]?$/.test(w.w));
+  if (anno) return { tipo: 'cartellino', titolo: anno.w.replace(/[.,]$/, ''), parola: anno.s };
+  const grande = ws.findIndex((w) => /^(milion|miliard|centinai)/i.test(w.w));
+  if (grande >= 0) {
+    const n = ws.slice(Math.max(0, grande - 2), grande).map((w) => parseFloat(w.w.replace(',', '.'))).find(Number.isFinite);
+    const unita = /^miliard/i.test(ws[grande].w) ? 1e9 : /^centinai/i.test(ws[grande].w) ? 1e8 : 1e6;
+    return { tipo: 'contatore', valore: Math.round((n || 1) * unita), sotto: (ws[grande + 1]?.w || ws[grande + 2]?.w || '').replace(/[^\p{L}]/gu, '').toUpperCase().slice(0, 12), da: ws[grande].s, a: Math.min(b.a, ws[grande].s + 2) };
   }
+  return null;
 }
-// quota di Denis in camera (l'AI ne mette troppo poco: Test 2 il 6%): le scene con solo una foto, senza eventi,
-// diventano "tu", prima le più lunghe; quelle con date, curve, acronimi, contatori, frasi restano sul mondo
-const quotaTu = () => scene.filter((s) => s.modo === 'tu').reduce((x, s) => x + s.a - s.da, 0) / DURATA;
-const generica = (s) => s.modo !== 'tu' && !s.finale && s.eroi.every((e) => e.tipo === 'foto') && !(s.eventi || []).length;
-const candidati = scene.filter((s, i) => i > 0 && generica(s) && s.a - s.da >= 3).sort((x, y) => (y.a - y.da) - (x.a - x.da));
-for (const s of candidati) {
-  if (quotaTu() >= QUOTA_TU - 0.04) break;
-  // al massimo 12 s di fila in camera (contando le scene "tu" accanto, che poi si uniscono)
-  const i = scene.indexOf(s);
-  let lungo = s.a - s.da;
-  for (let j = i - 1; j >= 0 && scene[j].modo === 'tu'; j--) lungo += scene[j].a - scene[j].da;
-  for (let j = i + 1; j < scene.length && scene[j].modo === 'tu'; j++) lungo += scene[j].a - scene[j].da;
-  if (lungo > 12) continue;
-  s.modo = 'tu'; delete s.eroi; delete s.eventi; corretti++;
+const TIPI = new Set(['cartellino', 'contatore', 'curva', 'acronimo', 'frase', 'parola', 'documento']);
+function valida(e, da, a) {
+  if (!e || !TIPI.has(e.tipo)) return null;
+  const t = trova(e.parola ?? '', da, a) ?? da + 0.2;
+  const o = { ...e, parola: +t.toFixed(3) };
+  delete o.file;
+  if ((o.tipo === 'cartellino' || o.tipo === 'parola') && !o.titolo) return null;
+  if (o.tipo === 'documento' && !o.titolo) return null;
+  if (o.tipo === 'contatore') {
+    // il numero deve essere detto davvero (Test 2: "254.808.972 PARAMETRI" inventato): cifre nel buco, o un numero
+    // seguito da milioni/miliardi
+    const ws = paroleIn(da, a), v = Math.round(+o.valore);
+    const detti = ws.flatMap((w, k) => {
+      const n = parseFloat(w.w.replace(/\./g, '').replace(',', '.'));
+      const molt = /^milion/i.test(ws[k + 1]?.w || '') ? 1e6 : /^miliard/i.test(ws[k + 1]?.w || '') ? 1e9 : 1;
+      const c = /^centinai/i.test(w.w) && /^milion/i.test(ws[k + 2]?.w || '') ? [1e8] : [];
+      return Number.isFinite(n) ? [n * molt, ...c] : c;
+    });
+    if (!Number.isFinite(v) || !detti.some((d) => Math.abs(d - v) <= Math.max(1, d * 0.01))) return null; o.valore = Math.round(+o.valore); o.da = trova(o.da ?? '', da, a) ?? t; o.a = trova(o.a ?? '', da, a) ?? Math.min(a, t + 2); }
+  if (o.tipo === 'curva') o.esplode = trova(o.esplode ?? '', da, a) ?? Math.min(a - 0.5, t + 2);
+  if (o.tipo === 'acronimo') { if (!(o.lettere || []).length) return null; o.lettere = o.lettere.map((l, k) => ({ l: String(l.l || '').slice(0, 2),
+      // "resto" senza la lettera iniziale (l'AI scriveva "Generative" invece di "enerative": usciva "GGenerative")
+      resto: String(l.resto || '').toLowerCase().startsWith(String(l.l || '').toLowerCase()) ? String(l.resto).slice(String(l.l).length) : String(l.resto || ''), parola: trova(l.parola ?? '', da, a) ?? t + 0.5 * k })); }
+  if (o.tipo === 'frase') {
+    if (!o.testo || o.testo.split(/\s+/).length < 5) return null;
+    const n = o.testo.split(/\s+/).length;
+    o.via = trova(o.via ?? '', da, a) ?? t;
+    if (o.modo === 'fili') {
+      o.fili = (o.fili || []).filter(([x, y]) => x >= 0 && y >= 0 && x < n && y < n && x !== y).map(([x, y, p]) => [x, y, trova(p ?? '', da, a) ?? t + 1]);
+      if (!o.fili.length) o.modo = 'sequenza';
+    } else o.modo = 'sequenza';
+  }
+  return o;
 }
-if (quotaTu() < QUOTA_TU - 0.1) log(`attenzione: Denis in camera solo il ${(quotaTu() * 100).toFixed(0)}% (troppe scene con date, grafici o frasi)`);
-// scene "tu" troppo corte per entrare e uscire dalla stampa: si uniscono alla scena prima
-for (let i = scene.length - 1; i > 0; i--) {
-  const s = scene[i];
-  if (s.modo === 'tu' && s.a - s.da < 2.4) { scene[i - 1].a = s.a; scene.splice(i, 1); corretti++; }
-}
-// scene "tu" consecutive: una sola
-for (let i = scene.length - 1; i > 0; i--) if (scene[i].modo === 'tu' && scene[i - 1].modo === 'tu') { scene[i - 1].a = scene[i].a; scene.splice(i, 1); }
-if (scene[0]?.modo !== 'tu' && scene[0]) log('attenzione: il video non comincia con Denis in camera');
+
+// ---------- scene
+let mosse = 0, eventiN = 0, riserve = 0;
+const scene_titoli = new Set();
+const scene = segmenti.map((s) => {
+  if (s.modo === 'tu') return { da: +s.da.toFixed(3), a: +s.a.toFixed(3), modo: 'tu' };
+  const si = mondo.indexOf(s), r = perTratto.get(si) || {};
+  const eroi = s.fermate.map((x, n) => ({ tipo: x.tipo, file: x.file, parola: x.t, ...(x.tipo === 'foto' && r.etichette?.[n] ? { sotto: String(r.etichette[n]).slice(0, 24) } : {}) }));
+  const eventi = [];
+  s.buchi.forEach((b, bi) => {
+    let e = valida((r.buchi || []).find((x) => Number(x.buco) === bi)?.eroe, b.da, b.a);
+    if (e) mosse++; else { e = riserva(b); if (e) riserve++; }
+    if (e) eroi.push(e);
+  });
+  eroi.sort((x, y) => x.parola - y.parola);
+  // schede-parola: solo se servono davvero (non doppie, non a ridosso di un'immagine): Test 2 ne aveva 9 su 40 fermate
+  const titoli = new Set();
+  for (let k = eroi.length - 1; k >= 0; k--) {
+    const e = eroi[k];
+    if (e.tipo !== 'parola') continue;
+    const vicini = eroi.filter((x) => x !== e && x.tipo !== 'parola' && Math.abs(x.parola - e.parola) < 3);
+    const t = norm(e.titolo);
+    if (vicini.length || titoli.has(t) || scene_titoli.has(t)) eroi.splice(k, 1); else { titoli.add(t); scene_titoli.add(t); }
+  }
+  // fermate troppo vicine dopo le aggiunte: si tiene la prima
+  const tenuti = eroi.filter((e, k) => k === 0 || e.parola - eroi[k - 1].parola >= SPAZIO * 0.8);
+  for (const ev of r.eventi || []) {
+    const fermata = s.fermate[Number(ev.n)];
+    const k = fermata ? tenuti.findIndex((e) => e.file === fermata.file) : -1;
+    if (k < 0 || !['cerchio', 'timbro', 'barra'].includes(ev.tipo)) continue;
+    const fine = k + 1 < tenuti.length ? tenuti[k + 1].parola : s.a;
+    const t = trova(ev.parola ?? '', tenuti[k].parola, fine);
+    if (t === null) continue;
+    eventi.push({ tipo: ev.tipo, parola: +t.toFixed(3), su: k, ...(ev.tipo === 'timbro' ? { testo: String(ev.testo || '').slice(0, 14) } : {}) });
+    eventiN++;
+  }
+  // eventi di riserva: cerchio sul titolo dei paper e documenti, barra sulle foto mentre si dice che qualcosa fallisce
+  tenuti.forEach((e, k) => {
+    if (eventi.some((x) => x.su === k)) return;
+    const fine = k + 1 < tenuti.length ? tenuti[k + 1].parola : s.a;
+    if (e.tipo === 'documento' && e.file && fine - e.parola > 1.6) { eventi.push({ tipo: 'cerchio', parola: +(e.parola + 0.7).toFixed(3), su: k, dy: -560, rx: 520, ry: 120 }); eventiN++; return; }
+    const neg = paroleIn(e.parola, fine).find((w) => /^(fallis|fallì|fallimento|sbagli|errore|errat|fiasco)/i.test(w.w));
+    if (e.tipo === 'foto' && neg) { eventi.push({ tipo: 'barra', parola: neg.s, su: k, dy: -80 }); eventiN++; }
+  });
+  // nessun protagonista (né immagini né mosse): una parola chiave lunga del tratto
+  if (!tenuti.length) {
+    const w = paroleIn(s.da, s.a).filter((x) => x.w.replace(/[^\p{L}]/gu, '').length >= 7).sort((x, y) => y.w.length - x.w.length)[0];
+    tenuti.push({ tipo: 'parola', titolo: (w?.w || 'Archivio').replace(/[^\p{L}\d-]/gu, ''), parola: w?.s ?? s.da });
+  }
+  return { da: +s.da.toFixed(3), a: +s.a.toFixed(3), fermate: true, eroi: tenuti, eventi };
+});
 
 const tu = scene.filter((s) => s.modo === 'tu').reduce((x, s) => x + s.a - s.da, 0);
-const uscita = { tema: ['archivio', 'bacheca', 'mappa'].includes(risposta.tema) ? risposta.tema : 'archivio', nota: `regia di ${MODELLO}`, scene };
-fs.writeFileSync(path.join(DIR, 'scene.json'), JSON.stringify(uscita, null, 1));
-log(`${scene.length} scene (${scene.filter((s) => s.modo === 'tu').length} in camera, ${(100 * tu / DURATA).toFixed(0)}% del tempo), ${corretti} correzioni del codice → ${path.join(DIR, 'scene.json')}`);
-for (const s of scene) console.log(`  ${s.da.toFixed(1).padStart(6)}–${s.a.toFixed(1).padEnd(6)} ${s.modo === 'tu' ? 'TU' : s.finale ? `finale → ${s.finale.ancora}` : s.eroi.map((e) => `${e.tipo}${e.file ? ':' + e.file : ''}${e.titolo ? ' "' + e.titolo + '"' : ''}`).join(' + ')}${(s.eventi || []).map((e) => ` · ${e.tipo}@${e.parola}`).join('')}`);
+const fermate = scene.reduce((x, s) => x + (s.eroi?.length || 0), 0);
+fs.writeFileSync(path.join(DIR, 'scene.json'), JSON.stringify({ tema: 'archivio', nota: `regia di ${MODELLO}`, scene }, null, 1));
+log(`${scene.length} scene: in camera ${scene.filter((s) => s.modo === 'tu').length} volte (${(100 * tu / DURATA).toFixed(0)}% del tempo), ${fermate} fermate sul mondo (una ogni ${((DURATA - tu) / Math.max(1, fermate)).toFixed(1)} s), ${mosse} mosse dell'AI, ${riserve} di riserva, ${eventiN} eventi`);
+for (const s of scene) {
+  if (s.modo === 'tu') { console.log(`  ${s.da.toFixed(1).padStart(6)}–${s.a.toFixed(1).padEnd(6)} TU  ${F.filter((f) => f.da >= s.da && f.da < s.a).map((f) => `(${ruolo.get(f.i)?.ruolo} ${ruolo.get(f.i)?.forza})`).join(' ')}`); continue; }
+  console.log(`  ${s.da.toFixed(1).padStart(6)}–${s.a.toFixed(1).padEnd(6)} ${s.eroi.map((e) => `${e.parola.toFixed(1)} ${e.tipo}${e.file ? ':' + e.file.slice(0, 22) : ''}${e.titolo ? ' "' + e.titolo + '"' : ''}`).join(' | ')}${s.eventi.map((e) => ` · ${e.tipo}`).join('')}`);
+}

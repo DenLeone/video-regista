@@ -7,19 +7,9 @@ sys.stdout.reconfigure(encoding='utf-8')
 a = sys.argv[1:]
 opz = lambda k, d=None: a[a.index(k) + 1] if k in a else d
 video, voce, tracce = [os.path.abspath(x) for x in a[:3]]
-if sys.platform == 'win32':
-    os.environ.setdefault('RESOLVE_SCRIPT_API', os.path.join(os.environ.get('PROGRAMDATA', r'C:\ProgramData'), 'Blackmagic Design', 'DaVinci Resolve', 'Support', 'Developer', 'Scripting'))
-    os.environ.setdefault('RESOLVE_SCRIPT_LIB', r'C:\Program Files\Blackmagic Design\DaVinci Resolve\fusionscript.dll')
-sys.path.append(os.path.join(os.environ['RESOLVE_SCRIPT_API'], 'Modules'))
-import DaVinciResolveScript as dvr
-
-resolve = None
-for prova in range(120):
-    resolve = dvr.scriptapp('Resolve')
-    if resolve and resolve.GetProjectManager(): break
-    if prova == 0: print('[doc-timeline] aspetto che DaVinci Resolve risponda…', flush=True)
-    time.sleep(3)
-if not resolve: sys.exit('DaVinci Resolve non risponde: aprilo (dal menu Start) e controlla External scripting using: Local')
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from davinci_locale import connetti
+resolve = connetti()
 pm = resolve.GetProjectManager()
 progetto = pm.LoadProject(opz('--progetto', 'Regista locale')) or pm.CreateProject(opz('--progetto', 'Regista locale'))
 if not progetto.GetTimelineCount(): progetto.SetSetting('timelineFrameRate', '29.97')

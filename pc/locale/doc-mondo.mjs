@@ -68,6 +68,13 @@ for (const s of scene) {
   const n = s.eroi.length;
   s.oggetti = s.eroi.map((e, j) => {
     let [w, h] = e.misure || MISURE[e.tipo] || [1200, 1200];
+    // scene "a fermate" (regia automatica): ogni protagonista ha la sua cella e la camera viaggia dall'uno all'altro
+    if (s.fermate) {
+      const cc = j === 0 ? c : cella(k++);
+      const t = tempo(e.parola ?? s.da, s.da, s.a);
+      const o = { id: e.id || `s${s.i}e${j}`, tipo: e.tipo, x: cc.x - w / 2, y: cc.y - h / 2, w, h, rot: e.rot ?? (casuale() - 0.5) * 7, entra: Math.max(0, j === 0 ? s.da + 0.25 : t - 0.35) };
+      return completa(o, e, s, t);
+    }
     // più protagonisti nella stessa scena: impilati (2) o a griglia 2×2 (3–4), più piccoli
     const f = n === 1 ? 1 : n === 2 ? 0.86 : 0.62;
     w *= f; h *= f;
@@ -76,6 +83,9 @@ for (const s of scene) {
     if (n >= 3) { x = c.x + (j % 2 ? 40 : -w - 40); y = c.y + (j < 2 ? -h - 40 : 40); }
     const t = tempo(e.parola ?? s.da, s.da, s.a);
     const o = { id: e.id || `s${s.i}e${j}`, tipo: e.tipo, x, y, w, h, rot: e.rot ?? (casuale() - 0.5) * 7, entra: Math.max(0, n === 1 || n >= 3 ? s.da + 0.25 + (n >= 3 ? j * 0.22 : 0) : j === 0 ? s.da + 0.25 : t - 0.15) };
+    return completa(o, e, s, t);
+  });
+  function completa(o, e, s, t) {
     if (e.id) ids[e.id] = o.id;
     for (const c2 of ['titolo', 'sotto', 'righe', 'modo', 'valore']) if (e[c2] !== undefined) o[c2] = e[c2];
     if (e.file) o.foto = `${CART}/${e.file}`;
@@ -93,7 +103,7 @@ for (const s of scene) {
     o._t = t;
     oggetti.push(o);
     return o;
-  });
+  }
   // protagonista: dalla sua parola alla parola del protagonista dopo (o alla fine della scena)
   s.oggetti.forEach((o, j) => { o.eroe = [[j === 0 ? s.da : o._t, j + 1 < n ? s.oggetti[j + 1]._t : s.a]]; });
   for (const ev of s.eventi || []) {
@@ -142,7 +152,7 @@ for (const [i, s] of scene.entries()) {
     eventi.push({ tipo: 'fili', t: tf, oggetto: o.id, verso: verso2, passo: Math.min(0.25, 2.4 / verso2.length) });
     continue;
   }
-  if (s.oggetti.length >= 3) {
+  if (s.oggetti.length >= 3 && !s.fermate) {
     const b = bbox(s.oggetti), z = zoomPer(b.w, b.h, 0.9);
     chiave(arrivo, b.x, b.y, z);
     chiave(partenza, b.x + (verso.x - b.x) * 0.03, b.y + (verso.y - b.y) * 0.03, z * 1.04);
@@ -150,11 +160,14 @@ for (const [i, s] of scene.entries()) {
   }
   s.oggetti.forEach((o, j) => {
     const c = centro(o), z = zoomPer(o.w, o.h);
-    const t0 = j === 0 ? arrivo : o._t + 0.3;
-    const fine = j + 1 < s.oggetti.length ? s.oggetti[j + 1]._t - 0.25 : partenza;
+    const prossimo = s.oggetti[j + 1];
+    // a fermate: arriva mentre l'oggetto si posa e riparte ~0,6 s prima del prossimo; nella stessa cella più lento
+    const t0 = j === 0 ? arrivo : o._t + (s.fermate ? 0.15 : 0.3);
+    const fine = prossimo ? prossimo._t - (s.fermate ? 0.6 : 0.25) : partenza;
+    const v = s.fermate && prossimo ? centro(prossimo) : verso;
     chiave(t0, c.x, c.y, z);
     // nelle pause la camera scivola piano verso dove andrà dopo
-    if (fine > t0 + 0.4) chiave(fine, c.x + (verso.x - c.x) * 0.035, c.y + (verso.y - c.y) * 0.035, z * 1.05);
+    if (fine > t0 + 0.4) chiave(fine, c.x + (v.x - c.x) * 0.04, c.y + (v.y - c.y) * 0.04, z * 1.05);
   });
 }
 camera.sort((a, b) => a.t - b.t);
@@ -163,7 +176,7 @@ if (camera[0].t > 0) camera.unshift({ ...camera[0], t: 0 });
 const pulita = camera.filter((c, i) => i === 0 || c.t - camera[i - 1].t > 0.05);
 
 for (const o of oggetti) delete o._t;
-const mondo = { w: CELLA.w * COLONNE, h: CELLA.h * Math.ceil(scene.length / COLONNE), tema: doc.tema || 'archivio' };
+const mondo = { w: CELLA.w * COLONNE, h: CELLA.h * Math.ceil(k / COLONNE), tema: doc.tema || 'archivio' };
 const props = { durata: DURATA, fps: FPS, voce: `${CART}/voce.wav`, vista: VISTA, mondo, camera: pulita, oggetti, eventi };
 fs.writeFileSync(uscita, JSON.stringify(props, null, 1));
 // suoni (pc/rotolo/suoni.py): carta che cade, pennarello, timbro, macchina da scrivere, whoosh nei viaggi e nei tuffi

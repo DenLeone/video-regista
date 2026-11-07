@@ -27,16 +27,10 @@ sys.path.append(os.path.join(os.environ['RESOLVE_SCRIPT_API'], 'Modules'))
 import DaVinciResolveScript as dvr
 # DaVinci può essere appena stato aperto (pc/locale/documentario.mjs): si aspetta fino a 3 minuti che risponda
 import time
-resolve = None
-for prova in range(120):  # DaVinci appena aperto può metterci più di 3 minuti a rispondere (Test 3)
-    resolve = dvr.scriptapp('Resolve')
-    if resolve and resolve.GetProjectManager():
-        break
-    if prova == 0:
-        print('[livelli] aspetto che DaVinci Resolve risponda…', flush=True)
-    time.sleep(3)
-if not resolve:
-    sys.exit('DaVinci Resolve non risponde: aprilo e controlla External scripting using: Local')
+# se DaVinci resta bloccato all'avvio lo chiude e lo riapre (pc/locale/davinci_locale.py)
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from davinci_locale import connetti
+resolve = connetti()
 
 def sonda(f):
     return json.loads(subprocess.run(['ffprobe', '-v', 'error', '-select_streams', 'v:0', '-show_entries', 'stream=width,height,r_frame_rate',
