@@ -46,6 +46,7 @@ if (opz('--eventi')) {
     if (e.tipo === 'parola') ev.push({ t: e.da, suono: e.timbro ? S.timbro : S.pop, db: -6 });
     if (e.tipo === 'commenti') { e.voci.forEach((v) => ev.push({ t: v.t, suono: S.pop, db: -10 })); if (e.domanda) ev.push({ t: e.domanda.t, suono: S.colpo, db: -6 }); }
     if (e.tipo === 'tris') { e.voci.forEach((v) => ev.push({ t: v.t, suono: S.colpo, db: -9 })); ev.push({ t: e.unione.t, suono: S.timbro, db: -5 }); }
+    if (e.tipo === 'bilancia') { ev.push({ t: e.da, suono: S.swish, db: -12 }, { t: e.pende.t, suono: S.colpo, db: -5 }); }
     if (e.tipo === 'finale') { ev.push({ t: e.da, suono: S.swish, db: -10 }); tasti(e.testo, e.da + 0.4, 20); }
   }
   ev.sort((a, b) => a.t - b.t);

@@ -2,29 +2,267 @@
  "nota": "Cracovia (08/11/2026): grafiche sopra il video di Denis. Tempi: numero o parola@dopo.",
  "musica": "10 Musica/tensione",
  "elementi": [
-  {"tipo": "foto", "file": "piazza.jpg", "etichetta": "CRACOVIA · 7 NOV 2026", "da": 0, "a": "spara@0", "zona": "alto"},
-  {"tipo": "ritaglio", "file": "titolo-6-morti.png", "da": "spara@0", "a": "due@9", "zona": "alto", "rot": -1.5},
-  {"tipo": "macchina", "da": "sei@1", "a": "due@9", "zona": "basso", "righe": [
-    {"testo": "6 MORTI", "t": "sei@1", "grande": true, "colore": "rosso"},
-    {"testo": "+3 IN CASA", "t": "tre@4"},
-    {"testo": "16 FERITI", "t": "sedici@7"}]},
-  {"tipo": "etichetta", "testo": "DUE DOMANDE", "da": "due@9", "a": "prima@11", "zona": "alto"},
-  {"tipo": "etichetta", "testo": "DOMANDA 1/2", "da": "prima@11", "a": "affascinato@18", "zona": "alto", "y": 0.05},
-  {"tipo": "parola", "testo": "DEMAGOGIA", "timbro": true, "da": "demagogia@12", "a": "cosa@16", "zona": "basso", "y": 0.62},
-  {"tipo": "citazione", "testo": "Affascinato dalle ideologie di estrema destra", "parole": [3, 4, 5], "autore": "Marcin Kierwiński, ministro dell'Interno polacco", "da": "affascinato@18", "a": "sei@26", "zona": "alto"},
-  {"tipo": "macchina", "da": "sei@26", "a": "seconda@33", "zona": "basso", "righe": [
-    {"testo": "CRACOVIA 2026 ....... 6", "t": "sei@26", "colore": "rosso"},
-    {"testo": "PUGET-SUR-ARGENS 2025 ... 1", "t": "uno@28"},
-    {"testo": "ÖREBRO 2025 ......... 10", "t": "dieci@29"}]},
-  {"tipo": "etichetta", "testo": "DOMANDA 2/2", "da": "seconda@33", "a": "giornalai@34", "zona": "alto"},
-  {"tipo": "ritaglio", "file": "titolo-sparatoria.png", "da": "giornalai@34", "a": "colore@47", "zona": "alto", "rot": 1.5, "larghezza": 0.82, "aspetto": 0.4329,
-   "cerchio": {"t": "sparatoria@40", "x0": 0.0, "y0": 0.20, "x1": 0.35, "y1": 0.40}},
-  {"tipo": "titolo", "testo": "ATTENTATO:", "t": "attentato@53", "sotto": "Attenzione, pericolo eventuale", "tSotto": "attenzione@55", "da": "titoli@51", "a": "narrazione@60", "zona": "alto"},
-  {"tipo": "commenti", "da": "commenti@68", "a": "fatto@75", "zona": "alto", "voci": [
-    {"testo": "«Ha fatto bene»", "t": "fatto@72"}, {"testo": "«Siamo stanchi»", "t": "stanchi@72.5"}], "domanda": {"t": "stanchi@73.5"}},
-  {"tipo": "tris", "da": "destra@103.5", "a": "secondaria@111", "zona": "basso", "y": 0.56,
-   "voci": [{"testo": "ESTREMISTA DI DESTRA", "t": "destra@103.5"}, {"testo": "ESTREMISTA ISLAMICO", "t": "islamico@105"}, {"testo": "ESTREMISTA DI SINISTRA", "t": "sinistra@106"}],
-   "unione": {"testo": "ESTREMISTA", "t": "generale@107"}},
-  {"tipo": "finale", "testo": "In base a cosa è successo.", "da": "base@135", "a": 136.636}
+  {
+   "tipo": "foto",
+   "file": "piazza.jpg",
+   "etichetta": "CRACOVIA · 7 NOV 2026",
+   "da": 0,
+   "a": "spara@0",
+   "zona": "alto"
+  },
+  {
+   "tipo": "ritaglio",
+   "file": "titolo-6-morti.png",
+   "da": "spara@0",
+   "a": "due@9",
+   "zona": "alto",
+   "rot": -1.5
+  },
+  {
+   "tipo": "macchina",
+   "da": "sei@1",
+   "a": "due@9",
+   "zona": "basso",
+   "righe": [
+    {
+     "testo": "6 MORTI",
+     "t": "sei@1",
+     "grande": true,
+     "colore": "rosso"
+    },
+    {
+     "testo": "+3 IN CASA",
+     "t": "tre@4"
+    },
+    {
+     "testo": "16 FERITI",
+     "t": "sedici@7"
+    }
+   ]
+  },
+  {
+   "tipo": "etichetta",
+   "testo": "DUE DOMANDE",
+   "da": "due@9",
+   "a": "prima@11",
+   "zona": "alto"
+  },
+  {
+   "tipo": "etichetta",
+   "testo": "DOMANDA 1/2",
+   "da": "prima@11",
+   "a": "affascinato@18",
+   "zona": "alto",
+   "y": 0.05
+  },
+  {
+   "tipo": "parola",
+   "testo": "DEMAGOGIA",
+   "timbro": true,
+   "da": "demagogia@12",
+   "a": "cosa@16",
+   "zona": "basso",
+   "y": 0.62
+  },
+  {
+   "tipo": "citazione",
+   "testo": "Affascinato dalle ideologie di estrema destra",
+   "parole": [
+    3,
+    4,
+    5
+   ],
+   "autore": "Marcin Kierwiński, ministro dell'Interno polacco",
+   "da": "affascinato@18",
+   "a": "sei@26",
+   "zona": "alto"
+  },
+  {
+   "tipo": "macchina",
+   "da": "sei@26",
+   "a": "seconda@33",
+   "zona": "basso",
+   "righe": [
+    {
+     "testo": "CRACOVIA 2026 ....... 6",
+     "t": "sei@26",
+     "colore": "rosso"
+    },
+    {
+     "testo": "PUGET-SUR-ARGENS 2025 ... 1",
+     "t": "uno@28"
+    },
+    {
+     "testo": "ÖREBRO 2025 ......... 10",
+     "t": "dieci@29"
+    }
+   ]
+  },
+  {
+   "tipo": "etichetta",
+   "testo": "DOMANDA 2/2",
+   "da": "seconda@33",
+   "a": "giornalai@34",
+   "zona": "alto"
+  },
+  {
+   "tipo": "ritaglio",
+   "file": "titolo-sparatoria.png",
+   "da": "giornalai@34",
+   "a": "colore@47",
+   "zona": "alto",
+   "rot": 1.5,
+   "larghezza": 0.82,
+   "aspetto": 0.4329,
+   "cerchio": {
+    "t": "sparatoria@40",
+    "x0": 0.0,
+    "y0": 0.2,
+    "x1": 0.35,
+    "y1": 0.4
+   }
+  },
+  {
+   "tipo": "titolo",
+   "testo": "ATTENTATO:",
+   "t": "attentato@53",
+   "sotto": "Attenzione, pericolo eventuale",
+   "tSotto": "attenzione@55",
+   "da": "titoli@51",
+   "a": "narrazione@60",
+   "zona": "alto"
+  },
+  {
+   "tipo": "commenti",
+   "da": "commenti@68",
+   "a": "fatto@75",
+   "zona": "alto",
+   "voci": [
+    {
+     "testo": "«Ha fatto bene»",
+     "t": "fatto@72"
+    },
+    {
+     "testo": "«Siamo stanchi»",
+     "t": "stanchi@72.5"
+    }
+   ],
+   "domanda": {
+    "t": "stanchi@73.5"
+   }
+  },
+  {
+   "tipo": "tris",
+   "da": "destra@103.5",
+   "a": "secondaria@111",
+   "zona": "basso",
+   "y": 0.56,
+   "voci": [
+    {
+     "testo": "ESTREMISTA DI DESTRA",
+     "t": "destra@103.5"
+    },
+    {
+     "testo": "ESTREMISTA ISLAMICO",
+     "t": "islamico@105"
+    },
+    {
+     "testo": "ESTREMISTA DI SINISTRA",
+     "t": "sinistra@106"
+    }
+   ],
+   "unione": {
+    "testo": "ESTREMISTA",
+    "t": "generale@107"
+   }
+  },
+  {
+   "tipo": "etichetta",
+   "testo": "LA COSA PIÙ PREOCCUPANTE",
+   "da": "preoccupante@77",
+   "a": "condannare@79.5",
+   "zona": "alto"
+  },
+  {
+   "tipo": "bilancia",
+   "sinistra": "IL FATTO",
+   "destra": "LA RELIGIONE",
+   "pende": {
+    "t": "peso@84.5",
+    "verso": 1
+   },
+   "da": "condannare@79.5",
+   "a": "camminando@92.5",
+   "zona": "basso",
+   "y": 0.55
+  },
+  {
+   "tipo": "ritaglio",
+   "file": "auto.jpg",
+   "da": "camminando@92.5",
+   "a": "destra@103.5",
+   "zona": "alto",
+   "rot": -2,
+   "larghezza": 0.7
+  },
+  {
+   "tipo": "macchina",
+   "da": "peso@100",
+   "a": "destra@103.5",
+   "zona": "basso",
+   "righe": [
+    {
+     "testo": "PESO DIFFERENTE?",
+     "t": "peso@100",
+     "colore": "rosso"
+    }
+   ]
+  },
+  {
+   "tipo": "parola",
+   "testo": "CONTRO TUTTI",
+   "timbro": true,
+   "da": "contro@119.3",
+   "a": "giornalisti@124",
+   "zona": "alto",
+   "y": 0.1
+  },
+  {
+   "tipo": "etichetta",
+   "testo": "AI GIORNALISTI",
+   "da": "giornalisti@124",
+   "a": "intellettualmente@125.8",
+   "zona": "alto"
+  },
+  {
+   "tipo": "etichetta",
+   "testo": "ONESTÀ INTELLETTUALE",
+   "da": "intellettualmente@125.8",
+   "a": "base@135",
+   "zona": "alto"
+  },
+  {
+   "tipo": "macchina",
+   "da": "stessi@128",
+   "a": "base@135",
+   "zona": "basso",
+   "righe": [
+    {
+     "testo": "STESSO FATTO",
+     "t": "stessi@128"
+    },
+    {
+     "testo": "= STESSO TITOLO",
+     "t": "stessi@131.4",
+     "colore": "rosso"
+    }
+   ]
+  },
+  {
+   "tipo": "finale",
+   "testo": "In base a cosa è successo.",
+   "da": "base@135",
+   "a": 136.636
+  }
  ]
 }

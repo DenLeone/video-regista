@@ -29,6 +29,8 @@ export type Elemento = Base & (
   | { tipo: 'commenti'; voci: { testo: string; t: number }[]; domanda?: { t: number } }
   | { tipo: 'tris'; voci: { testo: string; t: number }[]; unione: { testo: string; t: number } }
   | { tipo: 'finale'; testo: string }
+  // bilancia: due piatti con le etichette; pari all'inizio, pende verso "destra" (+1) o "sinistra" (-1) dal tempo t
+  | { tipo: 'bilancia'; sinistra: string; destra: string; pende: { t: number; verso: 1 | -1 } }
 );
 export type PropsRedazione = { durata: number; fps?: number; cartella: string; elementi: Elemento[] };
 
@@ -217,6 +219,42 @@ const Tris: React.FC<{ el: Extract<Elemento, { tipo: 'tris' }>; t: number }> = (
   );
 };
 
+const Bilancia: React.FC<{ el: Extract<Elemento, { tipo: 'bilancia' }>; t: number }> = ({ el, t }) => {
+  const { fps, width: W } = useVideoConfig();
+  const { stile } = moto(t, el, fps);
+  // oscillazione smorzata attorno a 0, poi si inclina di 14° con un rimbalzo
+  const lieve = 2.5 * Math.sin((t - el.da) * 5) * Math.exp(-(t - el.da) * 1.5);
+  const k = t >= el.pende.t ? spring({ frame: (t - el.pende.t) * fps, fps, config: { damping: 7, stiffness: 90, mass: 1.2 } }) : 0;
+  const ang = lieve + 14 * k * el.pende.verso;
+  const L = W * 0.36, cx = W * 0.43, cy = 120;
+  const piatto = (lato: -1 | 1, testo: string) => {
+    const a = (ang * Math.PI) / 180;
+    const x = cx + lato * L * Math.cos(a), y = cy + lato * L * Math.sin(a);
+    const pesante = (lato === 1 ? 1 : -1) === el.pende.verso && k > 0.2;
+    return (
+      <g key={lato}>
+        <line x1={x} y1={y} x2={x - 150} y2={y + 260} stroke={CARTA} strokeWidth={6} />
+        <line x1={x} y1={y} x2={x + 150} y2={y + 260} stroke={CARTA} strokeWidth={6} />
+        <path d={`M${x - 210},${y + 260} Q${x},${y + 340} ${x + 210},${y + 260} Z`} fill={CARTA} />
+        <foreignObject x={x - 330} y={y + 330} width={660} height={200}>
+          <div style={{ textAlign: 'center', fontFamily: SANS, fontWeight: 900, fontSize: 84, lineHeight: 1, color: pesante ? ROSSO : '#fff', textShadow: '0 4px 16px rgba(0,0,0,0.8)' }}>{testo}</div>
+        </foreignObject>
+      </g>
+    );
+  };
+  return (
+    <div style={{ position: 'absolute', left: W * 0.07, top: 0, width: W * 0.86, height: 900, ...stile }}>
+      <svg width={W * 0.86} height={900} style={{ overflow: 'visible', filter: 'drop-shadow(0 16px 30px rgba(0,0,0,0.6))' }}>
+        <line x1={cx} y1={cy} x2={cx} y2={cy + 640} stroke={CARTA} strokeWidth={22} />
+        <path d={`M${cx - 170},${cy + 660} L${cx + 170},${cy + 660} L${cx + 110},${cy + 620} L${cx - 110},${cy + 620} Z`} fill={CARTA} />
+        <g transform={`rotate(${ang} ${cx} ${cy})`}><line x1={cx - L} y1={cy} x2={cx + L} y2={cy} stroke={CARTA} strokeWidth={20} strokeLinecap="round" /></g>
+        <circle cx={cx} cy={cy} r={30} fill={ROSSO} />
+        {piatto(-1, el.sinistra)}{piatto(1, el.destra)}
+      </svg>
+    </div>
+  );
+};
+
 const Finale: React.FC<{ el: Extract<Elemento, { tipo: 'finale' }>; t: number }> = ({ el, t }) => {
   const nero = clamp((t - el.da) / 0.5);
   const testo = scrivi(el.testo, t, el.da + 0.4, 20);
@@ -247,6 +285,7 @@ export const Redazione: React.FC<PropsRedazione> = ({ cartella, elementi }) => {
             case 'titolo': return <Titolo el={el} t={t} />;
             case 'commenti': return <Commenti el={el} t={t} />;
             case 'tris': return <Tris el={el} t={t} />;
+            case 'bilancia': return <Bilancia el={el} t={t} />;
             default: return null;
           }
         })();
