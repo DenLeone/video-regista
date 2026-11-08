@@ -14,6 +14,7 @@ import { ProvaScene } from './presentazione/ProvaScene';
 import { Presentazione, PropsPresentazione } from './presentazione/Presentazione';
 import { Unboxing, PropsUnboxing } from './unboxing/Unboxing';
 import { Documentario } from './documentario/Documentario';
+import { Redazione, type PropsRedazione } from './redazione/Redazione';
 import type { PropsDocumentario } from './documentario/tipi';
 import { Racconto } from './racconto/Racconto';
 import { Racconto as PropsRacconto } from './racconto/tipi';
@@ -44,6 +45,10 @@ export const Root: React.FC = () => (
     {/* stile Presentazione del flusso locale: livello trasparente sopra il video vero (pc/locale/presentazione.mjs) */}
     <Composition id="Presentazione" component={Presentazione} fps={30} width={2160} height={3840} durationInFrames={300}
       defaultProps={{ durata: 10, cartella: "presentazione/esempio", scene: [] } as PropsPresentazione}
+      calculateMetadata={({ props }) => ({ fps: props.fps ?? 30, durationInFrames: Math.max(1, Math.round(props.durata * (props.fps ?? 30))) })} />
+    {/* stile Redazione: grafica trasparente sopra un video di opinione su un fatto di cronaca (pc/locale/redazione.mjs) */}
+    <Composition id="Redazione" component={Redazione} fps={30} width={2160} height={3840} durationInFrames={300}
+      defaultProps={{ durata: 10, cartella: 'redazione/esempio', elementi: [] } as PropsRedazione}
       calculateMetadata={({ props }) => ({ fps: props.fps ?? 30, durationInFrames: Math.max(1, Math.round(props.durata * (props.fps ?? 30))) })} />
     {/* stile Documentario del flusso locale: piano sequenza verticale con Denis dentro il mondo (pc/locale/doc-mondo.mjs) */}
     <Composition id="Documentario" component={Documentario} fps={30} width={1080} height={1920} durationInFrames={300}
