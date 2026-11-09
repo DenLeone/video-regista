@@ -307,7 +307,7 @@ function confrontoColore(file, id, durata, colore) {
   const out = path.join(WORK, `colore-${id}.jpg`);
   try {
     run('ffmpeg', ['-y', '-v', 'error', '-ss', (durata / 2).toFixed(2), '-i', file, '-frames:v', '1', '-filter_complex',
-      `[0:v]scale=540:-2,split[a][b];[a]format=yuv420p[a1];[b]${filtroColore(colore)}[b1];[a1][b1]hstack`, '-q:v', '3', out]);
+      `[0:v]scale=540:-2,split[a][b];[a]format=yuv420p[a1];[b]${filtroColore(colore)}[b1];[a1][b1]hstack`, ...JPG_PIENO, '-q:v', '3', out]);
   } catch (e) { log(`confronto colore di ${id} non riuscito`, e.message); }
 }
 
@@ -316,6 +316,9 @@ function confrontoColore(file, id, durata, colore) {
 // lanczos: dal 4K al 1080 resta più dettaglio del bicubico di default. `zoom` (punch-in del jump
 // cut): si ritaglia dall'originale prima di ridurre, invece di ingrandire nel browser il pezzo già a
 // 1080 (dal 4K il dettaglio c'è ancora). Colori dichiarati BT.709: senza, il render li indovina.
+// I JPEG vogliono la gamma piena: con ffmpeg 7 un fotogramma a gamma limitata (il nostro BT.709 "tv")
+// faceva fallire mjpeg ("Non full-range YUV is non-standard", Olivetti 09/11) e il foglio non usciva
+const JPG_PIENO = ['-pix_fmt', 'yuvj420p'];
 const TAG_709 = ['-colorspace', 'bt709', '-color_primaries', 'bt709', '-color_trc', 'bt709', '-color_range', 'tv'];
 // Look 12K, voce e camere sincronizzate: se il pezzo ha la luce della ripresa intera si usa la misura
 // di tutta la ripresa, così i pezzi dello stesso volto escono con la stessa curva (misurati uno per
@@ -585,16 +588,16 @@ function preparaImmagini(foto) {
     const file = `img_${id.replace(/[^\w-]+/g, '_')}.${icona ? 'png' : 'jpg'}`;
     try {
       if (icona) run('ffmpeg', ['-y', '-v', 'error', '-i', path.join(SCARICO, f), '-frames:v', '1', '-vf', 'scale=512:512:force_original_aspect_ratio=decrease', path.join(MEDIA, file)]);
-      else run('ffmpeg', ['-y', '-v', 'error', '-i', path.join(SCARICO, f), '-frames:v', '1', '-vf', "scale='min(1600,iw)':-2", '-q:v', '3', path.join(MEDIA, file)]);
+      else run('ffmpeg', ['-y', '-v', 'error', '-i', path.join(SCARICO, f), '-frames:v', '1', '-vf', "scale='min(1600,iw)':-2", ...JPG_PIENO, '-q:v', '3', path.join(MEDIA, file)]);
       const info = probe(path.join(MEDIA, file));
-      run('ffmpeg', ['-y', '-v', 'error', '-i', path.join(MEDIA, file), '-vf', `scale=240:426:force_original_aspect_ratio=decrease,pad=240:426:(ow-iw)/2:(oh-ih)/2:black${etichetta(icona ? `ICONA ${id}` : id)}`, '-q:v', '4', path.join(dir, `${String(out.length).padStart(3, '0')}.jpg`)]);
+      run('ffmpeg', ['-y', '-v', 'error', '-i', path.join(MEDIA, file), '-vf', `scale=240:426:force_original_aspect_ratio=decrease,pad=240:426:(ow-iw)/2:(oh-ih)/2:black${etichetta(icona ? `ICONA ${id}` : id)}`, ...JPG_PIENO, '-q:v', '4', path.join(dir, `${String(out.length).padStart(3, '0')}.jpg`)]);
       out.push({ id, file, originale: path.basename(f), orient: info.w > info.h ? 'h' : 'v', ...(icona ? { icona: true } : {}), ...(copertina ? { copertina: true } : {}) });
       if (icona) log(`${id}: icona (entra con bagliore quando la nomino)`);
     } catch (e) { log(`immagine ${f} non leggibile (HEIC?): saltata`, e.message.split('\n')[0]); }
   }
   if (!out.length) return { immagini: out, foglio: null };
   const foglio = path.join(WORK, 'fogli', 'immagini.jpg');
-  run('ffmpeg', ['-y', '-v', 'error', '-i', path.join(dir, '%03d.jpg'), '-vf', `tile=${Math.min(4, out.length)}x${Math.ceil(out.length / 4)}`, '-frames:v', '1', '-q:v', '4', foglio]);
+  run('ffmpeg', ['-y', '-v', 'error', '-i', path.join(dir, '%03d.jpg'), '-vf', `tile=${Math.min(4, out.length)}x${Math.ceil(out.length / 4)}`, '-frames:v', '1', ...JPG_PIENO, '-q:v', '4', foglio]);
   return { immagini: out, foglio: path.relative(ROOT, foglio).replace(/\\/g, '/') };
 }
 
@@ -822,7 +825,7 @@ function fogliProvino(file, id, durata, offset = 0, colore = null) {
       ? `${base},drawtext=fontfile='${FONT.replace(/:/g, '\\:')}':text='${scritta}':x=6:y=6:fontsize=24:fontcolor=white:box=1:boxcolor=black@0.65:boxborderw=4`
       : base;
     try {
-      run('ffmpeg', ['-y', '-v', 'error', ...(soloChiave ? ['-skip_frame', 'nokey'] : []), '-ss', t.toFixed(2), '-i', file, '-frames:v', '1', '-vf', filtro, '-q:v', '4', out]);
+      run('ffmpeg', ['-y', '-v', 'error', ...(soloChiave ? ['-skip_frame', 'nokey'] : []), '-ss', t.toFixed(2), '-i', file, '-frames:v', '1', '-vf', filtro, ...JPG_PIENO, '-q:v', '4', out]);
       if (!fs.existsSync(out) || fs.statSync(out).size === 0) throw new Error('nessun fotogramma');
     } catch (e) {
       if (soloChiave) { soloChiave = false; k--; continue; } // fotogrammi chiave troppo radi: decodifica normale
@@ -834,7 +837,7 @@ function fogliProvino(file, id, durata, offset = 0, colore = null) {
   for (let s = 0; s * 16 < n; s++) {
     const foglio = path.join(WORK, 'fogli', `${id}-${s + 1}.jpg`);
     run('ffmpeg', ['-y', '-v', 'error', '-start_number', String(s * 16), '-i', path.join(dir, '%03d.jpg'),
-      '-frames:v', '1', '-vf', 'tile=4x4:padding=4:color=black', '-q:v', '4', foglio]);
+      '-frames:v', '1', '-vf', 'tile=4x4:padding=4:color=black', ...JPG_PIENO, '-q:v', '4', foglio]);
     fogli.push(path.relative(ROOT, foglio).replace(/\\/g, '/'));
   }
   return { fogli, passo: +passo.toFixed(1), etichette };
@@ -1416,7 +1419,7 @@ function copertina(piano, regia, analisi, out) {
     let migliore = null;
     scelti.forEach(({ c }, i) => [0.3, 0.5, 0.7].forEach((q, j) => {
       const jpg = path.join(dir, `${i}-${j}.jpg`);
-      run('ffmpeg', ['-y', '-v', 'error', '-ss', ((c.end - c.start) * q).toFixed(2), '-i', path.join(MEDIA, c.file), '-frames:v', '1', '-q:v', '2', jpg]);
+      run('ffmpeg', ['-y', '-v', 'error', '-ss', ((c.end - c.start) * q).toFixed(2), '-i', path.join(MEDIA, c.file), '-frames:v', '1', ...JPG_PIENO, '-q:v', '2', jpg]);
       const b = nitidezza(jpg);
       if (!migliore || b < migliore.b) migliore = { jpg, b };
     }));
@@ -1515,8 +1518,8 @@ function fotogrammiFinale(outFile, durata, piano) {
     const scelti = tempi.slice(0, 8).sort((a, b) => a - b);
     fs.rmSync(dir, { recursive: true, force: true });
     fs.mkdirSync(dir, { recursive: true });
-    scelti.forEach((t, i) => run('ffmpeg', ['-y', '-v', 'error', '-ss', t.toFixed(2), '-i', outFile, '-frames:v', '1', '-vf', 'scale=360:-2', '-q:v', '4', path.join(dir, `${String(i).padStart(2, '0')}.jpg`)]));
-    run('ffmpeg', ['-y', '-v', 'error', '-i', path.join(dir, '%02d.jpg'), '-vf', `tile=4x${Math.ceil(scelti.length / 4)}`, '-frames:v', '1', '-q:v', '4', out]);
+    scelti.forEach((t, i) => run('ffmpeg', ['-y', '-v', 'error', '-ss', t.toFixed(2), '-i', outFile, '-frames:v', '1', '-vf', 'scale=360:-2', ...JPG_PIENO, '-q:v', '4', path.join(dir, `${String(i).padStart(2, '0')}.jpg`)]));
+    run('ffmpeg', ['-y', '-v', 'error', '-i', path.join(dir, '%02d.jpg'), '-vf', `tile=4x${Math.ceil(scelti.length / 4)}`, '-frames:v', '1', ...JPG_PIENO, '-q:v', '4', out]);
     return out;
   } catch (e) { log('fotogrammi del finale non riusciti', e.message); return null; }
 }
@@ -1532,7 +1535,7 @@ function anteprima(outFile, piano, durata) {
   const t = tempoCopertina(piano, durata);
   const jpg = path.join(WORK, 'anteprima.jpg');
   try {
-    run('ffmpeg', ['-y', '-v', 'error', '-ss', String(t), '-i', outFile, '-frames:v', '1', '-vf', 'scale=540:-2', '-q:v', '4', jpg]);
+    run('ffmpeg', ['-y', '-v', 'error', '-ss', String(t), '-i', outFile, '-frames:v', '1', '-vf', 'scale=540:-2', ...JPG_PIENO, '-q:v', '4', jpg]);
     return fs.readFileSync(jpg).toString('base64');
   } catch { return undefined; }
 }
@@ -1918,7 +1921,7 @@ async function provaRegia() {
   fs.mkdirSync(path.join(WORK, 'cache'), { recursive: true });
   let dir = null;
   for (const d of [OUT_DIR, IN_DIR]) {
-    try { rclone('copy', remote(d, nome, CACHE), path.join(WORK, 'cache')); } catch { continue; }
+    try { rclone('copy', remote(d, nome, CACHE), path.join(WORK, 'cache'), '--max-depth', '1'); } catch { continue; }
     if (fs.existsSync(path.join(WORK, 'cache', 'materiale.json'))) { dir = d; break; }
   }
   if (!dir) {
@@ -1972,12 +1975,12 @@ async function analizzaEsempi() {
     const info = probe(v);
     const base = `es${i + 1}`;
     // tutto il video: 24 fotogrammi; l'apertura: i primi 6 s, un fotogramma ogni 0,5 s a risoluzione piena
-    run('ffmpeg', ['-y', '-v', 'error', '-i', v, '-vf', `fps=${(24 / Math.max(1, info.durata)).toFixed(4)},scale=216:-2,tile=6x4`, '-frames:v', '1', '-q:v', '4', path.join(out, `${base}-tutto.jpg`)]);
-    run('ffmpeg', ['-y', '-v', 'error', '-t', '6', '-i', v, '-vf', 'fps=2,scale=360:-2,tile=6x2', '-frames:v', '1', '-q:v', '4', path.join(out, `${base}-apertura.jpg`)]);
+    run('ffmpeg', ['-y', '-v', 'error', '-i', v, '-vf', `fps=${(24 / Math.max(1, info.durata)).toFixed(4)},scale=216:-2,tile=6x4`, '-frames:v', '1', ...JPG_PIENO, '-q:v', '4', path.join(out, `${base}-tutto.jpg`)]);
+    run('ffmpeg', ['-y', '-v', 'error', '-t', '6', '-i', v, '-vf', 'fps=2,scale=360:-2,tile=6x2', '-frames:v', '1', ...JPG_PIENO, '-q:v', '4', path.join(out, `${base}-apertura.jpg`)]);
     // fotogrammi singoli lungo il video (scritte, inserti, colore) e un ritaglio al centro a
     // risoluzione nativa (nitidezza, grana: stili "di qualità" come 12K Quality, 19/10)
-    for (const q of [0.15, 0.3, 0.5, 0.7, 0.85]) run('ffmpeg', ['-y', '-v', 'error', '-ss', (info.durata * q).toFixed(2), '-i', v, '-frames:v', '1', '-vf', 'scale=540:-2', '-q:v', '2', path.join(out, `${base}-${Math.round(q * 100)}.jpg`)]);
-    run('ffmpeg', ['-y', '-v', 'error', '-ss', (info.durata * 0.5).toFixed(2), '-i', v, '-frames:v', '1', '-vf', 'crop=min(iw\\,720):min(ih\\,720)', '-q:v', '2', path.join(out, `${base}-dettaglio.jpg`)]);
+    for (const q of [0.15, 0.3, 0.5, 0.7, 0.85]) run('ffmpeg', ['-y', '-v', 'error', '-ss', (info.durata * q).toFixed(2), '-i', v, '-frames:v', '1', '-vf', 'scale=540:-2', ...JPG_PIENO, '-q:v', '2', path.join(out, `${base}-${Math.round(q * 100)}.jpg`)]);
+    run('ffmpeg', ['-y', '-v', 'error', '-ss', (info.durata * 0.5).toFixed(2), '-i', v, '-frames:v', '1', '-vf', 'crop=min(iw\\,720):min(ih\\,720)', ...JPG_PIENO, '-q:v', '2', path.join(out, `${base}-dettaglio.jpg`)]);
     // copia piccola (432 px, ~3 MB al minuto al massimo) da studiare fotogramma per fotogramma: il
     // collegamento a Drive di Claude non scarica file oltre ~5 MB (stile Esplicativo, 19/10)
     run('ffmpeg', ['-y', '-v', 'error', '-i', v, '-vf', 'scale=432:-2', '-c:v', 'libx264', '-preset', 'veryfast', '-crf', '30', '-maxrate', '400k', '-bufsize', '800k',
@@ -2220,7 +2223,8 @@ async function main() {
     // cache del giro precedente (trascrizioni già fatte, regia da correggere)
     let cache = null, regiaPrecedente = null;
     try {
-      rclone('copy', remote(SRC_DIR, nome, CACHE), path.join(WORK, 'cache'));
+      // solo i file della cache: la sottocartella kit (pezzi in piccolo, decine di MB) non serve al giro
+      rclone('copy', remote(SRC_DIR, nome, CACHE), path.join(WORK, 'cache'), '--max-depth', '1');
       if (fs.existsSync(path.join(WORK, 'cache', 'materiale.json'))) cache = JSON.parse(fs.readFileSync(path.join(WORK, 'cache', 'materiale.json'), 'utf8'));
       if (fs.existsSync(path.join(WORK, 'cache', 'regia.json'))) regiaPrecedente = JSON.parse(fs.readFileSync(path.join(WORK, 'cache', 'regia.json'), 'utf8'));
     } catch { /* primo giro: nessuna cache */ }
@@ -2337,6 +2341,15 @@ async function main() {
       if (!stileSuMisura || stileSuMisura.grafica.biancoNero === 'no') for (const c of piano.clips) delete c.bn;
     }
     if (confronto) log('testo montato:', piano.testo);
+    // Regia e trascrizione salvate subito, dove le cerca il giro dopo (09/11). Prima finivano su Drive
+    // solo a render riuscito: un render fallito buttava via la regia già pagata e "Solo render"
+    // rispondeva "Nessuna regia precedente". Non per le correzioni: riprovate, si applicherebbero due
+    // volte alla regia già corretta.
+    if (nuovaRegia && !CORREZIONE) {
+      Promise.all(['regia.json', 'materiale.json'].filter((f) => fs.existsSync(path.join(WORK, f)))
+        .map((f) => inSottofondo('rclone', ['copyto', path.join(WORK, f), remote(SRC_DIR, nome, CACHE, f)])))
+        .catch((e) => log('regia non salvata in anticipo', String(e.message).split('\n')[0]));
+    }
     const nomeStile = stileSuMisura?.nome || stile;
     if (PROVA_SECONDI) { troncaPiano(piano, PROVA_SECONDI, PROVA_DA); log(`render di prova: ${PROVA_DA ? `da ${PROVA_DA} s, ` : 'primi '}${PROVA_SECONDI} s (${piano.clips.length} tagli)`); }
     // i pezzi scelti, prima del render vero: la card dell'app distingue tagli e render
@@ -2430,7 +2443,8 @@ async function main() {
       const copie = [
         ...(davinci ? [inSottofondo('rclone', ['copyto', davinci, remote(DEST, nome, path.basename(davinci))])] : []),
         inSottofondo('rclone', ['copyto', path.join(WORK, 'NOTE.txt'), remote(DEST, nome, 'NOTE.txt')]),
-        ...['regia.json', 'piano.json', 'materiale.json'].map((f) => inSottofondo('rclone', ['copyto', path.join(WORK, f), remote(DEST, nome, CACHE, f)])),
+        // il piano di una prova è troncato: non deve coprire quello intero (lo legge "descrizione")
+        ...['regia.json', ...(PROVA_SECONDI ? [] : ['piano.json']), 'materiale.json'].map((f) => inSottofondo('rclone', ['copyto', path.join(WORK, f), remote(DEST, nome, CACHE, f)])),
         ...fs.readdirSync(WORK).filter((x) => /^colore-.+\.jpg$/.test(x)).map((f) => inSottofondo('rclone', ['copyto', path.join(WORK, f), remote(DEST, nome, CACHE, f)])),
       ];
       await Promise.all(copie);
@@ -2514,7 +2528,7 @@ async function preparaKit(piano, nome, dest) {
   rclone('copy', kit, remote(dest, nome, CACHE, 'kit'), '--transfers', '8');
   if (fs.existsSync(path.join(WORK, 'kit.zip'))) rclone('copyto', path.join(WORK, 'kit.zip'), remote(dest, nome, CACHE, 'kit', 'kit.zip'));
   // regia e materiale salvati: i render dopo ("render") non rifanno la regia
-  for (const f of ['regia.json', 'piano.json', 'materiale.json']) {
+  for (const f of ['regia.json', ...(PROVA_SECONDI ? [] : ['piano.json']), 'materiale.json']) {
     if (fs.existsSync(path.join(WORK, f))) rclone('copyto', path.join(WORK, f), remote(dest, nome, CACHE, f));
   }
   const peso = fs.readdirSync(media).reduce((t, f) => t + fs.statSync(path.join(media, f)).size, 0);

@@ -304,7 +304,7 @@ jobs:
       - name: Cache strumenti
         # stessa chiave di stile.yml, laboratorio.yml e del giro «strumenti»: un solo scarico
         if: vars.USA_IMMAGINE != '1' && steps.check.outputs.cartella != '' && inputs.azione != 'regia' && inputs.azione != 'archivio'
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: ~/opt/regista-strumenti
           key: regista-strumenti-v2-${{ runner.os }}
@@ -472,7 +472,7 @@ jobs:
 
       - name: Conserva piano e note (debug)
         if: always() && steps.check.outputs.cartella != ''
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: lavoro
           path: |

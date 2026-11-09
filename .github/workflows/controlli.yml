@@ -1,0 +1,31 @@
+name: controlli
+
+# A ogni modifica di stili e script: tipi delle composizioni, sintassi degli script e prove.
+# Nato il 09/11: un giro infinito in src/Focus.tsx era arrivato su main e i render restavano appesi.
+on:
+  push:
+    branches: [main]
+    paths: ['src/**', 'scripts/**', 'telegram/**', 'package.json', 'package-lock.json', 'tsconfig.json', '.github/workflows/controlli.yml']
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: controlli-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  controlli:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci --ignore-scripts
+      - name: Tipi, sintassi e prove
+        run: npm run controlli

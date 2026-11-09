@@ -268,6 +268,18 @@ DaVinci (`pc/locale/`, AI locali con Ollama, niente token). Il flusso locale è 
 - Le immagini diventano schede inclinate col bordo rosso, pillola (tag o parola) e icona rossa; la parola che cade su una scheda non si scrive dietro.
 - I B-roll (clip con `audio` o `muto`) hanno il contorno di un telefono con la parola dentro.
 - Cambi di scena: anello a retino rosso e ogni tanto il flash "negativo".
+- I B-roll si riconoscono dal campo `broll: true` della clip (lo mette `regia.mjs`), non più da `audio`/`muto`: con un girato tutto muto il telefono copriva l'intero video.
+- **Parole fitte** (`src/paroleFitte.ts`, prova in `scripts/parole-fitte.test.mjs`): se la regia dà poche parole chiave, i buchi si riempiono dal parlato (`piano.parole`), una ogni ~2,6 s, mai sopra quelle della regia. Il 09/11 la prima versione aveva un giro infinito (parola della regia 0,2–0,6 s dopo il punto di ricerca) e i render di Focus restavano appesi: corretto e coperto dalla prova.
+- Da fare: nel riferimento la persona è piccola su fondo chiaro pulito; da noi resta il girato intero. Idea: persona ritagliata su fondo `#E9E7EA`, più piccola e in basso.
+
+### Prove veloci degli stili (09/11)
+- **Kit**: `regista.yml` con `azione: kit` non fa il render: salva su Drive in `<cartella>/_regista/kit` il piano e tutti i pezzi a 540 px, più `kit.zip` (senza audio, per stare sotto i 10 MB che il connettore Drive riesce a scaricare).
+- **Fotogrammi**: i file di `kit/media` vanno in `public/media`, poi `node scripts/fotogrammi.mjs <Stile> <piano.json> <foglio.jpg> <secondi...>` (con `REMOTION_BROWSER`). Impacchetta una volta (~90 s), poi ogni fotogramma costa ~2 s.
+- **Render di un pezzo**: l'input `secondi` accetta anche `A-B` (es. `35-55`). Il piano di una prova è troncato e non viene salvato in `_regista/piano.json`.
+- **Laboratorio**: ricette con `"privato": true` non pubblicano niente sul ramo `laboratorio-esiti` (il repo è pubblico: obbligatorio col girato di Denis). Op `sequenze` = fogli di fotogrammi di un video.
+- **Regia salvata subito**: `regia.json` e `materiale.json` vanno in `_regista` appena scritta la regia (non per le correzioni), così un render fallito non butta via regia e trascrizione.
+- **Controlli**: `npm run controlli` (tipi, sintassi degli script, prove); gira da solo a ogni push con `.github/workflows/controlli.yml`.
+- **Da fare (Denis)**: rclone avvisa che il suo `client_id` condiviso di Google Drive verrà spento nel 2026. Serve un `client_id` proprio (https://rclone.org/drive/#making-your-own-client-id) e il secret `RCLONE_CONF` aggiornato.
 
 ## 6. Da fare (in ordine di utilità)
 1. Finire Austria e controllare tutto quello del §5.

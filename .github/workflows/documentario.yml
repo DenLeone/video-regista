@@ -74,7 +74,7 @@ jobs:
           python-version: '3.12'
 
       - name: Cache strumenti
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: ~/opt/regista-strumenti
           key: regista-strumenti-v2-${{ runner.os }}
@@ -184,7 +184,7 @@ jobs:
 
       - name: Conserva beats ed eventi (debug)
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: documentario
           path: |
