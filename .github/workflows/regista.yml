@@ -44,7 +44,7 @@ on:
         required: false
         default: ''
       secondi:
-        description: 'Render di prova: solo i primi N secondi del montaggio (vuoto = tutto)'
+        description: 'Render di prova: i primi N secondi (es. 20) o un pezzo in mezzo (es. 40-60) del montaggio (vuoto = tutto)'
         required: false
         default: ''
       stili:

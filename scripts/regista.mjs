@@ -45,7 +45,11 @@ const CORREZIONE = (process.env.CORREZIONE || '').trim();
 const RIRENDER = process.env.AZIONE === 'render'; // rifà solo il render con la regia salvata (origine 98)
 // render di prova (input "secondi"): solo i primi N secondi del montaggio, per provare look e
 // grafica di uno stile in pochi minuti; esce come "<nome> - PROVA Ns.mp4", senza didascalie
-const PROVA_SECONDI = Math.max(0, Number(process.env.PROVA_SECONDI) || 0);
+// "40-60" = un pezzo in mezzo, dal secondo 40 al 60 del montaggio (PROVA_DA = 40, PROVA_SECONDI = 20)
+const PROVA_PEZZO = /^\s*(\d+(?:[.,]\d+)?)\s*-\s*(\d+(?:[.,]\d+)?)\s*$/.exec(process.env.PROVA_SECONDI || '');
+const PROVA_DA = PROVA_PEZZO ? Number(PROVA_PEZZO[1].replace(',', '.')) : 0;
+const PROVA_SECONDI = PROVA_PEZZO ? Math.max(1, Number(PROVA_PEZZO[2].replace(',', '.')) - PROVA_DA) : Math.max(0, Number(process.env.PROVA_SECONDI) || 0);
+const PROVA_NOME = PROVA_PEZZO ? `${PROVA_PEZZO[1]}-${PROVA_PEZZO[2]}s` : `${PROVA_SECONDI}s`;
 // Confronto stili: un solo scarico, 2 o 3 anteprime da 10 s, il server aspetta il tasto
 // e monta il video intero nello stile scelto senza riscaricare. Nomi separati da |.
 const STILI_CONFRONTO = (process.env.STILI_SCELTA || '').split('|').map((s) => s.trim()).filter(Boolean).slice(0, 3);
@@ -379,7 +383,34 @@ export async function eseguiFfmpeg(lista, lavoratori = 4) {
   await pool(lista.map((args) => () => eseguiUno('ffmpeg', args)), lavoratori);
 }
 
-function troncaPiano(piano, secondi) {
+// da = secondo del montaggio da cui partire (prova di un pezzo in mezzo: "secondi" = "40-60")
+function troncaPiano(piano, secondi, da = 0) {
+  if (da > 0) {
+    let t = 0;
+    const clips = [];
+    for (const c of piano.clips) {
+      const dur = c.end - c.start, salta = da - t;
+      t += dur;
+      if (t <= da + 0.05) continue;
+      if (salta <= 0.05) { clips.push(c); continue; }
+      if (c.lento || c.rampa) continue; // il rallentatore non si accorcia da davanti: si parte dal pezzo dopo
+      const n = { ...c, start: +(c.start + salta).toFixed(3) };
+      if (c.audio) n.audio = { ...c.audio, start: +(c.audio.start + salta).toFixed(3) };
+      if (c.inserto?.tipo === 'video' && c.inserto.start != null) n.inserto = { ...c.inserto, start: +(c.inserto.start + salta).toFixed(3) };
+      clips.push(n);
+    }
+    // l'inizio vero è dove parte il primo pezzo tenuto
+    const inizio = t - clips.reduce((a, c) => a + (c.end - c.start), 0);
+    const sposta = (x) => ({ ...x, at: +(x.at - inizio).toFixed(3) });
+    const dentro = (x) => x.at + (x.dur ?? 0) > inizio + 0.3;
+    piano.clips = clips;
+    piano.keywords = piano.keywords.filter(dentro).map(sposta).map((k) => (k.at < 0 ? { ...k, dur: +(k.dur + k.at).toFixed(3), at: 0 } : k));
+    piano.parole = (piano.parole || []).filter((w) => w.at >= inizio).map(sposta);
+    piano.flickers = (piano.flickers || []).filter((f) => f.at >= inizio).map(sposta);
+    for (const campo of ['schermate', 'schede', 'icone']) if (piano[campo]) piano[campo] = piano[campo].filter((x) => x.at >= inizio).map(sposta);
+    if (piano.sponsorAt != null) piano.sponsorAt = Math.max(0, piano.sponsorAt - inizio);
+    if (piano.musica) piano.musica = { ...piano.musica, da: piano.musica.da + inizio, parlato: piano.musica.parlato.map(([a, b]) => [a - inizio, b - inizio]).filter(([, b]) => b > 0) };
+  }
   let t = 0;
   const clips = [];
   for (const c of piano.clips) {
@@ -2303,7 +2334,7 @@ async function main() {
     }
     if (confronto) log('testo montato:', piano.testo);
     const nomeStile = stileSuMisura?.nome || stile;
-    if (PROVA_SECONDI) { troncaPiano(piano, PROVA_SECONDI); log(`render di prova: primi ${PROVA_SECONDI} s (${piano.clips.length} tagli)`); }
+    if (PROVA_SECONDI) { troncaPiano(piano, PROVA_SECONDI, PROVA_DA); log(`render di prova: ${PROVA_DA ? `da ${PROVA_DA} s, ` : 'primi '}${PROVA_SECONDI} s (${piano.clips.length} tagli)`); }
     // i pezzi scelti, prima del render vero: la card dell'app distingue tagli e render
     await fase(nome, `✂️ Taglio ${piano.clips.length} pezzi`, 'tagli');
     await tagliaSegmenti(piano, analisi);
@@ -2334,7 +2365,7 @@ async function main() {
 
     // nome con versione: FINALE, FINALE v2, FINALE v3...
     const versioni = files.filter((f) => /FINALE( v\d+)?\.mp4$/i.test(f.Name)).length;
-    const finale = PROVA_SECONDI ? `${nome} - PROVA ${PROVA_SECONDI}s ${nomeStile}.mp4` : `${nome} - FINALE${versioni ? ` v${versioni + 1}` : ''}.mp4`;
+    const finale = PROVA_SECONDI ? `${nome} - PROVA ${PROVA_NOME} ${nomeStile}.mp4` : `${nome} - FINALE${versioni ? ` v${versioni + 1}` : ''}.mp4`;
     const outFile = path.join(ROOT, 'out', finale);
     fs.mkdirSync(path.dirname(outFile), { recursive: true });
     const durataPiano = piano.clips.reduce((s, c) => s + (c.end - c.start), 0);
