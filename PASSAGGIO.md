@@ -1,6 +1,6 @@
 # PASSAGGIO — tutto il progetto "Regista" in un file
 
-> Scritto da Claude il 30/10/2026 per passare il progetto a un'altra AI (Grok o altre).
+> Scritto da Claude il 30/10/2026 per passare il progetto a un'altra AI (Grok o altre). Aggiornato il 09/11/2026 (§5-ter).
 > **Leggi questo file per primo.** Lo storico completo, giorno per giorno, è in `PROGRESSO.md`.
 > Codice: https://github.com/DenLeone/video-regista (repo pubblico, ramo `main`).
 
@@ -132,7 +132,7 @@ Variabili utili:
   - Taglio frasi e pause in `scripts/regia.mjs`; render con **Remotion** (`src/*.tsx`).
   - Il girato arriva da Drive con rclone.
 - **Cartelle Drive**: `01 · Da editare/<Nome>` (girato) → `02 · Fatti/<Nome>` (risultato) → `03 · Da pubblicare`. Gli stili stanno in `12 · Risorse/Stili/<Stile>/stile.txt`.
-- **Stili**: Blueprint, Cinematico, Narrativo, Esplicativo, 12K Quality, Motion, Ultra, Beat, Blackden (reazione), più gli "stili su misura" da Drive (`stile.txt`, senza codice).
+- **Stili**: nel bot dal 05/11 solo **Cinematico** (predefinito) e **Lista UI** tra quelli col codice, più gli "stili su misura" da Drive (`stile.txt`, senza codice: Narrativo, Esplicativo, 12K Quality, Motion, Ultra, Impact, Beat, Blackden…). Blueprint e MotionCollage restano nel codice ma non si scelgono più. A parte il tasto **🎞 Documentario** (§5-ter).
 - **Laboratorio**: `.github/workflows/laboratorio.yml` con le ricette in `lab/*.json`. Fa prove, fotogrammi, varianti e l'analisi di video YouTube con Gemini. Gli esiti vanno sul ramo `laboratorio-esiti-<ricetta>` e su Drive.
 - **Pubblica**: `scripts/pubblica.mjs` (Instagram Reel + YouTube Shorts) dal tasto 📤 del bot.
 
@@ -200,6 +200,63 @@ Mappe v2, B-roll automatico, pacchetto (descrizione e copertine), uscita 4K, vel
 - **Libreria Assets** (03/11): `DIR_ASSETS` = `12 · Risorse/Assets` (scripts/cartelle.mjs), funzioni in `scripts/libreria.mjs` (test: `node --test scripts/libreria.test.mjs`). Loghi: i PNG in `Assets/Loghi/**` il cui nome (es. `ChatGPT.png`, `final-cut-pro.png`, alias con virgola `apple, iphone.png`) è detto nel parlato entrano da soli come icone (max 8, `REGISTA_LOGHI=0` li spegne). Font: negli stili su misura `Font titoli: Apple Garamond Bold` prende il file giusto (peso e corsivo) prima da asset/ dello stile, poi da `Assets/Fonts/**`, poi Google Fonts. ⚠️ Alcuni font in libreria sono PERSONAL USE ONLY.
 - **Campionario per DaVinci** (03/11): `node pc\campionario.mjs` sul PC rende ogni contenitore di Lista UI come ProRes 4444 trasparente (animato + fermo) e un FCPXML 1080×1920 con tutto in timeline. Testi in `pc/campionario.json`, istruzioni (anche per Claude Code sul PC) in `pc/CAMPIONARIO-DAVINCI.md`. I contenitori rifatti in DaVinci non entrano ancora da soli nei montaggi.
 - `scripts/stili/MotionCollage.md` aggiunto: senza, scegliere MotionCollage fermava il montaggio (ogni stile base vuole il suo .md).
+
+## 5-ter. NOVITÀ 03/11 – 09/11 (altre sessioni di Claude; riassunte da Claude il 09/11)
+⚠️ Le sessioni del 04–08/11 non avevano aggiornato questo file: i dettagli veri sono nei LEGGIMI citati qui sotto.
+
+**Due strade, da qui in poi:** il **bot nel cloud** (corti 9:16, Documentario) e il **flusso locale sul PC** con
+DaVinci (`pc/locale/`, AI locali con Ollama, niente token). Il flusso locale è dove si è lavorato di più.
+
+### Cloud (bot + GitHub Actions)
+- **🎞 Documentario** (motore *Rotolo*, 04/11): piano sequenza 9:16 senza tagli; la voce (o un video di Denis che parla,
+  come "presentatore") e le foto con il nome giusto (`persona-nome-anno.jpg`, `luogo-…`, `documento-…`, `prodotto-…`,
+  `ritaglio-….png`, `overlay-….mp4`). Due mondi: **📜 Rotolo** (carta di riso, inchiostro, timbri rossi) e **💻 Tech**
+  (canvas scuro, card di vetro, numeri enormi). Dal bot: 🎞 Documentario → cartella in `01 · Da editare` → stile →
+  1080 o 4K (workflow `.github/workflows/documentario.yml`). Torna `beats.json` nella cartella: corretto a mano e
+  rilanciato rifà solo il render. Escono anche copertina, descrizione e 5 hashtag (`pc/rotolo/social.mjs`).
+  Codice: `src/Rotolo.tsx`, `src/rotolo/`, `pc/rotolo/` (istruzioni: **`pc/rotolo/LEGGIMI.md`**). Regia AI:
+  Claude Code → Gemini → Ollama (`ROTOLO_AI` per forzare). `src/DocNintendo.tsx` = la prima prova fatta a mano.
+- **Racconto 21:9** (03/11, `src/racconto/`, `scripts/racconto/ai.json`): prova di piano sequenza orizzontale sulla
+  scrivania col video "Ai", resa sul laboratorio (`lab/ai-racconto.json`) → `02 · Fatti/Ai/Ai - RACCONTO 21x9.mp4`
+  (2,4 GB). Denis non ha ancora dato un giudizio; il Documentario ne ha preso il posto.
+- **Collage** (03/11): motion graphic a ritagli in 4K verticale descritta da `scena.json`, regia AI sul parlato di
+  `voce.mp4`. Sul PC: `COLLAGE.bat` / `node pc\collage.mjs <nome> [--anteprima|--fotogrammi|--studio|--regia]`.
+- **Bot**: stili ridotti (05/11, vedi §3); dal 09/11 **niente più messaggi automatici sui commenti** (restano
+  `/commenti` e il tasto 💬); restano piano del mattino, report del lunedì e "sta esplodendo".
+- **Laboratorio**: `trascrivi` salva anche le parole con i tempi (`parole-<file>.json`) e l'op `racconto` rende sul
+  runner. Voce e foto vere **solo su Drive e sul runner, mai nel repo** (è pubblico).
+
+### PC di casa: flusso locale (`pc/locale/`, istruzioni complete in **`pc/locale/LEGGIMI.md`**)
+- **Un comando, o un collegamento sul Desktop** (si trascina sopra il video o la cartella). **DaVinci va tenuto
+  CHIUSO**: lo apre lo script all'ultimo passo (aperto occupa ~6 GB della scheda video e l'AI va fino a 50 volte
+  più lenta). Serve **DaVinci Resolve Studio** con *Preferenze → Sistema → Generale → External scripting: Local*.
+- Passi: rinomina delle immagini guardandole (gemma4:12b) → **pulizia del parlato** (Whisper + allineamento forzato
+  MMS, via silenzi/ripetizioni/false partenze, niente parole mozzate; qwen3.8:27b) → immagini sulle parole →
+  regia → grafica Remotion trasparente → movimento del presentatore → suoni (SFX, musica, ambiente) → **timeline
+  in DaVinci** (V1 tu tagliato, V2 grafica, A1 voce, A2 sfx, A3 musica, A4 ambiente) → sottotitoli WATER di
+  ClashiVFX (dalla nostra trascrizione, spostati fuori dal viso).
+- Stili del flusso locale (collegamenti `.bat` in `pc/locale/`):
+  - **Documentario locale** (`--mondo tech|rotolo`): grafica Rotolo/Tech sopra il video vero, che resta gradabile.
+  - **Documentario piano sequenza** (`--stile documentario`): Denis DENTRO una stampa sulla scrivania, la camera ci entra
+    (`pc/locale/doc-*.mjs`, `src/documentario/`); prompt e video di riferimento in `12 · Risorse/Stili/Documentario`.
+  - **Presentazione** (`--stile presentazione`, 06/11): come il reel di riferimento: pannello Tiffany, parola chiave
+    enorme, infografiche per tema (barre, curva, onda, oggetto su percorso, prompt che si scrive, numeri, icone
+    Tabler), tre modi (tu con la parola, diviso, grafica piena a raffiche), il video vero dentro la grafica
+    (`pc/locale/presentazione.mjs`, `src/presentazione/`).
+  - **Unboxing** (06/11): solo riprese del prodotto, montate sul battito della musica, schede delle caratteristiche
+    (dal nome delle immagini o `prodotto.txt`), qwen3-vl:8b riconosce le fasi (scatola, apertura, prodotto…).
+    Voce fuori campo non ancora gestita (`pc/locale/unboxing.mjs`, `src/unboxing/`).
+  - **Redazione** (08/11): grafica trasparente per video d'opinione su fatti di cronaca, da una scaletta agganciata
+    alle parole (`"cracovia@0"`); prima prova "Cracovia", con la bilancia che pende sulla parola
+    (`pc/locale/redazione.mjs`, `src/redazione/`).
+- Modelli Ollama usati: `gemma4:12b`, `qwen3.8:27b`, `qwen3-vl:8b`. Ragionamento "low" di default
+  (`LOCALE_PENSA=medium` per alzarlo: 4–5 volte più lento a parità di risultato).
+- Dipendenze npm nuove: `@remotion/layout-utils`, `@tabler/icons-react` (sul PC: `npm ci` dopo il `git pull`).
+
+### Da verificare / aperto
+- Giudizio di Denis su Racconto 21:9 e sui test Documentario, Presentazione, Unboxing, Redazione.
+- Unboxing con voce fuori campo; mix del flusso locale a -17 LUFS (normalizzare a -14 in Fairlight o in Deliver).
+- `PASSAGGIO.md` va aggiornato a ogni sessione: le note di dettaglio stanno nei LEGGIMI, qui il quadro.
 
 ---
 
