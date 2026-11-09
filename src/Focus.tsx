@@ -212,7 +212,8 @@ export const Focus: React.FC<Piano> = (piano) => {
   const tr = tratti(piano);
   // un cambio di scena su tre (e ogni entrata o uscita da un B-roll) ha il flash fantasma
   const cambi = tr.filter((x, i) => x.cambio && (x.indice % 3 === 1 || x.broll !== tr[i - 1]?.broll)).map((x) => x.da);
-  const schede = schedeInserti(piano);
+  // come nel riferimento le schede foto sono brevi (max ~3 s): poi torna la parola grande dietro
+  const schede = schedeInserti(piano).map((s) => ({ ...s, len: Math.min(s.len, f(3.2)) }));
   const parole = piano.keywords;
   const nelTratto = (k: Keyword) => tr.find((x) => f(k.at) >= x.da && f(k.at) < x.da + x.len);
   // la parola che cade su una scheda foto va nella pillola della scheda, non dietro

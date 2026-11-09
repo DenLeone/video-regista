@@ -720,7 +720,7 @@ async function ritagliPersona(piano) {
     for (const [i, c] of piano.clips.entries()) {
       const dur = c.end - c.start;
       const sovrapposti = intervalli.map(([a, b]) => [Math.max(a, t), Math.min(b, t + dur)]).filter(([a, b]) => b - a > 0.1);
-      if (sovrapposti.length && c.orient !== 'h' && (!c.inserto || reazione)) {
+      if (sovrapposti.length && c.orient !== 'h' && (!c.inserto || reazione || focus)) {
         const da = Math.min(...sovrapposti.map(([a]) => a)) - t, a = Math.max(...sovrapposti.map(([, b]) => b)) - t;
         const out = `rit_${String(i).padStart(3, '0')}.webm`;
         run(py, [path.join(ROOT, 'scripts', 'ritaglio.py'), path.join(MEDIA, c.file), path.join(MEDIA, out), modello, (a - da).toFixed(3), da.toFixed(3)], { stdio: ['ignore', 'pipe', 'inherit'] });
