@@ -42,7 +42,7 @@ const REMOTE = process.env.REGISTA_REMOTE || 'gdrive';
 const IN_DIR = DIR_EDITARE;
 const OUT_DIR = DIR_FATTI;
 const CORREZIONE = (process.env.CORREZIONE || '').trim();
-const RIRENDER = process.env.AZIONE === 'render'; // rifà solo il render con la regia salvata (origine 98)
+const RIRENDER = process.env.AZIONE === 'render' || process.env.AZIONE === 'kit'; // rifà solo il render con la regia salvata (origine 98)
 // render di prova (input "secondi"): solo i primi N secondi del montaggio, per provare look e
 // grafica di uno stile in pochi minuti; esce come "<nome> - PROVA Ns.mp4", senza didascalie
 // "40-60" = un pezzo in mezzo, dal secondo 40 al 60 del montaggio (PROVA_DA = 40, PROVA_SECONDI = 20)
@@ -2364,6 +2364,7 @@ async function main() {
     }
     fs.writeFileSync(path.join(WORK, 'piano.json'), JSON.stringify(piano, null, 1));
     validaPiano(piano);
+    if (process.env.AZIONE === 'kit') { await preparaKit(piano, nome, DEST); return; }
 
     // nome con versione: FINALE, FINALE v2, FINALE v3...
     const versioni = files.filter((f) => /FINALE( v\d+)?\.mp4$/i.test(f.Name)).length;
@@ -2479,6 +2480,39 @@ async function main() {
     await notifica('⚠️ non montato', nome, testo, { info: { errore: e.message, correzione: CORREZIONE || '' } });
     process.exitCode = 1;
   }
+}
+
+// Kit di prova (azione "kit", 09/11): niente render. Il piano intero e tutto quello che usa (pezzi già
+// tagliati, ritagli della persona, foto) in piccolo su Drive in _regista/kit: così le prove di uno stile
+// si fanno in pochi secondi a fotogrammi (remotion still) o con un render a 540 px, senza rifare download,
+// analisi, regia e tagli ogni volta. Ogni file resta sotto i 10 MB.
+async function preparaKit(piano, nome, dest) {
+  const kit = path.join(WORK, 'kit'), media = path.join(kit, 'media');
+  fs.rmSync(kit, { recursive: true, force: true });
+  fs.mkdirSync(media, { recursive: true });
+  const lavori = fs.readdirSync(MEDIA).map((f) => {
+    const da = path.join(MEDIA, f), a = path.join(media, f), ext = path.extname(f).toLowerCase();
+    if (ext === '.webm') return ['-y', '-v', 'error', '-c:v', 'libvpx-vp9', '-i', da, '-vf', 'scale=540:-2', '-c:v', 'libvpx-vp9', '-pix_fmt', 'yuva420p',
+      '-b:v', '0', '-crf', '42', '-deadline', 'realtime', '-cpu-used', '8', '-auto-alt-ref', '0', '-an', a];
+    if (['.mp4', '.mov', '.m4v'].includes(ext)) return ['-y', '-v', 'error', '-i', da, '-vf', 'scale=540:-2', '-c:v', 'libx264', '-preset', 'veryfast', '-crf', '30',
+      '-pix_fmt', 'yuv420p', '-c:a', 'aac', '-b:a', '96k', '-movflags', '+faststart', a];
+    if (['.jpg', '.jpeg', '.png', '.webp'].includes(ext)) return ['-y', '-v', 'error', '-i', da, '-vf', "scale='min(1080,iw)':-2", a];
+    fs.copyFileSync(da, a);
+    return null;
+  }).filter(Boolean);
+  for (let i = 0; i < lavori.length; i += 4) await Promise.all(lavori.slice(i, i + 4).map((args) => inSottofondo('ffmpeg', args)));
+  fs.writeFileSync(path.join(kit, 'piano.json'), JSON.stringify(piano, null, 1));
+  const grossi = fs.readdirSync(media).filter((f) => fs.statSync(path.join(media, f)).size > 9.5e6);
+  if (grossi.length) log(`kit: file sopra i 9,5 MB: ${grossi.join(', ')}`);
+  try { rclone('purge', remote(dest, nome, CACHE, 'kit')); } catch { /* primo kit */ }
+  rclone('copy', kit, remote(dest, nome, CACHE, 'kit'), '--transfers', '8');
+  // regia e materiale salvati: i render dopo ("render") non rifanno la regia
+  for (const f of ['regia.json', 'piano.json', 'materiale.json']) {
+    if (fs.existsSync(path.join(WORK, f))) rclone('copyto', path.join(WORK, f), remote(dest, nome, CACHE, f));
+  }
+  const peso = fs.readdirSync(media).reduce((t, f) => t + fs.statSync(path.join(media, f)).size, 0);
+  log(`kit di prova in ${dest}/${nome}/${CACHE}/kit: ${fs.readdirSync(media).length} file, ${mb(peso)}`);
+  await notifica('🧪 kit di prova pronto', nome, `Piano e pezzi in piccolo in ${dest}/${nome}/${CACHE}/kit (${mb(peso)}): le prove di stile ora si fanno in pochi secondi.`);
 }
 
 // Video di anteprima per Telegram: i bot possono inviare al massimo 50 MB,
