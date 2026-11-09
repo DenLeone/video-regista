@@ -10,6 +10,7 @@ export type Clip = {
   // voce da un'altra sorgente (iPhone, Insta360, mic esterno): l'immagine resta muta
   audio?: { file: string; start: number };
   muto?: boolean;   // nessun audio
+  broll?: boolean;  // B-roll (non la persona che parla): lo stile Focus ci mette il telefono
   volume?: number;  // volume dell'audio della clip stessa (default 1)
   bn?: boolean;     // in bianco e nero (stili su misura con "Bianco e nero: momenti")
   // scheda arrotondata sopra l'inquadratura (registrazione dello schermo, screenshot, foto, B-roll

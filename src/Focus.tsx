@@ -31,7 +31,7 @@ function tratti(piano: Piano): Tratto[] {
     const prima = piano.clips[i - 1];
     const cambio = i > 0 && prima.file !== c.file;
     if (cambio) scene++;
-    const x = { da: t, len, broll: Boolean(c.audio) || Boolean(c.muto && i > 0), cambio, indice: scene };
+    const x = { da: t, len, broll: Boolean(c.broll), cambio, indice: scene };
     t += len;
     return x;
   });
@@ -238,6 +238,17 @@ export const Focus: React.FC<Piano> = (piano) => {
           <Scritta k={k} len={Math.max(8, f(k.dur))} i={i} top={TOP} />
         </Sequence>
       )))}
+
+      {/* schede foto dietro alla persona (il ritaglio passa davanti, la faccia resta libera) */}
+      {schede.map((s, i) => {
+        const k = parole.find((y) => f(y.at) >= s.from - 6 && f(y.at) < s.from + s.len);
+        return (
+          <Sequence key={`s${i}`} from={s.from} durationInFrames={Math.max(2, s.len)}>
+            <SchedaFocus s={s} i={i} pillola={k ? k.tag || k.word : undefined} />
+          </Sequence>
+        );
+      })}
+
       <Ritagli piano={piano} />
 
       {/* telefono sopra i B-roll, con dentro la parola del momento */}
@@ -246,15 +257,6 @@ export const Focus: React.FC<Piano> = (piano) => {
         return (
           <Sequence key={`t${i}`} from={x.da} durationInFrames={x.len}>
             <Telefono k={k} dentro={k ? f(k.at) - x.da : 0} />
-          </Sequence>
-        );
-      })}
-
-      {schede.map((s, i) => {
-        const k = parole.find((y) => f(y.at) >= s.from - 6 && f(y.at) < s.from + s.len);
-        return (
-          <Sequence key={`s${i}`} from={s.from} durationInFrames={Math.max(2, s.len)}>
-            <SchedaFocus s={s} i={i} pillola={k ? k.tag || k.word : undefined} />
           </Sequence>
         );
       })}

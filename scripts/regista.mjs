@@ -118,7 +118,7 @@ async function fetchRiprova(url, opts = {}, tentativi = 4) {
 const isInCorso = (name) => /^_VAI_in_corso_/i.test(name);
 const nomeVaiOriginale = (name) => name.replace(/^_VAI_in_corso_/i, '');
 // file generati da noi o segnali: mai materiale di montaggio
-const isNostro = (name) => isVai(name) || isInCorso(name) || /^_VAI_usato_/i.test(name) || /FINALE| - PROVA \d+s/i.test(name) || /^(NOTE|ERRORE|_ERRORE.*)\.txt$/i.test(name);
+const isNostro = (name) => isVai(name) || isInCorso(name) || /^_VAI_usato_/i.test(name) || /FINALE| - PROVA [\d.,-]+s| - documentario\b| - COPERTINA\b/i.test(name) || /^(NOTE|ERRORE|_ERRORE.*)\.txt$/i.test(name);
 
 // data di ripresa: metadati della camera, altrimenti dal nome (VID_20261018_…, IMG_20261018…)
 // ora esatta della ripresa dai metadati (niente ripiego sul nome del file, che dà solo il giorno)
@@ -385,6 +385,8 @@ export async function eseguiFfmpeg(lista, lavoratori = 4) {
 
 // da = secondo del montaggio da cui partire (prova di un pezzo in mezzo: "secondi" = "40-60")
 function troncaPiano(piano, secondi, da = 0) {
+  const totale = piano.clips.reduce((a, c) => a + (c.end - c.start), 0);
+  if (da > 0 && da > totale - secondi) da = Math.max(0, totale - secondi); // oltre la fine: gli ultimi secondi
   if (da > 0) {
     let t = 0;
     const clips = [];
@@ -688,8 +690,8 @@ async function ritagliPersona(piano) {
   if (!g?.dietro && !reazione && !focus) return;
   const intervalli = [];
   if (focus) for (const k of piano.keywords) intervalli.push([k.at, k.at + k.dur]);
-  // stile reazione: Denis davanti alle schede delle clip, per tutta la loro durata
-  if (reazione) {
+  // stile reazione e Focus: Denis davanti alle schede delle clip, per tutta la loro durata
+  if (reazione || focus) {
     let t0 = 0;
     for (const c of piano.clips) { const d = c.end - c.start; if (c.inserto && !c.inserto.telefono) intervalli.push([t0, t0 + d]); t0 += d; }
   }
@@ -2209,7 +2211,7 @@ async function main() {
       await fase(nome, `${CORREZIONE ? '✏️ Correzione · ' : ''}📥 Scarico ${media.length} file (${mb(peso)})`, 'scarico');
       // solo il materiale: niente sottocartelle (_regista), niente video finali/note/segnali
       rclone('copy', remote(dirMedia, nome), SCARICO, '--max-depth', '1', '--transfers', '8', '--multi-thread-streams', '8',
-        '--exclude', '*.XML', '--exclude', '*.xml', '--exclude', '*FINALE*', '--exclude', '* - PROVA *', '--exclude', '_VAI_*', '--exclude', '*.txt');
+        '--exclude', '*.XML', '--exclude', '*.xml', '--exclude', '*FINALE*', '--exclude', '* - PROVA *', '--exclude', '* - documentario*', '--exclude', '* - COPERTINA*', '--exclude', '_VAI_*', '--exclude', '*.txt');
     }
     try { rclone('copy', remote(SRC_DIR, nome), SCARICO, '--max-depth', '1', '--include', 'brief.txt'); } catch { /* cartella nuova */ }
 

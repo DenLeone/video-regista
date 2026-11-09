@@ -111,7 +111,7 @@ export function risolviRegia(regia, analisi) {
         if (!s || s.tipo !== 'video' || s.durata < (b - a) / lento) return null;
         let x = Math.max(0, Number(st.da) || 0);
         if (x + (b - a) / lento > s.durata) x = Math.max(0, s.durata - (b - a) / lento - 0.05);
-        return { file: s.file, start: +x.toFixed(3), end: +(x + b - a).toFixed(3), orient: s.orient, audio, punch: false, ...(lento > 1 ? { lento } : {}) };
+        return { file: s.file, start: +x.toFixed(3), end: +(x + b - a).toFixed(3), orient: s.orient, audio, punch: false, broll: true, ...(lento > 1 ? { lento } : {}) };
       }
       if (st.camera) {
         const cam = trovaSorgente(st.camera);
@@ -167,7 +167,7 @@ export function risolviRegia(regia, analisi) {
           // un pezzo diverso per ogni frase sullo stesso video
           const usato = clips.filter((c) => c.file === b.file).reduce((m, c) => Math.max(m, c.end), 0);
           const da = usato + dur <= b.durata ? usato : Math.max(0, (b.durata - dur) / 2);
-          clip = { file: b.file, start: +da.toFixed(3), end: +(da + dur).toFixed(3), orient: b.orient, audio, stock: String(it.stock) };
+          clip = { file: b.file, start: +da.toFixed(3), end: +(da + dur).toFixed(3), orient: b.orient, audio, broll: true, stock: String(it.stock) };
         } else if (analisi.stock) avvisi.push(`stock "${it.stock}" ${b ? 'troppo corto' : 'non trovato'} per ${f.id}: resta l'inquadratura`);
       }
       if (it.broll) {
@@ -178,7 +178,7 @@ export function risolviRegia(regia, analisi) {
         if (b && b.tipo === 'video' && b.durata >= dur / lento) {
           let da = Math.max(0, Number(it.da) || 0);
           if (da + dur / lento > b.durata) da = Math.max(0, b.durata - dur / lento - 0.05);
-          clip = { file: b.file, start: +da.toFixed(3), end: +(da + dur).toFixed(3), orient: b.orient, audio, ...(lento > 1 ? { lento } : {}) };
+          clip = { file: b.file, start: +da.toFixed(3), end: +(da + dur).toFixed(3), orient: b.orient, audio, broll: true, ...(lento > 1 ? { lento } : {}) };
         } else avvisi.push(`B-roll ${it.broll} ${b ? 'troppo corto' : 'inesistente'} per ${f.id}: uso un'inquadratura della voce`);
       }
       if (!clip) {
@@ -192,7 +192,7 @@ export function risolviRegia(regia, analisi) {
           // solo audio (mic esterno) e nessuna camera sincronizzata: copro con un B-roll
           const b = broll.filter((s) => s.durata >= dur && !s.stock)[girandolaBroll++ % Math.max(1, broll.length)];
           if (!b) { avvisi.push(`${f.id}: nessuna immagine disponibile, saltata`); return; }
-          clip = { file: b.file, start: 0, end: dur, orient: b.orient, audio };
+          clip = { file: b.file, start: 0, end: dur, orient: b.orient, audio, broll: true };
         }
       }
     } else if (it.broll) {
@@ -204,7 +204,7 @@ export function risolviRegia(regia, analisi) {
       let da = Math.max(0, Number(it.da) || 0);
       if (da + dur / lento > b.durata) da = Math.max(0, b.durata - dur / lento - 0.05);
       // start/end: inizio nella sorgente e durata sul video (col rallentatore la sorgente usata è dur / lento)
-      clip = { file: b.file, start: +da.toFixed(3), end: +(da + dur).toFixed(3), orient: b.orient, ...(lento > 1 ? { lento } : {}) };
+      clip = { file: b.file, start: +da.toFixed(3), end: +(da + dur).toFixed(3), orient: b.orient, broll: true, ...(lento > 1 ? { lento } : {}) };
       // la Sony registra audio solo dal microfono interno: lo uso come ambiente, ma piano.
       // Al rallentatore l'audio della clip non si usa (verrebbe stirato)
       if (it.audio === 'muto' || b.soloImmagini || lento > 1 || (senzaVoce && it.audio !== 'ambiente')) clip.muto = true;
