@@ -8,6 +8,7 @@ import { DocNintendo, DURATA_DOC } from './DocNintendo';
 import { PropsRotolo, Rotolo } from './Rotolo';
 import { MotionCollage } from './MotionCollage';
 import { ListaUI, Pezzo } from './ListaUI';
+import { Focus } from './Focus';
 import { SuMisura } from './SuMisura';
 import { ProvaFont } from './presentazione/ProvaFont';
 import { ProvaScene } from './presentazione/ProvaScene';
@@ -66,6 +67,8 @@ export const Root: React.FC = () => (
     <Composition id="MotionCollage" component={MotionCollage} fps={FPS} width={W} height={H}
       durationInFrames={90} calculateMetadata={metadati} defaultProps={esempio} />
     <Composition id="ListaUI" component={ListaUI} fps={FPS} width={W} height={H}
+      durationInFrames={90} calculateMetadata={metadati} defaultProps={esempio} />
+    <Composition id="Focus" component={Focus} fps={FPS} width={W} height={H}
       durationInFrames={90} calculateMetadata={metadati} defaultProps={esempio} />
     {/* Racconto: piano sequenza cinematografico 21:9 disegnato col codice (src/racconto, props in work/racconto) */}
     <Composition id="Racconto" component={Racconto} fps={30} width={3840} height={1646} durationInFrames={300}

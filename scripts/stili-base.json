@@ -8,5 +8,10 @@
     "nome": "ListaUI",
     "tasto": "🗂️ Lista UI",
     "cosa": "lista numerata con schermate animate stile app: cartelle No.1, chat che si scrive, finestra di file, griglia del profilo, scheda di un'app"
+  },
+  {
+    "nome": "Focus",
+    "tasto": "🔴 Focus",
+    "cosa": "parola enorme rossa in corsivo dietro di te con la riga piccola sopra, lettere che entrano sfocate, schede foto col bordo rosso, telefono sui B-roll"
   }
 ]

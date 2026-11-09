@@ -132,7 +132,7 @@ Variabili utili:
   - Taglio frasi e pause in `scripts/regia.mjs`; render con **Remotion** (`src/*.tsx`).
   - Il girato arriva da Drive con rclone.
 - **Cartelle Drive**: `01 · Da editare/<Nome>` (girato) → `02 · Fatti/<Nome>` (risultato) → `03 · Da pubblicare`. Gli stili stanno in `12 · Risorse/Stili/<Stile>/stile.txt`.
-- **Stili**: nel bot dal 05/11 solo **Cinematico** (predefinito) e **Lista UI** tra quelli col codice, più gli "stili su misura" da Drive (`stile.txt`, senza codice: Narrativo, Esplicativo, 12K Quality, Motion, Ultra, Impact, Beat, Blackden…). Blueprint e MotionCollage restano nel codice ma non si scelgono più. A parte il tasto **🎞 Documentario** (§5-ter).
+- **Stili**: nel bot dal 05/11 solo **Cinematico** (predefinito), **Lista UI** e **🔴 Focus** (dal 09/11) tra quelli col codice, più gli "stili su misura" da Drive (`stile.txt`, senza codice: Narrativo, Esplicativo, 12K Quality, Motion, Ultra, Impact, Beat, Blackden…). Blueprint e MotionCollage restano nel codice ma non si scelgono più. A parte il tasto **🎞 Documentario** (§5-ter).
 - **Laboratorio**: `.github/workflows/laboratorio.yml` con le ricette in `lab/*.json`. Fa prove, fotogrammi, varianti e l'analisi di video YouTube con Gemini. Gli esiti vanno sul ramo `laboratorio-esiti-<ricetta>` e su Drive.
 - **Pubblica**: `scripts/pubblica.mjs` (Instagram Reel + YouTube Shorts) dal tasto 📤 del bot.
 
@@ -259,6 +259,15 @@ DaVinci (`pc/locale/`, AI locali con Ollama, niente token). Il flusso locale è 
 - `PASSAGGIO.md` va aggiornato a ogni sessione: le note di dettaglio stanno nei LEGGIMI, qui il quadro.
 
 ---
+
+
+### Stile Focus (09/11)
+- Copia dello stile del video di riferimento `12 · Risorse/Stili/Focus/esempi/Focus.mp4` (studio grigio chiaro, persona in poltrona).
+- Codice: `src/Focus.tsx` (composizione `Focus`), regole AI in `scripts/stili/Focus.md`, tasto nel bot da `scripts/stili-base.json`.
+- Parola chiave enorme rossa in corsivo **dietro la persona** (serve il ritaglio: `ritagliPersona` in `regista.mjs` lo fa sempre quando lo stile è Focus), riga piccola sopra (`note`), parolina sotto (`tag`), lettere che entrano sfocate con quadratini rossi.
+- Le immagini diventano schede inclinate col bordo rosso, pillola (tag o parola) e icona rossa; la parola che cade su una scheda non si scrive dietro.
+- I B-roll (clip con `audio` o `muto`) hanno il contorno di un telefono con la parola dentro.
+- Cambi di scena: anello a retino rosso e ogni tanto il flash "negativo".
 
 ## 6. Da fare (in ordine di utilità)
 1. Finire Austria e controllare tutto quello del §5.

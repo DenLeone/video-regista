@@ -652,14 +652,17 @@ async function risaltoPersona(piano) {
 async function ritagliPersona(piano) {
   const g = piano.grafica;
   const reazione = g?.cornice === 'reazione';
-  if (!g?.dietro && !reazione) return;
+  // stile Focus (09/11): le parole grandi passano sempre dietro la persona
+  const focus = stileCorrente === 'Focus';
+  if (!g?.dietro && !reazione && !focus) return;
   const intervalli = [];
+  if (focus) for (const k of piano.keywords) intervalli.push([k.at, k.at + k.dur]);
   // stile reazione: Denis davanti alle schede delle clip, per tutta la loro durata
   if (reazione) {
     let t0 = 0;
     for (const c of piano.clips) { const d = c.end - c.start; if (c.inserto && !c.inserto.telefono) intervalli.push([t0, t0 + d]); t0 += d; }
   }
-  if (g.apertura === 'grande' && piano.parole?.length) {
+  if (g?.apertura === 'grande' && piano.parole?.length) {
     // stessa regola di fineApertura in src/SuMisura.tsx
     const parole = piano.parole, fineFrase = parole.find((p) => /[.!?]$/.test(p.w));
     const pause = parole.filter((p, i) => p.at + p.dur <= 5 && p.at + p.dur >= 1.5 && (/[,;:.!?]$/.test(p.w) || (parole[i + 1] && parole[i + 1].at - (p.at + p.dur) > 0.35)));
@@ -667,9 +670,9 @@ async function ritagliPersona(piano) {
       : pause.length ? pause[pause.length - 1].at + pause[pause.length - 1].dur : 5;
     intervalli.push([0, fine + 0.6]);
   }
-  if (g.titoli && g.tipoTitoli === 'frasi') for (const k of piano.keywords) intervalli.push([k.at, k.at + k.dur]);
+  if (g?.titoli && g.tipoTitoli === 'frasi') for (const k of piano.keywords) intervalli.push([k.at, k.at + k.dur]);
   // strati con le scritte dietro: il ritaglio copre tutto il parlato, così numeri e parole forti ci passano sotto
-  if (g.dietro && g.sottotitoli === 'strati') {
+  if (g?.dietro && g.sottotitoli === 'strati') {
     let t0 = 0;
     for (const c of piano.clips) {
       const d = c.end - c.start;
