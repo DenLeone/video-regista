@@ -2505,7 +2505,9 @@ async function preparaKit(piano, nome, dest) {
   const grossi = fs.readdirSync(media).filter((f) => fs.statSync(path.join(media, f)).size > 9.5e6);
   if (grossi.length) log(`kit: file sopra i 9,5 MB: ${grossi.join(', ')}`);
   // anche tutto in un solo zip (kit.zip): si scarica con una richiesta sola
-  try { run('zip', ['-q', '-r', '-0', path.join(WORK, 'kit.zip'), '.'], { cwd: kit }); } catch (e) { log('kit.zip non creato', e.message.split('\n')[0]); }
+  // senza l'audio (per i fotogrammi non serve e la voce in wav pesa): deve stare sotto i 10 MB
+  try { run('zip', ['-q', '-r', '-0', path.join(WORK, 'kit.zip'), '.', '-x', '*.wav', '*.m4a', '*.mp3', '*.aac'], { cwd: kit }); } catch (e) { log('kit.zip non creato', e.message.split('\n')[0]); }
+  if (fs.existsSync(path.join(WORK, 'kit.zip'))) log(`kit.zip: ${mb(fs.statSync(path.join(WORK, 'kit.zip')).size)}`);
   try { rclone('purge', remote(dest, nome, CACHE, 'kit')); } catch { /* primo kit */ }
   rclone('copy', kit, remote(dest, nome, CACHE, 'kit'), '--transfers', '8');
   if (fs.existsSync(path.join(WORK, 'kit.zip'))) rclone('copyto', path.join(WORK, 'kit.zip'), remote(dest, nome, CACHE, 'kit', 'kit.zip'));
