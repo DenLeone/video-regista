@@ -144,14 +144,29 @@ jobs:
           fi
           exit 1
 
+      # rclone tenuto in cache (09/11): l'installazione da rclone.org costava ~35 s a ogni giro.
+      # Per aggiornarlo basta cambiare il numero nella chiave.
+      - name: Cache rclone
+        if: vars.USA_IMMAGINE != '1'
+        uses: actions/cache@v5
+        with:
+          path: ~/.cache/regista-rclone
+          key: rclone-v1-${{ runner.os }}
+
       - name: Drive (rclone)
         id: drive
         env:
           RCLONE_CONF: ${{ secrets.RCLONE_CONF }}
         run: |
-          # nell'immagine c'è già; sulla macchina si installa come prima
+          # nell'immagine c'è già; sulla macchina si prende dalla cache, altrimenti si installa come prima
           if ! command -v rclone >/dev/null 2>&1; then
-            curl -fsSL https://rclone.org/install.sh | sudo bash > /dev/null
+            salvato="$HOME/.cache/regista-rclone/rclone"
+            if [ -x "$salvato" ] && "$salvato" version >/dev/null 2>&1; then
+              sudo install -m 755 "$salvato" /usr/local/bin/rclone
+            else
+              curl -fsSL https://rclone.org/install.sh | sudo bash > /dev/null
+              mkdir -p "$(dirname "$salvato")" && cp "$(command -v rclone)" "$salvato" || true
+            fi
           fi
           mkdir -p ~/.config/rclone
           # via env + printf: il token è JSON con virgolette, echo "..." le rovinerebbe
@@ -177,10 +192,18 @@ jobs:
           mapfile -t cartelle < <(rclone lsf "gdrive:$DIR_EDITARE" --dirs-only | sed 's:/$::')
           declare -A vai_di=()
           con_vai=()
-          for d in "${cartelle[@]}"; do
-            f=$(rclone lsf "gdrive:$DIR_EDITARE/$d" --files-only | grep -iE '^vai(\.[^.]+)?$' | head -n1 || true)
-            if [ -n "$f" ]; then con_vai+=("$d"); vai_di["$d"]="$f"; fi
-          done
+          # le cartelle si guardano 8 alla volta (09/11): una dopo l'altra, con 40 cartelle, era più di un minuto
+          vai_in() {
+            local f
+            f=$(rclone lsf "gdrive:$DIR_EDITARE/$1" --files-only | grep -iE '^vai(\.[^.]+)?$' | head -n1 || true)
+            if [ -n "$f" ]; then printf '%s\t%s\n' "$1" "$f"; fi
+          }
+          export -f vai_in
+          if [ ${#cartelle[@]} -gt 0 ]; then
+            while IFS=$'\t' read -r d f; do
+              if [ -n "$d" ] && [ -n "$f" ]; then con_vai+=("$d"); vai_di["$d"]="$f"; fi
+            done < <(printf '%s\0' "${cartelle[@]}" | xargs -0 -P 8 -I{} bash -c 'vai_in "$1"' _ {} | sort)
+          fi
           # prenoto il VAI subito: un giro successivo non riprende la stessa cartella
           prenota() { rclone moveto "gdrive:$DIR_EDITARE/$1/${vai_di[$1]}" "gdrive:$DIR_EDITARE/$1/_VAI_in_corso_${vai_di[$1]}" && echo "Prenotata: $1"; }
           # "Manifestazioni " e "Anime" arrivano dal bot senza lo spazio: si confronta dopo, sul nome vero
