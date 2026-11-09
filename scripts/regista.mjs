@@ -685,6 +685,7 @@ async function risaltoPersona(piano) {
 
 // la persona ritagliata nei momenti delle scritte grandi (stili su misura con "Scritte dietro di me"):
 // MediaPipe in scripts/ritaglio.py; se qualcosa non va le scritte restano davanti, il video esce lo stesso
+const RITAGLI_INSIEME = Math.max(1, Math.min(3, os.availableParallelism() - 1));
 async function ritagliPersona(piano) {
   const g = piano.grafica;
   const reazione = g?.cornice === 'reazione';
@@ -721,20 +722,25 @@ async function ritagliPersona(piano) {
   if (!intervalli.length) return;
   try {
     const { py, modello } = await preparaMediaPipe();
-    let t = 0, n = 0;
+    let t = 0;
+    const lavori = [];
     for (const [i, c] of piano.clips.entries()) {
       const dur = c.end - c.start;
       const sovrapposti = intervalli.map(([a, b]) => [Math.max(a, t), Math.min(b, t + dur)]).filter(([a, b]) => b - a > 0.1);
       if (sovrapposti.length && c.orient !== 'h' && (!c.inserto || reazione || focus)) {
         const da = Math.min(...sovrapposti.map(([a]) => a)) - t, a = Math.max(...sovrapposti.map(([, b]) => b)) - t;
         const out = `rit_${String(i).padStart(3, '0')}.webm`;
-        run(py, [path.join(ROOT, 'scripts', 'ritaglio.py'), path.join(MEDIA, c.file), path.join(MEDIA, out), modello, (a - da).toFixed(3), da.toFixed(3)], { stdio: ['ignore', 'pipe', 'inherit'] });
-        c.ritaglio = { file: out, da: +da.toFixed(3), dur: +(a - da).toFixed(3) };
-        n++;
+        lavori.push(async () => {
+          await eseguiUno(py, [path.join(ROOT, 'scripts', 'ritaglio.py'), path.join(MEDIA, c.file), path.join(MEDIA, out), modello, (a - da).toFixed(3), da.toFixed(3)]);
+          c.ritaglio = { file: out, da: +da.toFixed(3), dur: +(a - da).toFixed(3) };
+        });
       }
       t += dur;
     }
-    log(`ritagli della persona: ${n}`);
+    // più pezzi insieme (09/11): uno dopo l'altro, in Focus (persona ritagliata per tutto il video)
+    // erano 6 s di calcolo per ogni secondo di video, la fase più lunga dopo il render
+    await pool(lavori, RITAGLI_INSIEME);
+    log(`ritagli della persona: ${lavori.length}, ${Math.min(RITAGLI_INSIEME, lavori.length)} alla volta`);
   } catch (e) {
     log('ritaglio della persona non riuscito: scritte davanti', e.message.split('\n')[0]);
     for (const c of piano.clips) delete c.ritaglio;
@@ -1393,6 +1399,7 @@ function preparaPacchetto() {
         fs.rmSync(path.join(dir, 'public'), { recursive: true, force: true });
         fs.symlinkSync(path.join(ROOT, 'public'), path.join(dir, 'public'), 'junction');
         PACCHETTO = dir;
+        INSIEME['pacchetto pronto dopo'] = Math.round((Date.now() - T0) / 1000);
         log(`pacchetto Remotion pronto in sottofondo (${Math.round((Date.now() - t) / 1000)} s)`);
       } catch (e) { log('pacchetto Remotion non preparato, si impacchetta al render', e.message); }
       ok();
@@ -1438,6 +1445,7 @@ function renderizza(out, stile = STILI[0]) {
       // colori BT.709 a gamma limitata: prima usciva "yuvj420p" BT.601 a gamma piena, che app e
       // lettori possono leggere con neri grigi o colori spostati (prova del 20/10: col JPEG 100 +
       // BT.709 Remotion sbaglia i colori, col PNG sono esatti)
+      INSIEME['render dal pacchetto pronto'] = PACCHETTO ? 1 : 0;
       run('npx', ['remotion', 'render', ingressoRemotion(), stile, out, `--props=${path.join(WORK, 'piano.json')}`,
         '--codec=h264', '--video-bitrate=15M', '--max-rate=16M', '--buffer-size=32M', '--audio-bitrate=320k', '--concurrency=100%',
         '--image-format=png', '--color-space=bt709',
