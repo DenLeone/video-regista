@@ -2327,14 +2327,15 @@ export default {
 
   // cron di wrangler.toml, ogni 3 ore (un solo cron: il piano gratuito di Cloudflare ne ha pochi per
   // account). Alle 6:17 UTC il piano del mattino (il lunedì anche rinnovo della chiave Instagram e report
-  // della settimana); negli altri giri, tra le 9 e le 23 italiane, "sta esplodendo" e commenti nuovi
+  // della settimana); negli altri giri, tra le 9 e le 23 italiane, "sta esplodendo". I commenti nuovi non
+  // arrivano più da soli (Denis, 09/11: troppi messaggi, non li usava): restano /commenti e il tasto 💬
   async scheduled(evento: { scheduledTime?: number }, env: Env, ctx: { waitUntil(p: Promise<unknown>): void }) {
     const quando = new Date(evento?.scheduledTime || Date.now());
     const lunedi = quando.getUTCDay() === 1;
     const oraIt = Number(new Intl.DateTimeFormat('it-IT', { timeZone: 'Europe/Rome', hour: '2-digit', hourCycle: 'h23' }).format(quando));
     const lavori: LavoroSocial[] = quando.getUTCHours() === 6
-      ? [...(lunedi ? ['rinnovo', 'mattina', 'report'] as const : ['mattina'] as const), 'commenti']
-      : oraIt >= 9 && oraIt <= 23 ? ['esplosioni', 'commenti'] : [];
+      ? [...(lunedi ? ['rinnovo', 'mattina', 'report'] as const : ['mattina'] as const)]
+      : oraIt >= 9 && oraIt <= 23 ? ['esplosioni'] : [];
     if (lavori.length) ctx.waitUntil(mem(env).accoda(lavori));
   },
 };
