@@ -1368,6 +1368,66 @@ function dichiaraColori(file) {
   }
 }
 
+// ---------- pacchetto Remotion, una volta sola ----------
+// Prima ogni render e ogni copertina reimpacchettavano il progetto (45–75 s l'uno, copia di public/media
+// compresa). Dal 09/11 il pacchetto si prepara in sottofondo appena parte il giro, mentre si scarica e
+// si analizza: quando serve è già pronto. La sua cartella "public" è un collegamento a quella vera, così
+// vede i pezzi tagliati dopo. Se qualcosa va storto si torna a src/index.ts, come prima.
+let PACCHETTO = null;
+let pacchettoPronto = Promise.resolve();
+function preparaPacchetto() {
+  const base = path.join(os.tmpdir(), `regista-pacchetto-${process.pid}`);
+  const dir = path.join(base, 'pacchetto'), vuota = path.join(base, 'vuota');
+  const t = Date.now();
+  try {
+    fs.rmSync(base, { recursive: true, force: true });
+    fs.mkdirSync(vuota, { recursive: true });
+  } catch { return; }
+  pacchettoPronto = new Promise((ok) => {
+    const c = spawn('npx', ['remotion', 'bundle', 'src/index.ts', `--out-dir=${dir}`, `--public-dir=${vuota}`],
+      { cwd: ROOT, stdio: 'ignore', shell: process.platform === 'win32' });
+    c.on('error', () => ok());
+    c.on('close', (code) => {
+      try {
+        if (code !== 0 || !fs.existsSync(path.join(dir, 'index.html'))) throw new Error(`codice ${code}`);
+        fs.rmSync(path.join(dir, 'public'), { recursive: true, force: true });
+        fs.symlinkSync(path.join(ROOT, 'public'), path.join(dir, 'public'), 'junction');
+        PACCHETTO = dir;
+        log(`pacchetto Remotion pronto in sottofondo (${Math.round((Date.now() - t) / 1000)} s)`);
+      } catch (e) { log('pacchetto Remotion non preparato, si impacchetta al render', e.message); }
+      ok();
+    });
+  });
+}
+const ingressoRemotion = () => (PACCHETTO && fs.existsSync(path.join(PACCHETTO, 'index.html')) ? PACCHETTO : 'src/index.ts');
+
+// ---------- tempi del giro ----------
+// Quanto dura ogni tratto (09/11): in fondo al log e in _regista/tempi.json, per sapere dove
+// conviene velocizzare. Le cose fatte insieme durante il carico stanno in "insieme".
+const TAPPE = [];
+const INSIEME = {};
+const tappa = (nome) => { if (TAPPE.at(-1)?.nome !== nome) TAPPE.push({ nome, t: Date.now() }); };
+const cronometra = (nome, p) => { const t = Date.now(); return Promise.resolve(p).finally(() => { INSIEME[nome] = Math.round((Date.now() - t) / 1000); }); };
+function tempiGiro() {
+  const fine = Date.now(), per = {};
+  TAPPE.forEach((x, i) => { per[x.nome] = (per[x.nome] || 0) + ((TAPPE[i + 1]?.t ?? fine) - x.t) / 1000; });
+  return { totale: Math.round((fine - T0) / 1000), tappe: Object.fromEntries(Object.entries(per).map(([k, v]) => [k, Math.round(v)])), insieme: INSIEME };
+}
+const mmss = (s) => `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
+function rigaTempi() {
+  const t = tempiGiro();
+  const insieme = Object.entries(t.insieme).map(([k, v]) => `${k} ${mmss(v)}`).join(', ');
+  return `${Object.entries(t.tappe).map(([k, v]) => `${k} ${mmss(v)}`).join(' · ')}${insieme ? ` (insieme: ${insieme})` : ''} · totale ${mmss(t.totale)}`;
+}
+function salvaTempi(dir, nome) {
+  try {
+    const t = { ...tempiGiro(), quando: new Date().toISOString(), azione: process.env.AZIONE || 'monta', stile: stileCorrente || '', prova: PROVA_SECONDI || 0 };
+    fs.writeFileSync(path.join(WORK, 'tempi.json'), JSON.stringify(t, null, 1));
+    rclone('copyto', path.join(WORK, 'tempi.json'), remote(dir, nome, CACHE, 'tempi.json'));
+  } catch (e) { log('tempi non salvati', String(e.message).split('\n')[0]); }
+}
+process.on('exit', () => { if (TAPPE.length > 1) console.log(`[regista] tempi: ${rigaTempi()}`); });
+
 function renderizza(out, stile = STILI[0]) {
   // Il primo render a volte fallisce per un errore transitorio del compositor
   // (visto nel test del 16/10): fino a 3 tentativi.
@@ -1378,7 +1438,7 @@ function renderizza(out, stile = STILI[0]) {
       // colori BT.709 a gamma limitata: prima usciva "yuvj420p" BT.601 a gamma piena, che app e
       // lettori possono leggere con neri grigi o colori spostati (prova del 20/10: col JPEG 100 +
       // BT.709 Remotion sbaglia i colori, col PNG sono esatti)
-      run('npx', ['remotion', 'render', 'src/index.ts', stile, out, `--props=${path.join(WORK, 'piano.json')}`,
+      run('npx', ['remotion', 'render', ingressoRemotion(), stile, out, `--props=${path.join(WORK, 'piano.json')}`,
         '--codec=h264', '--video-bitrate=15M', '--max-rate=16M', '--buffer-size=32M', '--audio-bitrate=320k', '--concurrency=100%',
         '--image-format=png', '--color-space=bt709',
         // browser già installato (es. Chrome sul PC) invece di quello che Remotion scarica
@@ -1388,7 +1448,8 @@ function renderizza(out, stile = STILI[0]) {
       return;
     } catch (e) {
       if (tentativo >= 3) throw e;
-      log(`render fallito (tentativo ${tentativo}), riprovo`);
+      if (PACCHETTO) { PACCHETTO = null; log('render fallito col pacchetto pronto: riprovo impacchettando da capo'); }
+      else log(`render fallito (tentativo ${tentativo}), riprovo`);
     }
   }
 }
@@ -1428,7 +1489,7 @@ function copertina(piano, regia, analisi, out) {
     const testo = String(cop.testo || piano.titolo || '').trim().slice(0, 60);
     const props = { sfondo: 'media/copertina-sfondo.jpg', testo, evidenzia: [].concat(cop.evidenzia || []).map(String).slice(0, 3), grafica: piano.grafica || null };
     fs.writeFileSync(path.join(WORK, 'copertina.json'), JSON.stringify(props));
-    run('npx', ['remotion', 'still', 'src/index.ts', 'Copertina', out, `--props=${path.join(WORK, 'copertina.json')}`, '--image-format=jpeg', '--jpeg-quality=92',
+    run('npx', ['remotion', 'still', ingressoRemotion(), 'Copertina', out, `--props=${path.join(WORK, 'copertina.json')}`, '--image-format=jpeg', '--jpeg-quality=92',
       ...(process.env.REMOTION_BROWSER ? [`--browser-executable=${process.env.REMOTION_BROWSER}`] : [])], { cwd: ROOT, stdio: 'inherit', shell: process.platform === 'win32' });
     log(`copertina: "${testo}" su un fotogramma di ${path.basename(migliore.jpg)} (sfocatura ${migliore.b.toFixed(2)})`);
     return out;
@@ -1490,7 +1551,7 @@ let ultimaFase = '';
 const VERSIONE = 'v2';
 const fase = (nome, testo, step) => {
   log(`[fase] ${testo}`);
-  if (step) ultimaFase = step;
+  if (step) { ultimaFase = step; tappa(step); }
   return invia({ tipo: 'fase', nome, testo: `${testo} (${trascorso()})`, step, minuti: Math.round((Date.now() - T0) / 60000), versione: VERSIONE });
 };
 
@@ -2088,6 +2149,7 @@ async function confrontaStili(nome, analisi, testoMateriale, fogliUsati) {
       const out = path.join(ROOT, 'out', `${nome} - PROVA 10s ${sicuro}.mp4`);
       fs.mkdirSync(path.dirname(out), { recursive: true });
       await fase(nome, `🎬 Prova 10 s · ${uno.nomeStile}`, 'render');
+      await pacchettoPronto;
       renderizza(out, uno.stile);
       const durataN = probe(out).durata;
       const anteprimaMp4 = process.env.NOTIFY_URL ? await codificaAnteprima(out, durataN) : null;
@@ -2176,6 +2238,8 @@ async function main() {
   fs.mkdirSync(SCARICO, { recursive: true });
   fs.mkdirSync(path.join(WORK, 'fogli'), { recursive: true });
   fs.mkdirSync(MEDIA, { recursive: true });
+  tappa('avvio');
+  preparaPacchetto();
   // prenoto il VAI (se il workflow non l'ha già fatto): niente doppi montaggi della stessa cartella
   if (vai && isVai(vai)) {
     try { rclone('moveto', remote(SRC_DIR, nome, vai), remote(SRC_DIR, nome, `_VAI_in_corso_${vai}`)); vai = `_VAI_in_corso_${vai}`; }
@@ -2355,8 +2419,11 @@ async function main() {
     // i pezzi scelti, prima del render vero: la card dell'app distingue tagli e render
     await fase(nome, `✂️ Taglio ${piano.clips.length} pezzi`, 'tagli');
     await tagliaSegmenti(piano, analisi);
+    tappa('risalto persona');
     await risaltoPersona(piano);
+    tappa('ritagli persona');
     await ritagliPersona(piano);
+    tappa('prima del render');
     // prima di cancellarli, gli originali devono essere su Drive; se la copia fallisce il video si consegna lo stesso
     if (copiaOriginali) {
       try {
@@ -2389,6 +2456,7 @@ async function main() {
     const durataPiano = piano.clips.reduce((s, c) => s + (c.end - c.start), 0);
     const camereUsate = new Set(piano.clips.map((c) => c.file)).size;
     await fase(nome, `🎬 Render: ${durataPiano.toFixed(0)} s, ${piano.clips.length} tagli da ${camereUsate} sorgenti, ${piano.keywords.length} parole chiave`, 'render');
+    await pacchettoPronto;
     renderizza(outFile, stile);
     await fase(nome, '📤 Carico su Drive', 'carico');
 
@@ -2410,8 +2478,8 @@ async function main() {
     // Il master va su Drive mentre si preparano didascalie, copertina, anteprima e le note.
     // Sono processi già partiti: la copertina (Remotion) occupa il processo, gli altri no.
     log('carico il video su Drive e, insieme, didascalie, copertina, anteprima e note');
-    const uploadVideo = inSottofondo('rclone', ['copyto', outFile, remote(DEST, nome, finale)]);
-    const anteprimaP = process.env.NOTIFY_URL ? codificaAnteprima(outFile, durataN) : Promise.resolve(null);
+    const uploadVideo = cronometra('video su Drive', inSottofondo('rclone', ['copyto', outFile, remote(DEST, nome, finale)]));
+    const anteprimaP = cronometra('anteprima', process.env.NOTIFY_URL ? codificaAnteprima(outFile, durataN) : Promise.resolve(null));
     const didascalieP = (async () => {
       if (PROVA_SECONDI) return null;
       try {
@@ -2455,7 +2523,8 @@ async function main() {
       if (file) await inSottofondo('rclone', ['copyto', file, remote(DEST, nome, path.basename(file))]);
       return file;
     })();
-    const [fileCopertina, didascalie, anteprimaMp4] = await Promise.all([copertinaP, didascalieP, anteprimaP, uploadVideo, noteP]);
+    const [fileCopertina, didascalie, anteprimaMp4] = await Promise.all([cronometra('copertina', copertinaP), cronometra('didascalie', didascalieP), anteprimaP, uploadVideo, cronometra('note', noteP)]);
+    tappa('chiusura');
     if (vai) rclone('moveto', remote(SRC_DIR, nome, vai), remote(SRC_DIR, nome, vaiUsato));
     if (SRC_DIR === IN_DIR && !DA_TELEGRAM && !DA_R2) rclone('moveto', remote(IN_DIR, nome), remote(OUT_DIR, nome));
 
@@ -2477,6 +2546,7 @@ async function main() {
     const inviato = await inviaVideo(anteprimaMp4, nome, note, durataN, info);
     if (!inviato) await notifica('✅ pronto', nome, note, { ok: true, foto: anteprima(outFile, piano, durataN), info });
     await inviaCopertina(fileCopertina, nome, PROVA_SECONDI ? null : didascalie);
+    salvaTempi(OUT_DIR, nome);
   } catch (e) {
     const testo = `Errore: ${e.message}\n\n` + (CORREZIONE ? 'Puoi riprovare la correzione dal bot (✏️) o scrivermi una richiesta diversa.'
       : vai ? `Per riprovare: 🔁 Riprova dal bot, oppure rinomina ${vaiUsato} in ${nomeVaiOriginale(vai)}.` : 'Per riprovare: 🔁 Riprova.');
@@ -2533,6 +2603,7 @@ async function preparaKit(piano, nome, dest) {
   }
   const peso = fs.readdirSync(media).reduce((t, f) => t + fs.statSync(path.join(media, f)).size, 0);
   log(`kit di prova in ${dest}/${nome}/${CACHE}/kit: ${fs.readdirSync(media).length} file, ${mb(peso)}`);
+  salvaTempi(dest, nome);
   await notifica('🧪 kit di prova pronto', nome, `Piano e pezzi in piccolo in ${dest}/${nome}/${CACHE}/kit (${mb(peso)}): le prove di stile ora si fanno in pochi secondi.`);
 }
 
