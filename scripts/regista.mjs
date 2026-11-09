@@ -689,7 +689,9 @@ async function ritagliPersona(piano) {
   const focus = stileCorrente === 'Focus';
   if (!g?.dietro && !reazione && !focus) return;
   const intervalli = [];
-  if (focus) for (const k of piano.keywords) intervalli.push([k.at, k.at + k.dur]);
+  // Focus: le parole grandi arrivano ogni 2–3 s (src/Focus.tsx riempie i buchi dal parlato), quindi la persona
+  // va ritagliata per tutto il video, non solo sulle parole chiave della regia
+  if (focus) intervalli.push([0, piano.clips.reduce((t, c) => t + (c.end - c.start), 0)]);
   // stile reazione e Focus: Denis davanti alle schede delle clip, per tutta la loro durata
   if (reazione || focus) {
     let t0 = 0;
