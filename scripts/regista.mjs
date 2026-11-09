@@ -2504,8 +2504,11 @@ async function preparaKit(piano, nome, dest) {
   fs.writeFileSync(path.join(kit, 'piano.json'), JSON.stringify(piano, null, 1));
   const grossi = fs.readdirSync(media).filter((f) => fs.statSync(path.join(media, f)).size > 9.5e6);
   if (grossi.length) log(`kit: file sopra i 9,5 MB: ${grossi.join(', ')}`);
+  // anche tutto in un solo zip (kit.zip): si scarica con una richiesta sola
+  try { run('zip', ['-q', '-r', '-0', path.join(WORK, 'kit.zip'), '.'], { cwd: kit }); } catch (e) { log('kit.zip non creato', e.message.split('\n')[0]); }
   try { rclone('purge', remote(dest, nome, CACHE, 'kit')); } catch { /* primo kit */ }
   rclone('copy', kit, remote(dest, nome, CACHE, 'kit'), '--transfers', '8');
+  if (fs.existsSync(path.join(WORK, 'kit.zip'))) rclone('copyto', path.join(WORK, 'kit.zip'), remote(dest, nome, CACHE, 'kit', 'kit.zip'));
   // regia e materiale salvati: i render dopo ("render") non rifanno la regia
   for (const f of ['regia.json', 'piano.json', 'materiale.json']) {
     if (fs.existsSync(path.join(WORK, f))) rclone('copyto', path.join(WORK, f), remote(dest, nome, CACHE, f));
