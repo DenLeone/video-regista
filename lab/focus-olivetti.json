@@ -1,0 +1,8 @@
+{
+ "uscita": "02 · Fatti/Olivetti/_laboratorio",
+ "privato": true,
+ "sequenze": [
+  { "file": "02 · Fatti/Olivetti/Olivetti - PROVA 20s Focus.mp4", "quanti": 30, "inizio": 6,
+    "tratti": [{ "da": 0, "a": 3, "fps": 8, "larghezza": 270 }, { "da": 8, "a": 12, "fps": 6, "larghezza": 270 }] }
+ ]
+}

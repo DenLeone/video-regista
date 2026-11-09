@@ -476,6 +476,8 @@ async function main() {
   if (elenco) fs.writeFileSync(path.join(OUT, 'sorgenti.txt'), `${elenco}\n`);
   if (elenco && fs.existsSync(GIT)) fs.copyFileSync(path.join(OUT, 'sorgenti.txt'), path.join(GIT, 'sorgenti.txt'));
   carica();
+  // "privato": true = materiale di Denis (faccia, voce): niente copia sul ramo pubblico laboratorio-esiti
+  if (ric.privato) fs.rmSync(GIT, { recursive: true, force: true });
   log(`risultati in ${ric.uscita}: ${fs.readdirSync(OUT).length} file`);
 }
 
