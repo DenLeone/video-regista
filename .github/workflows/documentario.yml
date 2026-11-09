@@ -99,6 +99,10 @@ jobs:
           mkdir -p "work/sorgente/$CARTELLA" work/sfx
           # anche i video: un video di Denis che parla diventa il presentatore (la voce è il suo audio)
           rclone copy "gdrive:$DIR_EDITARE/$CARTELLA" "work/sorgente/$CARTELLA"
+          # foto caricate dal telefono come .zip (09/11): si estraggono nella cartella, senza sottocartelle
+          find "work/sorgente/$CARTELLA" -maxdepth 1 -iname '*.zip' -print0 | while IFS= read -r -d '' z; do
+            unzip -o -j -q "$z" -x '__MACOSX/*' -d "work/sorgente/$CARTELLA" && rm -f "$z" && echo "estratto: $(basename "$z")"
+          done
           rclone copy "gdrive:$DIR_SFX" work/sfx --exclude "*.md"
           ls -la "work/sorgente/$CARTELLA"
           echo "suoni: $(find work/sfx -type f | wc -l) file"
