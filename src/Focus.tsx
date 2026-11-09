@@ -79,7 +79,8 @@ const Pixel: React.FC<{ seme: string; x: number; y: number; w: number; h: number
 const grandezza = (parola: string) => {
   const righe = parola.length > 11 && parola.includes(' ') ? 2 : 1;
   const lunga = Math.max(...parola.split(righe === 2 ? ' ' : '\u0000').map((x) => x.length));
-  return { size: Math.min(300, Math.round(1500 / Math.max(3.2, lunga * 0.6))), righe };
+  // Inter 900 corsivo: ~0,6 em a lettera; deve stare in 980 px, se no l'ultima lettera va a capo dietro la persona ("Italian" per Italiano, 09/11)
+  return { size: Math.min(300, Math.round(960 / Math.max(3.2, lunga * 0.6))), righe };
 };
 
 // sfumato: la sfumatura rossa va su ogni lettera (il background-clip del contenitore non passa alle lettere animate)
@@ -114,7 +115,7 @@ const Scritta: React.FC<{ k: Keyword; len: number; i: number; top: number }> = (
               <Lettere testo={k.note} passo={0.8} />
             </div>
           ) : null}
-          <div style={{ fontFamily: INTER, fontStyle: 'italic', fontWeight: 900, fontSize: size, lineHeight: 0.92, letterSpacing: -size * 0.055, textAlign: 'center',
+          <div style={{ fontFamily: INTER, fontStyle: 'italic', fontWeight: 900, fontSize: size, lineHeight: 0.92, letterSpacing: -size * 0.055, textAlign: 'center', whiteSpace: 'nowrap',
             paddingRight: size * 0.08, filter: 'drop-shadow(0 8px 14px rgba(120,0,0,0.22))' }}>
             {righe === 2 ? k.word.split(' ').map((w, j) => <div key={j}><Lettere testo={w} ritardo={3 + j * 4} sfumato /></div>) : <Lettere testo={k.word} ritardo={3} sfumato />}
           </div>
