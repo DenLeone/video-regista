@@ -71,6 +71,9 @@ const SRC_DIR = process.env.ORIGINE === '98' || CORREZIONE ? OUT_DIR : IN_DIR;
 // I pezzi passano da Drive e non dagli artifact di GitHub: il repo è pubblico, il girato no.
 const PEZZO = (() => { const m = /^(\d+)\/(\d+)$/.exec(process.env.PEZZO || ''); return m ? { i: Number(m[1]), n: Number(m[2]) } : null; })();
 const UNISCI = process.env.UNISCI === '1';
+// PREPARA=1 (regista.yml, montaggi veri su più macchine): questa macchina scarica, analizza e scrive la
+// regia, la salva su Drive e si ferma; tagli e render li fanno i job «pezzo», il resto «unisci».
+const PREPARA = process.env.PREPARA === '1';
 const GIRO_PEZZI = `${process.env.GITHUB_RUN_ID || 'locale'}-${process.env.GITHUB_RUN_ATTEMPT || '1'}`;
 let ripiegoPezzi = false;
 const CACHE = '_regista'; // sottocartella con regia.json, piano.json e materiale.json di ogni video
@@ -1628,7 +1631,8 @@ async function inviaCopertina(file, nome, didascalie = null) {
 const RUN_URL = process.env.GITHUB_RUN_ID
   ? `${process.env.GITHUB_SERVER_URL}/${process.env.GITHUB_REPOSITORY}/actions/runs/${process.env.GITHUB_RUN_ID}`
   : undefined;
-const T0 = Date.now();
+// nel giro su più macchine il tempo parte da quando è partita la prima (REGISTA_T0)
+const T0 = Number(process.env.REGISTA_T0) || Date.now();
 const kTok = (n) => (n >= 1000 ? `${Math.round(n / 1000)}k` : String(n));
 function rigaConsumi() {
   const c = consumi.ai;
@@ -1650,6 +1654,8 @@ async function invia(payload) {
   if (!process.env.NOTIFY_URL) return;
   // render a pezzi: al bot parla solo la prima macchina (le fasi) e quella che riunisce (dal carico in poi)
   if (PEZZO && PEZZO.i > 0) return;
+  // montaggio da zero su più macchine: scarico, analisi e regia li ha già raccontati la prima macchina
+  if ((PEZZO || UNISCI) && process.env.AZIONE_DETTA && payload.tipo === 'fase' && ['scarico', 'prepara', 'regia'].includes(payload.step)) return;
   if (UNISCI && !ripiegoPezzi && payload.tipo === 'fase' && payload.step !== 'carico') return;
   try {
     await fetchRiprova(process.env.NOTIFY_URL, {
@@ -1658,7 +1664,7 @@ async function invia(payload) {
       // tgFile: ci sono le chiavi per scaricare i video mandati in chat (il bot avvisa se mancano)
       // azione e prova: il bot sceglie la scheda giusta (video, render di prova, esempi, prova regia)
       body: JSON.stringify({ run_url: RUN_URL, run_id: process.env.GITHUB_RUN_ID, origine: SRC_DIR === OUT_DIR ? '98' : '97', richiesto: process.env.CARTELLA || '', tgFile: CHIAVI_TELEGRAM,
-        azione: process.env.AZIONE || 'monta', ...(PROVA_SECONDI ? { prova: PROVA_SECONDI } : {}), ...payload }),
+        azione: process.env.AZIONE_DETTA || process.env.AZIONE || 'monta', ...(PROVA_SECONDI ? { prova: PROVA_SECONDI } : {}), ...payload }),
     });
   } catch (e) { log('notifica fallita', e.message); }
 }
@@ -2411,6 +2417,8 @@ async function main() {
       if (fs.existsSync(path.join(WORK, 'cache', 'materiale.json'))) cache = JSON.parse(fs.readFileSync(path.join(WORK, 'cache', 'materiale.json'), 'utf8'));
       if (fs.existsSync(path.join(WORK, 'cache', 'regia.json'))) regiaPrecedente = JSON.parse(fs.readFileSync(path.join(WORK, 'cache', 'regia.json'), 'utf8'));
     } catch { /* primo giro: nessuna cache */ }
+    // una macchina dei pezzi non scrive mai la regia: ne uscirebbe una diversa per macchina
+    if (PEZZO && !regiaPrecedente) throw new Error('regia salvata non trovata');
     if (CORREZIONE && !regiaPrecedente) {
       throw new Error('questo video è stato montato con la versione precedente del regista (o non ha cache): per correggerlo serve un nuovo montaggio da zero.');
     }
@@ -2528,10 +2536,27 @@ async function main() {
     // solo a render riuscito: un render fallito buttava via la regia già pagata e "Solo render"
     // rispondeva "Nessuna regia precedente". Non per le correzioni: riprovate, si applicherebbero due
     // volte alla regia già corretta.
+    let regiaSalvata = !nuovaRegia;
     if (nuovaRegia && !CORREZIONE) {
-      Promise.all(['regia.json', 'materiale.json'].filter((f) => fs.existsSync(path.join(WORK, f)))
+      const salva = Promise.all(['regia.json', 'materiale.json'].filter((f) => fs.existsSync(path.join(WORK, f)))
         .map((f) => inSottofondo('rclone', ['copyto', path.join(WORK, f), remote(SRC_DIR, nome, CACHE, f)])))
-        .catch((e) => log('regia non salvata in anticipo', String(e.message).split('\n')[0]));
+        .then(() => true, (e) => { log('regia non salvata in anticipo', String(e.message).split('\n')[0]); return false; });
+      if (PREPARA) regiaSalvata = await salva;
+    }
+    // Montaggio su più macchine: qui la prima si ferma e passa la mano. Solo per il video intero senza
+    // correzioni, prove o confronto; se la regia o gli originali non sono su Drive si va avanti qui, da soli.
+    if (PREPARA && regiaSalvata && !CORREZIONE && !PROVA_SECONDI && !confronto && !stileSuMisura?.grafica.beat && process.env.AZIONE !== 'kit' && process.env.GITHUB_OUTPUT) {
+      let originali = true;
+      if (copiaOriginali) {
+        try { await copiaOriginali; if (DA_R2) cancellaR2(R2_ID); copiaOriginali = null; }
+        catch (e) { originali = false; log('originali non ancora su Drive: monto su questa macchina', e.message); }
+      }
+      if (originali) {
+        if (vai) { try { rclone('moveto', remote(SRC_DIR, nome, vai), remote(SRC_DIR, nome, vaiUsato)); } catch (e) { log('VAI non rinominato', e.message.split('\n')[0]); } }
+        fs.appendFileSync(process.env.GITHUB_OUTPUT, `pezzi_cartella<<REGISTA_FINE\n${nome}\nREGISTA_FINE\npezzi_origine=${SRC_DIR === OUT_DIR ? '98' : '97'}\npezzi_t0=${T0}\n`);
+        log(`regia pronta e salvata: tagli e render passano alle altre macchine (${trascorso()})`);
+        return;
+      }
     }
     const nomeStile = stileSuMisura?.nome || stile;
     if (PROVA_SECONDI) { troncaPiano(piano, PROVA_SECONDI, PROVA_DA); log(`render di prova: ${PROVA_DA ? `da ${PROVA_DA} s, ` : 'primi '}${PROVA_SECONDI} s (${piano.clips.length} tagli)`); }

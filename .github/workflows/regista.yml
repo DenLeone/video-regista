@@ -51,6 +51,10 @@ on:
         description: 'Confronto: 2 o 3 stili separati da | . Un solo scarico, anteprima da 10 s per ciascuno, poi il video intero nello stile scelto in chat'
         required: false
         default: ''
+      macchine:
+        description: 'Montaggio su più macchine: 2, 3, 4, 5, 6 o 8 (default 6); 1 = tutto su una macchina, come prima. Vale per monta e render del video intero; prove, correzioni e confronto restano su una'
+        required: false
+        default: '6'
       tentativo:
         description: 'Interno, non cambiare. 1 = primo giro, 2 = rilancio automatico se il server ha fallito'
         required: false
@@ -79,6 +83,11 @@ permissions:
 
 jobs:
   monta:
+    # con più macchine questo job prepara e scrive la regia, poi «pezzo» e «unisci» fanno il resto
+    outputs:
+      pezzi_cartella: ${{ steps.monta.outputs.pezzi_cartella }}
+      pezzi_origine: ${{ steps.monta.outputs.pezzi_origine }}
+      pezzi_t0: ${{ steps.monta.outputs.pezzi_t0 }}
     # versione fissa: ubuntu-latest passa a Ubuntu 26 dal 19/10/2026 (ffmpeg, font, dipendenze di Chrome)
     runs-on: ubuntu-24.04
     # un giro fermo (mirror, modello che non risponde) non tiene il runner per 4 ore
@@ -415,6 +424,8 @@ jobs:
           AZIONE: ${{ inputs.azione }}
           PROVA_SECONDI: ${{ inputs.secondi }}
           STILI_SCELTA: ${{ inputs.stili }}
+          # più macchine (10/11): solo video intero, senza prove, correzioni, confronto né immagine Docker
+          PREPARA: ${{ (inputs.azione == '' || inputs.azione == 'monta' || inputs.azione == 'render') && inputs.secondi == '' && inputs.stili == '' && inputs.correzione == '' && inputs.macchine != '' && inputs.macchine != '1' && vars.USA_IMMAGINE != '1' && '1' || '' }}
         run: |
           # l'archivio non installa i pacchetti: la cartella sul disco grande va creata lo stesso
           sudo mkdir -p /mnt/regista && sudo chown "$USER" /mnt/regista
@@ -520,3 +531,154 @@ jobs:
             work/ERRORE.txt
           if-no-files-found: ignore
           retention-days: 7
+
+  # ---------- montaggio su più macchine (10/11) ----------
+  # «monta» ha scritto e salvato la regia: ogni «pezzo» taglia, ritaglia e renderizza il suo tratto e lo
+  # carica su Drive (_regista/pezzi: il repo è pubblico, il girato non passa dagli artifact); «unisci»
+  # riunisce, fa copertina e descrizione, carica e avvisa il bot. Se un pezzo manca, «unisci» fa da sola
+  # il giro normale: il video esce comunque, solo più tardi.
+  pezzo:
+    needs: monta
+    if: needs.monta.outputs.pezzi_cartella != ''
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        i: ${{ fromJSON('{"2":[0,1],"3":[0,1,2],"4":[0,1,2,3],"5":[0,1,2,3,4],"6":[0,1,2,3,4,5],"8":[0,1,2,3,4,5,6,7]}')[inputs.macchine] || fromJSON('[0,1,2,3,4,5]') }}
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+      - name: Cache strumenti
+        uses: actions/cache@v5
+        with:
+          path: ~/opt/regista-strumenti
+          key: regista-strumenti-v2-${{ runner.os }}
+      - name: Cache pacchetto Remotion
+        uses: actions/cache@v5
+        with:
+          path: ~/.cache/regista-pacchetto
+          key: pacchetto-v1-${{ hashFiles('src/**', 'package-lock.json', 'tsconfig.json') }}
+      - name: Dipendenze
+        timeout-minutes: 16
+        run: |
+          bash scripts/programma-video.sh fonts-noto-color-emoji libegl1 libgles2
+          npm ci || npm install
+          sudo mkdir -p /mnt/regista && sudo chown "$USER" /mnt/regista
+      - name: Cache rclone
+        uses: actions/cache@v5
+        with:
+          path: ~/.cache/regista-rclone
+          key: rclone-v1-${{ runner.os }}
+      - name: Drive (rclone)
+        env:
+          RCLONE_CONF: ${{ secrets.RCLONE_CONF }}
+        run: |
+          if ! command -v rclone >/dev/null 2>&1; then
+            salvato="$HOME/.cache/regista-rclone/rclone"
+            if [ -x "$salvato" ] && "$salvato" version >/dev/null 2>&1; then
+              sudo install -m 755 "$salvato" /usr/local/bin/rclone
+            else
+              curl -fsSL https://rclone.org/install.sh | sudo bash > /dev/null
+            fi
+          fi
+          mkdir -p ~/.config/rclone
+          printf '%s\n' "$RCLONE_CONF" > ~/.config/rclone/rclone.conf
+      - name: Taglia, ritaglia e renderizza il suo tratto
+        env:
+          GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+          CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          PIXABAY_API_KEY: ${{ secrets.PIXABAY_API_KEY }}
+          PEXELS_API_KEY: ${{ secrets.PEXELS_API_KEY }}
+          REGISTA_AI: ${{ inputs.ai || vars.REGISTA_AI }}
+          REGISTA_MODEL: ${{ inputs.modello || vars.REGISTA_MODEL }}
+          GEMINI_MODEL: ${{ inputs.modello_gemini || vars.GEMINI_MODEL }}
+          REGISTA_VERSIONE: ${{ github.ref_name }}
+          REGISTA_SCARICO: /mnt/regista/in
+          NOTIFY_URL: ${{ secrets.NOTIFY_URL }}
+          NOTIFY_TOKEN: ${{ secrets.NOTIFY_TOKEN }}
+          CARTELLA: ${{ needs.monta.outputs.pezzi_cartella }}
+          ORIGINE: ${{ needs.monta.outputs.pezzi_origine }}
+          REGISTA_T0: ${{ needs.monta.outputs.pezzi_t0 }}
+          BRIEF_EXTRA: ${{ inputs.brief }}
+          AZIONE: render
+          AZIONE_DETTA: ${{ inputs.azione || 'monta' }}
+          PEZZO: ${{ matrix.i }}/${{ strategy.job-total }}
+        run: |
+          export REGISTA_PACCHETTO_DIR="$HOME/.cache/regista-pacchetto"
+          node scripts/regista.mjs
+
+  unisci:
+    needs: [monta, pezzo]
+    if: ${{ !cancelled() && needs.monta.outputs.pezzi_cartella != '' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+      - name: Cache strumenti
+        uses: actions/cache@v5
+        with:
+          path: ~/opt/regista-strumenti
+          key: regista-strumenti-v2-${{ runner.os }}
+      - name: Cache pacchetto Remotion
+        uses: actions/cache@v5
+        with:
+          path: ~/.cache/regista-pacchetto
+          key: pacchetto-v1-${{ hashFiles('src/**', 'package-lock.json', 'tsconfig.json') }}
+      - name: Dipendenze
+        timeout-minutes: 16
+        run: |
+          bash scripts/programma-video.sh fonts-noto-color-emoji libegl1 libgles2
+          npm ci || npm install
+          sudo mkdir -p /mnt/regista && sudo chown "$USER" /mnt/regista
+      - name: Cache rclone
+        uses: actions/cache@v5
+        with:
+          path: ~/.cache/regista-rclone
+          key: rclone-v1-${{ runner.os }}
+      - name: Drive (rclone)
+        env:
+          RCLONE_CONF: ${{ secrets.RCLONE_CONF }}
+        run: |
+          if ! command -v rclone >/dev/null 2>&1; then
+            salvato="$HOME/.cache/regista-rclone/rclone"
+            if [ -x "$salvato" ] && "$salvato" version >/dev/null 2>&1; then
+              sudo install -m 755 "$salvato" /usr/local/bin/rclone
+            else
+              curl -fsSL https://rclone.org/install.sh | sudo bash > /dev/null
+            fi
+          fi
+          mkdir -p ~/.config/rclone
+          printf '%s\n' "$RCLONE_CONF" > ~/.config/rclone/rclone.conf
+      - name: Riunisce, copertina, descrizione e carico
+        env:
+          GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+          CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          PIXABAY_API_KEY: ${{ secrets.PIXABAY_API_KEY }}
+          PEXELS_API_KEY: ${{ secrets.PEXELS_API_KEY }}
+          REGISTA_AI: ${{ inputs.ai || vars.REGISTA_AI }}
+          REGISTA_MODEL: ${{ inputs.modello || vars.REGISTA_MODEL }}
+          GEMINI_MODEL: ${{ inputs.modello_gemini || vars.GEMINI_MODEL }}
+          REGISTA_VERSIONE: ${{ github.ref_name }}
+          REGISTA_SCARICO: /mnt/regista/in
+          NOTIFY_URL: ${{ secrets.NOTIFY_URL }}
+          NOTIFY_TOKEN: ${{ secrets.NOTIFY_TOKEN }}
+          CARTELLA: ${{ needs.monta.outputs.pezzi_cartella }}
+          ORIGINE: ${{ needs.monta.outputs.pezzi_origine }}
+          REGISTA_T0: ${{ needs.monta.outputs.pezzi_t0 }}
+          BRIEF_EXTRA: ${{ inputs.brief }}
+          AZIONE: render
+          AZIONE_DETTA: ${{ inputs.azione || 'monta' }}
+          UNISCI: '1'
+        run: |
+          export REGISTA_PACCHETTO_DIR="$HOME/.cache/regista-pacchetto"
+          node scripts/regista.mjs
