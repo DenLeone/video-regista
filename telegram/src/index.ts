@@ -146,7 +146,8 @@ const LINEA = '━━━━━━━━━━━━━━━━━━';
 // Denis crea su Drive (cartelle in "12 · Risorse/Stili", elenco mandato dal workflow)
 type Stile = { nome: string; tasto: string; cosa: string };
 // stessi nomi di scripts/regista.mjs: l'elenco sta in scripts/stili-base.json
-const STILI: Stile[] = STILI_BASE;
+// archiviato = il codice resta, ma il tasto non si vede più (Denis, 11/11: solo Cinematico, Kal e Ultra)
+const STILI: Stile[] = (STILI_BASE as (Stile & { archiviato?: boolean })[]).filter((s) => !s.archiviato);
 let STILI_DRIVE: string[] = []; // letti dalla memoria a ogni richiesta
 // cartella su Drive e riga "Quando usarlo" di stile.txt (dal workflow), per descrizioni e link
 type InfoStile = { nome: string; id?: string; desc?: string };
