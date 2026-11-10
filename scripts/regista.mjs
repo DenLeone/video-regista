@@ -1382,8 +1382,19 @@ function dichiaraColori(file) {
 let PACCHETTO = null;
 let pacchettoPronto = Promise.resolve();
 function preparaPacchetto() {
-  const base = path.join(os.tmpdir(), `regista-pacchetto-${process.pid}`);
+  // REGISTA_PACCHETTO_DIR: cartella tenuta in cache tra un giro e l'altro (regista.yml, chiave = codice
+  // degli stili). Se il pacchetto c'è già non si rifà: sul runner erano ~100 s in sottofondo.
+  const base = process.env.REGISTA_PACCHETTO_DIR || path.join(os.tmpdir(), `regista-pacchetto-${process.pid}`);
   const dir = path.join(base, 'pacchetto'), vuota = path.join(base, 'vuota');
+  const collega = () => {
+    fs.rmSync(path.join(dir, 'public'), { recursive: true, force: true });
+    fs.symlinkSync(path.join(ROOT, 'public'), path.join(dir, 'public'), 'junction');
+    PACCHETTO = dir;
+  };
+  if (process.env.REGISTA_PACCHETTO_DIR && fs.existsSync(path.join(dir, 'index.html'))) {
+    try { collega(); INSIEME['pacchetto pronto dopo'] = 0; log('pacchetto Remotion già pronto (cache)'); return; }
+    catch (e) { log('pacchetto in cache non usabile, lo rifaccio', e.message); }
+  }
   const t = Date.now();
   try {
     fs.rmSync(base, { recursive: true, force: true });
@@ -1396,12 +1407,13 @@ function preparaPacchetto() {
     c.on('close', (code) => {
       try {
         if (code !== 0 || !fs.existsSync(path.join(dir, 'index.html'))) throw new Error(`codice ${code}`);
-        fs.rmSync(path.join(dir, 'public'), { recursive: true, force: true });
-        fs.symlinkSync(path.join(ROOT, 'public'), path.join(dir, 'public'), 'junction');
-        PACCHETTO = dir;
+        collega();
         INSIEME['pacchetto pronto dopo'] = Math.round((Date.now() - T0) / 1000);
         log(`pacchetto Remotion pronto in sottofondo (${Math.round((Date.now() - t) / 1000)} s)`);
-      } catch (e) { log('pacchetto Remotion non preparato, si impacchetta al render', e.message); }
+      } catch (e) {
+        log('pacchetto Remotion non preparato, si impacchetta al render', e.message);
+        try { fs.rmSync(dir, { recursive: true, force: true }); } catch { /* resta com'è */ }
+      }
       ok();
     });
   });
@@ -1436,6 +1448,20 @@ function salvaTempi(dir, nome) {
 process.on('exit', () => { if (TAPPE.length > 1) console.log(`[regista] tempi: ${rigaTempi()}`); });
 
 function renderizza(out, stile = STILI[0]) {
+  // A pezzi in parallelo (scripts/render-pezzi.mjs, 10/11): un processo solo lasciava ferma quasi metà
+  // della macchina. Serve il pacchetto già pronto; se qualcosa va storto si fa il render intero di sempre.
+  // REGISTA_RENDER_PEZZI=0 lo spegne.
+  if (PACCHETTO && process.env.REGISTA_RENDER_PEZZI !== '0') {
+    try {
+      run(process.execPath, [path.join(ROOT, 'scripts', 'render-pezzi.mjs'), PACCHETTO, stile, out, path.join(WORK, 'piano.json')], { cwd: ROOT, stdio: 'inherit' });
+      INSIEME['render a pezzi'] = 1;
+      dichiaraColori(out);
+      return;
+    } catch (e) {
+      INSIEME['render a pezzi'] = 0;
+      log('render a pezzi non riuscito, faccio quello intero', String(e.message).split('\n')[0]);
+    }
+  }
   // Il primo render a volte fallisce per un errore transitorio del compositor
   // (visto nel test del 16/10): fino a 3 tentativi.
   for (let tentativo = 1; ; tentativo++) {

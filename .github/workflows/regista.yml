@@ -332,6 +332,15 @@ jobs:
           path: ~/opt/regista-strumenti
           key: regista-strumenti-v2-${{ runner.os }}
 
+      # Il pacchetto Remotion (gli stili impacchettati) cambia solo quando cambia src/: tra un giro e
+      # l'altro resta in cache, così il render parte senza rifarlo (10/11)
+      - name: Cache pacchetto Remotion
+        if: steps.check.outputs.cartella != '' && inputs.azione != 'regia' && inputs.azione != 'archivio'
+        uses: actions/cache@v5
+        with:
+          path: ~/.cache/regista-pacchetto
+          key: pacchetto-v1-${{ hashFiles('src/**', 'package-lock.json', 'tsconfig.json') }}
+
       - name: Dipendenze
         id: dipendenze
         # la prova della sola regia non tocca video: niente ffmpeg né Remotion
@@ -407,6 +416,7 @@ jobs:
         run: |
           # l'archivio non installa i pacchetti: la cartella sul disco grande va creata lo stesso
           sudo mkdir -p /mnt/regista && sudo chown "$USER" /mnt/regista
+          export REGISTA_PACCHETTO_DIR="$HOME/.cache/regista-pacchetto"
           node scripts/regista.mjs
 
       # Chiavi mancanti e cartella inesistente hanno già avvisato e non si rilanciano.

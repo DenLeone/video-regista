@@ -51,3 +51,18 @@ test('forza: numeri e nomi propri vincono, le parole vuote no', () => {
   assert.ok(forza('Olivetti', false) > forza('olivetti', false));
   assert.ok(forza('Olivetti', true) === forza('olivetti', false));
 });
+
+test('render a pezzi: i pezzi coprono tutti i fotogrammi, senza buchi né doppioni', async () => {
+  const { dividi } = await import('./render-pezzi.mjs');
+  for (const [durata, pezzi] of [[412, 4], [2176, 4], [300, 4], [45, 4], [61, 3], [1, 4], [2176, 2]]) {
+    const { passo, intervalli } = dividi(durata, pezzi);
+    assert.equal(intervalli[0][0], 0);
+    assert.equal(intervalli.at(-1)[1], durata - 1);
+    intervalli.forEach(([da, a], i) => {
+      assert.ok(a >= da);
+      if (i) assert.equal(da, intervalli[i - 1][1] + 1);
+      if (i < intervalli.length - 1) assert.equal(a - da + 1, passo);
+    });
+    assert.ok(intervalli.length <= pezzi);
+  }
+});
