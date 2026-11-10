@@ -1448,10 +1448,11 @@ function salvaTempi(dir, nome) {
 process.on('exit', () => { if (TAPPE.length > 1) console.log(`[regista] tempi: ${rigaTempi()}`); });
 
 function renderizza(out, stile = STILI[0]) {
-  // A pezzi in parallelo (scripts/render-pezzi.mjs, 10/11): un processo solo lasciava ferma quasi metà
-  // della macchina. Serve il pacchetto già pronto; se qualcosa va storto si fa il render intero di sempre.
-  // REGISTA_RENDER_PEZZI=0 lo spegne.
-  if (PACCHETTO && process.env.REGISTA_RENDER_PEZZI !== '0') {
+  // A pezzi in parallelo (scripts/render-pezzi.mjs, 10/11), solo con REGISTA_RENDER_PEZZI=1. Su un PC
+  // con processore libero rende (in prova 61–75 s contro 95); sul runner di GitHub no: tre giri di
+  // prova di 20 s, intero 135 s, a pezzi 151 e 164 s (i 4 processori sono già pieni). Resta spento
+  // lì; lo script serve per dividere il render su più macchine.
+  if (PACCHETTO && process.env.REGISTA_RENDER_PEZZI === '1') {
     try {
       run(process.execPath, [path.join(ROOT, 'scripts', 'render-pezzi.mjs'), PACCHETTO, stile, out, path.join(WORK, 'piano.json')], { cwd: ROOT, stdio: 'inherit' });
       INSIEME['render a pezzi'] = 1;
