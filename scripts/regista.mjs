@@ -2708,7 +2708,13 @@ async function main() {
     const [fileCopertina, didascalie, anteprimaMp4] = await Promise.all([cronometra('copertina', copertinaP), cronometra('didascalie', didascalieP), anteprimaP, uploadVideo, cronometra('note', noteP)]);
     tappa('chiusura');
     if (vai) rclone('moveto', remote(SRC_DIR, nome, vai), remote(SRC_DIR, nome, vaiUsato));
-    if (SRC_DIR === IN_DIR && !DA_TELEGRAM && !DA_R2) rclone('moveto', remote(IN_DIR, nome), remote(OUT_DIR, nome));
+    if (SRC_DIR === IN_DIR && !DA_TELEGRAM && !DA_R2) {
+      // rclone sposta i file ma lascia le cartelle vuote: la cartella del video restava in 01 vuota
+      // (con dentro _regista vuota). --delete-empty-src-dirs toglie le sottocartelle, rmdirs la cartella
+      // stessa; rmdirs cancella solo cartelle vuote, quindi un file rimasto indietro non si perde.
+      rclone('moveto', remote(IN_DIR, nome), remote(OUT_DIR, nome), '--delete-empty-src-dirs');
+      try { rclone('rmdirs', remote(IN_DIR, nome)); } catch (e) { log(`cartella ${IN_DIR}/${nome} non tolta`, e.message.split('\n')[0]); }
+    }
 
     let fileId = null;
     try { fileId = JSON.parse(run('rclone', ['lsjson', remote(OUT_DIR, nome, finale)]))[0]?.ID || null; } catch (e) { log('ID del video su Drive non trovato', e.message); }
