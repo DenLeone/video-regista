@@ -217,7 +217,11 @@ const aggiunteDi = (x) => Object.fromEntries(AGGIUNTE_DISCORSO.filter((k) => (k 
 // Dal 10/11 l'AI può anche TOGLIERE frasi dal discorso (ripetizioni, autocorrezioni, giri a vuoto: nel
 // mouse Ajazz «nel receiver, nel ricevitore» era rimasto tutto), mai riordinare o aggiungere. Se ne
 // toglie troppe (meno del 60% del parlato o meno di 3 frasi) non ci si fida: resta la sequenza intera.
+// Il modello di riserva (Gemini «lite») non sa farlo: nella prova del 10/11 ha lasciato gli inciampi e
+// tolto pezzi buoni («quindi questo per» → «me è un best buy»). Con lui il discorso resta intero.
+const modelloDebole = () => /lite/i.test(String(consumi.ai?.modello || ''));
 function sequenzaPulita(r) {
+  if (modelloDebole()) { discorso.tenute = discorso.sequenza.length; discorso.riserva = true; return discorso.sequenza; }
   const scelte = new Set((r.sequenza || []).map((y) => normFrase(y.frase)));
   const tenute = discorso.sequenza.filter((it) => scelte.has(it.frase));
   const durata = (seq) => seq.reduce((t, it) => { const f = analisiCorrente?.frasi.find((x) => x.id === it.frase); return t + (f ? f.fine - f.inizio : 0); }, 0);
@@ -227,7 +231,9 @@ function sequenzaPulita(r) {
 }
 const conSequenza = (r) => (discorso ? { ...r, sequenza: sequenzaPulita(r).map((it) => {
   const x = (r.sequenza || []).find((y) => normFrase(y.frase) === it.frase);
-  return { ...it, ...(x ? aggiunteDi(x) : {}) };
+  const piu = x ? aggiunteDi(x) : {};
+  if (modelloDebole()) { delete piu.da_parola; delete piu.fino_a; }
+  return { ...it, ...piu };
 }) } : r);
 // in più: i video e le immagini di Denis che l'AI non ha usato vanno messi lo stesso (usaTuttoIlMateriale)
 const perRegia = (r) => usaTuttoIlMateriale(DISCORSO ? { ...conSequenza(r), discorso: true } : r, analisiCorrente);
@@ -2217,7 +2223,7 @@ async function rifinisciPiano(regia, risultato, analisi, avvisoStile) {
   if (DISCORSO) { Object.assign(regia, { sequenza: conSequenza(regia).sequenza, discorso: true }); fs.writeFileSync(path.join(WORK, 'regia.json'), JSON.stringify(regia, null, 1)); }
   if (avvisi.length) log('avvisi regia:', avvisi.join(' | '));
   if (avvisoStile) piano.note = [`⚠️ ${avvisoStile}`, piano.note].filter(Boolean).join(' · ');
-  if (discorso) piano.note = [`🎙️ Discorso (un solo video): tenute ${discorso.tenute ?? discorso.sequenza.length} frasi su ${discorso.sequenza.length}, in ordine${discorso.tolte.length ? `, tolte ${discorso.tolte.length} tra false partenze e ripetizioni` : ''}`, piano.note].filter(Boolean).join(' · ');
+  if (discorso) piano.note = [`🎙️ Discorso (un solo video): tenute ${discorso.tenute ?? discorso.sequenza.length} frasi su ${discorso.sequenza.length}, in ordine${discorso.riserva ? ' (testo NON ripulito: oggi ha risposto solo il modello di riserva di Gemini)' : ''}${discorso.tolte.length ? `, tolte ${discorso.tolte.length} tra false partenze e ripetizioni` : ''}`, piano.note].filter(Boolean).join(' · ');
   const livelloVoce = Math.max(-60, ...analisi.sorgenti.filter((s) => s.principale && s.livello != null).map((s) => s.livello));
   piano.sfx = process.env.REGISTA_SFX === '0' ? false
     : { volume: +Math.min(0.6, Math.max(0.1, livelloVoce > -60 ? 10 ** ((livelloVoce + 2) / 20) : 0.25)).toFixed(3) };
@@ -2505,7 +2511,7 @@ async function main() {
       log('testo montato:', piano.testo);
       if (avvisoStile) analisi.avvisi = [...(analisi.avvisi || []), avvisoStile];
       if (analisi.avvisi?.length) piano.note = [...analisi.avvisi.map((a) => `⚠️ ${a}`), piano.note].filter(Boolean).join(' · ');
-      if (discorso) piano.note = [`🎙️ Discorso (un solo video): tenute ${discorso.tenute ?? discorso.sequenza.length} frasi su ${discorso.sequenza.length}, in ordine${discorso.tolte.length ? `, tolte ${discorso.tolte.length} tra false partenze e ripetizioni` : ''}`, piano.note].filter(Boolean).join(' · ');
+      if (discorso) piano.note = [`🎙️ Discorso (un solo video): tenute ${discorso.tenute ?? discorso.sequenza.length} frasi su ${discorso.sequenza.length}, in ordine${discorso.riserva ? ' (testo NON ripulito: oggi ha risposto solo il modello di riserva di Gemini)' : ''}${discorso.tolte.length ? `, tolte ${discorso.tolte.length} tra false partenze e ripetizioni` : ''}`, piano.note].filter(Boolean).join(' · ');
       // effetti sonori sotto la voce: più bassa la voce registrata, più bassi gli effetti (~12–16 dB sotto)
       const livelloVoce = Math.max(-60, ...analisi.sorgenti.filter((s) => s.principale && s.livello != null).map((s) => s.livello));
       piano.sfx = process.env.REGISTA_SFX === '0' ? false
