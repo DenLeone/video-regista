@@ -154,10 +154,12 @@ type InfoStile = { nome: string; id?: string; desc?: string };
 let INFO_STILI: InfoStile[] = [];
 let STILI_APP: { nome: string; desc?: string }[] = []; // studiati nell'app, chiave app:stili
 const infoStile = (nome: string) => INFO_STILI.find((x) => x.nome.toLowerCase() === nome.toLowerCase());
+// stili studiati nell'app e archiviati (Denis, 11/11: restano solo Cinematico, Kal e Ultra)
+const APP_ARCHIVIATI = new Set(['techapps', 'cinematic talk', 'strategic creator']);
 const tuttiStili = (): Stile[] => unisciNomi(
   STILI,
   STILI_DRIVE.map((n) => ({ nome: n, cosa: infoStile(n)?.desc || 'su misura, da Drive' })),
-  STILI_APP,
+  STILI_APP.filter((s) => !APP_ARCHIVIATI.has(s.nome.trim().toLowerCase())),
 );
 // nome esatto; se il tasto l'ha accorciato (64 byte), l'unico stile che inizia così
 function nomeStile(x?: string) {
