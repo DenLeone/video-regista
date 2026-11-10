@@ -214,7 +214,18 @@ function preparaDiscorso(analisi) {
 // dove c'è un salto. Anche per correzioni e "Solo render" di un discorso (DISCORSO senza la sequenza nuova)
 const AGGIUNTE_DISCORSO = ['bn', 'fumo', 'stock', 'inserto', 'inserto_da', 'broll', 'da', 'lento', 'zoom', 'telefono', 'guarda', 'guarda_da'];
 const aggiunteDi = (x) => Object.fromEntries(AGGIUNTE_DISCORSO.filter((k) => (k === 'bn' || k === 'fumo' || k === 'lento' || k === 'zoom' || k === 'telefono' ? x[k] === true : x[k] != null && x[k] !== '')).map((k) => [k, x[k]]));
-const conSequenza = (r) => (discorso ? { ...r, sequenza: discorso.sequenza.map((it) => {
+// Dal 10/11 l'AI può anche TOGLIERE frasi dal discorso (ripetizioni, autocorrezioni, giri a vuoto: nel
+// mouse Ajazz «nel receiver, nel ricevitore» era rimasto tutto), mai riordinare o aggiungere. Se ne
+// toglie troppe (meno del 60% del parlato o meno di 3 frasi) non ci si fida: resta la sequenza intera.
+function sequenzaPulita(r) {
+  const scelte = new Set((r.sequenza || []).map((y) => normFrase(y.frase)));
+  const tenute = discorso.sequenza.filter((it) => scelte.has(it.frase));
+  const durata = (seq) => seq.reduce((t, it) => { const f = analisiCorrente?.frasi.find((x) => x.id === it.frase); return t + (f ? f.fine - f.inizio : 0); }, 0);
+  const buona = tenute.length >= 3 && durata(tenute) >= 0.6 * durata(discorso.sequenza);
+  discorso.tenute = buona ? tenute.length : discorso.sequenza.length;
+  return buona ? tenute : discorso.sequenza;
+}
+const conSequenza = (r) => (discorso ? { ...r, sequenza: sequenzaPulita(r).map((it) => {
   const x = (r.sequenza || []).find((y) => normFrase(y.frase) === it.frase);
   return { ...it, ...(x ? aggiunteDi(x) : {}) };
 }) } : r);
@@ -580,7 +591,10 @@ function eIcona(file) {
     const { width: w, height: h, pix_fmt: pix = '' } = j.streams?.[0] || {};
     const alfa = /^(rgba|bgra|argb|abgr|ya8|ya16|rgba64|yuva)/.test(pix);
     const quadrata = w && h && w / h > 0.85 && w / h < 1.18;
-    return (alfa && /\.png$/i.test(file) && quadrata) || (quadrata && Math.max(w, h) <= 1300);
+    // Solo PNG: un JPG non ha trasparenza, e le foto prodotto quadrate su fondo bianco non sono icone
+    // (Ajazz AJ159 V2, 10/11: tre foto del mouse messe come icone "a metà video")
+    if (!/\.png$/i.test(file)) return false;
+    return (alfa && quadrata) || (quadrata && Math.max(w, h) <= 1300);
   } catch { return false; }
 }
 
@@ -603,7 +617,7 @@ function preparaImmagini(foto) {
       else run('ffmpeg', ['-y', '-v', 'error', '-i', path.join(SCARICO, f), '-frames:v', '1', '-vf', "scale='min(1600,iw)':-2", ...JPG_PIENO, '-q:v', '3', path.join(MEDIA, file)]);
       const info = probe(path.join(MEDIA, file));
       run('ffmpeg', ['-y', '-v', 'error', '-i', path.join(MEDIA, file), '-vf', `scale=240:426:force_original_aspect_ratio=decrease,pad=240:426:(ow-iw)/2:(oh-ih)/2:black${etichetta(icona ? `ICONA ${id}` : id)}`, ...JPG_PIENO, '-q:v', '4', path.join(dir, `${String(out.length).padStart(3, '0')}.jpg`)]);
-      out.push({ id, file, originale: path.basename(f), orient: info.w > info.h ? 'h' : 'v', ...(icona ? { icona: true } : {}), ...(copertina ? { copertina: true } : {}) });
+      out.push({ id, file, originale: path.basename(f), orient: info.w > info.h ? 'h' : 'v', ...(info.w > 0 && info.h > 0 ? { ar: +(info.w / info.h).toFixed(3) } : {}), ...(icona ? { icona: true } : {}), ...(copertina ? { copertina: true } : {}) });
       if (icona) log(`${id}: icona (entra con bagliore quando la nomino)`);
     } catch (e) { log(`immagine ${f} non leggibile (HEIC?): saltata`, e.message.split('\n')[0]); }
   }
@@ -795,6 +809,14 @@ export function nomiDelBrief(brief) {
   const righe = [...String(brief || '').matchAll(/\b(?:prodott[oi]|nomi|marc(?:a|he))\s*:\s*([^.\n]+)/gi)].map((m) => m[1]);
   return [...new Set(righe.flatMap((r) => r.match(/[\p{L}\p{N}][\p{L}\p{N}-]{2,}/gu) || []))];
 }
+// Anche il nome della cartella, quando è un prodotto: c'è una sigla con cifre ("Ajazz AJ159 V2",
+// 10/11: senza brief il video diceva "la J159V2 della Ajax"). Cartelle come "Test Impact" non contano.
+export function nomiDellaCartella(nome) {
+  const parole = String(nome || '').match(/[\p{L}\p{N}][\p{L}\p{N}-]*/gu) || [];
+  if (!parole.some((w) => /\d/.test(w) && /\p{L}/u.test(w))) return [];
+  return [...new Set(parole.filter((w) => w.length >= 3 && !/^\d+$/.test(w)))];
+}
+export const nomiDelVideo = (brief, cartella) => [...new Set([...nomiDelBrief(brief), ...nomiDellaCartella(cartella)])];
 const nucleo = (w) => String(w).toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9]/g, '');
 function distanzaParole(a, b) {
   let riga = Array.from({ length: b.length + 1 }, (_, j) => j);
@@ -956,7 +978,7 @@ function promptRegia({ modo, testoMateriale, regiaPrecedente }) {
       ? `Il video dura circa ${Math.round(durata)} s: distribuisci ${cartelli ? 'al massimo' : 'circa'} ${quante} ${cartelli ? 'cartelli' : 'scritte grandi'} su tutta la durata (${cartelli ? 'uno ogni ~45 s' : 'una ogni ~20 s'}), sulle frasi più forti; questo vale più del numero indicato nella sezione Grafica.`
       : 'Questo stile non ha scritte grandi: `keywords` vuoto.';
     const { conBroll } = discorso;
-    p += `\n\n## MODALITÀ DISCORSO (regola di Denis: nella cartella c'è un solo video parlato)\nÈ un discorso di Denis da montare così com'è: NIENTE regia. Non togliere frasi per accorciare, non riordinare, non scegliere cosa tenere: la sequenza l'ha già decisa lo script (tutte le frasi in ordine, tolte solo pause, false partenze e ripetizioni) e nella regia va copiata identica:\n\`\`\`json\n"sequenza": ${JSON.stringify(discorso.sequenza)}\n\`\`\`\nIl tuo lavoro è SOLO la grafica dello stile (sezione Grafica): \`titolo\`, \`soggetto\`, \`copertina\`, \`enfasi\` se lo stile ha l'apertura a lettere enormi (sulle prime parole del discorso), le \`keywords\` con le regole dello stile e, se lo stile ha il bianco e nero nei momenti, \`"bn": true\` su qualche elemento della sequenza${stileSuMisura?.grafica.fumo || stileSuMisura?.grafica.stock ? '; se la sezione Grafica li prevede, puoi aggiungere agli elementi anche `fumo`, `stock` e `inserto` (sempre con la stessa `frase`)' : ''}. ${scritte} ${stileSuMisura?.grafica.cornice === 'reazione' && analisiCorrente?.sorgenti?.some((s) => s.reazione) ? 'Nella cartella ci sono le clip dell\'altro creator a cui Denis risponde (vedi Sorgenti, con cosa dicono e quando): mettile come `"inserto": "<id>", "inserto_da": <secondi>` sulle frasi in cui Denis ne parla, le cita o le commenta, come dice la sezione Grafica; anche le immagini (screenshot, copertina) come `inserto`. Le clip "DA GUARDARE IN SILENZIO" invece vanno con `"guarda": "<id>"` (e `"guarda_da"`) sulla frase subito prima del silenzio in cui Denis la guarda (vedi i silenzi elencati in Sorgenti), una per silenzio. Usale TUTTE almeno una volta. Ignora le regole su durata, scaletta e scelta delle frasi.' : conBroll ? 'Nella cartella ci sono anche dei B-roll di Denis (vedi Sorgenti e fogli provino): mettili sopra la voce aggiungendo all\'elemento `"broll": "<id>", "da": <secondi>` (stessa `frase`), dove mostrano quello che dice in quel momento, circa uno ogni 8–12 s, mai sull\'aggancio né sulla chiusura: usali TUTTI almeno una volta (anche le registrazioni dello schermo e le immagini, come `inserto`). Le regole sui B-roll valgono (niente bocca che parla, non riusare lo stesso momento); ignora quelle su durata, scaletta e scelta delle frasi.' : 'Ignora le regole su durata, scaletta, inquadrature e B-roll.'} \`scaletta\` = i 3–6 temi del discorso, \`testo_montato\` vuoto.`;
+    p += `\n\n## MODALITÀ DISCORSO (regola di Denis: nella cartella c'è un solo video parlato)\nÈ un discorso di Denis: l'ORDINE resta il suo, ma il testo deve uscire sensato, conciso e lineare (Denis, 10/11: «non posso ripetere tre volte la stessa cosa»). Parti da questa sequenza (lo script ha già tolto pause e false partenze evidenti):\n\`\`\`json\n"sequenza": ${JSON.stringify(discorso.sequenza)}\n\`\`\`\nCopiala nella regia togliendo SOLO gli elementi che appesantiscono: lo stesso concetto detto due volte (tieni la versione più chiara, di solito l'ultima), le autocorrezioni («nel receiver, nel ricevitore»: resta solo la parola giusta), le frasi lasciate a metà e poi riprese, gli incisi e i giri di parole che non aggiungono niente. Non riordinare, non aggiungere frasi che non sono nell'elenco, non togliere informazioni (un dato, un pregio o un difetto detti una volta sola restano), non togliere l'aggancio né la chiusura; togli al massimo un terzo del discorso. Scrivi \`testo_montato\` con le frasi rimaste e rileggilo: nessun concetto due volte, nessuna frase monca, il filo si segue. In \`note\` elenca le frasi tolte e perché. Poi la grafica dello stile (sezione Grafica): \`titolo\`, \`soggetto\`, \`copertina\`, \`enfasi\` se lo stile ha l'apertura a lettere enormi (sulle prime parole del discorso), le \`keywords\` con le regole dello stile e, se lo stile ha il bianco e nero nei momenti, \`"bn": true\` su qualche elemento della sequenza${stileSuMisura?.grafica.fumo || stileSuMisura?.grafica.stock ? '; se la sezione Grafica li prevede, puoi aggiungere agli elementi anche `fumo`, `stock` e `inserto` (sempre con la stessa `frase`)' : ''}. ${scritte} ${stileSuMisura?.grafica.cornice === 'reazione' && analisiCorrente?.sorgenti?.some((s) => s.reazione) ? 'Nella cartella ci sono le clip dell\'altro creator a cui Denis risponde (vedi Sorgenti, con cosa dicono e quando): mettile come `"inserto": "<id>", "inserto_da": <secondi>` sulle frasi in cui Denis ne parla, le cita o le commenta, come dice la sezione Grafica; anche le immagini (screenshot, copertina) come `inserto`. Le clip "DA GUARDARE IN SILENZIO" invece vanno con `"guarda": "<id>"` (e `"guarda_da"`) sulla frase subito prima del silenzio in cui Denis la guarda (vedi i silenzi elencati in Sorgenti), una per silenzio. Usale TUTTE almeno una volta. Ignora le regole su durata, scaletta e scelta delle frasi.' : conBroll ? 'Nella cartella ci sono anche dei B-roll di Denis (vedi Sorgenti e fogli provino): mettili sopra la voce aggiungendo all\'elemento `"broll": "<id>", "da": <secondi>` (stessa `frase`), dove mostrano quello che dice in quel momento, circa uno ogni 8–12 s, mai sull\'aggancio né sulla chiusura: usali TUTTI almeno una volta (anche le registrazioni dello schermo e le immagini, come `inserto`). Le regole sui B-roll valgono (niente bocca che parla, non riusare lo stesso momento); ignora quelle su durata, scaletta e scelta delle frasi.' : 'Ignora le regole su durata, scaletta, inquadrature e B-roll.'} \`scaletta\` = i 3–6 temi del discorso.`;
   }
   if (catalogoMusica && Object.keys(catalogoMusica).length) {
     p += `\n\n## Musica\nDenis vuole la musica sotto la voce (bassa, scende quando parla). Scegli il brano più adatto al tono e al ritmo di QUESTO video e scrivilo nel campo \`"musica"\` in cima alla regia (il nome esatto, tra virgolette): energico e veloce per prodotti, tech e ritmo serrato; morbido e lento per racconti, riflessioni e discorsi seri; mai un brano allegro su un argomento serio.\n${descriviCatalogo(catalogoMusica)}`;
@@ -1945,10 +1967,10 @@ export async function analizza(nome, brief, cache) {
     if (!p.voce) { p.voce = `${p.id}.voce.wav`; estraiVoce(p.originale, path.join(MEDIA, p.voce)); }
     let parole = parolePrecedenti(p.file) || parolePrecedenti(p.voce);
     if (!parole && process.env.GROQ_API_KEY) {
-      parole = await trascrivi(path.join(MEDIA, p.voce), 'it', nomiDelBrief(brief));
+      parole = await trascrivi(path.join(MEDIA, p.voce), 'it', nomiDelVideo(brief, nome));
       consumi.groqSec += p.durata;
     }
-    p.parole = correggiNomi(parole || [], nomiDelBrief(brief));
+    p.parole = correggiNomi(parole || [], nomiDelVideo(brief, nome));
     // vento, musica, rumore scambiati per voce: meno di 10 parole al minuto = B-roll
     if (p.parole.length < Math.max(3, (p.durata / 60) * 10)) {
       log(`${p.id}: quasi nessuna parola trascritta (${p.parole.length}), la tratto come B-roll`);
@@ -2193,7 +2215,7 @@ async function rifinisciPiano(regia, risultato, analisi, avvisoStile) {
   if (DISCORSO) { Object.assign(regia, { sequenza: conSequenza(regia).sequenza, discorso: true }); fs.writeFileSync(path.join(WORK, 'regia.json'), JSON.stringify(regia, null, 1)); }
   if (avvisi.length) log('avvisi regia:', avvisi.join(' | '));
   if (avvisoStile) piano.note = [`⚠️ ${avvisoStile}`, piano.note].filter(Boolean).join(' · ');
-  if (discorso) piano.note = [`🎙️ Discorso (un solo video): tenute tutte le ${discorso.sequenza.length} frasi in ordine${discorso.tolte.length ? `, tolte ${discorso.tolte.length} tra false partenze e ripetizioni` : ''}`, piano.note].filter(Boolean).join(' · ');
+  if (discorso) piano.note = [`🎙️ Discorso (un solo video): tenute ${discorso.tenute ?? discorso.sequenza.length} frasi su ${discorso.sequenza.length}, in ordine${discorso.tolte.length ? `, tolte ${discorso.tolte.length} tra false partenze e ripetizioni` : ''}`, piano.note].filter(Boolean).join(' · ');
   const livelloVoce = Math.max(-60, ...analisi.sorgenti.filter((s) => s.principale && s.livello != null).map((s) => s.livello));
   piano.sfx = process.env.REGISTA_SFX === '0' ? false
     : { volume: +Math.min(0.6, Math.max(0.1, livelloVoce > -60 ? 10 ** ((livelloVoce + 2) / 20) : 0.25)).toFixed(3) };
@@ -2481,7 +2503,7 @@ async function main() {
       log('testo montato:', piano.testo);
       if (avvisoStile) analisi.avvisi = [...(analisi.avvisi || []), avvisoStile];
       if (analisi.avvisi?.length) piano.note = [...analisi.avvisi.map((a) => `⚠️ ${a}`), piano.note].filter(Boolean).join(' · ');
-      if (discorso) piano.note = [`🎙️ Discorso (un solo video): tenute tutte le ${discorso.sequenza.length} frasi in ordine${discorso.tolte.length ? `, tolte ${discorso.tolte.length} tra false partenze e ripetizioni` : ''}`, piano.note].filter(Boolean).join(' · ');
+      if (discorso) piano.note = [`🎙️ Discorso (un solo video): tenute ${discorso.tenute ?? discorso.sequenza.length} frasi su ${discorso.sequenza.length}, in ordine${discorso.tolte.length ? `, tolte ${discorso.tolte.length} tra false partenze e ripetizioni` : ''}`, piano.note].filter(Boolean).join(' · ');
       // effetti sonori sotto la voce: più bassa la voce registrata, più bassi gli effetti (~12–16 dB sotto)
       const livelloVoce = Math.max(-60, ...analisi.sorgenti.filter((s) => s.principale && s.livello != null).map((s) => s.livello));
       piano.sfx = process.env.REGISTA_SFX === '0' ? false

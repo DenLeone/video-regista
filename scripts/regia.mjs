@@ -228,7 +228,7 @@ export function risolviRegia(regia, analisi) {
       const durClip = clip.end - clip.start;
       const b = img ? null : trovaSorgente(nomeIns);
       if (img?.icona) iconeDaInserto.push({ icona: img.id, frase: it.frase });
-      else if (img) clip.inserto = { file: img.file, tipo: 'immagine', orient: img.orient, ...(it.telefono === true ? { telefono: true } : {}), ...(img.copertina ? { copertina: true } : {}) };
+      else if (img) clip.inserto = { file: img.file, tipo: 'immagine', orient: img.orient, ...(img.ar ? { ar: img.ar } : {}), ...(it.telefono === true ? { telefono: true } : {}), ...(img.copertina ? { copertina: true } : {}) };
       // le clip di un altro (stile reazione) possono essere più corte della frase: la scheda esce prima
       else if (b && b.tipo === 'video' && (b.durata >= durClip || (b.reazione && b.durata >= 1.2))) {
         let da = Math.max(0, Number(it.inserto_da) || 0);
@@ -687,6 +687,18 @@ function intervalli(ids) {
   return out.join(', ');
 }
 
+// Di cosa parla un'immagine, dal nome del file: "ajazz-aj159-v2-mc-sensore-paw3311" → sensore, paw3311.
+// Si tolgono sigle corte, numeri e parole vuote; il confronto con la frase è sulla radice (5 lettere).
+const VUOTE_NOME = new Set(['img', 'foto', 'immagine', 'image', 'screenshot', 'schermata', 'copia', 'final', 'finale', 'della', 'dello', 'delle', 'degli', 'dall', 'alto', 'vista', 'nero', 'bianco', 'prodotto']);
+const radice = (w) => String(w).toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9]/g, '').slice(0, 5);
+export function paroleChiaveNome(id) {
+  return [...new Set(String(id).split(/[^\p{L}\p{N}]+/u).filter((w) => w.length >= 4 && !/^\d+$/.test(w) && !VUOTE_NOME.has(w.toLowerCase())).map(radice))];
+}
+export function votoImmagine(chiavi, testo) {
+  const dette = new Set(String(testo).split(/[^\p{L}\p{N}]+/u).filter((w) => w.length >= 4).map(radice));
+  return chiavi.filter((k) => dette.has(k)).length;
+}
+
 // I video e le immagini di Denis nella cartella vanno usati tutti (Beats pokemon, 22/10: "quando
 // metto video devono essere usati"). Quelli che l'AI ha lasciato fuori si mettono qui, sparsi sul
 // video, su frasi libere (niente B-roll, inserto o stacco già messi, mai la prima né l'ultima) che
@@ -722,7 +734,20 @@ export function usaTuttoIlMateriale(regia, analisi) {
   const libero = (it, i) => it.frase && i > 0 && i < sequenza.length - 1 && !it.broll && !it.inserto && !it.stock && !it.stacco;
   mancanti.forEach((s, k) => {
     const obiettivo = Math.round(((k + 1) * sequenza.length) / (mancanti.length + 1));
-    const adatti = sequenza.map((it, i) => i).filter((i) => libero(sequenza[i], i) && (s.immagine || durata(sequenza[i]) <= s.durata - 0.1));
+    let adatti = sequenza.map((it, i) => i).filter((i) => libero(sequenza[i], i) && (s.immagine || durata(sequenza[i]) <= s.durata - 0.1));
+    // Le immagini non si spargono più a caso (Ajazz AJ159 V2, 10/11: la scheda delle dimensioni mentre
+    // Denis parlava del cavo): entrano solo su una frase che nomina quello che mostrano, e non attaccate
+    // a un'altra scheda. Se nessuna frase ne parla restano fuori: meglio una scheda in meno che una fuori posto.
+    if (s.immagine) {
+      // le parole che stanno in quasi tutti i nomi (marca e modello) non dicono cosa mostra l'immagine
+      const tutte = propri.filter((x) => x.immagine).map((x) => paroleChiaveNome(x.id));
+      const comuni = new Set(tutte.length >= 3 ? tutte.flat().filter((k, _, a) => a.filter((y) => y === k).length > tutte.length / 2) : []);
+      const chiavi = paroleChiaveNome(s.id).filter((k) => !comuni.has(k));
+      const voti = new Map(adatti.map((i) => [i, votoImmagine(chiavi, frasi.get(normFrase(sequenza[i].frase))?.testo || '')]));
+      const vicina = (i) => Boolean(sequenza[i - 1]?.inserto || sequenza[i + 1]?.inserto);
+      const meglio = Math.max(0, ...voti.values());
+      adatti = meglio > 0 ? adatti.filter((i) => voti.get(i) === meglio && !vicina(i)) : [];
+    }
     if (!adatti.length) return;
     const i = adatti.reduce((a, b) => (Math.abs(b - obiettivo) < Math.abs(a - obiettivo) ? b : a));
     const comeInserto = s.immagine || s.schermo || s.reazione || s.orient === 'h';

@@ -17,7 +17,8 @@ export type Clip = {
   // del prodotto) mentre Denis ne parla; video: start/end nella sorgente
   // audio: si sente la voce della clip (più bassa di Denis); zoom: ingrandita sulla faccia; telefono:
   // dentro un telefono; copertina: la copertina del post a cui si risponde (stile reazione, Blackden)
-  inserto?: { file: string; tipo: 'video' | 'immagine'; orient?: 'v' | 'h'; start?: number; end?: number; continua?: boolean;
+  // ar = larghezza / altezza dell'immagine: la scheda prende la sua forma (senza, 9:16 o 16:9 da orient)
+  inserto?: { file: string; tipo: 'video' | 'immagine'; orient?: 'v' | 'h'; ar?: number; start?: number; end?: number; continua?: boolean;
     audio?: boolean; zoom?: boolean; telefono?: boolean; copertina?: boolean;
     // clip "guarda …": Denis tace e la guarda, si sente a volume pieno e la scheda è più grande
     pieno?: boolean };

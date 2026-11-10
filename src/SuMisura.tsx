@@ -394,7 +394,7 @@ export const SuMisura: React.FC<Piano> = (piano) => {
       {/* stile reazione: le clip dell'altro dietro a Denis (la persona ritagliata va sopra) */}
       {reazione ? <InsertiReazione piano={piano} g={g} sfx={sfx} /> : null}
       {g.dietro || reazione ? <Ritagli piano={piano} filtro={LOOK[g.look]} /> : null}
-      {reazione ? <SchedeInfo piano={piano} g={g} sfx={sfx} /> : <Inserti piano={piano} sfx={sfx} cornice={g.cornice} />}
+      {reazione ? <SchedeInfo piano={piano} g={g} sfx={sfx} /> : <Inserti piano={piano} sfx={sfx} cornice={g.cornice} sopra={strati && g.posizione === 'basso' && !g.dietro ? 920 : undefined} />}
       {g.fumo && g.transizione !== 'sfocata' ? <Fumi piano={piano} /> : null}
       {g.fumo && g.transizione === 'sfocata' ? <Sfocature piano={piano} /> : null}
       {strati ? <BlocchiUltra blocchi={blocchi} g={g} solo={g.dietro ? 'piccole' : 'tutte'} /> : <BlocchiMotion blocchi={blocchi} g={g} />}

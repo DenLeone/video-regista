@@ -191,14 +191,24 @@ const TvView: React.FC<{ s: Scheda; contenuto: React.ReactNode }> = ({ s, conten
   );
 };
 
-const SchedaView: React.FC<{ s: Scheda; cornice?: 'scheda' | 'tv' | 'reazione' }> = ({ s, cornice }) => {
+const SchedaView: React.FC<{ s: Scheda; cornice?: 'scheda' | 'tv' | 'reazione'; sopra?: number }> = ({ s, cornice, sopra }) => {
   const fr = useCurrentFrame();
   const entra = interpolate(fr, [0, 12], [0, 1], { extrapolateLeft: 'clamp', extrapolateRight: 'clamp', easing: Easing.out(Easing.back(1.4)) });
   const esce = interpolate(fr, [s.len - 9, s.len], [0, 1], { extrapolateLeft: 'clamp', extrapolateRight: 'clamp', easing: Easing.in(Easing.cubic) });
   const vis = Math.min(1, fr / 6) * (1 - esce);
   const primo = s.pezzi[0].ins;
   const orizz = primo.orient === 'h';
-  const w = orizz ? 960 : 640, h = orizz ? 540 : 1138;
+  // La scheda prende la forma dell'immagine (dentro 960×1138): prima era solo 9:16 o 16:9 e una foto
+  // quadrata o 4:5 usciva tagliata ai lati, con le scritte mozzate (Ajazz AJ159 V2, 10/11)
+  const ar = primo.tipo === 'immagine' && primo.ar && primo.ar > 0.3 && primo.ar < 3.4 ? primo.ar : null;
+  // `sopra`: la scheda deve finire prima di questa riga (i sottotitoli stanno sotto). Senza, sta al
+  // centro come sempre. Prima scheda e sottotitoli si sovrapponevano e non si leggeva né l'una né gli altri
+  const ALTO = 240;
+  const maxH = sopra ? Math.max(300, sopra - ALTO) : 1138;
+  const forma = ar ?? (orizz ? 16 / 9 : 9 / 16);
+  const w = Math.round(Math.min(960, maxH * forma));
+  const h = Math.round(w / forma);
+  const top = sopra ? ALTO + Math.round((maxH - h) / 2) : 900 - h / 2;
   const zoom = 1 + 0.05 * (fr / Math.max(1, s.len)); // le immagini si muovono piano
   const contenuto = s.pezzi.map((p, i) => (
     <Sequence key={i} from={p.from - s.from} durationInFrames={p.len} layout="none">
@@ -213,7 +223,7 @@ const SchedaView: React.FC<{ s: Scheda; cornice?: 'scheda' | 'tv' | 'reazione' }
     <AbsoluteFill>
       <AbsoluteFill style={{ backgroundColor: `rgba(0,0,0,${0.3 * vis})` }} />
       <div style={{
-        position: 'absolute', left: (1080 - w) / 2, top: 900 - h / 2, width: w, height: h, borderRadius: orizz ? 30 : 46, overflow: 'hidden',
+        position: 'absolute', left: (1080 - w) / 2, top, width: w, height: h, borderRadius: h < 700 ? 30 : 46, overflow: 'hidden',
         border: '3px solid rgba(255,255,255,0.18)', boxShadow: '0 40px 90px rgba(0,0,0,0.55), 0 8px 24px rgba(0,0,0,0.35)', backgroundColor: '#111',
         opacity: vis, transform: `translateY(${(1 - entra) * 160 - esce * 90}px) scale(${0.86 + 0.14 * entra - 0.08 * esce}) rotate(${(1 - entra) * -3}deg)`,
       }}>
@@ -223,11 +233,11 @@ const SchedaView: React.FC<{ s: Scheda; cornice?: 'scheda' | 'tv' | 'reazione' }
   );
 };
 
-export const Inserti: React.FC<{ piano: Piano; sfx?: number; cornice?: 'scheda' | 'tv' | 'reazione' }> = ({ piano, sfx = 0, cornice }) => (
+export const Inserti: React.FC<{ piano: Piano; sfx?: number; cornice?: 'scheda' | 'tv' | 'reazione'; sopra?: number }> = ({ piano, sfx = 0, cornice, sopra }) => (
   <>
     {schedeInserti(piano).map((s, i) => (
       <Sequence key={`in${i}`} from={s.from} durationInFrames={Math.max(2, s.len)}>
-        <SchedaView s={s} cornice={cornice} />
+        <SchedaView s={s} cornice={cornice} sopra={sopra} />
       </Sequence>
     ))}
     {sfx > 0 ? schedeInserti(piano).flatMap((s, i) => [

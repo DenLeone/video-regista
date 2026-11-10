@@ -85,3 +85,23 @@ test('pezzi: ogni fotogramma ha le sue clip, con una di margine per parte', asyn
   assert.deepEqual([...clipDelTratto(pos.clip, 0, 10)], [0, 1]);
   assert.equal(clipDelTratto(pos.clip, 99999, 100000).size, 0);
 });
+
+test('nomi di prodotto dal nome della cartella: solo se c\'è una sigla con cifre', async () => {
+  process.env.CARTELLA ??= '';
+  const { nomiDellaCartella } = await import('./regista.mjs');
+  assert.deepEqual(nomiDellaCartella('Ajazz AJ159 V2'), ['Ajazz', 'AJ159']);
+  assert.deepEqual(nomiDellaCartella('Test Impact'), []);
+  assert.deepEqual(nomiDellaCartella('Olivetti'), []);
+  assert.deepEqual(nomiDellaCartella('Video 10-11-2026'), []);
+});
+
+test('immagini avanzate: solo sulla frase che ne parla, altrimenti fuori', async () => {
+  const { usaTuttoIlMateriale } = await import('./regia.mjs');
+  const frasi = ['Io ho un po di mouse', 'il mio preferito è questo', 'la batteria si cambia in un attimo', 'è sempre in carica nel ricevitore', 'cercare il cavo è una noia', 'il sensore è top di gamma', 'per me è un best buy']
+    .map((testo, i) => ({ id: `F${String(i + 1).padStart(3, '0')}`, testo, inizio: i * 3, fine: i * 3 + 2.5, principale: 'A' }));
+  const immagini = ['x-mouse-m1-batteria-estratta', 'x-mouse-m1-dimensioni-prodotto', 'x-mouse-m1-sensore-paw3311', 'x-mouse-m1-confezione'].map((id) => ({ id, file: `img_${id}.jpg` }));
+  const analisi = { frasi, immagini, sorgenti: [{ id: 'A', tipo: 'video', principale: true }] };
+  const r = usaTuttoIlMateriale({ sequenza: frasi.map((f) => ({ frase: f.id })) }, analisi);
+  const dove = Object.fromEntries(r.sequenza.filter((x) => x.inserto).map((x) => [x.inserto, x.frase]));
+  assert.deepEqual(dove, { 'x-mouse-m1-batteria-estratta': 'F003', 'x-mouse-m1-sensore-paw3311': 'F006' });
+});
