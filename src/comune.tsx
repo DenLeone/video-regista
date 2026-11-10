@@ -191,7 +191,7 @@ const TvView: React.FC<{ s: Scheda; contenuto: React.ReactNode }> = ({ s, conten
   );
 };
 
-const SchedaView: React.FC<{ s: Scheda; cornice?: 'scheda' | 'tv' | 'reazione'; sopra?: number }> = ({ s, cornice, sopra }) => {
+const SchedaView: React.FC<{ s: Scheda; cornice?: Cornice; sopra?: number; n?: number }> = ({ s, cornice, sopra, n = 0 }) => {
   const fr = useCurrentFrame();
   const entra = interpolate(fr, [0, 12], [0, 1], { extrapolateLeft: 'clamp', extrapolateRight: 'clamp', easing: Easing.out(Easing.back(1.4)) });
   const esce = interpolate(fr, [s.len - 9, s.len], [0, 1], { extrapolateLeft: 'clamp', extrapolateRight: 'clamp', easing: Easing.in(Easing.cubic) });
@@ -219,6 +219,26 @@ const SchedaView: React.FC<{ s: Scheda; cornice?: 'scheda' | 'tv' | 'reazione'; 
     </Sequence>
   ));
   if (cornice === 'tv') return <TvView s={s} contenuto={contenuto} />;
+  if (cornice === 'laterale') {
+    // Ultra (riferimenti studiati il 10/11): scheda piccola (≤ 40% della larghezza), inclinata, accanto
+    // alla persona all'altezza della testa, a sinistra e a destra a turno; niente velo scuro sul video
+    const LW = 400, LH = 540;
+    const lw = Math.round(Math.min(LW, LH * forma));
+    const lh = Math.round(lw / forma);
+    const sinistra = n % 2 === 0;
+    const verso = sinistra ? -1 : 1;
+    return (
+      <AbsoluteFill>
+        <div style={{
+          position: 'absolute', left: sinistra ? 48 : 1080 - 48 - lw, top: 360 + (LH - lh) / 2, width: lw, height: lh, borderRadius: 26, overflow: 'hidden',
+          border: '4px solid rgba(255,255,255,0.9)', boxShadow: '0 24px 60px rgba(0,0,0,0.5)', backgroundColor: '#111', opacity: vis,
+          transform: `translateX(${verso * ((1 - entra) * 120 + esce * 60)}px) scale(${0.9 + 0.1 * entra}) rotate(${verso * (4 - 2 * (1 - entra))}deg)`,
+        }}>
+          {contenuto}
+        </div>
+      </AbsoluteFill>
+    );
+  }
   return (
     <AbsoluteFill>
       <AbsoluteFill style={{ backgroundColor: `rgba(0,0,0,${0.3 * vis})` }} />
@@ -233,11 +253,12 @@ const SchedaView: React.FC<{ s: Scheda; cornice?: 'scheda' | 'tv' | 'reazione'; 
   );
 };
 
-export const Inserti: React.FC<{ piano: Piano; sfx?: number; cornice?: 'scheda' | 'tv' | 'reazione'; sopra?: number }> = ({ piano, sfx = 0, cornice, sopra }) => (
+type Cornice = 'scheda' | 'tv' | 'reazione' | 'laterale';
+export const Inserti: React.FC<{ piano: Piano; sfx?: number; cornice?: Cornice; sopra?: number }> = ({ piano, sfx = 0, cornice, sopra }) => (
   <>
     {schedeInserti(piano).map((s, i) => (
       <Sequence key={`in${i}`} from={s.from} durationInFrames={Math.max(2, s.len)}>
-        <SchedaView s={s} cornice={cornice} sopra={sopra} />
+        <SchedaView s={s} cornice={cornice} sopra={sopra} n={i} />
       </Sequence>
     ))}
     {sfx > 0 ? schedeInserti(piano).flatMap((s, i) => [

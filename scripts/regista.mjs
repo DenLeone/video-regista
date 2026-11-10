@@ -39,6 +39,7 @@ import { progettoDaVinci } from './davinci.mjs';
 import { filtroRampa, grigliaBattute, motoRipresa, pianoBeat, scegliTratto } from './beat.mjs';
 import { analizzaBrano, descriviCatalogo, DIR_MUSICA, ESTENSIONI_MUSICA, momentiParlati, richiestaMusica, scegliBrano } from './musica.mjs';
 import { AUDIO_EXT, IMAGE_EXT, NOMI_DISPOSITIVO, VIDEO_EXT, dispositivo, prioritaAudio, tagsPiatti } from './sorgenti.mjs';
+import { regolaStile } from './regolatore.mjs';
 
 const REMOTE = process.env.REGISTA_REMOTE || 'gdrive';
 const IN_DIR = DIR_EDITARE;
@@ -2253,7 +2254,14 @@ async function rifinisciPiano(regia, risultato, analisi, avvisoStile) {
   if (stileSuMisura) piano.grafica = stileSuMisura.grafica;
   piano.fps = analisi.fps || 30;
   if (!stileSuMisura || stileSuMisura.grafica.biancoNero === 'no') for (const c of piano.clips) delete c.bn;
+  regolaPiano(piano);
   return { regia, piano, avvisi };
+}
+
+// regolatore anti-caos (scripts/regolatore.mjs): toglie quello che la regia ha messo in più
+function regolaPiano(piano) {
+  const tolti = regolaStile(piano, stileSuMisura?.grafica);
+  if (tolti.bn || tolti.inserti) log(`regolatore: tolti ${tolti.inserti} inserti e ${tolti.bn} momenti in b/n in più`);
 }
 
 async function regiaDiUnoStile(nomeStile, nome, analisi, testoMateriale, fogliUsati) {
@@ -2564,6 +2572,7 @@ async function main() {
       // b/n solo se lo stile lo prevede: con "Bianco e nero: no" (o uno stile pronto) i "bn" della regia
       // non valgono (12K Quality rifatto sulla regia del Narrativo, 19/10: un pezzo era uscito in b/n)
       if (!stileSuMisura || stileSuMisura.grafica.biancoNero === 'no') for (const c of piano.clips) delete c.bn;
+      regolaPiano(piano);
     }
     if (confronto) log('testo montato:', piano.testo);
     // Regia e trascrizione salvate subito, dove le cerca il giro dopo (09/11). Prima finivano su Drive

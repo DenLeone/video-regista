@@ -112,7 +112,7 @@ export type GraficaStile = {
   transizione?: 'fumo' | 'sfocata';          // sfocata = scia sfocata veloce sul taglio (Ultra); senza, fumo
   palette?: string[];                        // colori a giro delle parole grandi (sottotitoli a strati)
   firma?: string;                            // logo Instagram e nome (es. @_black_den) fissi in basso a sinistra
-  cornice?: 'scheda' | 'tv' | 'reazione';    // inserti: scheda arrotondata, televisore anni '70 o scheda in prospettiva dietro a Denis
+  cornice?: 'scheda' | 'tv' | 'reazione' | 'laterale'; // inserti: scheda arrotondata, televisore anni '70, scheda in prospettiva dietro a Denis o piccola inclinata di lato (Ultra)
   suoni?: Record<string, string>;            // effetti sonori dello stile (asset/suoni): nome → file in public
   beat?: boolean;                            // montaggio a tempo di musica (stile Beat)
   stock?: boolean;                           // l'AI può chiedere B-roll di repertorio (Pixabay o Pexels, se c'è la chiave)
@@ -126,7 +126,7 @@ export type GraficaStile = {
   rivela?: boolean;                          // inizio "prima e dopo": l'immagine piatta che si colora
   stacchi?: boolean;                         // ritmo veloce: la regia può cambiare inquadratura a metà frase
   chiusura?: string;                         // chiusura con logo Instagram e questo nome (es. @_black_den)
-  biancoNero: 'no' | 'momenti' | 'sempre';
+  biancoNero: 'no' | 'uno' | 'momenti' | 'sempre'; // uno = un solo momento breve (Ultra)
   vignetta: number;                          // 0–1
   sfx: boolean;
   musica?: { file: string; volume: number } | null;

@@ -43,14 +43,14 @@ Posizione titoli: alto        # alto | centro | basso
 Look: naturale                # sempre naturale: Denis non vuole modifiche ai colori (gli altri look sono disattivati)
 Soggetto in risalto: no       # sempre no (colori naturali)
 Sfondo sfocato: no            # sempre no (colori naturali)
-Bianco e nero: no             # no | momenti (l'AI mette in b/n i momenti di racconto) | sempre
+Bianco e nero: no             # no | uno (un solo momento breve: Ultra) | momenti (l'AI mette in b/n i momenti di racconto) | sempre
 Vignettatura: 0               # sempre 0 (colori naturali)
 Inizio: normale               # sempre normale ("prima e dopo" disattivato: colori naturali)
 Tagli dentro le frasi: no     # sì = ritmo veloce: l'inquadratura può cambiare a metà frase, sulla parola che nomina la cosa
 Chiusura: no                  # no | il tuo nome Instagram (es. @_black_den): finale scurito con logo e nome
 Firma: no                     # no | il tuo nome Instagram: logo e nome fissi in basso a sinistra per tutto il video
 Transizioni: no               # no | fumo (nuvola che copre il taglio nei cambi di scena scelti dall'AI) | sfocata (scia sfocata veloce sul taglio)
-Inserti: scheda               # scheda (arrotondata, tipo telefono) | tv (televisore anni '70 con barre colorate all'accensione) | reazione (le clip di un altro in una scheda in prospettiva dietro di te, con la sua voce più bassa; schede informative di vetro scritte dall'AI: Blackden)
+Inserti: scheda               # scheda (arrotondata, tipo telefono) | laterale (piccola e inclinata accanto a te, al massimo una ogni 10 s: Ultra) | tv (televisore anni '70 con barre colorate all'accensione) | reazione (le clip di un altro in una scheda in prospettiva dietro di te, con la sua voce più bassa; schede informative di vetro scritte dall'AI: Blackden)
 B-roll stock: no              # sì = l'AI può coprire alcune frasi con video di repertorio da Pexels (serve il secret PIXABAY_API_KEY)
 
 # --- AUDIO ---
@@ -178,7 +178,7 @@ export function leggiStile(testo, nomeCartella) {
   }
   const palette = (campi['colori parole grandi'] || '').match(/#?[0-9a-f]{6}\b/gi);
   if (palette?.length) g.palette = palette.map((c) => colore(c, '#FFFFFF'));
-  if (campi.inserti) g.cornice = /tv|telev/.test(norm(campi.inserti)) ? 'tv' : /reaz|rispost|blackden/.test(norm(campi.inserti)) ? 'reazione' : 'scheda';
+  if (campi.inserti) g.cornice = /tv|telev/.test(norm(campi.inserti)) ? 'tv' : /reaz|rispost|blackden/.test(norm(campi.inserti)) ? 'reazione' : /lato|later|piccol/.test(norm(campi.inserti)) ? 'laterale' : 'scheda';
   if (campi['b-roll stock']) g.stock = si(campi['b-roll stock']);
   // Montaggio: beat = video a tempo di musica, senza voce né regia dell'AI (scripts/beat.mjs)
   if (/beat|tempo/.test(norm(campi.montaggio))) g.beat = true;
@@ -186,7 +186,7 @@ export function leggiStile(testo, nomeCartella) {
   // (stile studiato dall'AI sul Motion, 25/10); restano i cartelli a tutto schermo
   if ((g.sottotitoli === 'blocchi' || g.sottotitoli === 'strati') && (g.tipoTitoli === 'parole' || g.tipoTitoli === 'frasi')) g.tipoTitoli = 'cartelli';
   const bn = norm(campi['bianco e nero']);
-  if (bn) g.biancoNero = /sempre|tutto/.test(bn) ? 'sempre' : /^no/.test(bn) ? 'no' : 'momenti';
+  if (bn) g.biancoNero = /sempre|tutto/.test(bn) ? 'sempre' : /^no/.test(bn) ? 'no' : /^(uno|una|un momento|1)\b/.test(bn) ? 'uno' : 'momenti';
   if (g.biancoNero === 'sempre') g.look = 'bianco e nero';
   g.vignetta = numero(campi.vignettatura, g.vignetta * 100, 0, 100) / 100;
   if (campi['effetti sonori']) g.sfx = si(campi['effetti sonori']);
@@ -263,7 +263,9 @@ export function promptSuMisura(g, testoAI, disponibili = {}) {
       '  - Il contenuto viene SOLO da quello che Denis dice nel video e da fatti certi e generali: niente numeri, articoli di legge o date che Denis non dice e di cui non sei sicuro. Meglio una scheda in meno che un dato inventato.',
       '  - Mai due schede a meno di 15 s una dall\'altra; mai sopra una clip con la voce dell\'altro.');
   }
+  if (g.cornice === 'laterale') righe.push('- **Inserti piccoli di lato** (foto, schermate, B-roll come `inserto`): una scheda piccola e inclinata accanto a Denis, mai sopra di lui. Pochi: al massimo uno ogni 10 s (2–3 in 30 s), ognuno su una frase da 1,5–3 s che nomina proprio quella cosa. Lo script toglie quelli in più.');
   if (g.cornice === 'tv') righe.push('- Gli inserti compaiono dentro un televisore anni \'70 (barre colorate all\'accensione): perfetti per filmati, schermate e foto di cui Denis parla.');
+  if (g.biancoNero === 'uno') righe.push('- **Bianco e nero**: UN SOLO momento in tutto il video, breve (1–3 s): `"bn": true` su un solo elemento della sequenza, su un passaggio di racconto o riflessione. Mai sul volto che dà un dato o sul prodotto. Lo script tiene solo il primo.');
   if (g.biancoNero === 'momenti') righe.push('- **Bianco e nero**: metti `"bn": true` sugli elementi della sequenza che raccontano (ricordi, riflessioni, B-roll d\'atmosfera), circa un terzo; il volto che parla al presente e il prodotto restano a colori.');
   righe.push('- `flickers`: []. `tavola`: "". `soggetto`: nome breve del prodotto o del tema. `sponsor`: null (se il brief cita uno sponsor, mettilo come titolo, se lo stile ha i titoli).');
   if (testoAI.trim()) righe.push('', `### Indicazioni di Denis per questo stile (stile.txt)`, ...testoAI.trim().split('\n').map((r) => `- ${r}`),
