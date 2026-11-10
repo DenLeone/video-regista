@@ -65,9 +65,11 @@ env:
 
 # Una coda PER CARTELLA: GitHub tiene un solo giro "in attesa" per gruppo e scarta
 # quelli in attesa più vecchi. Con un gruppo unico, tre avvii di fila ne perdevano uno.
+# I render di prova (azione render + secondi) hanno una coda per stile e tratto: più prove della
+# stessa cartella girano insieme (10/11); scrivono file con nomi diversi e non toccano il piano salvato.
 # Cartelle diverse girano in parallelo. Senza nome di cartella, e l'elenco, hanno la loro coda.
 concurrency:
-  group: regista-${{ inputs.azione == 'elenco' && 'elenco' || (inputs.azione == 'regia' || inputs.azione == 'esempi') && format('{0}-{1}', inputs.azione, inputs.cartella) || inputs.cartella || 'auto' }}
+  group: regista-${{ inputs.azione == 'elenco' && 'elenco' || (inputs.azione == 'regia' || inputs.azione == 'esempi') && format('{0}-{1}', inputs.azione, inputs.cartella) || (inputs.secondi != '' && inputs.azione == 'render') && format('prova-{0}-{1}-{2}', inputs.cartella, inputs.secondi, inputs.brief) || inputs.cartella || 'auto' }}
   cancel-in-progress: false
 
 # senza nome di cartella, lo script avvia un giro per ogni cartella con VAI (gh workflow run)
