@@ -71,7 +71,7 @@ const Parola: React.FC<{ k: Keyword; len: number }> = ({ k, len }) => {
   const fs = Math.min(240, ...righe.map((r) => dentro(r, { famiglia: ANTON, peso: 400 }, 240)));
   const mano = (k.note || '').replace(/^\/\/\s*/, '').trim();
   const scrive = interpolate(fr, [4, 14], [0, 1], { ...clamp, easing: Easing.out(Easing.cubic) });
-  const top = k.top ?? 250;
+  const top = 250; // sempre in alto: l'AI a volte manda il top degli altri stili (in basso)
   return (
     <AbsoluteFill style={{ opacity: esce }}>
       <div style={{ position: 'absolute', top, left: SICURA.lato - 40, right: SICURA.lato - 40, textAlign: 'center' }}>
@@ -81,7 +81,7 @@ const Parola: React.FC<{ k: Keyword; len: number }> = ({ k, len }) => {
             transform: `scale(${0.7 + 0.3 * entra})`, opacity: Math.min(1, entra * 1.5) }}>{r}</div>
         ))}
         {mano ? (
-          <div style={{ position: 'relative', marginTop: -fs * 0.42, fontFamily: MARKER, fontSize: Math.min(110, fs * 0.62), color: ROSSO, lineHeight: 1,
+          <div style={{ position: 'relative', marginTop: -fs * 0.12, fontFamily: MARKER, fontSize: Math.min(110, fs * 0.62), color: ROSSO, lineHeight: 1,
             transform: 'rotate(-6deg)', textShadow: '0 3px 10px rgba(0,0,0,0.45)', clipPath: `inset(0 ${(1 - scrive) * 100}% 0 0)` }}>{mano}</div>
         ) : null}
       </div>
