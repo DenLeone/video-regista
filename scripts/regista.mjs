@@ -2539,9 +2539,9 @@ async function main() {
       fs.mkdirSync(DIR_PEZZO, { recursive: true });
       fs.writeFileSync(path.join(DIR_PEZZO, 'pezzo.json'), JSON.stringify(mio));
       if (!mio.tratto) { log(`pezzo ${PEZZO.i + 1}/${PEZZO.n}: il video ha solo ${intervalli.length} pezzi, niente da fare`); return; }
-      // solo le clip del tratto: gli stili disegnano una clip alla volta. Il Beat mostra anche la vicina
-      // nelle transizioni, e lì se ne taglia una in più per parte
-      solo = clipDelTratto(pos.clip, mio.tratto[0], mio.tratto[1], piano.beat ? 1 : 0);
+      // le clip del tratto più una per parte: senza margine (prova del 10/11 con 6 macchine) il render
+      // chiedeva anche il pezzo vicino e due macchine su sei si fermavano
+      solo = clipDelTratto(pos.clip, mio.tratto[0], mio.tratto[1], 1);
       log(`pezzo ${PEZZO.i + 1}/${intervalli.length}: fotogrammi ${mio.tratto[0]}–${mio.tratto[1]} di ${pos.durata}, ${solo.size} clip su ${piano.clips.length}`);
     } else if (UNISCI) {
       const qui = path.join(WORK, 'pezzi');
