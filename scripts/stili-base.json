@@ -5,6 +5,11 @@
     "cosa": "spot di prodotto, sottotitoli parola per parola, titoli grandi"
   },
   {
+    "nome": "Kal",
+    "tasto": "🟨 Kal",
+    "cosa": "seduto alla scrivania, parola grande gialla in alto con la scritta rossa a mano, sottotitoli sempre, prodotto in un riquadro sul tappetino verde"
+  },
+  {
     "nome": "ListaUI",
     "tasto": "🗂️ Lista UI",
     "cosa": "lista numerata con schermate animate stile app: cartelle No.1, chat che si scrive, finestra di file, griglia del profilo, scheda di un'app"

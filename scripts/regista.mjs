@@ -2595,6 +2595,8 @@ async function main() {
       }
     }
     const nomeStile = stileSuMisura?.nome || stile;
+    // Kal: inquadratura fissa come nei riferimenti, niente zoom alternato sui tagli
+    if (stile === 'Kal') for (const c of piano.clips) c.punch = false;
     if (PROVA_SECONDI) { troncaPiano(piano, PROVA_SECONDI, PROVA_DA); log(`render di prova: ${PROVA_DA ? `da ${PROVA_DA} s, ` : 'primi '}${PROVA_SECONDI} s (${piano.clips.length} tagli)`); }
     // i pezzi scelti, prima del render vero: la card dell'app distingue tagli e render
     await fase(nome, `✂️ Taglio ${piano.clips.length} pezzi`, 'tagli');
