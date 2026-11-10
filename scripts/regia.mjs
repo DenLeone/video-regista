@@ -149,10 +149,14 @@ export function risolviRegia(regia, analisi) {
     let clip = null;
     let paroleF = []; // parole della frase (per lo stacco dentro la frase)
     if (it.frase) {
-      const f = frasi.get(normFrase(it.frase));
-      if (!f) { avvisi.push(`frase ${it.frase} inesistente: saltata`); return; }
-      const voce = sorgenti.find((s) => s.id === f.principale);
-      const taglio = fineTaglio.get(idx);
+      const intera = frasi.get(normFrase(it.frase));
+      if (!intera) { avvisi.push(`frase ${it.frase} inesistente: saltata`); return; }
+      const voce = sorgenti.find((s) => s.id === intera.principale);
+      // tagli dentro il pezzo chiesti dall'AI (da_parola / fino_a): inciampi e autocorrezioni
+      const corta = accorciaFrase(intera, it, voce);
+      if (corta.avviso) avvisi.push(corta.avviso);
+      const f = corta.f;
+      const taglio = f === intera ? fineTaglio.get(idx) : null;
       const dur = q((taglio ? taglio.t : f.fine) - f.inizio);
       testo.push(taglio ? f.testo.trim().split(/\s+/).slice(0, -taglio.parole).join(' ') : f.testo);
       paroleF = paroleFrase(voce, f, taglio);
@@ -493,6 +497,43 @@ function distanza(a, b) {
 
 const RIMANDO = /^(appunto|però|quindi|anche|ma|perché|poi|infatti|cioè|questo|questa|questi|queste|l'unica|l'unico|invece|allora|comunque)\b/i;
 const finita = (t) => /[.!?…]["»”)]?$/.test(String(t).trim());
+// Tagli dentro un pezzo (10/11, mouse Ajazz: «anche se anche completely black», «nel receiver, nel
+// ricevitore»): gli inciampi stanno nello stesso respiro, senza pausa, e a blocchi interi non si
+// tolgono. L'AI indica da quale parola far partire il pezzo ("da_parola") o fino a quale tenerlo
+// ("fino_a"); il taglio cade tra due parole di Whisper. Se le parole non si trovano o resterebbe
+// meno di mezzo secondo, il pezzo resta intero.
+export function accorciaFrase(f, it, voce) {
+  if (!it?.da_parola && !it?.fino_a) return { f };
+  const w = paroleFrase(voce, f, null);
+  const testo = f.testo.trim().split(/\s+/);
+  if (w.length !== testo.length || w.length < 2) return { f, avviso: `${f.id}: taglio dentro la frase non applicato (parole non allineate)` };
+  const tok = w.map((x) => paroleDi(x.w).join(''));
+  const dove = (frase) => {
+    const cerca = paroleDi(frase);
+    const out = [];
+    if (cerca.length) for (let i = 0; i + cerca.length <= tok.length; i++) if (cerca.every((c, k) => tok[i + k] === c)) out.push(i);
+    return { out, n: cerca.length };
+  };
+  let da = 0, a = w.length - 1;
+  if (it.da_parola) {
+    const { out } = dove(it.da_parola);
+    const i = out.find((x) => x > 0);
+    if (i == null) return { f, avviso: `${f.id}: "da_parola" «${it.da_parola}» non trovata, pezzo intero` };
+    da = i;
+  }
+  if (it.fino_a) {
+    const { out, n } = dove(it.fino_a);
+    const i = out.filter((x) => x + n - 1 < w.length - 1 && x + n - 1 >= da).pop();
+    if (i == null) return { f, avviso: `${f.id}: "fino_a" «${it.fino_a}» non trovata, pezzo intero` };
+    a = i + n - 1;
+  }
+  const inizio = da > 0 ? Math.max(f.inizio, Math.min(w[da].s - 0.03, (w[da - 1].e + w[da].s) / 2)) : f.inizio;
+  const fine = a < w.length - 1 ? Math.min(f.fine, Math.max(w[a].s + 0.1, w[a + 1].s - 0.02)) : f.fine;
+  if (fine - inizio < 0.5) return { f, avviso: `${f.id}: taglio dentro la frase troppo corto, pezzo intero` };
+  const tolte = [...testo.slice(0, da), ...testo.slice(a + 1)].join(' ');
+  return { f: { ...f, inizio: +inizio.toFixed(3), fine: +fine.toFixed(3), testo: testo.slice(da, a + 1).join(' ') }, avviso: `${f.id}: tolto «${tolte}»` };
+}
+
 // le parole di Whisper della frase `f` (quelle del suo testo, nello stesso ordine), senza le
 // ultime tolte dal taglio sulle ripetizioni. Whisper sbaglia i bordi anche di mezzo secondo
 // (Wave3: "5" 0,4 s prima della frase, "pronto" dopo la fine): cerco la sequenza esatta in una

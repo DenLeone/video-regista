@@ -105,3 +105,22 @@ test('immagini avanzate: solo sulla frase che ne parla, altrimenti fuori', async
   const dove = Object.fromEntries(r.sequenza.filter((x) => x.inserto).map((x) => [x.inserto, x.frase]));
   assert.deepEqual(dove, { 'x-mouse-m1-batteria-estratta': 'F003', 'x-mouse-m1-sensore-paw3311': 'F006' });
 });
+
+test('tagli dentro la frase: falsa partenza e coda ridetta', async () => {
+  const { accorciaFrase } = await import('./regia.mjs');
+  const parole = (testo, t0) => testo.split(' ').map((w, i) => ({ w, s: t0 + i * 0.4, e: t0 + i * 0.4 + 0.35 }));
+  const t1 = 'anche se anche completely black non è affatto male';
+  const voce = { parole: parole(t1, 10) };
+  const f = { id: 'F020', principale: 'A', inizio: 9.9, fine: 13.6, testo: t1 };
+  const r = accorciaFrase(f, { da_parola: 'anche completely' }, voce);
+  assert.equal(r.f.testo, 'anche completely black non è affatto male');
+  assert.ok(r.f.inizio > 10.7 && r.f.inizio < 10.81, String(r.f.inizio));
+  assert.equal(r.f.fine, f.fine);
+  const r2 = accorciaFrase(f, { fino_a: 'black' }, voce);
+  assert.equal(r2.f.testo, 'anche se anche completely black');
+  assert.ok(r2.f.fine > 11.9 && r2.f.fine <= 12.0, String(r2.f.fine));
+  // parole che non ci sono, o niente da fare: il pezzo resta com'è
+  assert.equal(accorciaFrase(f, { da_parola: 'ricevitore' }, voce).f, f);
+  assert.equal(accorciaFrase(f, {}, voce).f, f);
+  assert.equal(accorciaFrase(f, { da_parola: 'male' }, voce).f, f);
+});
