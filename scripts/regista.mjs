@@ -2517,13 +2517,16 @@ async function main() {
       fs.mkdirSync(DIR_PEZZO, { recursive: true });
       fs.writeFileSync(path.join(DIR_PEZZO, 'pezzo.json'), JSON.stringify(mio));
       if (!mio.tratto) { log(`pezzo ${PEZZO.i + 1}/${PEZZO.n}: il video ha solo ${intervalli.length} pezzi, niente da fare`); return; }
-      solo = clipDelTratto(pos.clip, mio.tratto[0], mio.tratto[1]);
+      // solo le clip del tratto: gli stili disegnano una clip alla volta. Il Beat mostra anche la vicina
+      // nelle transizioni, e lì se ne taglia una in più per parte
+      solo = clipDelTratto(pos.clip, mio.tratto[0], mio.tratto[1], piano.beat ? 1 : 0);
       log(`pezzo ${PEZZO.i + 1}/${intervalli.length}: fotogrammi ${mio.tratto[0]}–${mio.tratto[1]} di ${pos.durata}, ${solo.size} clip su ${piano.clips.length}`);
     } else if (UNISCI) {
       const qui = path.join(WORK, 'pezzi');
       try { rclone('copy', remote(SRC_DIR, nome, CACHE, 'pezzi', GIRO_PEZZI), qui, '--transfers', '8'); } catch (e) { log('pezzi non scaricati', e.message.split('\n')[0]); }
       pezzi = leggiPezzi(qui, impronta);
-      if (pezzi) solo = clipPerCopertina(piano, analisi);
+      // la copertina si fa solo per il video intero: nelle prove non si taglia niente
+      if (pezzi) solo = PROVA_SECONDI ? new Set() : clipPerCopertina(piano, analisi);
       else { ripiegoPezzi = true; log('pezzi delle altre macchine incompleti o di un altro piano: faccio tagli e render qui'); }
     }
     await tagliaSegmenti(piano, analisi, solo);
