@@ -2771,8 +2771,15 @@ async function main() {
       // rclone sposta i file ma lascia le cartelle vuote: la cartella del video restava in 01 vuota
       // (con dentro _regista vuota). --delete-empty-src-dirs toglie le sottocartelle, rmdirs la cartella
       // stessa; rmdirs cancella solo cartelle vuote, quindi un file rimasto indietro non si perde.
-      rclone('moveto', remote(IN_DIR, nome), remote(OUT_DIR, nome), '--delete-empty-src-dirs');
-      try { rclone('rmdirs', remote(IN_DIR, nome)); } catch (e) { log(`cartella ${IN_DIR}/${nome} non tolta`, e.message.split('\n')[0]); }
+      // «move» (non «moveto»: non accetta --delete-empty-src-dirs, e il 10/11 il giro di Insta Mic Pro è
+      // finito in errore a video già fatto). Se lo spostamento non riesce il video resta in 01 ma è pronto:
+      // non è un motivo per dire "non montato".
+      try {
+        rclone('move', remote(IN_DIR, nome), remote(OUT_DIR, nome), '--delete-empty-src-dirs');
+        try { rclone('rmdirs', remote(IN_DIR, nome)); } catch (e) { log(`cartella ${IN_DIR}/${nome} non tolta`, e.message.split('\n')[0]); }
+      } catch (e) {
+        log(`cartella non spostata in ${OUT_DIR}: il video resta in ${IN_DIR}/${nome}`, e.message.split('\n')[0]);
+      }
     }
 
     let fileId = null;
