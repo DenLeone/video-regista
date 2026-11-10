@@ -16,8 +16,8 @@ import { dentro, SICURA } from './testo';
 const { fontFamily: ANTON } = loadAnton('normal', { weights: ['400'], subsets: ['latin'] });
 const { fontFamily: MARKER } = loadMarker('normal', { weights: ['400'], subsets: ['latin'] });
 const { fontFamily: MONTSERRAT } = loadMontserrat('normal', { weights: ['600', '700'], subsets: ['latin'] });
-const GIALLO = '#F2C230';
-const ROSSO = '#E3262B';
+const TIFFANY = '#81D8D0';
+const BLU = '#1F4FE0';
 const MAT = '#1F5A45';
 const OMBRA = '0 4px 18px rgba(0,0,0,0.5), 0 1px 3px rgba(0,0,0,0.6)';
 const OMBRA_SOTTO = '0 0 2px rgba(0,0,0,0.75), 0 2px 8px rgba(0,0,0,0.55)';
@@ -77,11 +77,11 @@ const Parola: React.FC<{ k: Keyword; len: number }> = ({ k, len }) => {
       <div style={{ position: 'absolute', top, left: SICURA.lato - 40, right: SICURA.lato - 40, textAlign: 'center' }}>
         {k.tag ? <div style={{ fontFamily: ANTON, fontSize: 52, color: '#FFFFFF', letterSpacing: '0.02em', textShadow: OMBRA, opacity: entra }}>{k.tag.toUpperCase()}</div> : null}
         {righe.map((r, i) => (
-          <div key={i} style={{ fontFamily: ANTON, fontSize: fs, lineHeight: 0.95, color: GIALLO, letterSpacing: '0.01em', textShadow: OMBRA,
+          <div key={i} style={{ fontFamily: ANTON, fontSize: fs, lineHeight: 0.95, color: TIFFANY, letterSpacing: '0.01em', textShadow: OMBRA,
             transform: `scale(${0.7 + 0.3 * entra})`, opacity: Math.min(1, entra * 1.5) }}>{r}</div>
         ))}
         {mano ? (
-          <div style={{ position: 'relative', marginTop: -fs * 0.12, fontFamily: MARKER, fontSize: Math.min(110, fs * 0.62), color: ROSSO, lineHeight: 1,
+          <div style={{ position: 'relative', marginTop: -fs * 0.42, fontFamily: MARKER, fontSize: Math.min(110, fs * 0.62), color: BLU, lineHeight: 1,
             transform: 'rotate(-6deg)', textShadow: '0 3px 10px rgba(0,0,0,0.45)', clipPath: `inset(0 ${(1 - scrive) * 100}% 0 0)` }}>{mano}</div>
         ) : null}
       </div>
