@@ -74,6 +74,21 @@ const UNISCI = process.env.UNISCI === '1';
 // PREPARA=1 (regista.yml, montaggi veri su più macchine): questa macchina scarica, analizza e scrive la
 // regia, la salva su Drive e si ferma; tagli e render li fanno i job «pezzo», il resto «unisci».
 const PREPARA = process.env.PREPARA === '1';
+// ATTENDI=1 (regista.yml): le macchine dei pezzi partono insieme alla prima, installano e scaricano
+// mentre lei scrive la regia, poi aspettano il via. I segnali stanno su Drive in 02/_giri/<giro>:
+// cartella.json (quale video, appena si sa), via.json (regia salvata), fine.json (niente pezzi).
+const ATTENDI = process.env.ATTENDI === '1';
+const remoteGiro = (...p) => remote(OUT_DIR, '_giri', GIRO_PEZZI, ...p);
+function segnale(nome, dati = {}) {
+  try {
+    const f = path.join(WORK, `segnale-${nome}.json`);
+    fs.mkdirSync(WORK, { recursive: true });
+    fs.writeFileSync(f, JSON.stringify(dati));
+    rclone('copyto', f, remoteGiro(`${nome}.json`));
+  } catch (e) { log(`segnale ${nome} non scritto`, String(e.message).split('\n')[0]); }
+}
+// le foto per la copertina fatte dalle macchine dei pezzi: indice della clip → [3 jpg]
+let fotoCopertina = null;
 const GIRO_PEZZI = `${process.env.GITHUB_RUN_ID || 'locale'}-${process.env.GITHUB_RUN_ATTEMPT || '1'}`;
 let ripiegoPezzi = false;
 const CACHE = '_regista'; // sottocartella con regia.json, piano.json e materiale.json di ogni video
@@ -1586,7 +1601,7 @@ function copertina(piano, regia, analisi, out) {
   try {
     const voci = new Set(analisi.sorgenti.filter((x) => x.principale || x.sync).map((x) => x.id));
     let t = 0;
-    const pezzi = piano.clips.map((c) => { const p = { c, da: t }; t += c.end - c.start; return p; })
+    const pezzi = piano.clips.map((c, k) => { const p = { c, da: t, k }; t += c.end - c.start; return p; })
       .filter(({ c }) => voci.has(c.sorgente) && !c.inserto && c.end - c.start >= 0.6);
     if (!pezzi.length) return null;
     // fino a 6 inquadrature sparse sul video, tre fotogrammi ciascuna: vince il meno mosso
@@ -1595,9 +1610,11 @@ function copertina(piano, regia, analisi, out) {
     fs.rmSync(dir, { recursive: true, force: true });
     fs.mkdirSync(dir, { recursive: true });
     let migliore = null;
-    scelti.forEach(({ c }, i) => [0.3, 0.5, 0.7].forEach((q, j) => {
+    scelti.forEach(({ c, k }, i) => [0.3, 0.5, 0.7].forEach((q, j) => {
       const jpg = path.join(dir, `${i}-${j}.jpg`);
-      run('ffmpeg', ['-y', '-v', 'error', '-ss', ((c.end - c.start) * q).toFixed(2), '-i', path.join(MEDIA, c.file), '-frames:v', '1', ...JPG_PIENO, '-q:v', '2', jpg]);
+      // giro su più macchine: la foto l'ha già fatta la macchina di quel tratto
+      if (fotoCopertina?.get(k)?.[j]) { fs.copyFileSync(fotoCopertina.get(k)[j], jpg); }
+      else run('ffmpeg', ['-y', '-v', 'error', '-ss', ((c.end - c.start) * q).toFixed(2), '-i', path.join(MEDIA, c.file), '-frames:v', '1', ...JPG_PIENO, '-q:v', '2', jpg]);
       const b = nitidezza(jpg);
       if (!migliore || b < migliore.b) migliore = { jpg, b };
     }));
@@ -2371,6 +2388,8 @@ async function main() {
     catch (e) { log('non riesco a prenotare il VAI', e.message); }
   }
   const vaiUsato = vai ? `_VAI_usato_${nomeVaiOriginale(vai)}` : null;
+  // le macchine dei pezzi possono già scaricare (per Telegram e app solo dopo, quando gli originali sono su Drive)
+  if (PREPARA && !DA_TELEGRAM && !DA_R2) segnale('cartella', { cartella: nome, origine: SRC_DIR === OUT_DIR ? '98' : '97', t0: T0 });
 
   // Telegram e app: originali in 01/<nome> in sottofondo, risultato direttamente in 02/<nome>
   const DEST = DA_TELEGRAM || DA_R2 ? OUT_DIR : SRC_DIR;
@@ -2409,6 +2428,21 @@ async function main() {
     }
     try { rclone('copy', remote(SRC_DIR, nome), SCARICO, '--max-depth', '1', '--include', 'brief.txt'); } catch { /* cartella nuova */ }
 
+    // macchina dei pezzi partita insieme alla prima: il girato è scaricato, ora si aspetta la regia
+    if (PEZZO && ATTENDI) {
+      const limite = Date.now() + 25 * 60 * 1000;
+      let esito = null;
+      while (!esito && Date.now() < limite) {
+        try {
+          const c = rclone('lsf', remoteGiro(), '--files-only');
+          if (/^via\.json$/m.test(c)) esito = 'via';
+          else if (/^fine\.json$/m.test(c)) esito = 'fine';
+        } catch { /* cartella dei segnali non ancora creata */ }
+        if (!esito) await attesa(4000);
+      }
+      if (esito !== 'via') { log(esito === 'fine' ? 'il video si monta su una macchina sola: questo pezzo non serve' : 'nessun via in 25 minuti: mi fermo'); return; }
+      log(`regia pronta, parto (${trascorso()})`);
+    }
     // cache del giro precedente (trascrizioni già fatte, regia da correggere)
     let cache = null, regiaPrecedente = null;
     try {
@@ -2553,6 +2587,8 @@ async function main() {
       }
       if (originali) {
         if (vai) { try { rclone('moveto', remote(SRC_DIR, nome, vai), remote(SRC_DIR, nome, vaiUsato)); } catch (e) { log('VAI non rinominato', e.message.split('\n')[0]); } }
+        if (DA_TELEGRAM || DA_R2) segnale('cartella', { cartella: nome, origine: SRC_DIR === OUT_DIR ? '98' : '97', t0: T0 });
+        segnale('via');
         fs.appendFileSync(process.env.GITHUB_OUTPUT, `pezzi_cartella<<REGISTA_FINE\n${nome}\nREGISTA_FINE\npezzi_origine=${SRC_DIR === OUT_DIR ? '98' : '97'}\npezzi_t0=${T0}\n`);
         log(`regia pronta e salvata: tagli e render passano alle altre macchine (${trascorso()})`);
         return;
@@ -2575,13 +2611,25 @@ async function main() {
       // le clip del tratto più una per parte: senza margine (prova del 10/11 con 6 macchine) il render
       // chiedeva anche il pezzo vicino e due macchine su sei si fermavano
       solo = clipDelTratto(pos.clip, mio.tratto[0], mio.tratto[1], 1);
+      // le clip della copertina che cominciano nel mio tratto: le foto le faccio io (chi riunisce non taglia)
+      mio.copertina = [...clipPerCopertina(piano, analisi)].filter((i) => pos.clip[i].da >= mio.tratto[0] && pos.clip[i].da <= mio.tratto[1]);
       log(`pezzo ${PEZZO.i + 1}/${intervalli.length}: fotogrammi ${mio.tratto[0]}–${mio.tratto[1]} di ${pos.durata}, ${solo.size} clip su ${piano.clips.length}`);
     } else if (UNISCI) {
       const qui = path.join(WORK, 'pezzi');
       try { rclone('copy', remote(SRC_DIR, nome, CACHE, 'pezzi', GIRO_PEZZI), qui, '--transfers', '8'); } catch (e) { log('pezzi non scaricati', e.message.split('\n')[0]); }
       pezzi = leggiPezzi(qui, impronta);
       // la copertina si fa solo per il video intero: nelle prove non si taglia niente
-      if (pezzi) solo = PROVA_SECONDI ? new Set() : clipPerCopertina(piano, analisi);
+      if (pezzi && !PROVA_SECONDI) {
+        // le foto della copertina arrivano dai pezzi; se ne manca qualcuna si tagliano qui quelle clip
+        const serve = clipPerCopertina(piano, analisi);
+        const trovate = new Map();
+        for (const x of pezzi) for (const i of serve) {
+          const fs3 = [0, 1, 2].map((j) => path.join(x.dir, 'copertina', `${i}-${j}.jpg`));
+          if (fs3.every((f) => fs.existsSync(f))) trovate.set(i, fs3);
+        }
+        if ([...serve].every((i) => trovate.has(i))) { fotoCopertina = trovate; solo = new Set(); }
+        else solo = serve;
+      } else if (pezzi) solo = new Set();
       else { ripiegoPezzi = true; log('pezzi delle altre macchine incompleti o di un altro piano: faccio tagli e render qui'); }
     }
     await tagliaSegmenti(piano, analisi, solo);
@@ -2617,6 +2665,14 @@ async function main() {
       await fase(nome, `🎬 Render su più macchine: ${mio.quanti} pezzi insieme`, 'render');
       await pacchettoPronto;
       if (!PACCHETTO) throw new Error('pacchetto Remotion non pronto');
+      for (const i of mio.copertina || []) {
+        const c = piano.clips[i];
+        fs.mkdirSync(path.join(DIR_PEZZO, 'copertina'), { recursive: true });
+        [0.3, 0.5, 0.7].forEach((q, j) => {
+          try { run('ffmpeg', ['-y', '-v', 'error', '-ss', ((c.end - c.start) * q).toFixed(2), '-i', path.join(MEDIA, c.file), '-frames:v', '1', ...JPG_PIENO, '-q:v', '2', path.join(DIR_PEZZO, 'copertina', `${i}-${j}.jpg`)]); }
+          catch (e) { log(`foto per la copertina ${i}-${j} non fatta`, e.message.split('\n')[0]); }
+        });
+      }
       run(process.execPath, [path.join(ROOT, 'scripts', 'render-pezzi.mjs'), '--pezzo', PACCHETTO, stile, path.join(WORK, 'piano.json'),
         String(mio.tratto[0]), String(mio.tratto[1]), path.join(DIR_PEZZO, 'v.ts'), path.join(DIR_PEZZO, 'a.aac'), String(os.availableParallelism())], { cwd: ROOT, stdio: 'inherit' });
       fs.writeFileSync(path.join(DIR_PEZZO, 'pezzo.json'), JSON.stringify({ ...mio, fatto: true }));
@@ -2636,6 +2692,9 @@ async function main() {
     if (pezzi) {
       await unisciPezzi(pezzi, outFile);
       try { rclone('purge', remote(SRC_DIR, nome, CACHE, 'pezzi')); } catch (e) { log('pezzi non cancellati da Drive', e.message.split('\n')[0]); }
+      try { rclone('purge', remoteGiro()); } catch { /* già tolti */ }
+      // segnali vecchi lasciati da giri finiti male
+      try { rclone('delete', remote(OUT_DIR, '_giri'), '--min-age', '1d', '--rmdirs'); } catch { /* niente da togliere */ }
     } else {
       await pacchettoPronto;
       renderizza(outFile, stile);

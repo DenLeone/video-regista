@@ -516,6 +516,14 @@ jobs:
             '{tipo: "esito", esito: "⚠️ non montato", nome: $n, richiesto: $r, ok: false, run_url: $u, run_id: $id, testo: ("Errore: " + $c), info: {errore: $c}}' \
             | curl -s -X POST "$NOTIFY_URL" -H 'content-type: application/json' -H "x-regista-token: $NOTIFY_TOKEN" -d @- > /dev/null || true
 
+      # niente pezzi (prova, correzione, ripiego su una macchina, errore): le macchine dei pezzi, partite
+      # insieme a questa, smettono di aspettare
+      - name: Libera le macchine dei pezzi
+        if: always() && steps.monta.outputs.pezzi_cartella == '' && ((inputs.azione == '' || inputs.azione == 'monta' || inputs.azione == 'render') && inputs.secondi == '' && inputs.stili == '' && inputs.correzione == '' && inputs.macchine != '' && inputs.macchine != '1' && vars.USA_IMMAGINE != '1')
+        run: |
+          printf '{}' > /tmp/fine.json
+          rclone copyto /tmp/fine.json "gdrive:$DIR_FATTI/_giri/$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT/fine.json" || true
+
       - name: Conserva piano e note (debug)
         if: always() && steps.check.outputs.cartella != ''
         uses: actions/upload-artifact@v6
@@ -538,10 +546,10 @@ jobs:
   # riunisce, fa copertina e descrizione, carica e avvisa il bot. Se un pezzo manca, «unisci» fa da sola
   # il giro normale: il video esce comunque, solo più tardi.
   pezzo:
-    needs: monta
-    if: needs.monta.outputs.pezzi_cartella != ''
+    # parte insieme a «monta»: installa, aspetta di sapere quale video, scarica e poi aspetta la regia
+    if: (inputs.azione == '' || inputs.azione == 'monta' || inputs.azione == 'render') && inputs.secondi == '' && inputs.stili == '' && inputs.correzione == '' && inputs.macchine != '' && inputs.macchine != '1' && vars.USA_IMMAGINE != '1'
     runs-on: ubuntu-24.04
-    timeout-minutes: 30
+    timeout-minutes: 50
     strategy:
       fail-fast: false
       matrix:
@@ -587,7 +595,26 @@ jobs:
           fi
           mkdir -p ~/.config/rclone
           printf '%s\n' "$RCLONE_CONF" > ~/.config/rclone/rclone.conf
+      - name: Aspetta di sapere quale video
+        id: quale
+        run: |
+          giro="gdrive:$DIR_FATTI/_giri/$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT"
+          for i in $(seq 1 300); do
+            if rclone cat "$giro/cartella.json" > /tmp/cartella.json 2>/dev/null && [ -s /tmp/cartella.json ]; then
+              {
+                echo "CARTELLA<<REGISTA_FINE"; jq -r .cartella /tmp/cartella.json; echo "REGISTA_FINE"
+                echo "ORIGINE=$(jq -r .origine /tmp/cartella.json)"
+                echo "REGISTA_T0=$(jq -r .t0 /tmp/cartella.json)"
+              } >> "$GITHUB_ENV"
+              echo "via=1" >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
+            if rclone lsf "$giro" --files-only 2>/dev/null | grep -qx 'fine.json'; then echo "montaggio su una macchina sola: questo pezzo non serve"; exit 0; fi
+            sleep 4
+          done
+          echo "::warning::nessuna cartella in 20 minuti"
       - name: Taglia, ritaglia e renderizza il suo tratto
+        if: steps.quale.outputs.via == '1'
         env:
           GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
           CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
@@ -601,13 +628,11 @@ jobs:
           REGISTA_SCARICO: /mnt/regista/in
           NOTIFY_URL: ${{ secrets.NOTIFY_URL }}
           NOTIFY_TOKEN: ${{ secrets.NOTIFY_TOKEN }}
-          CARTELLA: ${{ needs.monta.outputs.pezzi_cartella }}
-          ORIGINE: ${{ needs.monta.outputs.pezzi_origine }}
-          REGISTA_T0: ${{ needs.monta.outputs.pezzi_t0 }}
           BRIEF_EXTRA: ${{ inputs.brief }}
           AZIONE: render
           AZIONE_DETTA: ${{ inputs.azione || 'monta' }}
           PEZZO: ${{ matrix.i }}/${{ strategy.job-total }}
+          ATTENDI: '1'
         run: |
           export REGISTA_PACCHETTO_DIR="$HOME/.cache/regista-pacchetto"
           node scripts/regista.mjs
