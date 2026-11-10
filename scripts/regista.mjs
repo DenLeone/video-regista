@@ -22,6 +22,8 @@
 import { execFileSync, spawn, spawnSync } from 'node:child_process';
 import fs from 'node:fs';
 import os from 'node:os';
+import crypto from 'node:crypto';
+import { clipDelTratto, dividi, fotogrammiClip, sceltePerCopertina } from './pezzi.mjs';
 import path from 'node:path';
 import { audioMuto, frasi, inviluppo, sincronizza, sogliaVoce } from './audio.mjs';
 import { DIR_ASSETS, DIR_EDITARE, DIR_FATTI, DIR_STILI } from './cartelle.mjs';
@@ -63,6 +65,14 @@ const R2_ID = (process.env.R2_ID || '').trim();
 const DA_R2 = /^[A-Za-z0-9_-]{8,80}$/.test(R2_ID);
 const CHIAVI_TELEGRAM = Boolean(process.env.TG_API_ID && process.env.TG_API_HASH && process.env.TELEGRAM_BOT_TOKEN);
 const SRC_DIR = process.env.ORIGINE === '98' || CORREZIONE ? OUT_DIR : IN_DIR;
+// Render diviso su più macchine (veloce.yml, 10/11). PEZZO="i/N": questa macchina taglia, ritaglia e
+// renderizza solo il tratto i di N e carica video e audio su Drive, in _regista/pezzi/<giro>. UNISCI=1:
+// questa macchina li scarica e li riunisce al posto di tagli e render (se ne manca uno, giro normale).
+// I pezzi passano da Drive e non dagli artifact di GitHub: il repo è pubblico, il girato no.
+const PEZZO = (() => { const m = /^(\d+)\/(\d+)$/.exec(process.env.PEZZO || ''); return m ? { i: Number(m[1]), n: Number(m[2]) } : null; })();
+const UNISCI = process.env.UNISCI === '1';
+const GIRO_PEZZI = `${process.env.GITHUB_RUN_ID || 'locale'}-${process.env.GITHUB_RUN_ATTEMPT || '1'}`;
+let ripiegoPezzi = false;
 const CACHE = '_regista'; // sottocartella con regia.json, piano.json e materiale.json di ogni video
 const ROOT = path.resolve(path.dirname(new URL(import.meta.url).pathname.replace(/^\/([A-Za-z]:)/, '$1')), '..');
 const WORK = path.join(ROOT, 'work');
@@ -516,7 +526,7 @@ async function scaricaStock(regia, analisi) {
 
 const ZOOM_PUNCH = 1.18; // come in src/comune.tsx
 const TAGLI_INSIEME = 4;
-async function tagliaSegmenti(piano, analisi) {
+async function tagliaSegmenti(piano, analisi, solo = null) {
   const perFile = new Map(analisi.sorgenti.filter((s) => s.tipo === 'video').map((s) => [s.file, s]));
   const lavori = [];
   piano.clips.forEach((c, i) => {
@@ -529,10 +539,12 @@ async function tagliaSegmenti(piano, analisi) {
     // rallentatore: dur è la durata sul video, della sorgente ne serve dur / lento
     const lento = c.lento > 1 ? c.lento : 1;
     const start = c.start;
+    // render a pezzi: le clip degli altri tratti prendono solo i dati del taglio, senza tagliare
+    const mia = !solo || solo.has(i);
     // la curva del look si misura adesso, in ordine: due pezzi della stessa ripresa non si pestano i piedi
-    const args = comandiTaglio(s, start, dur / lento, path.join(MEDIA, seg), !c.audio && !c.muto && s.haAudio, false, zoom, lento, piano.fps || 30, c.rampa || null);
+    const args = !mia ? null : comandiTaglio(s, start, dur / lento, path.join(MEDIA, seg), !c.audio && !c.muto && s.haAudio, false, zoom, lento, piano.fps || 30, c.rampa || null);
     lavori.push(async () => {
-      await eseguiUno('ffmpeg', args);
+      if (args) await eseguiUno('ffmpeg', args);
       Object.assign(c, { file: seg, start: 0, end: +dur.toFixed(3), sorgente: s.id, daSorgente: start });
       if (zoom > 1) c.punch = false;
       delete c.lento; // il pezzo è già al rallentatore
@@ -545,15 +557,15 @@ async function tagliaSegmenti(piano, analisi) {
       const ins = `ins_${String(i).padStart(3, '0')}.mp4`;
       const d = c.inserto.end - c.inserto.start;
       const iStart = c.inserto.start;
-      const argsI = comandiTaglio(si, iStart, d, path.join(MEDIA, ins), Boolean(c.inserto.audio && si.haAudio), true);
+      const argsI = !mia ? null : comandiTaglio(si, iStart, d, path.join(MEDIA, ins), Boolean(c.inserto.audio && si.haAudio), true);
       lavori.push(async () => {
-        await eseguiUno('ffmpeg', argsI);
+        if (argsI) await eseguiUno('ffmpeg', argsI);
         // sorgente e punto d'ingresso originali: servono al progetto per DaVinci
         Object.assign(c.inserto, { file: ins, start: 0, end: +d.toFixed(3), sorgente: si.id, daSorgente: iStart });
       });
     }
   });
-  log(`taglio di ${lavori.length} pezzi, ${Math.min(TAGLI_INSIEME, lavori.length)} alla volta`);
+  log(`taglio di ${solo ? `${solo.size} clip su ${piano.clips.length}` : `${lavori.length} pezzi`}, ${Math.min(TAGLI_INSIEME, lavori.length)} alla volta`);
   await pool(lavori, TAGLI_INSIEME);
 }
 
@@ -666,13 +678,13 @@ function preparaMediaPipe() {
 // lo sfondo scende al buio e vira al petrolio, sfocato solo con "Sfondo sfocato: sì"
 // (scripts/look/risalto.py). I pezzi senza una
 // persona chiara (dettagli di prodotto) restano come sono; se qualcosa non va, video senza risalto.
-async function risaltoPersona(piano) {
+async function risaltoPersona(piano, solo = null) {
   if (!piano.grafica?.risalto) return;
   try {
     const { py, modello } = await preparaMediaPipe();
     let n = 0;
-    for (const c of piano.clips) {
-      if (c.orient === 'h') continue;
+    for (const [i, c] of piano.clips.entries()) {
+      if (c.orient === 'h' || (solo && !solo.has(i))) continue;
       const src = path.join(MEDIA, c.file), out = path.join(MEDIA, `ris_${c.file}`);
       const esito = run(py, [path.join(ROOT, 'scripts', 'look', 'risalto.py'), src, out, modello, ...(piano.grafica.sfoca ? ['sfoca'] : [])], { stdio: ['ignore', 'pipe', 'inherit'] });
       if (/^risalto/m.test(esito) && fs.existsSync(out)) { fs.renameSync(out, src); n++; }
@@ -686,7 +698,7 @@ async function risaltoPersona(piano) {
 // la persona ritagliata nei momenti delle scritte grandi (stili su misura con "Scritte dietro di me"):
 // MediaPipe in scripts/ritaglio.py; se qualcosa non va le scritte restano davanti, il video esce lo stesso
 const RITAGLI_INSIEME = Math.max(1, Math.min(3, os.availableParallelism() - 1));
-async function ritagliPersona(piano) {
+async function ritagliPersona(piano, solo = null) {
   const g = piano.grafica;
   const reazione = g?.cornice === 'reazione';
   // stile Focus (09/11): le parole grandi passano sempre dietro la persona
@@ -727,7 +739,7 @@ async function ritagliPersona(piano) {
     for (const [i, c] of piano.clips.entries()) {
       const dur = c.end - c.start;
       const sovrapposti = intervalli.map(([a, b]) => [Math.max(a, t), Math.min(b, t + dur)]).filter(([a, b]) => b - a > 0.1);
-      if (sovrapposti.length && c.orient !== 'h' && (!c.inserto || reazione || focus)) {
+      if (sovrapposti.length && c.orient !== 'h' && (!c.inserto || reazione || focus) && (!solo || solo.has(i))) {
         const da = Math.min(...sovrapposti.map(([a]) => a)) - t, a = Math.max(...sovrapposti.map(([, b]) => b)) - t;
         const out = `rit_${String(i).padStart(3, '0')}.webm`;
         lavori.push(async () => {
@@ -1203,11 +1215,50 @@ async function chiediRegia(testoMateriale, fogli, regiaPrecedente, valida = (r) 
   throw errore;
 }
 
-function validaPiano(p) {
+// ---------- render su più macchine ----------
+const DIR_PEZZO = path.join(WORK, 'pezzo');
+// lo stesso piano su tutte le macchine: se una ne calcola uno diverso i pezzi non si riuniscono
+function improntaPiano(piano, stile) {
+  const dati = { stile, fps: piano.fps || 30, prova: process.env.PROVA_SECONDI || '', clips: piano.clips.map((c) => [c.file, +c.start.toFixed(3), +c.end.toFixed(3)]), keywords: (piano.keywords || []).map((k) => [k.word, k.at, k.dur]) };
+  return crypto.createHash('sha1').update(JSON.stringify(dati)).digest('hex');
+}
+// le clip che la copertina guarda (prima dei tagli): chi riunisce i pezzi taglia solo queste
+function clipPerCopertina(piano, analisi) {
+  const voci = new Set(analisi.sorgenti.filter((x) => x.principale || x.sync).map((x) => x.id));
+  const idDi = new Map(analisi.sorgenti.map((x) => [x.file, x.id]));
+  const candidati = piano.clips.map((c, i) => ({ c, i })).filter(({ c }) => voci.has(idDi.get(c.file)) && !c.inserto && +(c.end - c.start).toFixed(3) >= 0.6);
+  return new Set(sceltePerCopertina(candidati).map((x) => x.i));
+}
+// i pezzi scaricati da Drive (una cartella l'uno con v.ts, a.aac e pezzo.json): tutti, in ordine
+function leggiPezzi(dir, impronta) {
+  try {
+    const trovati = fs.readdirSync(dir).map((d) => path.join(dir, d)).filter((d) => fs.existsSync(path.join(d, 'pezzo.json')))
+      .map((d) => ({ dir: d, ...JSON.parse(fs.readFileSync(path.join(d, 'pezzo.json'), 'utf8')) }));
+    const buoni = trovati.filter((x) => x.fatto && x.impronta === impronta && fs.existsSync(path.join(x.dir, 'v.ts')) && fs.existsSync(path.join(x.dir, 'a.aac')));
+    const quanti = buoni[0]?.quanti;
+    if (!quanti) return null;
+    const ordine = Array.from({ length: quanti }, (_, i) => buoni.find((x) => x.i === i));
+    if (ordine.some((x) => !x)) { log(`pezzi: ne servono ${quanti}, buoni ${buoni.length} su ${trovati.length} trovati`); return null; }
+    return ordine;
+  } catch (e) { log('pezzi non leggibili', e.message); return null; }
+}
+async function unisciPezzi(pezzi, out) {
+  const { combineChunks } = await import('@remotion/renderer');
+  const { passo, durata, fps } = pezzi[0];
+  await combineChunks({
+    outputLocation: out, videoFiles: pezzi.map((x) => path.join(x.dir, 'v.ts')), audioFiles: pezzi.map((x) => path.join(x.dir, 'a.aac')),
+    codec: 'h264', audioCodec: 'aac', fps, framesPerChunk: passo, preferLossless: false, compositionDurationInFrames: durata, audioBitrate: '320k', logLevel: 'error',
+  });
+  INSIEME['pezzi riuniti'] = pezzi.length;
+  log(`riuniti ${pezzi.length} pezzi (${durata} fotogrammi)`);
+  dichiaraColori(out);
+}
+
+function validaPiano(p, solo = null) {
   const err = (m) => { throw new Error(`piano non valido: ${m}`); };
   if (!Array.isArray(p.clips) || p.clips.length === 0) err('nessuna clip');
-  for (const c of p.clips) {
-    if (!fs.existsSync(path.join(MEDIA, c.file))) err(`file inesistente ${c.file}`);
+  for (const [i, c] of p.clips.entries()) {
+    if ((!solo || solo.has(i)) && !fs.existsSync(path.join(MEDIA, c.file))) err(`file inesistente ${c.file}`);
     if (c.audio && !fs.existsSync(path.join(MEDIA, c.audio.file))) err(`audio inesistente ${c.audio.file}`);
     if (!(c.end > c.start)) err(`clip ${c.file} con end <= start`);
   }
@@ -1508,7 +1559,7 @@ function copertina(piano, regia, analisi, out) {
       .filter(({ c }) => voci.has(c.sorgente) && !c.inserto && c.end - c.start >= 0.6);
     if (!pezzi.length) return null;
     // fino a 6 inquadrature sparse sul video, tre fotogrammi ciascuna: vince il meno mosso
-    const scelti = pezzi.length <= 6 ? pezzi : Array.from({ length: 6 }, (_, i) => pezzi[Math.round((i * (pezzi.length - 1)) / 5)]);
+    const scelti = sceltePerCopertina(pezzi);
     const dir = path.join(WORK, 'copertina');
     fs.rmSync(dir, { recursive: true, force: true });
     fs.mkdirSync(dir, { recursive: true });
@@ -1569,6 +1620,9 @@ const trascorso = () => `${Math.round((Date.now() - T0) / 60000)} min`;
 
 async function invia(payload) {
   if (!process.env.NOTIFY_URL) return;
+  // render a pezzi: al bot parla solo la prima macchina (le fasi) e quella che riunisce (dal carico in poi)
+  if (PEZZO && PEZZO.i > 0) return;
+  if (UNISCI && !ripiegoPezzi && payload.tipo === 'fase' && payload.step !== 'carico') return;
   try {
     await fetchRiprova(process.env.NOTIFY_URL, {
       method: 'POST', headers: { 'content-type': 'application/json', 'x-regista-token': process.env.NOTIFY_TOKEN || '' },
@@ -2453,11 +2507,30 @@ async function main() {
     if (PROVA_SECONDI) { troncaPiano(piano, PROVA_SECONDI, PROVA_DA); log(`render di prova: ${PROVA_DA ? `da ${PROVA_DA} s, ` : 'primi '}${PROVA_SECONDI} s (${piano.clips.length} tagli)`); }
     // i pezzi scelti, prima del render vero: la card dell'app distingue tagli e render
     await fase(nome, `✂️ Taglio ${piano.clips.length} pezzi`, 'tagli');
-    await tagliaSegmenti(piano, analisi);
+    // render su più macchine: questa taglia solo il suo tratto, oppure (chi riunisce) solo le clip della copertina
+    const impronta = improntaPiano(piano, stile);
+    let solo = null, mio = null, pezzi = null;
+    if (PEZZO) {
+      const pos = fotogrammiClip(piano.clips, piano.fps || 30);
+      const { passo, intervalli } = dividi(pos.durata, PEZZO.n);
+      mio = { i: PEZZO.i, quanti: intervalli.length, passo, durata: pos.durata, fps: piano.fps || 30, impronta, tratto: intervalli[PEZZO.i] || null };
+      fs.mkdirSync(DIR_PEZZO, { recursive: true });
+      fs.writeFileSync(path.join(DIR_PEZZO, 'pezzo.json'), JSON.stringify(mio));
+      if (!mio.tratto) { log(`pezzo ${PEZZO.i + 1}/${PEZZO.n}: il video ha solo ${intervalli.length} pezzi, niente da fare`); return; }
+      solo = clipDelTratto(pos.clip, mio.tratto[0], mio.tratto[1]);
+      log(`pezzo ${PEZZO.i + 1}/${intervalli.length}: fotogrammi ${mio.tratto[0]}–${mio.tratto[1]} di ${pos.durata}, ${solo.size} clip su ${piano.clips.length}`);
+    } else if (UNISCI) {
+      const qui = path.join(WORK, 'pezzi');
+      try { rclone('copy', remote(SRC_DIR, nome, CACHE, 'pezzi', GIRO_PEZZI), qui, '--transfers', '8'); } catch (e) { log('pezzi non scaricati', e.message.split('\n')[0]); }
+      pezzi = leggiPezzi(qui, impronta);
+      if (pezzi) solo = clipPerCopertina(piano, analisi);
+      else { ripiegoPezzi = true; log('pezzi delle altre macchine incompleti o di un altro piano: faccio tagli e render qui'); }
+    }
+    await tagliaSegmenti(piano, analisi, solo);
     tappa('risalto persona');
-    await risaltoPersona(piano);
+    if (!pezzi) await risaltoPersona(piano, solo);
     tappa('ritagli persona');
-    await ritagliPersona(piano);
+    if (!pezzi) await ritagliPersona(piano, solo);
     tappa('prima del render');
     // prima di cancellarli, gli originali devono essere su Drive; se la copia fallisce il video si consegna lo stesso
     if (copiaOriginali) {
@@ -2480,8 +2553,19 @@ async function main() {
       } catch (e) { log('musica non preparata', e.message.split('\n')[0]); }
     }
     fs.writeFileSync(path.join(WORK, 'piano.json'), JSON.stringify(piano, null, 1));
-    validaPiano(piano);
+    validaPiano(piano, solo);
     if (process.env.AZIONE === 'kit') { await preparaKit(piano, nome, DEST); return; }
+    if (mio) {
+      await fase(nome, `🎬 Render su più macchine: ${mio.quanti} pezzi insieme`, 'render');
+      await pacchettoPronto;
+      if (!PACCHETTO) throw new Error('pacchetto Remotion non pronto');
+      run(process.execPath, [path.join(ROOT, 'scripts', 'render-pezzi.mjs'), '--pezzo', PACCHETTO, stile, path.join(WORK, 'piano.json'),
+        String(mio.tratto[0]), String(mio.tratto[1]), path.join(DIR_PEZZO, 'v.ts'), path.join(DIR_PEZZO, 'a.aac'), String(os.availableParallelism())], { cwd: ROOT, stdio: 'inherit' });
+      fs.writeFileSync(path.join(DIR_PEZZO, 'pezzo.json'), JSON.stringify({ ...mio, fatto: true }));
+      rclone('copy', DIR_PEZZO, remote(SRC_DIR, nome, CACHE, 'pezzi', GIRO_PEZZI, `pezzo-${mio.i}`), '--transfers', '4');
+      log(`pezzo ${mio.i + 1}/${mio.quanti} pronto e caricato`);
+      return;
+    }
 
     // nome con versione: FINALE, FINALE v2, FINALE v3...
     const versioni = files.filter((f) => /FINALE( v\d+)?\.mp4$/i.test(f.Name)).length;
@@ -2491,8 +2575,13 @@ async function main() {
     const durataPiano = piano.clips.reduce((s, c) => s + (c.end - c.start), 0);
     const camereUsate = new Set(piano.clips.map((c) => c.file)).size;
     await fase(nome, `🎬 Render: ${durataPiano.toFixed(0)} s, ${piano.clips.length} tagli da ${camereUsate} sorgenti, ${piano.keywords.length} parole chiave`, 'render');
-    await pacchettoPronto;
-    renderizza(outFile, stile);
+    if (pezzi) {
+      await unisciPezzi(pezzi, outFile);
+      try { rclone('purge', remote(SRC_DIR, nome, CACHE, 'pezzi')); } catch (e) { log('pezzi non cancellati da Drive', e.message.split('\n')[0]); }
+    } else {
+      await pacchettoPronto;
+      renderizza(outFile, stile);
+    }
     await fase(nome, '📤 Carico su Drive', 'carico');
 
     const durataN = probe(outFile).durata;
@@ -2583,6 +2672,7 @@ async function main() {
     await inviaCopertina(fileCopertina, nome, PROVA_SECONDI ? null : didascalie);
     salvaTempi(OUT_DIR, nome);
   } catch (e) {
+    if (PEZZO) { log(`pezzo ${PEZZO.i + 1} non riuscito: ${e.message}`); process.exitCode = 1; return; }
     const testo = `Errore: ${e.message}\n\n` + (CORREZIONE ? 'Puoi riprovare la correzione dal bot (✏️) o scrivermi una richiesta diversa.'
       : vai ? `Per riprovare: 🔁 Riprova dal bot, oppure rinomina ${vaiUsato} in ${nomeVaiOriginale(vai)}.` : 'Per riprovare: 🔁 Riprova.');
     fs.mkdirSync(WORK, { recursive: true });

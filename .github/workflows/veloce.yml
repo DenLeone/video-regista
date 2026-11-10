@@ -1,0 +1,154 @@
+name: veloce
+
+# Render diviso su più macchine (10/11), per ora solo "Solo render" di un video che ha già la regia
+# salvata: N macchine tagliano, ritagliano e renderizzano ognuna il suo tratto (job «pezzo»), poi una
+# riunisce i pezzi, fa copertina, descrizione e carica (job «unisci»). Se un pezzo manca, «unisci»
+# fa il giro normale da sola: il video esce comunque. Il workflow «regista» resta com'è.
+# I pezzi passano da Drive (_regista/pezzi), non dagli artifact: il repo è pubblico, il girato no.
+on:
+  workflow_dispatch:
+    inputs:
+      cartella:
+        description: 'Nome esatto della cartella (in 02 · Fatti con origine 98, in 01 · Da editare con 97)'
+        required: true
+      origine:
+        description: '98 = video in 02 · Fatti (default), 97 = in 01 · Da editare'
+        required: false
+        default: '98'
+      brief:
+        description: 'Brief al volo (es. "Stile: Focus")'
+        required: false
+        default: ''
+      secondi:
+        description: 'Render di prova: N = primi N secondi, A-B = un tratto. Vuoto = video intero'
+        required: false
+        default: ''
+      macchine:
+        description: 'Quante macchine per il render: 2, 3, 4, 5, 6 o 8'
+        required: false
+        default: '4'
+
+concurrency:
+  group: veloce-${{ inputs.cartella }}-${{ inputs.secondi }}-${{ inputs.brief }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+env:
+  DIR_EDITARE: '01 · Da editare'
+  DIR_FATTI: '02 · Fatti'
+  DIR_PUBBLICARE: '03 · Da pubblicare'
+  DIR_STILI: '12 · Risorse/Stili'
+  REGISTA_AI: ${{ vars.REGISTA_AI }}
+  REGISTA_MODEL: ${{ vars.REGISTA_MODEL }}
+  GEMINI_MODEL: ${{ vars.GEMINI_MODEL }}
+  REGISTA_VERSIONE: ${{ github.ref_name }}
+  REGISTA_SCARICO: /mnt/regista/in
+  CARTELLA: ${{ inputs.cartella }}
+  BRIEF_EXTRA: ${{ inputs.brief }}
+  ORIGINE: ${{ inputs.origine }}
+  AZIONE: render
+  PROVA_SECONDI: ${{ inputs.secondi }}
+
+jobs:
+  pezzo:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        i: ${{ fromJSON('{"2":[0,1],"3":[0,1,2],"4":[0,1,2,3],"5":[0,1,2,3,4],"6":[0,1,2,3,4,5],"8":[0,1,2,3,4,5,6,7]}')[inputs.macchine] }}
+    steps:
+      - &checkout
+        uses: actions/checkout@v5
+      - &node
+        uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+      - &cache_strumenti
+        name: Cache strumenti
+        uses: actions/cache@v5
+        with:
+          path: ~/opt/regista-strumenti
+          key: regista-strumenti-v2-${{ runner.os }}
+      - &cache_pacchetto
+        name: Cache pacchetto Remotion
+        uses: actions/cache@v5
+        with:
+          path: ~/.cache/regista-pacchetto
+          key: pacchetto-v1-${{ hashFiles('src/**', 'package-lock.json', 'tsconfig.json') }}
+      - &dipendenze
+        name: Dipendenze
+        timeout-minutes: 16
+        run: |
+          bash scripts/programma-video.sh fonts-noto-color-emoji libegl1 libgles2
+          npm ci || npm install
+          sudo mkdir -p /mnt/regista && sudo chown "$USER" /mnt/regista
+      # Drive dopo le dipendenze: la configurazione con il token non è sul disco mentre gira npm ci
+      - &cache_rclone
+        name: Cache rclone
+        uses: actions/cache@v5
+        with:
+          path: ~/.cache/regista-rclone
+          key: rclone-v1-${{ runner.os }}
+      - &drive
+        name: Drive (rclone)
+        env:
+          RCLONE_CONF: ${{ secrets.RCLONE_CONF }}
+        run: |
+          if ! command -v rclone >/dev/null 2>&1; then
+            salvato="$HOME/.cache/regista-rclone/rclone"
+            if [ -x "$salvato" ] && "$salvato" version >/dev/null 2>&1; then
+              sudo install -m 755 "$salvato" /usr/local/bin/rclone
+            else
+              curl -fsSL https://rclone.org/install.sh | sudo bash > /dev/null
+              mkdir -p "$(dirname "$salvato")" && cp "$(command -v rclone)" "$salvato" || true
+            fi
+          fi
+          mkdir -p ~/.config/rclone
+          printf '%s\n' "$RCLONE_CONF" > ~/.config/rclone/rclone.conf
+      - name: Taglia, ritaglia e renderizza il suo tratto
+        env:
+          PEZZO: ${{ matrix.i }}/${{ inputs.macchine }}
+          # le chiavi solo a questo passo (non a npm ci né alle action)
+          GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+          CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          PIXABAY_API_KEY: ${{ secrets.PIXABAY_API_KEY }}
+          PEXELS_API_KEY: ${{ secrets.PEXELS_API_KEY }}
+          NOTIFY_URL: ${{ secrets.NOTIFY_URL }}
+          NOTIFY_TOKEN: ${{ secrets.NOTIFY_TOKEN }}
+        run: |
+          export REGISTA_PACCHETTO_DIR="$HOME/.cache/regista-pacchetto"
+          node scripts/regista.mjs
+
+  unisci:
+    needs: pezzo
+    # anche se un pezzo è fallito: in quel caso questo job fa il giro normale da solo
+    if: ${{ !cancelled() }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - *checkout
+      - *node
+      - *cache_strumenti
+      - *cache_pacchetto
+      - *dipendenze
+      - *cache_rclone
+      - *drive
+      - name: Riunisce, copertina, descrizione e carico
+        env:
+          UNISCI: '1'
+          # le chiavi solo a questo passo (non a npm ci né alle action)
+          GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+          CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          PIXABAY_API_KEY: ${{ secrets.PIXABAY_API_KEY }}
+          PEXELS_API_KEY: ${{ secrets.PEXELS_API_KEY }}
+          NOTIFY_URL: ${{ secrets.NOTIFY_URL }}
+          NOTIFY_TOKEN: ${{ secrets.NOTIFY_TOKEN }}
+        run: |
+          export REGISTA_PACCHETTO_DIR="$HOME/.cache/regista-pacchetto"
+          node scripts/regista.mjs

@@ -13,18 +13,10 @@ import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { combineChunks, renderMedia, selectComposition } from '@remotion/renderer';
+import { dividi } from './pezzi.mjs';
 
 const QUI = fileURLToPath(import.meta.url);
 const browserExecutable = process.env.REMOTION_BROWSER || null;
-
-// i fotogrammi [da, a] di ogni pezzo: tutti lunghi uguali, l'ultimo prende il resto
-export function dividi(durata, pezzi) {
-  const n = Math.max(1, Math.min(pezzi, Math.floor(durata / 30) || 1));
-  const passo = Math.ceil(durata / n);
-  const out = [];
-  for (let da = 0; da < durata; da += passo) out.push([da, Math.min(durata, da + passo) - 1]);
-  return { passo, intervalli: out };
-}
 
 async function unPezzo(serveUrl, stile, filePiano, da, a, video, audio, schede) {
   const inputProps = JSON.parse(fs.readFileSync(filePiano, 'utf8'));

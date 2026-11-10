@@ -53,7 +53,7 @@ test('forza: numeri e nomi propri vincono, le parole vuote no', () => {
 });
 
 test('render a pezzi: i pezzi coprono tutti i fotogrammi, senza buchi né doppioni', async () => {
-  const { dividi } = await import('./render-pezzi.mjs');
+  const { dividi } = await import('./pezzi.mjs');
   for (const [durata, pezzi] of [[412, 4], [2176, 4], [300, 4], [45, 4], [61, 3], [1, 4], [2176, 2]]) {
     const { passo, intervalli } = dividi(durata, pezzi);
     assert.equal(intervalli[0][0], 0);
@@ -65,4 +65,23 @@ test('render a pezzi: i pezzi coprono tutti i fotogrammi, senza buchi né doppio
     });
     assert.ok(intervalli.length <= pezzi);
   }
+});
+
+test('pezzi: ogni fotogramma ha le sue clip, con una di margine per parte', async () => {
+  const { dividi, fotogrammiClip, clipDelTratto } = await import('./pezzi.mjs');
+  const clips = [3.367, 6.067, 4.3, 2.8, 4.467, 0.5, 9.1, 1.234].map((d) => ({ start: 10, end: 10 + d }));
+  const pos = fotogrammiClip(clips, 30);
+  assert.equal(pos.clip[0].da, 0);
+  assert.equal(pos.clip[1].da, 101);
+  assert.ok(Math.abs(pos.durata - (pos.clip.at(-1).a + 1)) <= clips.length);
+  const { intervalli } = dividi(pos.durata, 4);
+  const viste = new Set();
+  for (const [da, a] of intervalli) {
+    const solo = clipDelTratto(pos.clip, da, a);
+    pos.clip.forEach((p, i) => { if (p.a >= da && p.da <= a) assert.ok(solo.has(i), `clip ${i} manca nel tratto ${da}-${a}`); });
+    for (const i of solo) viste.add(i);
+  }
+  assert.equal(viste.size, clips.length);
+  assert.deepEqual([...clipDelTratto(pos.clip, 0, 10)], [0, 1]);
+  assert.equal(clipDelTratto(pos.clip, 99999, 100000).size, 0);
 });
