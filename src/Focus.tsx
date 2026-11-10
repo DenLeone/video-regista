@@ -169,7 +169,11 @@ const SchedaFocus: React.FC<{ s: Scheda; i: number; pillola?: string }> = ({ s, 
   const p = spring({ frame: fr, fps, config: { damping: 13, stiffness: 150 } });
   const esce = interpolate(fr, [s.len - 6, s.len], [0, 1], { extrapolateLeft: 'clamp', extrapolateRight: 'clamp' });
   const orizz = s.pezzi[0].ins.orient === 'h';
-  const w = orizz ? 760 : 520, h = orizz ? 470 : 680;
+  // la scheda prende la forma dell'immagine (dentro 760×680): una foto quadrata usciva tagliata ai lati
+  const primo = s.pezzi[0].ins;
+  const ar = primo.tipo === 'immagine' && primo.ar && primo.ar > 0.3 && primo.ar < 3.4 ? primo.ar : null;
+  const w = ar ? Math.round(Math.min(760, 680 * ar)) : orizz ? 760 : 520;
+  const h = ar ? Math.round(w / ar) : orizz ? 470 : 680;
   const cx = 540 + (i % 2 ? 60 : -40), cy = 640;
   const rot = i % 2 ? 4 : -3;
   const zoom = 1 + 0.05 * (fr / Math.max(1, s.len));
