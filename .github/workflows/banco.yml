@@ -1,0 +1,50 @@
+name: banco
+
+# Banco di prova degli stili (11/11): a ogni modifica di Cinematico, Kal, Ultra o di quello che usano,
+# fotogrammi dei tre stili su un montaggio finto (scripts/banco.mjs) in un foglio solo, scaricabile
+# dal giro. Scene generate con ffmpeg: niente girato di Denis, il foglio si può pubblicare.
+# Il giro è rosso se uno stile non parte o se il regolatore anti-caos non toglie quello che deve.
+on:
+  push:
+    branches: [main]
+    paths: ['src/**', 'scripts/banco.mjs', 'scripts/banco/**', 'scripts/fotogrammi.mjs', 'scripts/regolatore.mjs',
+      'scripts/stile-su-misura.mjs', 'package-lock.json', '.github/workflows/banco.yml']
+  workflow_dispatch:
+
+concurrency:
+  group: banco-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  banco:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+      - name: Cache strumenti
+        uses: actions/cache@v5
+        with:
+          path: ~/opt/regista-strumenti
+          key: regista-strumenti-v2-${{ runner.os }}
+      - name: Dipendenze
+        timeout-minutes: 10
+        run: |
+          bash scripts/programma-video.sh fonts-noto-color-emoji libegl1 libgles2
+          npm ci --ignore-scripts
+      - name: Fotogrammi dei tre stili
+        run: node scripts/banco.mjs
+      - name: Foglio
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: banco
+          path: out/banco/*.jpg
+          if-no-files-found: ignore
+          retention-days: 14

@@ -222,7 +222,7 @@ const SchedaView: React.FC<{ s: Scheda; cornice?: Cornice; sopra?: number; n?: n
   if (cornice === 'laterale') {
     // Ultra (riferimenti studiati il 10/11): scheda piccola (≤ 40% della larghezza), inclinata, accanto
     // alla persona all'altezza della testa, a sinistra e a destra a turno; niente velo scuro sul video
-    const LW = 400, LH = 540;
+    const LW = 360, LH = 480; // 400 toccava il bordo della faccia (banco, 11/11)
     const lw = Math.round(Math.min(LW, LH * forma));
     const lh = Math.round(lw / forma);
     const sinistra = n % 2 === 0;

@@ -316,3 +316,8 @@ Denis incolla i comandi e ti rimanda l'output. Quindi:
 - dagli **un blocco PowerShell alla volta**;
 - per modificare il codice, dagli il file intero o la modifica precisa (riga vecchia → riga nuova). Poi `git add -A; git commit -m "..."; git push` da `C:\regista`, se vuole tenerla sul repo;
 - puoi leggere il codice dal repo pubblico GitHub (link in alto) prima di proporre modifiche: **leggi sempre il file vero** prima di cambiarlo.
+
+## Banco di prova e anteprima (11/11)
+- **Banco di prova** (`scripts/banco.mjs`, workflow `banco`): a ogni modifica di `src/**`, del regolatore o di `stile-su-misura.mjs`, fotogrammi di Cinematico, Kal e Ultra su un montaggio finto (sagoma al posto della persona, scene generate con ffmpeg: si può pubblicare). Foglio negli artefatti del giro (`banco`). Rosso se uno stile non parte o se il regolatore di Ultra non toglie 1 scheda e 1 b/n. In locale: `node scripts/banco.mjs [Kal Ultra …]` → `out/banco/banco.jpg`. La scheda di Ultra usata è `scripts/banco/Ultra.txt` (copia di quella su Drive).
+- Trovati e sistemati dal banco: in Kal la parola grande finiva sopra il riquadro del B-roll (ora il riquadro sta da y 700, 720×1000) e i sottotitoli sparivano per un gruppo intero dopo ogni parola grande; in Ultra la scheda di lato toccava la faccia (ora 360×480).
+- **Anteprima su Telegram**: la carica il runner direttamente (`caricaSuTelegram`, messaggio silenzioso poi cancellato) appena è codificata; al bot (`/video`) passa solo il `file_id`. Prima i 36 MB passavano dal bot e la chiusura durava 2:45 (anteprima 2:15). Se non riesce, si torna al giro di prima. Il bot dà la chat con `GET /chat-anteprima`.

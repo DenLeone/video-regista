@@ -1,0 +1,25 @@
+# Copia di prova della scheda Ultra (12 · Risorse/Stili/Ultra/stile.txt, 11/11) per il banco di prova.
+# Se cambi la scheda su Drive, aggiorna anche questa.
+Nome: Ultra
+Apertura: normale
+Sottotitoli: strati
+Font sottotitoli: Montserrat 300
+Colore sottotitoli: #FFFFFF
+Maiuscolo sottotitoli: no
+Dimensione sottotitoli: 84
+Titoli: no
+Font titoli: Montserrat 900
+Colore titoli: #FFFFFF
+Colore accento: #F4E41C
+Colori parole grandi: #F4E41C, #F2231B, #C6E01F, #E4E4E4
+Scritte dietro di me: no
+Look: naturale
+Bianco e nero: uno
+Tagli dentro le frasi: sì
+Transizioni: sfocata
+Inserti: laterale
+B-roll stock: no
+Chiusura: no
+Firma: no
+Effetti sonori: sì
+Musica: no

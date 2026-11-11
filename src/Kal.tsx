@@ -44,7 +44,9 @@ export function gruppiKal(parole: Piano['parole'] = [], titoli: Keyword[] = []):
   chiudi();
   out.forEach((g, k) => { const dopo = out[k + 1]; g.fine = dopo && dopo.at - g.fine < 0.5 ? dopo.at : g.fine + 0.2; });
   // durante una parola grande i sottotitoli tacciono: si legge quella
-  return out.filter((g) => !titoli.some((t) => g.at >= t.at - 0.05 && g.at < t.at + t.dur))
+  // un gruppo cominciato sotto la parola grande ricompare appena lei esce (prima spariva tutto il gruppo:
+  // sottotitoli assenti per un secondo e mezzo dopo ogni parola grande, banco 11/11)
+  return out.map((g) => { const t = titoli.find((x) => g.at >= x.at - 0.05 && g.at < x.at + x.dur); return t ? { ...g, at: t.at + t.dur } : g; })
     .map((g) => { const t = titoli.find((x) => x.at > g.at && x.at < g.fine); return t ? { ...g, fine: t.at } : g; })
     .filter((g) => g.fine - g.at >= 0.1);
 }
@@ -114,11 +116,12 @@ const Riquadro: React.FC<{ clip: Clip; len: number }> = ({ clip, len }) => {
   const entra = interpolate(fr, [0, 8], [0, 1], { ...clamp, easing: Easing.out(Easing.cubic) });
   const ins = clip.inserto;
   const immagine = ins?.tipo === 'immagine';
-  const w = 860, h = 1360;
+  // sotto la parola grande (in alto da 250): prima il riquadro partiva da 240 e la parola ci finiva sopra (banco, 11/11)
+  const w = 720, h = 1000, top = 700;
   return (
     <AbsoluteFill>
       <Tappetino />
-      <div style={{ position: 'absolute', left: (1080 - w) / 2, top: (1920 - h) / 2 - 40, width: w, height: h, borderRadius: 34, overflow: 'hidden',
+      <div style={{ position: 'absolute', left: (1080 - w) / 2, top, width: w, height: h, borderRadius: 34, overflow: 'hidden',
         backgroundColor: '#0d0d0d', boxShadow: '0 30px 70px rgba(0,0,0,0.55), 0 6px 18px rgba(0,0,0,0.4)',
         transform: `translateY(${(1 - entra) * 60}px) scale(${0.94 + 0.06 * entra})`, opacity: entra }}>
         {immagine && ins
