@@ -1,4 +1,6 @@
 name: regista
+# nome del giro con la cartella: il 🧭 Capo squadra di Den Squadra riconosce così la fine del montaggio
+run-name: ${{ inputs.cartella && format('regista · {0}', inputs.cartella) || 'regista' }}
 
 on:
   workflow_dispatch:          # avvio dal bot, dall'app o dal tab Actions
