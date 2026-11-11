@@ -1,7 +1,10 @@
 // Pubblicazione dal bot Telegram (tasto 📤 Pubblica → workflow "pubblica"): Instagram come
 // reel di prova e YouTube Shorts, poi il video passa in 03 · Da pubblicare e il bot riceve i link.
 //
-// DATI (JSON dal bot): { nonce, nome, file, fileId, didascalia, titolo, copertina, copertinaId, ig, yt, prova }
+// DATI (JSON dal bot): { nonce, nome, file, fileId, didascalia, titolo, descrizioneYt, copertina, copertinaId, ig, yt, prova, squadra }
+// descrizioneYt: descrizione per YouTube (se manca si usa la didascalia)
+// squadra: avviato dal 📤 Pubblicatore di Den Squadra: l'esito si scrive anche su Drive in
+//   02 · Fatti/<nome>/_squadra/pubblicato.json (la Squadra lo legge da lì; il bot Regista lo ignora: nonce non suo)
 // copertina: ms del fotogramma di copertina; copertinaId: la copertina fatta dal regista (jpg su Drive), se c'è vince lei
 //   prova: 'MANUAL' (passa ai follower quando lo decide Denis dall'app) | 'SS_PERFORMANCE'
 //   (Instagram lo passa da solo se va bene con i non follower) | '' (Reel normale)
@@ -154,7 +157,8 @@ async function youtube(d, video) {
   const durata = durataMp4(dati);
   const short = !durata || durata <= 180;
   if (!short) log(`YouTube: ${Math.round(durata)} s, oltre i 3 minuti degli Shorts: video normale`);
-  const descrizione = !short || /#shorts/i.test(d.didascalia || '') ? d.didascalia || '' : `${d.didascalia || ''}\n\n#shorts`;
+  const base = d.descrizioneYt || d.didascalia || '';
+  const descrizione = !short || /#shorts/i.test(base) ? base : `${base}\n\n#shorts`;
   const avvio = await fetch(`${YT_UPLOAD()}/upload/youtube/v3/videos?uploadType=resumable&part=snippet,status`, {
     method: 'POST',
     headers: { authorization: `Bearer ${t.access_token}`, 'content-type': 'application/json; charset=UTF-8', 'x-upload-content-length': String(dati.length), 'x-upload-content-type': 'video/mp4' },
@@ -207,6 +211,9 @@ async function main() {
     }
   } catch (e) {
     esito.errore = String(e.message || e).slice(0, 300);
+  }
+  if (d.squadra) {
+    try { execFileSync('rclone', ['rcat', remote(OUT_DIR, d.nome, '_squadra', 'pubblicato.json')], { input: JSON.stringify({ ...esito, quando: new Date().toISOString() }) }); } catch (e) { log('esito per la Squadra non scritto', e.message); }
   }
   await avvisaBot(esito);
   if (esito.errore || [esito.instagram, esito.youtube].some((x) => x && !x.ok && !x.saltato)) process.exitCode = 1;
