@@ -1906,7 +1906,9 @@ async function onVideo(env: Env, form: FormData) {
   let info: Info | undefined;
   try { info = form.get('info') ? JSON.parse(String(form.get('info'))) : undefined; } catch { /* vecchio formato */ }
   const video = form.get('video');
-  if (!video || typeof video === 'string') return false;
+  // file_id: il runner ha già caricato l'anteprima su Telegram (11/11): niente 36 MB da far passare di qui
+  const giaCaricato = String(form.get('file_id') || '').trim();
+  if (!giaCaricato && (!video || typeof video === 'string')) return false;
   if (runId && !info?.confronta) {
     await mem(env).scrivi(`run:${runId}`, memoFinale(await leggi<RunMemo | string>(env, `run:${runId}`), nome, undefined, info, info?.prova ? 'render' : undefined));
     const c = await cardDelGiro(env, runId, nome);
@@ -1926,7 +1928,7 @@ async function onVideo(env: Env, form: FormData) {
     ? `🧪 <b>${esc(nome)}</b> · ${esc(info.stile || '')}\nprimi 10 secondi. Il tasto arriva sotto, quando ci sono tutte.`
     : didascalia(nome, info, testo);
   const tasti = info?.confronta ? [] : tastiRisultato(runId || undefined, runUrl || undefined, info);
-  let fileId: string | undefined;
+  let fileId: string | undefined = giaCaricato || undefined;
   let almenoUno = false;
   for (const chat of autorizzati(env)) {
     const out = new FormData();
@@ -1939,7 +1941,7 @@ async function onVideo(env: Env, form: FormData) {
     if (form.get('durata')) out.append('duration', String(Math.round(Number(form.get('durata')))));
     if (tasti.length) out.append('reply_markup', JSON.stringify(tastiera(tasti)));
     if (fileId) out.append('video', fileId);
-    else out.append('video', video, `${nome}.mp4`);
+    else if (video && typeof video !== 'string') out.append('video', video, `${nome}.mp4`);
     const r = await fetch(`https://api.telegram.org/bot${env.TELEGRAM_BOT_TOKEN}/sendVideo`, { method: 'POST', body: out });
     if (r.ok) {
       almenoUno = true;
@@ -2276,6 +2278,12 @@ export default {
       if (url.pathname === '/stile-correggi') return correggiStileSalvato(env, creaOps(), await req.json().catch(() => ({})));
       const inviato = await onVideo(env, await req.formData());
       return new Response(inviato ? 'ok' : 'video non inviato', { status: inviato ? 200 : 502 });
+    }
+
+    // chat dove il runner carica l'anteprima prima di passarne il file_id a /video
+    if (req.method === 'GET' && url.pathname === '/chat-anteprima') {
+      if (req.headers.get('x-regista-token') !== env.NOTIFY_TOKEN) return new Response('no', { status: 401 });
+      return Response.json({ chat: autorizzati(env)[0] || null });
     }
 
     // chiave Instagram per il workflow "pubblica" (che non la conosce: la custodisce il bot)

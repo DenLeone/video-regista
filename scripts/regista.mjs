@@ -2732,6 +2732,8 @@ async function main() {
     log('carico il video su Drive e, insieme, didascalie, copertina, anteprima e note');
     const uploadVideo = cronometra('video su Drive', inSottofondo('rclone', ['copyto', outFile, remote(DEST, nome, finale)]));
     const anteprimaP = cronometra('anteprima', process.env.NOTIFY_URL ? codificaAnteprima(outFile, durataN) : Promise.resolve(null));
+    // l'anteprima parte per Telegram appena è pronta, mentre si finiscono note e copertina
+    const suTelegramP = cronometra('anteprima su Telegram', anteprimaP.then((f) => (f ? caricaSuTelegram(f, durataN) : null)));
     const didascalieP = (async () => {
       if (PROVA_SECONDI) return null;
       try {
@@ -2808,7 +2810,7 @@ async function main() {
       ...(fileId && !PROVA_SECONDI ? { pubblica: { fileId, file: finale, didascalia: didascalie?.instagram || '', copertina: Math.round(tempoCopertina(piano, durataN) * 1000), ...(copertinaId ? { copertinaId } : {}), youtube: didascalie ? { titolo: didascalie.youtube_titolo, descrizione: didascalie.youtube_descrizione } : null } } : {}),
     };
     // anteprima: prima provo il video in chat, se non passa mando la foto
-    const inviato = await inviaVideo(anteprimaMp4, nome, note, durataN, info);
+    const inviato = await inviaVideo(anteprimaMp4, nome, note, durataN, info, await suTelegramP);
     if (!inviato) await notifica('✅ pronto', nome, note, { ok: true, foto: anteprima(outFile, piano, durataN), info });
     await inviaCopertina(fileCopertina, nome, PROVA_SECONDI ? null : didascalie);
     salvaTempi(OUT_DIR, nome);
@@ -2892,10 +2894,41 @@ function codificaAnteprima(outFile, durata) {
     return anteprimaMp4;
   }).catch((e) => { log('anteprima video fallita', e.message); return null; });
 }
-async function inviaVideo(anteprimaMp4, nome, testo, durata, info) {
+// L'anteprima caricata su Telegram direttamente dal runner (11/11): passando dal bot (Cloudflare) i 36 MB
+// facevano due viaggi e ci mettevano 2 min 15 s. Qui si carica in un messaggio silenzioso che poi si
+// cancella: al bot resta solo il file_id, con cui manda la scheda vera. Se qualcosa non va: null, e
+// l'anteprima passa dal bot come prima.
+async function caricaSuTelegram(anteprimaMp4, durata) {
+  const token = process.env.TELEGRAM_BOT_TOKEN;
+  if (!token || !process.env.NOTIFY_URL) return null;
+  try {
+    const base = process.env.NOTIFY_URL.replace(/\/notify$/, '');
+    const r0 = await fetch(`${base}/chat-anteprima`, { headers: { 'x-regista-token': process.env.NOTIFY_TOKEN || '' } });
+    const chat = r0.ok ? (await r0.json()).chat : null;
+    if (!chat) return null;
+    const form = new FormData();
+    form.append('chat_id', String(chat));
+    form.append('disable_notification', 'true');
+    form.append('supports_streaming', 'true');
+    form.append('duration', String(Math.round(durata)));
+    form.append('video', new Blob([fs.readFileSync(anteprimaMp4)], { type: 'video/mp4' }), 'anteprima.mp4');
+    const t = Date.now();
+    const r = await fetch(`https://api.telegram.org/bot${token}/sendVideo`, { method: 'POST', body: form });
+    const j = await r.json().catch(() => ({}));
+    const fileId = j?.result?.video?.file_id;
+    if (!r.ok || !fileId) { log(`anteprima diretta non riuscita (${r.status})`); return null; }
+    log(`anteprima su Telegram in ${Math.round((Date.now() - t) / 1000)} s`);
+    fetch(`https://api.telegram.org/bot${token}/deleteMessage`, { method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ chat_id: chat, message_id: j.result.message_id }) }).catch(() => {});
+    return fileId;
+  } catch (e) { log('anteprima diretta non riuscita', String(e.message).split('\n')[0]); return null; }
+}
+async function inviaVideo(anteprimaMp4, nome, testo, durata, info, fileIdPronto) {
   if (!process.env.NOTIFY_URL || !anteprimaMp4) return false;
   try {
     const size = fs.statSync(anteprimaMp4).size;
+    // fileIdPronto: già provato mentre si chiudeva il resto (null = non riuscito, si passa dal bot)
+    const fileId = fileIdPronto === undefined ? await caricaSuTelegram(anteprimaMp4, durata) : fileIdPronto;
     const form = new FormData();
     form.append('nome', nome);
     form.append('testo', testo);
@@ -2903,7 +2936,8 @@ async function inviaVideo(anteprimaMp4, nome, testo, durata, info) {
     form.append('run_id', process.env.GITHUB_RUN_ID || '');
     form.append('run_url', RUN_URL || '');
     if (info) form.append('info', JSON.stringify(info));
-    form.append('video', new Blob([fs.readFileSync(anteprimaMp4)], { type: 'video/mp4' }), 'anteprima.mp4');
+    if (fileId) form.append('file_id', fileId);
+    else form.append('video', new Blob([fs.readFileSync(anteprimaMp4)], { type: 'video/mp4' }), 'anteprima.mp4');
     const url = process.env.NOTIFY_URL.replace(/\/notify$/, '/video');
     const r = await fetchRiprova(url, { method: 'POST', headers: { 'x-regista-token': process.env.NOTIFY_TOKEN || '' }, body: form });
     log(`anteprima video: ${r.status} (${mb(size)})`);

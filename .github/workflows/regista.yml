@@ -697,6 +697,8 @@ jobs:
           REGISTA_SCARICO: /mnt/regista/in
           NOTIFY_URL: ${{ secrets.NOTIFY_URL }}
           NOTIFY_TOKEN: ${{ secrets.NOTIFY_TOKEN }}
+          # l'anteprima va su Telegram direttamente da qui (scripts/regista.mjs, caricaSuTelegram)
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           CARTELLA: ${{ needs.monta.outputs.pezzi_cartella }}
           ORIGINE: ${{ needs.monta.outputs.pezzi_origine }}
           REGISTA_T0: ${{ needs.monta.outputs.pezzi_t0 }}
