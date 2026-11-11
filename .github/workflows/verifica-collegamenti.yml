@@ -1,0 +1,33 @@
+name: verifica-collegamenti
+
+# Controlla che le chiavi di YouTube (e Drive) funzionino SENZA pubblicare niente: chiede a Google
+# un accesso con YT_CLIENT_ID / YT_CLIENT_SECRET / YT_REFRESH_TOKEN e stampa solo ok o l'errore.
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  verifica:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: YouTube
+        env:
+          YT_CLIENT_ID: ${{ secrets.YT_CLIENT_ID }}
+          YT_CLIENT_SECRET: ${{ secrets.YT_CLIENT_SECRET }}
+          YT_REFRESH_TOKEN: ${{ secrets.YT_REFRESH_TOKEN }}
+        run: |
+          for v in YT_CLIENT_ID YT_CLIENT_SECRET YT_REFRESH_TOKEN; do [ -n "${!v}" ] || { echo "::error::$v vuoto"; exit 1; }; done
+          r=$(curl -sS https://oauth2.googleapis.com/token -d client_id="$YT_CLIENT_ID" -d client_secret="$YT_CLIENT_SECRET" -d refresh_token="$YT_REFRESH_TOKEN" -d grant_type=refresh_token)
+          if echo "$r" | jq -e '.access_token' > /dev/null; then echo "YouTube: ok (scope: $(echo "$r" | jq -r .scope))"
+          else echo "::error::YouTube: $(echo "$r" | jq -r '.error + " - " + (.error_description // "")')"; exit 1; fi
+      - name: Drive
+        env:
+          RCLONE_CONF: ${{ secrets.RCLONE_CONF }}
+        run: |
+          curl -fsSL https://rclone.org/install.sh | sudo bash > /dev/null
+          mkdir -p ~/.config/rclone
+          printf '%s\n' "$RCLONE_CONF" | tr -d '\r' | sed -e '1s/^\xEF\xBB\xBF//' -e 's/^[[:space:]]*//' > ~/.config/rclone/rclone.conf
+          rclone lsd gdrive: --max-depth 1 > /dev/null && echo "Drive: ok"
