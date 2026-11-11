@@ -2453,12 +2453,20 @@ async function main() {
     }
     // cache del giro precedente (trascrizioni già fatte, regia da correggere)
     let cache = null, regiaPrecedente = null;
-    try {
-      // solo i file della cache: la sottocartella kit (pezzi in piccolo, decine di MB) non serve al giro
-      rclone('copy', remote(SRC_DIR, nome, CACHE), path.join(WORK, 'cache'), '--max-depth', '1');
-      if (fs.existsSync(path.join(WORK, 'cache', 'materiale.json'))) cache = JSON.parse(fs.readFileSync(path.join(WORK, 'cache', 'materiale.json'), 'utf8'));
-      if (fs.existsSync(path.join(WORK, 'cache', 'regia.json'))) regiaPrecedente = JSON.parse(fs.readFileSync(path.join(WORK, 'cache', 'regia.json'), 'utf8'));
-    } catch { /* primo giro: nessuna cache */ }
+    // Le macchine dei pezzi riprovano per un minuto: la cartella _regista appena creata dalla prima
+    // macchina a volte su Drive non si vede ancora per qualche secondo (Moero, 11/11: «directory not
+    // found» un secondo dopo «regia salvata», 6 pezzi su 6 falliti e render tutto su una macchina)
+    for (let prova = 0; prova < (PEZZO ? 12 : 1); prova++) {
+      if (prova) await new Promise((r) => setTimeout(r, 5000));
+      try {
+        // solo i file della cache: la sottocartella kit (pezzi in piccolo, decine di MB) non serve al giro
+        rclone('copy', remote(SRC_DIR, nome, CACHE), path.join(WORK, 'cache'), '--max-depth', '1');
+        if (fs.existsSync(path.join(WORK, 'cache', 'materiale.json'))) cache = JSON.parse(fs.readFileSync(path.join(WORK, 'cache', 'materiale.json'), 'utf8'));
+        if (fs.existsSync(path.join(WORK, 'cache', 'regia.json'))) regiaPrecedente = JSON.parse(fs.readFileSync(path.join(WORK, 'cache', 'regia.json'), 'utf8'));
+      } catch { /* primo giro: nessuna cache */ }
+      if (regiaPrecedente || !PEZZO) break;
+      log(`regia non ancora visibile su Drive, riprovo (${prova + 1}/12)`);
+    }
     // una macchina dei pezzi non scrive mai la regia: ne uscirebbe una diversa per macchina
     if (PEZZO && !regiaPrecedente) throw new Error('regia salvata non trovata');
     if (CORREZIONE && !regiaPrecedente) {
