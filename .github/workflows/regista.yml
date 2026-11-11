@@ -181,7 +181,7 @@ jobs:
           fi
           mkdir -p ~/.config/rclone
           # via env + printf: il token è JSON con virgolette, echo "..." le rovinerebbe
-          printf '%s\n' "$RCLONE_CONF" > ~/.config/rclone/rclone.conf
+          printf '%s\n' "$RCLONE_CONF" | tr -d '\r' | sed -e '1s/^\xEF\xBB\xBF//' -e 's/^[[:space:]]*//' > ~/.config/rclone/rclone.conf
           rclone lsf "gdrive:$DIR_EDITARE" --dirs-only > /dev/null && echo "Drive OK"
 
       - name: C'è qualcosa da fare?
@@ -594,7 +594,7 @@ jobs:
             fi
           fi
           mkdir -p ~/.config/rclone
-          printf '%s\n' "$RCLONE_CONF" > ~/.config/rclone/rclone.conf
+          printf '%s\n' "$RCLONE_CONF" | tr -d '\r' | sed -e '1s/^\xEF\xBB\xBF//' -e 's/^[[:space:]]*//' > ~/.config/rclone/rclone.conf
       - name: Aspetta di sapere quale video
         id: quale
         run: |
@@ -682,7 +682,7 @@ jobs:
             fi
           fi
           mkdir -p ~/.config/rclone
-          printf '%s\n' "$RCLONE_CONF" > ~/.config/rclone/rclone.conf
+          printf '%s\n' "$RCLONE_CONF" | tr -d '\r' | sed -e '1s/^\xEF\xBB\xBF//' -e 's/^[[:space:]]*//' > ~/.config/rclone/rclone.conf
       - name: Riunisce, copertina, descrizione e carico
         env:
           GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}

@@ -62,7 +62,7 @@ jobs:
         run: |
           command -v rclone >/dev/null 2>&1 || curl -fsSL https://rclone.org/install.sh | sudo bash > /dev/null
           mkdir -p ~/.config/rclone
-          printf '%s\n' "$RCLONE_CONF" > ~/.config/rclone/rclone.conf
+          printf '%s\n' "$RCLONE_CONF" | tr -d '\r' | sed -e '1s/^\xEF\xBB\xBF//' -e 's/^[[:space:]]*//' > ~/.config/rclone/rclone.conf
           rclone lsf "gdrive:$DIR_EDITARE" --dirs-only > /dev/null && echo "Drive OK"
 
       - uses: actions/setup-node@v5

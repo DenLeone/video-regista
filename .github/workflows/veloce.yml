@@ -108,7 +108,7 @@ jobs:
             fi
           fi
           mkdir -p ~/.config/rclone
-          printf '%s\n' "$RCLONE_CONF" > ~/.config/rclone/rclone.conf
+          printf '%s\n' "$RCLONE_CONF" | tr -d '\r' | sed -e '1s/^\xEF\xBB\xBF//' -e 's/^[[:space:]]*//' > ~/.config/rclone/rclone.conf
       - name: Taglia, ritaglia e renderizza il suo tratto
         env:
           PEZZO: ${{ matrix.i }}/${{ inputs.macchine }}
