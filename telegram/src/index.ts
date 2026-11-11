@@ -33,7 +33,6 @@ export interface Env {
   ALLOWED_CHAT_ID: string;  // uno o più chat id separati da virgola
   GITHUB_TOKEN: string;      // fine-grained, Actions read & write sul repo
   GITHUB_REPO: string;       // "DenLeone/video-regista"
-  SQUADRA_REPO?: string;     // repo privato degli agenti, default "DenLeone/Den" (stesso GITHUB_TOKEN: deve vederlo)
   NOTIFY_TOKEN: string;      // condiviso con il workflow
   IG_TOKEN?: string;         // chiave Instagram (secret): IGAA… dura 60 giorni e la rinnova il bot, EAA… non scade
   IG_USER_ID?: string;       // id dell'account Instagram, per la chiave del login unificato (EAA…)
@@ -1113,7 +1112,6 @@ async function onMessage(env: Env, msg: Msg) {
     if (nome === 'impostazioni') return invia(env, chat, await schermoImpostazioni(env));
     if (nome === 'aiuto' || nome === 'guida') return invia(env, chat, GUIDA);
     if (nome === 'social') return social(env, chat);
-    if (nome === 'squadra') return chiediSquadra(env, chat, resto);
     if (nome === 'tiktok') return invia(env, chat, await schermoTikTok(env));
     if (nome === 'commenti') return commentiOra(env, chat);
     if (nome === 'report') return reportOra(env, chat);
@@ -1125,9 +1123,6 @@ async function onMessage(env: Env, msg: Msg) {
     }
     return invia(env, chat, await pannello(env)); // /start, /menu e comandi sconosciuti
   }
-
-  // «Squadra» scritto a mano: il centralino degli agenti (Den)
-  if (/^squadra[.!?]*$/i.test(text)) return chiediSquadra(env, chat, '');
 
   // testo libero: risposta a una domanda in sospeso?
   const attesa = await leggi<Attesa>(env, kAttesa(chat));
@@ -1255,7 +1250,6 @@ Ti mando il video qui quando è pronto; il file intero va in <b>02 · Fatti/${es
     }, msgId);
   }
   if (data === 'stili') { await avviso(); return mostra(env, chat, await schermoStili(env), msgId); }
-  if (data === 'squadra') { await avviso('Chiedo alla squadra'); return chiediSquadra(env, chat, ''); }
   if (data === 'col') { await avviso(); return mostra(env, chat, await schermoCollegamenti(env), msgId); }
 
   // 📼 ultimi video: rimando giù il video con i suoi tasti
@@ -1653,7 +1647,7 @@ type Info = {
 type SceltaStile = { nome: string; stili: string[]; scelta?: string };
 // azione: com'è partito il giro (monta, render, esempi, regia, elenco); prova: secondi del render di prova
 type Notify = {
-  tipo?: 'fase' | 'esito' | 'cartelle' | 'vuoto' | 'pubblicato' | 'squadra'; chat?: string; esito?: string; nome: string; testo: string; ok?: boolean; foto?: string;
+  tipo?: 'fase' | 'esito' | 'cartelle' | 'vuoto' | 'pubblicato'; esito?: string; nome: string; testo: string; ok?: boolean; foto?: string;
   nonce?: string; instagram?: EsitoPiattaforma; youtube?: EsitoPiattaforma; spostato?: boolean; errore?: string;
   run_url?: string; run_id?: string; step?: IdFase; minuti?: number; versione?: string; origine?: '97' | '98'; info?: Info; richiesto?: string;
   cartelle?: string[]; vai?: string[]; tgFile?: boolean; stili?: string[]; stili_info?: InfoStile[]; yt?: boolean;
@@ -1709,12 +1703,6 @@ const memoFinale = (vecchio: RunMemo | string | undefined, nome: string, origine
 
 async function onNotify(env: Env, n: Notify) {
   if (n.tipo === 'pubblicato') return onPubblicato(env, n);
-  // risposta della squadra di agenti (repo Den, workflow squadra.yml)
-  if (n.tipo === 'squadra') {
-    const dove = n.chat && autorizzati(env).includes(n.chat) ? [n.chat] : autorizzati(env);
-    await Promise.all(dove.map((c) => invia(env, c, { testo: n.testo || '👥 Squadra: nessuna risposta', tasti: [[tasto('🔄 Squadra', 'squadra'), MENU_TASTO]] })));
-    return;
-  }
   const chats = autorizzati(env);
   if (typeof n.tgFile === 'boolean' && (await fileInChatPronti(env)) !== n.tgFile) await mem(env).scrivi('tg_file', n.tgFile);
   if (n.tipo === 'cartelle') {
@@ -2134,22 +2122,6 @@ async function segnalaErrore(env: Env, chat: string | undefined, e: unknown) {
   if (chat && ok(env, chat)) {
     await invia(env, chat, { testo: `⚠️ <b>Errore del bot</b>\n<code>${esc(tronca(String((e as Error)?.message || e), 300))}</code>\nRiprova; se si ripete, dimmelo.`, tasti: [[MENU_TASTO]] }).catch(() => undefined);
   }
-}
-
-// ---------- squadra di agenti (repo privato Den, workflow squadra.yml) ----------
-// Passo 0 (11/11): «Squadra» chiede lo stato di 00 · Preparazione; la risposta arriva su /notify.
-async function chiediSquadra(env: Env, chat: string, richiesta: string) {
-  const repo = env.SQUADRA_REPO || 'DenLeone/Den';
-  const r = await fetch(`https://api.github.com/repos/${repo}/actions/workflows/squadra.yml/dispatches`, {
-    method: 'POST',
-    headers: { authorization: `Bearer ${env.GITHUB_TOKEN}`, accept: 'application/vnd.github+json', 'user-agent': 'regista-telegram', 'x-github-api-version': '2022-11-28' },
-    body: JSON.stringify({ ref: 'main', inputs: { agente: 'stato', richiesta: richiesta.trim(), chat } }),
-  });
-  if (r.status === 204) return invia(env, chat, { testo: '👥 Chiedo alla squadra… (circa mezzo minuto)' });
-  const motivo = r.status === 404 || r.status === 403
-    ? `il token di GitHub del bot non vede il repo <b>${esc(repo)}</b>: su GitHub → Settings → Developer settings → token del bot → aggiungi ${esc(repo)} con «Actions: read and write»`
-    : `GitHub ${r.status}: ${esc((await r.text()).slice(0, 200))}`;
-  return invia(env, chat, { testo: `⚠️ Squadra non raggiungibile: ${motivo}.` });
 }
 
 async function dispatchSemplice(env: Env, inputs: Record<string, string>): Promise<string | null> {
