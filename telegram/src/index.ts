@@ -25,7 +25,7 @@ import STILI_BASE from '../../scripts/stili-base.json';
 import type { Ops, Segreti } from './ops';
 import { unisciNomi } from './stile-studio';
 import { commentiNuovi, controllaEsplosioni, K_RADAR, kCommento, nascondiCommento, proposte, reportSettimana, rispondiCommento, testoCommento, type CommentoSalvato } from './crescita';
-import { PAGINA_PRIVACY, PAGINA_TERMINI, chiaveFacebook, completaLoginTikTok, linkLoginTikTok, pianoDelGiorno, statoTikTok, type DepsSocial } from './social';
+import { PAGINA_PRIVACY, PAGINA_TERMINI, chiaveCaricamentoTikTok, chiaveFacebook, completaLoginTikTok, linkLoginTikTok, pianoDelGiorno, statoTikTok, type DepsSocial } from './social';
 
 export interface Env {
   TELEGRAM_BOT_TOKEN: string;
@@ -2090,7 +2090,7 @@ async function schermoTikTok(env: Env): Promise<Schermo> {
   return {
     testo: s.collegato
       ? `🎵 <b>TikTok collegato</b>\nIl bot rinnova l’accesso da solo fino al ${esc(scade)}. Ricollega solo se /social dà errore.`
-      : '🎵 <b>TikTok non collegato</b>\nApri il link, accedi con .blackden e autorizza. Il link vale 15 minuti.',
+      : '🎵 <b>TikTok non collegato</b>\nApri il link, accedi con .blackden e autorizza (statistiche e caricamento delle bozze). Il link vale 15 minuti.',
     tasti: [[link(s.collegato ? '🔗 Ricollega' : '🔗 Collega TikTok', await linkLoginTikTok(d, origineBot()))], [MENU_TASTO]],
   };
 }
@@ -2290,6 +2290,11 @@ export default {
     if (req.method === 'GET' && url.pathname === '/ig-token') {
       if (req.headers.get('x-regista-token') !== env.NOTIFY_TOKEN) return new Response('no', { status: 401 });
       return Response.json({ token: (await chiaveInstagram(env)) || null, utente: env.IG_USER_ID || null });
+    }
+    // chiave TikTok per caricare il video come bozza (workflow "pubblica", 📤 Pubblicatore della Squadra)
+    if (req.method === 'GET' && url.pathname === '/tt-token') {
+      if (req.headers.get('x-regista-token') !== env.NOTIFY_TOKEN) return new Response('no', { status: 401 });
+      try { return Response.json(await chiaveCaricamentoTikTok(await depsSocial(env))); } catch (e) { return Response.json({ token: null, motivo: (e as Error).message }); }
     }
 
     if (req.method === 'GET' && (url.pathname === '/privacy' || url.pathname === '/termini')) {

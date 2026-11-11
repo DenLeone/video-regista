@@ -13,7 +13,7 @@ export type Video = {
   salvati?: number; reach?: number; visioneMedia?: number; durata?: number; // secondi
 };
 export type Fotografia = { giorno: string; quando: number; video: Video[]; errori: string[]; tiktok: boolean };
-export type ChiaveTikTok = { access: string; scade: number; refresh: string; refreshScade: number; openId?: string };
+export type ChiaveTikTok = { access: string; scade: number; refresh: string; refreshScade: number; openId?: string; scope?: string };
 
 export type DepsSocial = {
   fetch: typeof fetch;
@@ -120,7 +120,8 @@ export async function linkLoginTikTok(d: DepsSocial, origine: string): Promise<s
   const stato = crypto.randomUUID();
   await d.scrivi(K_TT_STATO, { stato, quando: Date.now() });
   const q = new URLSearchParams({
-    client_key: d.ttKey || '', scope: 'user.info.basic,video.list', response_type: 'code',
+    // video.upload: il 📤 Pubblicatore carica il video come bozza nell'app (11/11)
+    client_key: d.ttKey || '', scope: 'user.info.basic,video.list,video.upload', response_type: 'code',
     redirect_uri: callbackTikTok(origine), state: stato,
   });
   return `${TT_AUTH}?${q}`;
@@ -134,7 +135,7 @@ async function tokenTikTok(d: DepsSocial, campi: Record<string, string>): Promis
     signal: AbortSignal.timeout(20_000),
   });
   const j = (await r.json().catch(() => ({}))) as {
-    access_token?: string; expires_in?: number; refresh_token?: string; refresh_expires_in?: number; open_id?: string;
+    access_token?: string; expires_in?: number; refresh_token?: string; refresh_expires_in?: number; open_id?: string; scope?: string;
     error?: string; error_description?: string;
   };
   if (!r.ok || !j.access_token || !j.refresh_token) throw new Error(`TikTok: ${j.error_description || j.error || `HTTP ${r.status}`}`);
@@ -142,6 +143,7 @@ async function tokenTikTok(d: DepsSocial, campi: Record<string, string>): Promis
   const k: ChiaveTikTok = {
     access: j.access_token, scade: ora + (j.expires_in || 86_400) * 1000,
     refresh: j.refresh_token, refreshScade: ora + (j.refresh_expires_in || 31_536_000) * 1000, openId: j.open_id,
+    ...(j.scope ? { scope: j.scope } : {}),
   };
   await d.scrivi(K_TT, k);
   return k;
@@ -161,6 +163,15 @@ async function accessoTikTok(d: DepsSocial): Promise<string | undefined> {
   if (k.scade - Date.now() > 5 * 60_000) return k.access;
   if (k.refreshScade < Date.now()) throw new Error('TikTok: accesso scaduto, ricollega con /tiktok');
   return (await tokenTikTok(d, { grant_type: 'refresh_token', refresh_token: k.refresh })).access;
+}
+
+// chiave per caricare bozze (workflow "pubblica", via /tt-token del bot): null se TikTok non è collegato
+// o se il collegamento non ha il permesso video.upload (va ricollegato con /tiktok)
+export async function chiaveCaricamentoTikTok(d: DepsSocial): Promise<{ token: string | null; motivo?: string }> {
+  const k = await d.leggi<ChiaveTikTok>(K_TT);
+  if (!k) return { token: null, motivo: 'TikTok non collegato: /tiktok nel bot Regista' };
+  if (!String(k.scope || '').split(',').includes('video.upload')) return { token: null, motivo: 'TikTok collegato senza il permesso di caricare (video.upload): ricollega con /tiktok' };
+  return { token: (await accessoTikTok(d)) || null };
 }
 
 export async function statoTikTok(d: DepsSocial): Promise<{ app: boolean; collegato: boolean; scade?: number }> {
