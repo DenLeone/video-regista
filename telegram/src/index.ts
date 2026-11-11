@@ -2297,6 +2297,11 @@ export default {
       try { return Response.json(await chiaveCaricamentoTikTok(await depsSocial(env))); } catch (e) { return Response.json({ token: null, motivo: (e as Error).message }); }
     }
 
+    // verifica del sito per l'app TikTok for Developers (URL prefix, 11/11): firma pubblica, non segreta.
+    // Il file scaricato si chiamava …_2.txt (doppio download): si servono entrambi i nomi
+    if (req.method === 'GET' && /^\/tiktokFjoXpW2X6bAw6rUSYK2quc26IdVMnk5z(_2)?\.txt$/.test(url.pathname)) {
+      return new Response('tiktok-developers-site-verification=FjoXpW2X6bAw6rUSYK2quc26IdVMnk5z', { headers: { 'content-type': 'text/plain; charset=utf-8' } });
+    }
     if (req.method === 'GET' && (url.pathname === '/privacy' || url.pathname === '/termini')) {
       return new Response(url.pathname === '/privacy' ? PAGINA_PRIVACY : PAGINA_TERMINI, { headers: { 'content-type': 'text/html; charset=utf-8' } });
     }
