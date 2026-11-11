@@ -55,8 +55,15 @@ async function linkPubblico(fileId, attiva) {
   const base = `${DRIVE()}/drive/v3/files/${fileId}/permissions`;
   if (attiva) await json(await fetch(`${base}?supportsAllDrives=true`, { method: 'POST', headers: h, body: JSON.stringify({ role: 'reader', type: 'anyone' }) }), 'link Drive');
   else {
-    const r = await fetch(`${base}/anyoneWithLink?supportsAllDrives=true`, { method: 'DELETE', headers: h });
-    if (!r.ok && r.status !== 404) log('link pubblico non tolto', r.status, await r.text());
+    // Drive a volte rifiuta per troppe richieste (403 rateLimitExceeded, 11/11): si riprova con attese
+    // crescenti, perché il file non deve restare aperto a chiunque abbia il link
+    for (let i = 0; i < 6; i++) {
+      const r = await fetch(`${base}/anyoneWithLink?supportsAllDrives=true`, { method: 'DELETE', headers: { ...h, authorization: `Bearer ${tokenDrive()}` } });
+      if (r.ok || r.status === 404) return;
+      log(`link pubblico non tolto (${r.status}), riprovo`, (await r.text()).slice(0, 200));
+      await attesa(5000 * 2 ** i);
+    }
+    throw new Error('link pubblico di Drive non tolto: toglilo a mano dal file');
   }
 }
 
@@ -117,8 +124,7 @@ async function instagram(d) {
     log(`Instagram: pubblicato ${media.id}${d.prova ? ` come reel di prova (${d.prova})` : ''}`);
     return { ok: true, link: info.permalink || `https://www.instagram.com/${me.username || ''}`, prova: Boolean(d.prova) };
   } finally {
-    await linkPubblico(d.fileId, false);
-    if (conCopertina) await linkPubblico(d.copertinaId, false).catch(() => {});
+    await Promise.all([linkPubblico(d.fileId, false), conCopertina ? linkPubblico(d.copertinaId, false) : null].map((p) => Promise.resolve(p).catch((e) => log(e.message))));
   }
 }
 
