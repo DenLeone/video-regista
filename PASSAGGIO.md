@@ -157,6 +157,7 @@ Montaggio a tempo di musica (`scripts/beat.mjs`, `src/Beat.tsx`), tagli a battut
 
 ### Nomi dei segreti (solo i nomi, i valori li ha Denis)
 - **Worker** (`npx wrangler secret put NOME --name regista-telegram`, lanciato dalla home, non da System32): TELEGRAM_BOT_TOKEN, TELEGRAM_SECRET, ALLOWED_CHAT_ID, GITHUB_TOKEN, GEMINI_API_KEY, ANTHROPIC_API_KEY (facoltativo), IG_TOKEN, IG_USER_ID, TIKTOK_CLIENT_KEY, TIKTOK_CLIENT_SECRET, NOTIFY_TOKEN, più quelli dell'app (APP_SETUP_CODE, R2_*, VAPID_*, DRIVE_*: vedi README.md).
+- **Google Cloud, progetto «Den Regista»** (11/11, in produzione, non verificato): client «rclone» (app desktop) usato in RCLONE_CONF al posto del client condiviso di rclone, che Google spegne nel 2026; client «YouTube» (web, redirect OAuth Playground) per YT_*. Controllo senza pubblicare: workflow `verifica-collegamenti`.
 - **GitHub Actions**: GEMINI_API_KEY, CLAUDE_CODE_OAUTH_TOKEN, RCLONE_CONF, TELEGRAM_BOT_TOKEN, TG_API_ID, TG_API_HASH, CLOUDFLARE_API_TOKEN, CLOUDFLARE_ACCOUNT_ID, YT_CLIENT_ID, YT_CLIENT_SECRET, YT_REFRESH_TOKEN, PEXELS_API_KEY, PIXABAY_API_KEY, GROQ_API_KEY, NOTIFY_URL, NOTIFY_TOKEN, R2_*.
 - **PC**: `GEMINI_API_KEY` (con `setx`).
 
