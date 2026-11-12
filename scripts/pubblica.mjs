@@ -95,6 +95,10 @@ async function accountIg(token, utente) {
   return { io, username: me.username };
 }
 
+// link di scaricamento diretto: drive.google.com/uc oltre i ~100 MB risponde con la pagina «impossibile
+// cercare virus» e Instagram rifiuta il video (12/11, Anker 105 MB: errore 2207082); con confirm=t no
+const linkDrive = (id) => `https://drive.usercontent.google.com/download?id=${id}&export=download&confirm=t`;
+
 async function instagram(d) {
   const chiave = await chiaveInstagram();
   const token = chiave.token;
@@ -106,8 +110,8 @@ async function instagram(d) {
   const conCopertina = Boolean(d.copertinaId) && await linkPubblico(d.copertinaId, true).then(() => true, (e) => { log(`copertina non usata: ${e.message}`); return false; });
   try {
     const campi = new URLSearchParams({
-      media_type: 'REELS', video_url: `https://drive.google.com/uc?id=${d.fileId}&export=download`, caption: d.didascalia || '',
-      ...(conCopertina ? { cover_url: `https://drive.google.com/uc?id=${d.copertinaId}&export=download` } : { thumb_offset: String(Math.max(0, Math.round(d.copertina || 0))) }),
+      media_type: 'REELS', video_url: linkDrive(d.fileId), caption: d.didascalia || '',
+      ...(conCopertina ? { cover_url: linkDrive(d.copertinaId) } : { thumb_offset: String(Math.max(0, Math.round(d.copertina || 0))) }),
       access_token: token,
       ...(d.prova ? { trial_params: JSON.stringify({ graduation_strategy: d.prova }) } : { share_to_feed: 'true' }),
     });
@@ -207,7 +211,13 @@ export async function tiktok(d, video) {
   if (!id || !dove) throw new Error('TikTok non ha dato l\'indirizzo di caricamento');
   for (let i = 0; i < totale; i++) {
     const da = i * chunk, a = i === totale - 1 ? dati.length : da + chunk;
-    const r = await fetch(dove, { method: 'PUT', headers: { 'content-type': 'video/mp4', 'content-length': String(a - da), 'content-range': `bytes ${da}-${a - 1}/${dati.length}` }, body: dati.subarray(da, a) });
+    // TikTok a volte risponde 500 su un pezzo (12/11): si riprova lo stesso pezzo fino a 3 volte
+    let r;
+    for (const pausa of [0, 5000, 15000]) {
+      if (pausa) { log(`TikTok: pezzo ${i + 1} rifiutato (${r.status}), riprovo tra ${pausa / 1000} s`); await attesa(pausa); }
+      r = await fetch(dove, { method: 'PUT', headers: { 'content-type': 'video/mp4', 'content-length': String(a - da), 'content-range': `bytes ${da}-${a - 1}/${dati.length}` }, body: dati.subarray(da, a) });
+      if (r.ok || r.status < 500) break;
+    }
     if (!r.ok) throw new Error(`caricamento TikTok, pezzo ${i + 1}/${totale}: HTTP ${r.status} ${(await r.text()).slice(0, 200)}`);
   }
   log(`TikTok: caricato (${(dati.length / 1e6).toFixed(0)} MB, ${totale} pezzi), attendo la bozza…`);
@@ -235,7 +245,8 @@ async function main() {
   const errore = (e) => ({ ok: false, errore: String(e.message || e).slice(0, 300) });
   try {
     if (!d.fileId || !d.file || !d.nome) throw new Error('dati incompleti dal bot');
-    const sorgente = remote(OUT_DIR, d.nome, d.file);
+    // percorso: il video è già altrove (es. 03 · Da pubblicare, quando si ritenta una piattaforma)
+    const sorgente = d.percorso ? `${REMOTE}:${d.percorso}` : remote(OUT_DIR, d.nome, d.file);
     rclone('lsjson', sorgente); // il video c'è ancora? (e rinnova l'accesso a Drive)
     if (d.ig) {
       try { esito.instagram = await instagram(d); } catch (e) { log('Instagram:', e.message); esito.instagram = errore(e); }
@@ -252,8 +263,11 @@ async function main() {
     if (d.tt) {
       try { esito.tiktok = await tiktok(d, scarica()); } catch (e) { log('TikTok:', e.message); esito.tiktok = errore(e); }
     }
-    // pubblicato almeno da una parte: il video passa in 03 · Da pubblicare
-    if (esito.instagram?.ok || esito.youtube?.ok || esito.tiktok?.ok) {
+    // il video passa in 03 · Da pubblicare solo quando TUTTE le piattaforme chieste sono andate (o saltate):
+    // se una fallisce resta in 02, così si può ritentare (12/11: Anker, Instagram e TikTok falliti)
+    const chieste = [d.ig && esito.instagram, d.yt && esito.youtube, d.tt && esito.tiktok].filter(Boolean);
+    const giaIn03 = String(d.percorso || '').startsWith(`${PUB_DIR}/`);
+    if (!giaIn03 && chieste.some((x) => x.ok) && chieste.every((x) => x.ok || x.saltato)) {
       try { rclone('moveto', sorgente, remote(PUB_DIR, d.file)); esito.spostato = true; } catch (e) { log('video non spostato in 99', e.message); }
     }
   } catch (e) {
