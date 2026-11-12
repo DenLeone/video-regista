@@ -1,4 +1,6 @@
 name: stile
+# nome del giro: il 🥷 Copiatore di Den Squadra riconosce così la fine dello studio
+run-name: ${{ inputs.salva && format('stile · {0}', inputs.salva) || 'stile' }}
 
 # Studia uno stile dal video di riferimento intero (scripts/studia-stile.mjs). Lo avvia il bot
 # quando nell'app "Studia uno stile" il file è arrivato su R2; l'esito torna al bot (/stile-esito),
@@ -82,8 +84,9 @@ jobs:
           NOTIFY_TOKEN: ${{ secrets.NOTIFY_TOKEN }}
         run: node scripts/studia-stile.mjs
 
+      # non per il Copiatore (salva su Drive): il riferimento è di altri e gli artefatti di un repo pubblico si vedono
       - name: Conserva lo stile
-        if: always()
+        if: always() && inputs.salva == ''
         uses: actions/upload-artifact@v6
         with:
           name: stile

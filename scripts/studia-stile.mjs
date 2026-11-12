@@ -133,7 +133,7 @@ function prompt({ durata, tagli, taglioMedio }) {
     'Con Sottotitoli: strati, Enfasi corsivo: sì e Scritte dietro di me: sì il programma fa già due font (Font corsivo sulle parole chiave, Font titoli sui numeri) e mette quelle parole dietro la persona. Posizione sottotitoli vale anche per gli strati. Maiuscolo parole grandi: sì mette in maiuscolo solo le parole grosse. Entrata parole grandi: pop le fa comparire sul posto, senza scivolare da sinistra. Righe: 2 tiene insieme al massimo due righe. Le parole piccole restano davanti. Il punch sui jump cut della stessa camera lo alterna lo script, non va chiesto come effetto nuovo.',
     'Vanno in da_creare, mai in un campo: testo che segue il corpo o un percorso, quattro font nella stessa frase, scritte HUD o monospace di metadati, lettere 3D, crepe, stanza che cambia, frecce sulla grafica di Instagram.',
     '',
-    'Rispondi SOLO con JSON: {"risposta": "2-4 frasi per Denis in italiano: cosa hai visto e cosa rende riconoscibile lo stile", "stile": "il testo di stile.txt", "da_creare": ["…"]}',
+    'Rispondi SOLO con JSON: {"risposta": "2-4 frasi per Denis in italiano: cosa hai visto e cosa rende riconoscibile lo stile", "stile": "il testo di stile.txt", "da_creare": ["…"], "come_girare": ["max 4 consigli brevi a Denis su come GIRARE per ottenere questo stile: inquadrature, movimenti veri di camera, luce, distanza; solo cose che il montaggio non può fare"]}',
     '',
     '=== MODELLO DI stile.txt (campi e valori ammessi) ===',
     MODELLO.trim(),
@@ -174,7 +174,8 @@ function leggiRisposta(testo) {
     const o = JSON.parse(t.slice(i, j + 1));
     const stile = String(o.stile || '').trim();
     if (!stile || !/^\s*Nome\s*:/mi.test(stile)) return null;
-    return { risposta: String(o.risposta || '').trim(), stile, daCreare: (Array.isArray(o.da_creare) ? o.da_creare : []).map(String).map((x) => x.trim()).filter(Boolean).slice(0, 8) };
+    return { risposta: String(o.risposta || '').trim(), stile, daCreare: (Array.isArray(o.da_creare) ? o.da_creare : []).map(String).map((x) => x.trim()).filter(Boolean).slice(0, 8),
+      comeGirare: (Array.isArray(o.come_girare) ? o.come_girare : []).map(String).map((x) => x.trim()).filter(Boolean).slice(0, 4) };
   } catch { return null; }
 }
 
@@ -264,7 +265,9 @@ async function main() {
     const esito = await chiediStile(fileGemini, { durata, tagli, taglioMedio }, chiave);
     // nel riepilogo del giro su GitHub: lo stile si legge anche senza aprire l'app
     const riepilogo = `## Stile studiato (${esito.modello})\n\n${esito.risposta}\n\n\`\`\`\n${esito.stile}\n\`\`\`\n${esito.daCreare.length ? `\n### Da creare\n${esito.daCreare.map((d) => `- ${d}`).join('\n')}\n` : ''}`;
-    if (process.env.GITHUB_STEP_SUMMARY) fs.appendFileSync(process.env.GITHUB_STEP_SUMMARY, riepilogo);
+    // studio dal 🥷 Copiatore di Den Squadra (salva su Drive): il riferimento è di altri, niente testo nel
+    // riepilogo pubblico del giro; l'esito va solo su Drive
+    if (process.env.GITHUB_STEP_SUMMARY && !process.env.STILE_SALVA_DRIVE) fs.appendFileSync(process.env.GITHUB_STEP_SUMMARY, riepilogo);
     fs.writeFileSync(path.join(WORK, 'stile.txt'), esito.stile);
     fs.writeFileSync(path.join(WORK, 'esito.json'), JSON.stringify(esito, null, 1));
     // prova da Drive: lo stile va anche in Stili/<STILE_SALVA_DRIVE>/ (con i "da creare" come note),
@@ -275,9 +278,13 @@ async function main() {
         + (esito.daCreare.length ? `\n\n# --- DA CREARE ---\n${esito.daCreare.map((d) => `# DA CREARE: ${d}`).join('\n')}\n` : '');
       fs.writeFileSync(path.join(WORK, 'stile-drive.txt'), testo);
       run('rclone', ['copyto', path.join(WORK, 'stile-drive.txt'), `${process.env.REGISTA_REMOTE || 'gdrive'}:${cartella}/stile.txt`]);
+      // esito completo accanto allo stile (per il 🥷 Copiatore): nome proposto, risposta, da creare, come girare
+      const nomeProposto = (/^\s*Nome\s*:\s*(.+)$/mi.exec(esito.stile) || [])[1]?.replace(/#.*$/, '').trim() || '';
+      fs.writeFileSync(path.join(WORK, 'esito-drive.json'), JSON.stringify({ nomeProposto, risposta: esito.risposta, daCreare: esito.daCreare, comeGirare: esito.comeGirare || [], modello: esito.modello, durata: +durata.toFixed(1), tagli, taglioMedio }, null, 1));
+      run('rclone', ['copyto', path.join(WORK, 'esito-drive.json'), `${process.env.REGISTA_REMOTE || 'gdrive'}:${cartella}/esito.json`]);
       log(`stile salvato su Drive in ${cartella}`);
     }
-    console.log(esito.stile);
+    if (!process.env.STILE_SALVA_DRIVE) console.log(esito.stile);
     await rispondi({ ok: true, ...esito, durata: +durata.toFixed(1), tagli, taglioMedio });
   } catch (e) {
     log('studio non riuscito:', e.message);
