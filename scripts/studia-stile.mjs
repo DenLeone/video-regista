@@ -234,7 +234,8 @@ async function chiediStile(fileGemini, misure, chiave) {
 }
 
 async function rispondi(dati) {
-  if (!process.env.NOTIFY_URL || !R2_ID) { log('NOTIFY_URL mancante: risultato solo nel log', JSON.stringify(dati).slice(0, 500)); return; }
+  // senza R2 (prove da Drive, 🥷 Copiatore): niente bot e niente testo nel log pubblico, solo l'esito
+  if (!process.env.NOTIFY_URL || !R2_ID) { log(`esito: ${dati.ok ? 'stile scritto' : `errore: ${dati.errore || ''}`} (solo su Drive)`); return; }
   const url = process.env.NOTIFY_URL.replace(/\/notify$/, '/stile-esito');
   for (let i = 1; i <= 3; i++) {
     try {
