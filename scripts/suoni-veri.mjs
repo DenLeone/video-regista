@@ -84,6 +84,7 @@ export function preparaSuoni({ ROOT, WORK, rclone, remote, run, log, seme }) {
       pool.push(...effetti.filter((p) => r.nome.test(path.basename(p).replace(/[_\-.]+/g, ' '))).map((p) => remote(EFFETTI, p)));
     }
     if (!pool.length) continue;
+    pool.sort(); // stesso ordine su tutte le macchine del giro (i pezzi in parallelo devono scegliere lo stesso file)
     const inizio = Math.floor(caso(seme, ruolo) * pool.length);
     // fino a 3 tentativi: un file troppo lungo o rotto passa al successivo
     for (let k = 0; k < Math.min(3, pool.length); k++) {
