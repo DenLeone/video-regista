@@ -25,7 +25,7 @@ import STILI_BASE from '../../scripts/stili-base.json';
 import type { Ops, Segreti } from './ops';
 import { unisciNomi } from './stile-studio';
 import { commentiNuovi, controllaEsplosioni, K_RADAR, kCommento, nascondiCommento, proposte, reportSettimana, rispondiCommento, testoCommento, type CommentoSalvato } from './crescita';
-import { PAGINA_PRIVACY, PAGINA_TERMINI, chiaveCaricamentoTikTok, chiaveFacebook, completaLoginTikTok, linkLoginTikTok, pianoDelGiorno, statoTikTok, type DepsSocial } from './social';
+import { PAGINA_PRIVACY, PAGINA_TERMINI, chiaveCaricamentoTikTok, chiaveFacebook, completaLoginTikTok, fotografa, linkLoginTikTok, pianoDelGiorno, statoTikTok, type DepsSocial } from './social';
 
 export interface Env {
   TELEGRAM_BOT_TOKEN: string;
@@ -2290,6 +2290,12 @@ export default {
     if (req.method === 'GET' && url.pathname === '/ig-token') {
       if (req.headers.get('x-regista-token') !== env.NOTIFY_TOKEN) return new Response('no', { status: 401 });
       return Response.json({ token: (await chiaveInstagram(env)) || null, utente: env.IG_USER_ID || null });
+    }
+    // numeri di Instagram e TikTok per il 📊 Analista di Den Squadra (workflow "statistiche"): li legge ora
+    // (e li salva nello storico, come il giro del mattino)
+    if (req.method === 'GET' && url.pathname === '/statistiche') {
+      if (req.headers.get('x-regista-token') !== env.NOTIFY_TOKEN) return new Response('no', { status: 401 });
+      try { return Response.json(await fotografa(await depsSocial(env))); } catch (e) { return Response.json({ video: [], errori: [(e as Error).message] }); }
     }
     // chiave TikTok per caricare il video come bozza (workflow "pubblica", 📤 Pubblicatore della Squadra)
     if (req.method === 'GET' && url.pathname === '/tt-token') {

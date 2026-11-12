@@ -1,0 +1,37 @@
+name: statistiche
+
+# Per il 📊 Analista di Den Squadra: chiede al bot Regista i numeri di Instagram e TikTok (/statistiche,
+# le chiavi le custodisce il bot) e li scrive su Drive in 00 · Preparazione/_analista/statistiche.json,
+# dove la Squadra li legge. Nel log solo i conteggi, mai i dati.
+on:
+  workflow_dispatch:
+    inputs:
+      nonce:
+        description: 'Codice monouso della richiesta (lo mette la Squadra)'
+        required: true
+
+permissions:
+  contents: read
+
+jobs:
+  statistiche:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 8
+    steps:
+      - name: Drive (rclone)
+        env:
+          RCLONE_CONF: ${{ secrets.RCLONE_CONF }}
+        run: |
+          curl -fsSL https://rclone.org/install.sh | sudo bash > /dev/null
+          mkdir -p ~/.config/rclone
+          printf '%s\n' "$RCLONE_CONF" | tr -d '\r' | sed -e '1s/^\xEF\xBB\xBF//' -e 's/^[[:space:]]*//' > ~/.config/rclone/rclone.conf
+      - name: Numeri dal bot
+        env:
+          NOTIFY_URL: ${{ secrets.NOTIFY_URL }}
+          NOTIFY_TOKEN: ${{ secrets.NOTIFY_TOKEN }}
+          NONCE: ${{ inputs.nonce }}
+        run: |
+          base="${NOTIFY_URL%/notify}"
+          curl -fsS --max-time 120 -H "x-regista-token: $NOTIFY_TOKEN" "$base/statistiche" > /tmp/s.json
+          echo "video: $(jq '.video | length' /tmp/s.json) · errori: $(jq '.errori | length' /tmp/s.json)"
+          jq --arg n "$NONCE" '. + {nonce: $n}' /tmp/s.json | rclone rcat "gdrive:00 · Preparazione/_analista/statistiche.json"
