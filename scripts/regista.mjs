@@ -2598,6 +2598,10 @@ async function main() {
     // volte alla regia già corretta.
     let regiaSalvata = !nuovaRegia;
     if (nuovaRegia && !CORREZIONE) {
+      // la cartella _regista si crea PRIMA, una volta sola: due copie partite insieme la creavano due volte
+      // (su Drive due cartelle con lo stesso nome) e le macchine dei pezzi leggevano quella senza regia.json
+      // («regia salvata non trovata», 6 pezzi su 6 falliti e render su una macchina sola: Ajazz AJ159 V2, 12/11)
+      try { rclone('mkdir', remote(SRC_DIR, nome, CACHE)); } catch (e) { log('cartella della regia non creata in anticipo', String(e.message).split('\n')[0]); }
       const salva = Promise.all(['regia.json', 'materiale.json'].filter((f) => fs.existsSync(path.join(WORK, f)))
         .map((f) => inSottofondo('rclone', ['copyto', path.join(WORK, f), remote(SRC_DIR, nome, CACHE, f)])))
         .then(() => true, (e) => { log('regia non salvata in anticipo', String(e.message).split('\n')[0]); return false; });
