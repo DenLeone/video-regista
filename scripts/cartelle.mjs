@@ -8,3 +8,6 @@ export const DIR_PUBBLICARE = process.env.DIR_PUBBLICARE || '03 · Da pubblicare
 export const DIR_STILI = process.env.DIR_STILI || '12 · Risorse/Stili';
 // libreria di Denis (03/11): Loghi/ (PNG trasparenti col nome della marca), Fonts/, elementi…
 export const DIR_ASSETS = process.env.DIR_ASSETS || '12 · Risorse/Assets';
+// suoni (12/11): il pack a pagamento, la grande libreria e la tassonomia curata. Restano su Drive:
+// il Regista li scarica sul runner a ogni montaggio (scripts/suoni-veri.mjs), mai nel repo
+export const DIR_SFX = process.env.DIR_SFX || '12 · Risorse/SFX — regista';

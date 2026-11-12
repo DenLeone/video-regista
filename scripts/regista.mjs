@@ -27,6 +27,7 @@ import { clipDelTratto, dividi, fotogrammiClip, sceltePerCopertina } from './pez
 import path from 'node:path';
 import { audioMuto, frasi, inviluppo, sincronizza, sogliaVoce } from './audio.mjs';
 import { DIR_ASSETS, DIR_EDITARE, DIR_FATTI, DIR_STILI } from './cartelle.mjs';
+import { preparaSuoni, suoniDelloStile } from './suoni-veri.mjs';
 import { loghiDetti, nomiLogo, scegliFont } from './libreria.mjs';
 import { HDR, curvaChiara, curvaEsposizione, filtroTecnico, misuraPezzo, perFiltro, probe, riconosciLog } from './colore.mjs';
 import { chiaveStock, materialePerAI, normFrase, risolviRegia, sequenzaDiscorso, usaTuttoIlMateriale } from './regia.mjs';
@@ -1328,7 +1329,14 @@ let LOOK_12K = false;
 let LOOK_STILE = null;
 const NITIDEZZA_12K = 0.5;
 const normNome = (t) => String(t || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/\s+/g, ' ').trim();
+// suoni veri dal pack di Denis (scripts/suoni-veri.mjs), una volta per giro, prima dello stile
+let suoniPronti = false;
 function scegliStile(brief) {
+  if (!suoniPronti) {
+    suoniPronti = true;
+    try { INSIEME['suoni veri'] = Object.keys(preparaSuoni({ ROOT, WORK, rclone, remote, run, log, seme: String(process.env.CARTELLA || '').trim() })).length; }
+    catch (e) { log('suoni veri non preparati, restano i sintetici', String(e.message).split('\n')[0]); }
+  }
   const richiesto = (/stile\s*:\s*([^\n.,;]+)/i.exec(brief || '') || [])[1]?.trim();
   stileSuMisura = null;
   LUT_STILE = null;
@@ -1442,6 +1450,7 @@ function caricaStile(nome) {
       grafica.suoni[normNome(path.parse(p).name)] = `stili/corrente/${dest}`;
     });
     log(`stile ${nome}: ${suoni.length} effetti sonori propri (${Object.keys(grafica.suoni).join(', ')})`);
+    try { suoniDelloStile({ ROOT, run, log, suoni: grafica.suoni }); } catch (e) { log('suoni dello stile non applicati', String(e.message).split('\n')[0]); }
   }
   // LUT: quella in asset/ dello stile; con "Look: teal e arancio" il look 12K del repo (lut/12k.cube,
   // scripts/look/lut12k.py) con l'esposizione adattata a ogni pezzo
