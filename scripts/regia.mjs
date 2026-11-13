@@ -66,6 +66,22 @@ export function risolviRegia(regia, analisi) {
     } else avvisi.push(`la chiusura (${fUltima.id}) finisce a metà frase`);
   } else if (fUltima && !finita(fUltima.testo)) avvisi.push(`la chiusura (${fUltima.id}) finisce senza punto: controlla`);
 
+  // in mezzo alla sequenza: se una frase continua nella successiva e l'AI l'ha saltata,
+  // la inserisco (stesso criterio della chiusura). Evita "lasciata a metà" nel racconto.
+  const segni = segniFrasi(analisi.frasi);
+  const falsaPartenza = (g) => (segni.get(g.id) || []).includes('interrotta');
+  for (let i = 0; i < sequenza.length; i++) {
+    const f = frasi.get(normFrase(sequenza[i].frase));
+    if (!f) continue;
+    const g = successiva(analisi.frasi, f);
+    if (!g || sequenza.some((it) => normFrase(it.frase) === g.id)) continue;
+    if (/[,;:]$/.test(f.testo.trim())) continue;
+    const dopo = sequenza.slice(i + 1).map((it) => frasi.get(normFrase(it.frase))).find(Boolean);
+    if (dopo && falsaPartenza(g) && dopo.principale === g.principale && analisi.frasi.indexOf(dopo) - analisi.frasi.indexOf(g) <= 2) continue;
+    sequenza.splice(i + 1, 0, { frase: g.id, camera: sequenza[i].camera });
+    avvisi.push(`${f.id} continuata con ${g.id}: era stata lasciata a metà`);
+  }
+
   // ripartenze dentro la stessa frase: "…in più versioni e quindi mi | E quindi mi interessava…"
   // (Lark A2): se la frase dopo comincia con le ultime parole di quella prima, la prima si
   // accorcia prima delle parole ripetute. Solo con almeno 3 parole in comune: 2 parole
@@ -298,8 +314,6 @@ export function risolviRegia(regia, analisi) {
   // ("…per 45 più | coupon ovviamente…", Lark A2 prova del 18/10); dopo una virgola si può chiudere
   // (saltare una continuazione interrotta — "fosse..." — e riprendere subito dopo va bene; una
   // ripetizione no: può contenere la fine della frase prima, come "o meno," in Lark A2)
-  const segni = segniFrasi(analisi.frasi);
-  const falsaPartenza = (g) => (segni.get(g.id) || []).includes('interrotta');
   usate.forEach((f, i) => {
     const g = successiva(analisi.frasi, f), dopo = usate[i + 1];
     if (!g || !dopo || dopo === g || /[,;:]$/.test(f.testo.trim())) return;
