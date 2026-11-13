@@ -1643,6 +1643,7 @@ type Info = {
   ai?: { chi: string; modello: string; input: number; output: number; usd?: number } | null; minuti?: number; correzione?: string; errore?: string;
   pubblica?: Pubblica; prova?: number; link?: string; esempi?: number; confronta?: boolean;
   documentario?: boolean; // giro di documentario.yml (motore Rotolo): sotto il video solo Drive e log
+  scaletta?: string[]; avvisi?: string[];
 };
 type SceltaStile = { nome: string; stili: string[]; scelta?: string };
 // azione: com'è partito il giro (monta, render, esempi, regia, elenco); prova: secondi del render di prova
@@ -1667,6 +1668,8 @@ function didascalia(nome: string, info?: Info, testo = ''): string {
     `⌛ ${info.minuti ?? '?'} min${info.correzione ? `  ·  ✏️ ${esc(tronca(info.correzione, 80))}` : ''}`,
     info.prova ? `<i>Ti piace? 🎬 Video intero con ${info.stile ? esc(info.stile) : 'questo stile'}, oppure 🎨 prova un altro stile.</i>` : '',
   ].filter(Boolean);
+  if (info.scaletta?.length) righe.push(`📋 ${esc(tronca(info.scaletta.join(' → '), 140))}`);
+  if (info.avvisi?.length) righe.push(`🔧 ${esc(tronca(info.avvisi.join(' · '), 180))}`);
   const note = info.note ? `\n📝 <i>${esc(tronca(info.note, Math.max(80, 900 - righe.join('\n').length)))}</i>` : '';
   return righe.join('\n') + note;
 }

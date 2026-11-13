@@ -3062,6 +3062,8 @@ async function main() {
       file: finale, durata: +durataN.toFixed(1), tagli: piano.clips.length, sorgenti: camereUsate, voce: voci,
       keywords: piano.keywords.map((k) => k.word), note: piano.note || '', ai: consumi.ai,
       minuti: Math.round((Date.now() - T0) / 60000), correzione: CORREZIONE || '', versione: VERSIONE, stile: nomeStile,
+      ...(regia?.scaletta ? { scaletta: [].concat(regia.scaletta).slice(0, 6) } : {}),
+      ...(avvisi?.length ? { avvisi: avvisi.filter((a) => /chiusura|continuat|agganciat|apertura spostata|finisce a metà|lasciata a metà/.test(a)).slice(0, 4) } : {}),
       ...(fileId ? { link: `https://drive.google.com/file/d/${fileId}/view` } : {}),
       ...(PROVA_SECONDI ? { prova: PROVA_SECONDI } : {}),
       ...(fileId && !PROVA_SECONDI ? { pubblica: { fileId, file: finale, didascalia: didascalie?.instagram || '', copertina: Math.round(tempoCopertina(piano, durataN) * 1000), ...(copertinaId ? { copertinaId } : {}), youtube: didascalie ? { titolo: didascalie.youtube_titolo, descrizione: didascalie.youtube_descrizione } : null } } : {}),
