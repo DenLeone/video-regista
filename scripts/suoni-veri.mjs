@@ -15,21 +15,25 @@ import path from 'node:path';
 import { DIR_ASSETS, DIR_SFX } from './cartelle.mjs';
 
 const PACK = `${DIR_ASSETS}/@kummetzz _ SIGNATURE SFX PACK`;
-const EFFETTI = `${DIR_ASSETS}/Suoni/Effetti`;
+const SUONI = `${DIR_ASSETS}/Suoni`;
+const EFFETTI = `${SUONI}/Effetti`;
+// le altre cartelle di Suoni (es. «Transizioni e UI», 13/11) sono scelte da Denis: entrano sempre nel
+// mucchio, per nome del file (anche in italiano: «sfx-whoosh-leggero-07»). Una cartella nuova lì dentro
+// entra da sola al montaggio dopo
 const INDICE = `${DIR_SFX}/_indice-effetti.json`; // elenco di Suoni/Effetti (5000+ file), rifatto ogni 7 giorni
 const AUDIO = /\.(wav|mp3|aif|aiff|ogg|flac|m4a)$/i;
 const MAX_BYTE = 4 << 20;
 
 // dove cercare ogni ruolo: cartelle del pack, cartelle della tassonomia, parole nel nome (Suoni/Effetti)
 export const RUOLI = {
-  whoosh: { pack: /^Whoosh/i, sfx: /05 Movimento\/(whoosh|swish)/i, nome: /\b(whoosh|woosh|swoosh|swish|swipe)/i },
-  ui_in: { pack: null, sfx: /07 Digitale\/(pop|clic interfaccia)/i, nome: /\b(pop|ui|interface|button|bubble|blip)\b/i },
-  colpo: { pack: /^Impact_Hits/i, sfx: /03 Timbri e colpi\/colpo|08 Cinematico\/hit/i, nome: /\b(hit|punch|thud|knock)\b/i },
-  impatto: { pack: /^(Impact_Hits|Boulders)/i, sfx: /08 Cinematico\/(boom|sub drop)|03 Timbri e colpi\/impatto/i, nome: /\b(impact|boom|slam|sub ?drop)\b/i },
+  whoosh: { pack: /^Whoosh/i, sfx: /05 Movimento\/(whoosh|swish)/i, nome: /\b(whoosh|woosh|swoosh|swish|swipe|transizione)/i },
+  ui_in: { pack: null, sfx: /07 Digitale\/(pop|clic interfaccia)/i, nome: /\b(pop|ui|interface|button|bubble|blip|click|clic|tap)\b/i },
+  colpo: { pack: /^Impact_Hits/i, sfx: /03 Timbri e colpi\/colpo|08 Cinematico\/hit/i, nome: /\b(hit|punch|thud|knock|colpo|botta)\b/i },
+  impatto: { pack: /^(Impact_Hits|Boulders)/i, sfx: /08 Cinematico\/(boom|sub drop)|03 Timbri e colpi\/impatto/i, nome: /\b(impact|impatto|boom|slam|sub ?drop)\b/i },
   glitch: { pack: /^Gli/i, sfx: /07 Digitale\/glitch/i, nome: /glitch|stutter|distort/i },
-  riser: { pack: /^Riser/i, sfx: /05 Movimento\/riser/i, nome: /\b(riser|rise|uplift|build ?up)/i },
-  strappo: { pack: null, sfx: /01 Carta\/strappo/i, nome: /\b(rip|ripping|tear|tearing)\b/i },
-  ui_conferma: { pack: null, sfx: /07 Digitale\/notifica/i, nome: /\b(confirm|success|notification|ding|chime|correct)\b/i },
+  riser: { pack: /^Riser/i, sfx: /05 Movimento\/riser/i, nome: /\b(riser|rise|uplift|build ?up|salita)/i },
+  strappo: { pack: null, sfx: /01 Carta\/strappo/i, nome: /\b(rip|ripping|tear|tearing|strappo)\b/i },
+  ui_conferma: { pack: null, sfx: /07 Digitale\/notifica/i, nome: /\b(confirm|success|notification|ding|chime|correct|notifica|conferma)\b/i },
 };
 
 const elenca = (rclone, dove) => JSON.parse(rclone('lsjson', '-R', '--files-only', '--fast-list', dove))
@@ -73,11 +77,19 @@ export function preparaSuoni({ ROOT, WORK, rclone, remote, run, log, seme }) {
   let pack = [], sfx = [], effetti = null;
   try { pack = elenca(rclone, remote(PACK)); } catch (e) { log('suoni veri: pack non leggibile', String(e.message).split('\n')[0]); }
   try { sfx = elenca(rclone, remote(DIR_SFX)); } catch { /* facoltativa */ }
+  let scelte = [];
+  try {
+    for (const d of JSON.parse(rclone('lsjson', '--dirs-only', remote(SUONI))).map((x) => x.Path).filter((x) => x !== 'Effetti' && !x.startsWith('_'))) {
+      try { scelte.push(...elenca(rclone, remote(SUONI, d)).map((x) => ({ ...x, p: `${d}/${x.p}` }))); } catch { /* una cartella sola */ }
+    }
+  } catch { /* facoltativa */ }
+  const perNome = (p) => path.basename(p).replace(/\.[a-z0-9]+$/i, '').replace(/[_\-.]+/g, ' ');
   const scelti = {};
   for (const [ruolo, r] of Object.entries(RUOLI)) {
     const pool = [
       ...(r.pack ? pack.filter((x) => r.pack.test(x.p)).map((x) => remote(PACK, x.p)) : []),
       ...sfx.filter((x) => r.sfx.test(x.p)).map((x) => remote(DIR_SFX, x.p)),
+      ...scelte.filter((x) => r.nome.test(perNome(x.p))).map((x) => remote(SUONI, x.p)),
     ];
     if (pool.length < 4) {
       if (!effetti) { try { effetti = indiceEffetti({ rclone, remote, dir }); } catch (e) { effetti = []; log('suoni veri: Effetti non leggibile', String(e.message).split('\n')[0]); } }
@@ -105,7 +117,7 @@ export function preparaSuoni({ ROOT, WORK, rclone, remote, run, log, seme }) {
         const p = picco(pulito);
         const gain = rif != null && p != null ? Math.max(-30, Math.min(24, rif - p)) : 0;
         run('ffmpeg', ['-y', '-v', 'error', '-i', pulito, '-af', `volume=${gain.toFixed(2)}dB,alimiter=limit=0.97`, '-ac', '2', '-ar', '48000', '-c:a', 'pcm_s16le', dest]);
-        scelti[ruolo] = { fonte: da.includes(PACK) ? 'pack' : da.includes(EFFETTI) ? 'effetti' : 'sfx-regista', varianti: pool.length };
+        scelti[ruolo] = { fonte: da.includes(PACK) ? 'pack' : da.includes(EFFETTI) ? 'effetti' : da.includes(SUONI) ? 'suoni di Denis' : 'sfx-regista', varianti: pool.length };
         break;
       } catch (e) { log(`suoni veri: ${ruolo} tentativo ${k + 1} non riuscito`, String(e.message).split('\n')[0]); }
     }

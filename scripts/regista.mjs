@@ -514,6 +514,21 @@ const FONTI_STOCK = {
   },
 };
 export const fontiStock = () => Object.keys(FONTI_STOCK).filter((n) => process.env[`${n.toUpperCase()}_API_KEY`]);
+// B-roll e foto di Denis (13/11): Assets/Sfondi e B-roll (Video B-roll, Foto stock e quello che aggiunge
+// dopo; i Gradienti no, sono sfondi). Vengono PRIMA di Pixabay/Pexels: l'AI vede i nomi dei file (sono
+// descrittivi: «broll-citta-notte-aerea-01») e ne sceglie uno con "stock": "<nome>". Un file nuovo nella
+// cartella entra da solo al montaggio dopo. REGISTA_LIBRERIA_STOCK=0 la spegne
+const LIB_STOCK = 'Sfondi e B-roll';
+const VIDEO_LIB = /\.(mp4|mov|m4v|webm)$/i, FOTO_LIB = /\.(jpe?g|png|webp)$/i;
+export const libreriaStock = () => (process.env.REGISTA_LIBRERIA_STOCK === '0' ? []
+  : elencoLibreria(LIB_STOCK).filter((p) => (VIDEO_LIB.test(p) || FOTO_LIB.test(p)) && !/(^|\/)(gradient|_)/i.test(p)).sort());
+const chiaveLib = (q) => chiaveStock(String(q || '').replace(/^\s*libreria\s*:\s*/i, '').replace(/\.[a-z0-9]{2,4}$/i, ''));
+// una foto diventa un video di 6 s con una lenta panoramica dall'alto in basso (colori com'è: niente filtri)
+function fotoInVideo(foto, dest) {
+  run('ffmpeg', ['-y', '-v', 'error', '-loop', '1', '-t', '6', '-i', foto, '-vf',
+    "scale=1296:2304:force_original_aspect_ratio=increase,crop=1296:2304,crop=1080:1920:(iw-ow)/2:(ih-oh)*t/6,fps=30,format=yuv420p",
+    '-c:v', 'libx264', '-preset', 'veryfast', '-crf', '18', '-an', dest]);
+}
 // i video e le immagini di Denis nella cartella (oltre alla voce): se ci sono si usano quelli e
 // nessun altro, niente repertorio (Beats pokemon, 22/10)
 export const materialeProprio = (analisi) => analisi.sorgenti.some((s) => s.tipo === 'video' && !s.principale && !s.sync && !s.stock)
@@ -523,7 +538,8 @@ async function scaricaStock(regia, analisi) {
   const richieste = [...new Set((regia.sequenza || []).map((it) => String(it.stock || '').trim()).filter(Boolean))].slice(0, 12);
   if (!richieste.length) return 0;
   const fonti = fontiStock();
-  if (!fonti.length) { log(`stock: ${richieste.length} B-roll di repertorio chiesti ma manca PIXABAY_API_KEY: restano le inquadrature`); return 0; }
+  const libreria = new Map(libreriaStock().map((p) => [chiaveLib(path.parse(p).name), p]));
+  if (!fonti.length && !libreria.size) { log(`stock: ${richieste.length} B-roll di repertorio chiesti ma manca PIXABAY_API_KEY e la libreria è vuota: restano le inquadrature`); return 0; }
   analisi.stock = analisi.stock || {};
   const dir = path.join(WORK, 'stock');
   fs.mkdirSync(dir, { recursive: true });
@@ -533,6 +549,25 @@ async function scaricaStock(regia, analisi) {
     const chiave = chiaveStock(q);
     if (!chiave || analisi.stock[chiave]) continue;
     try {
+      // prima la libreria di Denis (nome esatto di un suo file), poi Pixabay/Pexels
+      const daLib = libreria.get(chiaveLib(q));
+      if (daLib) {
+        const id = `stock${analisi.sorgenti.filter((s) => s.stock).length + 1}`;
+        const grezzo = path.join(dir, `${id}-libreria${path.extname(daLib).toLowerCase()}`);
+        const dest = path.join(dir, `${id}.mp4`);
+        rclone('copyto', remote(DIR_ASSETS, LIB_STOCK, daLib), grezzo);
+        if (FOTO_LIB.test(daLib)) fotoInVideo(grezzo, dest); else fs.renameSync(grezzo, dest);
+        const info = probe(dest);
+        if (!info.durata) throw new Error('file della libreria non leggibile');
+        analisi.sorgenti.push({ id, file: `${id}.mp4`, originale: dest, tipo: 'video', dispositivo: 'stock', nomeDispositivo: 'libreria',
+          durata: +info.durata.toFixed(2), orient: 'v', ritaglia916: info.w > info.h, haAudio: false, colore: info.colore, fps: info.fps,
+          soloImmagini: 'repertorio', stock: true, idStock: `lib-${daLib}`, crediti: null });
+        analisi.stock[chiave] = id;
+        scaricati++;
+        log(`stock: ${id} dalla libreria di Denis (nome non scritto: repo pubblico), ${info.w}×${info.h} ${info.durata.toFixed(1)} s`);
+        continue;
+      }
+      if (!fonti.length) { log(`stock "${q}": non è un file della libreria e manca PIXABAY_API_KEY`); continue; }
       // il primo video di almeno 4 s non già usato, prima i verticali, fonte per fonte
       let scelto = null;
       for (const fonte of fonti) {
@@ -989,7 +1024,8 @@ async function montaBeat(analisi, nome) {
 // ---------- 3. l'AI scrive la regia ----------
 function promptRegia({ modo, testoMateriale, regiaPrecedente }) {
   let p = fs.readFileSync(path.join(ROOT, 'scripts', 'prompt-regista.md'), 'utf8')
-    .replace('{{GRAFICA}}', stileSuMisura ? promptSuMisura(stileSuMisura.grafica, stileSuMisura.testoAI, { stock: fontiStock().length > 0 && !(analisiCorrente && materialeProprio(analisiCorrente)) })
+    .replace('{{GRAFICA}}', stileSuMisura ? promptSuMisura(stileSuMisura.grafica, stileSuMisura.testoAI, { stock: fontiStock().length > 0 && !(analisiCorrente && materialeProprio(analisiCorrente)),
+      libreria: analisiCorrente && materialeProprio(analisiCorrente) ? [] : libreriaStock().map((p) => path.parse(p).name) })
       : fs.readFileSync(path.join(ROOT, 'scripts', 'stili', `${stileCorrente}.md`), 'utf8').trim());
   if (regiaPrecedente) {
     p += `\n\n## MODALITÀ CORREZIONE\nEsiste già un montaggio, questa è la sua regia:\n\`\`\`json\n${JSON.stringify(regiaPrecedente, null, 1)}\n\`\`\`\nDenis l'ha guardato e chiede queste modifiche:\n\n> ${CORREZIONE.replace(/\n/g, '\n> ')}\n\nParti da questa regia e applica SOLO quello che chiede, lasciando invariato il resto. I tempi li ricalcola lo script. Nella \`note\` elenca in breve cosa hai cambiato.`;
@@ -2777,7 +2813,7 @@ async function main() {
       `Parole chiave: ${piano.keywords.map((k) => `${k.word} @${k.at.toFixed(1)}s`).join(', ') || '—'}`,
       piano.testo ? `Testo: ${piano.testo}` : '',
       piano.note ? `Note: ${piano.note}` : '',
-      analisi.sorgenti.some((s) => s.stock && piano.clips.some((c) => c.sorgente === s.id)) ? `Repertorio: ${analisi.sorgenti.filter((s) => s.stock && piano.clips.some((c) => c.sorgente === s.id)).map((s) => s.crediti).join(', ')}` : '',
+      analisi.sorgenti.some((s) => s.stock && piano.clips.some((c) => c.sorgente === s.id)) ? `Repertorio: ${analisi.sorgenti.filter((s) => s.stock && piano.clips.some((c) => c.sorgente === s.id)).map((s) => s.crediti).filter(Boolean).join(', ') || 'libreria di Denis'}` : '',
       `File: ${OUT_DIR}/${nome}/${finale}`,
       DA_TELEGRAM || DA_R2 ? (avvisoOriginali || `Originali: ${IN_DIR}/${nome}`) : '',
       rigaConsumi(),

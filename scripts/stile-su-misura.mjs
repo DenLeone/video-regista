@@ -52,7 +52,7 @@ Firma: no                     # no | il tuo nome Instagram: logo e nome fissi in
 Transizioni: no               # no | fumo (nuvola che copre il taglio nei cambi di scena scelti dall'AI) | sfocata (scia sfocata veloce sul taglio) | pellicola (bruciatura di pellicola, lampo caldo arancione sul taglio: film burn / light leak)
 Cornice pellicola: no         # no | super 8 (bordo nero da pellicola Super 8 con i fori, fisso per tutto il video: look vintage/analogico)
 Inserti: scheda               # scheda (arrotondata, tipo telefono) | laterale (piccola e inclinata accanto a te, al massimo una ogni 10 s: Ultra) | tv (televisore anni '70 con barre colorate all'accensione) | reazione (le clip di un altro in una scheda in prospettiva dietro di te, con la sua voce più bassa; schede informative di vetro scritte dall'AI: Blackden)
-B-roll stock: no              # sì = l'AI può coprire alcune frasi con video di repertorio da Pexels (serve il secret PIXABAY_API_KEY)
+B-roll stock: no              # sì = l'AI può coprire alcune frasi con B-roll: prima i video e le foto di Assets/Sfondi e B-roll, poi Pixabay/Pexels (secret PIXABAY_API_KEY)
 
 # --- AUDIO ---
 Effetti sonori: sì            # sì | no
@@ -251,8 +251,12 @@ export function promptSuMisura(g, testoAI, disponibili = {}) {
       '  - **Raffica di dettagli**: `stacco` può essere una lista (fino a 6), in ordine di parola: quando Denis elenca cose che si vedono ("ha il display, il knob, le luci"), un dettaglio per ognuna, 0,5–1 s l\'uno (es. `"stacco": [{"dopo": "display", "broll": "C0928", "da": 3.0}, {"dopo": "knob", "broll": "C0930", "da": 8.5}]`). Ogni pezzo almeno ~0,5 s; nei B-roll a 50/60 fps puoi aggiungere `"lento": true` al singolo stacco.');
   }
   if (g.fumo) righe.push(`- **Transizioni ${g.transizione === 'sfocata' ? 'sfocate' : g.transizione === 'pellicola' ? 'a pellicola bruciata' : 'a fumo'}**: \`"fumo": true\` sull'elemento della sequenza dove la scena cambia davvero (dal volto a un B-roll o al repertorio e ritorno, o quando cambia argomento): ${g.transizione === 'sfocata' ? 'l\'immagine si sfoca con una scia veloce sul taglio' : 'una nuvola copre il taglio'}. 2–5 in un video di un minuto, almeno 8 s una dall'altra, mai sul primo elemento.`);
-  if (g.stock && disponibili.stock) {
-    righe.push('- **B-roll di repertorio**: su un elemento con `frase` puoi mettere `"stock": "<ricerca in inglese, 2–4 parole>"` al posto di `camera`/`broll`: lo script cerca un video di repertorio e lo mostra a tutto schermo mentre Denis parla. La ricerca descrive una cosa concreta che si vede e illustra quello che dice in quel momento (es. "server room lights", "crowd protest street", "old tv static", "money counting hands"), niente nomi di persone o marchi.',
+  const libreria = (disponibili.libreria || []).slice(0, 120);
+  if (g.stock && (disponibili.stock || libreria.length)) {
+    righe.push(disponibili.stock
+      ? '- **B-roll di repertorio**: su un elemento con `frase` puoi mettere `"stock": "<ricerca in inglese, 2–4 parole>"` al posto di `camera`/`broll`: lo script cerca un video di repertorio e lo mostra a tutto schermo mentre Denis parla. La ricerca descrive una cosa concreta che si vede e illustra quello che dice in quel momento (es. "server room lights", "crowd protest street", "old tv static", "money counting hands"), niente nomi di persone o marchi.'
+      : '- **B-roll di repertorio**: su un elemento con `frase` puoi mettere `"stock": "<nome di un file qui sotto>"` al posto di `camera`/`broll`: lo script mostra quel video a tutto schermo mentre Denis parla. Solo se illustra davvero quello che dice.',
+      ...(libreria.length ? [`  - **Prima la libreria di Denis** (video e foto suoi, il nome dice cosa si vede): se uno illustra la frase, scrivi il suo nome esatto, es. \`"stock": "${libreria[0]}"\`.${disponibili.stock ? ' Solo se nessuno va bene, una ricerca in inglese.' : ''} Nomi: ${libreria.join(', ')}.`] : []),
       '  - Circa uno ogni 10–15 s, su frasi da 1,5 a 6 s; mai l\'aggancio né la chiusura (lì il volto), mai due di fila; stessa ricerca su due frasi = stesso video, pezzi diversi. Se non trova niente resta l\'inquadratura normale.');
   }
   if (g.cornice === 'reazione') {
