@@ -1,47 +1,52 @@
-# Velocità — modifiche del 13/11/2026
+# Velocità — 13/11/2026
 
-Tutto sul piano gratuito. Il repo è pubblico: i minuti di GitHub Actions non si pagano. Nessuna API a pagamento aggiunta (resta Groq + Gemini già in uso).
+Tutto sul piano gratuito. Il repo è pubblico: i minuti di GitHub Actions non si pagano. Nessuna API a pagamento aggiunta.
 
-## Cosa è cambiato
+## Cosa è in produzione
 
 ### 1. L'analisi non si rifà se i file sono gli stessi
-File: `scripts/cache-analisi.mjs`, `scripts/regista.mjs`
+`scripts/cache-analisi.mjs`, `scripts/regista.mjs`
 
-In `_regista/materiale.json` ora ci sono la dimensione di ogni file (`byte`), un'`impronta` e se il giro era in modalità discorso.
+In `_regista/materiale.json` ci sono la dimensione di ogni file, un'impronta e se il giro era in modalità discorso.
 
-- **Solo render** e **ogni macchina dei pezzi** riusano trascrizione, sync e frasi già salvate. Prima ciascuna delle 6–8 macchine rianalizzava il girato (Groq compreso) prima di renderizzare il suo tratto.
-- **Stesso girato rilanciato** (stesso nome e stessa dimensione, anche con un altro stile): niente nuova trascrizione e niente ricalcolo dell'aggancio visivo del 4K. I fogli provino si rifanno, perché l'AI deve ancora scegliere.
-- Un file sostituito (dimensione diversa) non tiene la trascrizione vecchia.
-- La cache dei giri già fatti, senza `byte`, vale ancora per correzione e solo render.
+- Solo render e ogni macchina dei pezzi riusano trascrizione e sync. Prima ciascuna rianalizzava il girato.
+- Stesso girato rilanciato (stesso nome e stessa dimensione): niente Groq e niente aggancio visivo del 4K.
+- Un file sostituito non tiene la trascrizione vecchia.
 
-### 2. Fogli provino in parallelo
-File: `scripts/regista.mjs`
+### 2. L'analisi parte prima del tap
+Quando l'upload dall'app arriva tutto su R2, parte da solo il giro `azione: prepara`.
 
-I fotogrammi di una clip partono 4 alla volta, e fino a 3 clip insieme. Prima erano uno dopo l'altro.
+- Scarica, trascrive, sincronizza.
+- Salva `_regista/materiale-anticipato.json`. Non tocca `materiale.json` di un montaggio già fatto.
+- Non monta, non cancella i file su R2, non tiene bloccata la coda del montaggio.
+- Il tap «Monta» resta obbligatorio. Se i file coincidono, il montaggio salta trascrizione e sync.
+- Archivio e video di riferimento di uno stile non la avviano.
+- Se fallisce, il montaggio la rifà da solo.
 
-### 3. Più macchine, sempre gratis
-- `regista.yml`: default da 6 a **8** macchine.
-- `veloce.yml`: default da 4 a **8** macchine.
+Telegram manda un messaggio solo alla fine: «Analisi pronta».
 
-Il render si divide in più pezzi. Il tempo di orologio scende; i minuti totali di Actions salgono, ma sul repo pubblico non costano.
+### 3. I pezzi del render passano da R2
+`scripts/rete.mjs`
 
-### 4. Confronto colore saltato dove non serve
-Nel solo render (e sulle macchine dei pezzi) non si rifà il confronto colore I-Log: è già nel giro che ha scritto la regia.
+I tratti già montati (`v.ts` + audio) vanno su R2 (`pezzi/<giro>/`), non su Drive. Chi riunisce li scarica da lì. Se R2 non risponde, si torna a Drive come prima. A fine giro si cancellano sia da R2 sia da Drive.
 
-## Cosa non è stato toccato
+Vale per `regista.yml` e per `veloce.yml`. Il girato originale non cambia posto.
 
-- Nessun servizio a pagamento.
-- Nessun cambiamento a stili, regia, pubblicazione, bot.
-- L'immagine Docker (`USA_IMMAGINE`) resta spenta: accenderla è una variabile del repository, non un costo, ma va verificata a parte.
+### 4. Fogli provino in parallelo
+I fotogrammi di una clip partono 4 alla volta, fino a 3 clip insieme.
+
+### 5. Otto macchine
+Default 8 in `regista.yml` e in `veloce.yml`.
+
+## Cosa non ho messo
+
+Far scaricare un proxy unico alle 8 macchine, al posto del 4K. Il download è già in parallelo con l'analisi: toglierlo da lì allungherebbe il giro, non lo accorcerebbe. L'immagine Docker resta spenta: accenderla oggi rimette tutto su una macchina sola.
 
 ## Tempo atteso
 
-| | Prima | Dopo, a regime |
+| | Prima | Adesso |
 |---|---|---|
-| Montaggio normale | ~20 min | ~12–15 min |
-| Secondo giro sugli stessi file (altro stile, solo render) | ~20 min | ~8–12 min |
-| Macchine dei pezzi | rianalizzavano tutte | partono dal materiale già salvato |
-
-Il primo giro di una cartella nuova paga ancora trascrizione e fogli (una volta sola, sulla macchina che prepara). Dal giro dopo, e su tutte le macchine di render, quel pezzo non si ripete.
-
-`REGISTA_CACHE=0` non c'è: per forzare un'analisi nuova basta cambiare un file, oppure cancellare `_regista/materiale.json` nella cartella del video.
+| Montaggio appena caricato dall'app, tap dopo qualche minuto | ~20 min | ~10–14 min (l'analisi è già fatta) |
+| Tap immediato, analisi ancora in corso | ~20 min | ~12–15 min |
+| Stesso girato di nuovo | ~20 min | ~8–12 min |
+| Cartella nuova da Drive, primo giro | ~20 min | ~12–15 min |

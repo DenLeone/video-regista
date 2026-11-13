@@ -66,6 +66,7 @@ function memoria() {
     lancia: async () => null,
     provaRegia: async () => null,
     archivia: async () => null,
+    anticipa: async () => null,
     studiaStile: async () => null,
     giri: async () => [],
     video: async () => [],

@@ -631,8 +631,12 @@ export async function gestisciApp(
         file.completo = true;
       }
       if (sess.file.every((f) => f.completo)) {
+        const eraPronto = Boolean(sess.pronto);
         sess.pronto = true;
         await scriviOggetto(c, `inbox/${sess.id}/manifest.json`, JSON.stringify({ id: sess.id, nome: sess.nome, modalita: sess.modalita, file: sess.file.map((f) => ({ nome: f.nome, size: f.size, key: f.key })) }), 'application/json').catch(() => undefined);
+        if (!eraPronto && !sess.archivio && !sess.riferimento && sess.nome) {
+          await ops.anticipa(env, sess.nome, sess.id).catch(() => undefined);
+        }
       }
       await ops.scrivi(env, `app:upload:${sess.id}`, sess);
       return json(riassuntoUpload(sess));

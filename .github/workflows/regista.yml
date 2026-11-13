@@ -34,7 +34,7 @@ on:
         required: false
         default: ''
       azione:
-        description: 'monta (default) | elenco = manda solo al bot le cartelle di 01 · Da editare | regia = prova veloce della sola regia (testo, niente render) su una cartella già montata | render = rifà solo il render con la regia salvata (origine 98) | esempi = fogli di fotogrammi degli esempi di uno stile (cartella = nome dello stile) | archivio = copia su Drive i file caricati dall''app, senza montare | kit = niente render: piano e pezzi in piccolo su Drive (_regista/kit) per provare gli stili in pochi secondi (origine 98) | descrizione = riscrive descrizione e 5 hashtag di un video già montato (origine 98) e li manda al bot'
+        description: 'monta (default) | elenco = manda solo al bot le cartelle di 01 · Da editare | regia = prova veloce della sola regia (testo, niente render) su una cartella già montata | render = rifà solo il render con la regia salvata (origine 98) | esempi = fogli di fotogrammi degli esempi di uno stile (cartella = nome dello stile) | archivio = copia su Drive i file caricati dall''app, senza montare | prepara = analizza il girato appena arrivato su R2, senza montare e senza cancellarlo | kit = niente render: piano e pezzi in piccolo su Drive (_regista/kit) per provare gli stili in pochi secondi (origine 98) | descrizione = riscrive descrizione e 5 hashtag di un video già montato (origine 98) e li manda al bot'
         required: false
         default: 'monta'
       r2:
@@ -75,7 +75,7 @@ env:
 # stessa cartella girano insieme (10/11); scrivono file con nomi diversi e non toccano il piano salvato.
 # Cartelle diverse girano in parallelo. Senza nome di cartella, e l'elenco, hanno la loro coda.
 concurrency:
-  group: regista-${{ inputs.azione == 'elenco' && 'elenco' || (inputs.azione == 'regia' || inputs.azione == 'esempi') && format('{0}-{1}', inputs.azione, inputs.cartella) || (inputs.secondi != '' && inputs.azione == 'render') && format('prova-{0}-{1}-{2}', inputs.cartella, inputs.secondi, inputs.brief) || inputs.cartella || 'auto' }}
+  group: regista-${{ inputs.azione == 'elenco' && 'elenco' || (inputs.azione == 'regia' || inputs.azione == 'esempi' || inputs.azione == 'prepara') && format('{0}-{1}', inputs.azione, inputs.cartella) || (inputs.secondi != '' && inputs.azione == 'render') && format('prova-{0}-{1}-{2}', inputs.cartella, inputs.secondi, inputs.brief) || inputs.cartella || 'auto' }}
   cancel-in-progress: false
 
 # senza nome di cartella, lo script avvia un giro per ogni cartella con VAI (gh workflow run)
@@ -630,6 +630,10 @@ jobs:
           REGISTA_SCARICO: /mnt/regista/in
           NOTIFY_URL: ${{ secrets.NOTIFY_URL }}
           NOTIFY_TOKEN: ${{ secrets.NOTIFY_TOKEN }}
+          R2_ACCOUNT_ID: ${{ secrets.R2_ACCOUNT_ID }}
+          R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          R2_BUCKET: ${{ secrets.R2_BUCKET }}
           BRIEF_EXTRA: ${{ inputs.brief }}
           AZIONE: render
           AZIONE_DETTA: ${{ inputs.azione || 'monta' }}
@@ -699,6 +703,10 @@ jobs:
           REGISTA_SCARICO: /mnt/regista/in
           NOTIFY_URL: ${{ secrets.NOTIFY_URL }}
           NOTIFY_TOKEN: ${{ secrets.NOTIFY_TOKEN }}
+          R2_ACCOUNT_ID: ${{ secrets.R2_ACCOUNT_ID }}
+          R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          R2_BUCKET: ${{ secrets.R2_BUCKET }}
           # l'anteprima va su Telegram direttamente da qui (scripts/regista.mjs, caricaSuTelegram)
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           CARTELLA: ${{ needs.monta.outputs.pezzi_cartella }}

@@ -1733,8 +1733,16 @@ async function onNotify(env: Env, n: Notify) {
     else for (const chat of chats) await invia(env, chat, s, true);
     return;
   }
-    // analisi degli esempi, prova della sola regia, copia degli originali dall'app: niente scheda di montaggio
-  if (n.azione === 'esempi' || n.azione === 'regia' || n.azione === 'archivio') {
+  // analisi degli esempi, prova della sola regia, copia degli originali, analisi prima del tap: niente scheda di montaggio
+  if (n.azione === 'esempi' || n.azione === 'regia' || n.azione === 'archivio' || n.azione === 'prepara') {
+    if (n.azione === 'prepara') {
+      if (n.tipo === 'fase') return;
+      const s: Schermo = n.ok
+        ? { testo: `🎞 <b>Analisi pronta</b> · ${esc(n.nome)}\nQuando monti, parto dalla trascrizione già fatta. Il video non è ancora montato.`, tasti: [[MENU_TASTO]] }
+        : { testo: `⚠️ <b>Analisi anticipata non riuscita</b> — ${esc(n.nome)}\nIl montaggio la rifà da solo.\n<blockquote>${esc(tronca(n.testo, 400))}</blockquote>`, tasti: [[MENU_TASTO]] };
+      for (const chat of chats) await invia(env, chat, s, true);
+      return;
+    }
     if (n.azione === 'regia' && n.tipo !== 'fase') {
       await mem(env).scrivi('app:regia', { nome: n.nome, ok: Boolean(n.ok), testo: n.testo, quando: Date.now(), attesa: false, runUrl: n.run_url });
       await avvisaApp(env, { tipo: 'regia', titolo: n.ok ? 'Prova della regia' : 'Prova non riuscita', corpo: n.nome, url: '/' });
@@ -2139,6 +2147,9 @@ async function provaRegiaApp(env: Env, cartella: string, brief: string): Promise
 async function archiviaApp(env: Env, cartella: string, r2: string): Promise<string | null> {
   return dispatchSemplice(env, { azione: 'archivio', cartella, r2, origine: '97' });
 }
+async function anticipaApp(env: Env, cartella: string, r2: string): Promise<string | null> {
+  return dispatchSemplice(env, { azione: 'prepara', cartella, r2, origine: '97' });
+}
 
 function creaOps(): Ops {
   const e = (env: Segreti) => env as Env;
@@ -2171,6 +2182,7 @@ function creaOps(): Ops {
       return r.status === 204 ? null : `GitHub ${r.status}: ${(await r.text()).slice(0, 200)}`;
     },
     archivia: (env, cartella, r2) => archiviaApp(e(env), cartella, r2),
+    anticipa: (env, cartella, r2) => anticipaApp(e(env), cartella, r2),
     giri: (env) => giri(e(env)),
     video: async (env) => (await leggi<VideoFatto[]>(e(env), 'video')) || [],
     memo: async (env, runId) => {

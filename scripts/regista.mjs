@@ -34,14 +34,14 @@ import { chiaveStock, materialePerAI, normFrase, risolviRegia, sequenzaDiscorso,
 import { movimento, syncMovimento } from './sync-visivo.mjs';
 import { LOOK_FFMPEG, leggiStile, promptSuMisura } from './stile-su-misura.mjs';
 import { chiaveStileR2, preparaStileApp } from './stile-app.mjs';
-import { bloccoRemoteR2, comandiCancellaR2, comandiCopiaDrive, comandiScaricoR2 } from './rete.mjs';
+import { bloccoRemoteR2, comandiCancellaR2, comandiCopiaDrive, comandiScaricoR2, comandiCopiaPezzoR2, comandiScaricaPezziR2, comandiCancellaPezziR2 } from './rete.mjs';
 import { scegliCartella } from './scegli-cartella.mjs';
 import { progettoDaVinci } from './davinci.mjs';
 import { filtroRampa, grigliaBattute, motoRipresa, pianoBeat, scegliTratto } from './beat.mjs';
 import { analizzaBrano, descriviCatalogo, DIR_MUSICA, ESTENSIONI_MUSICA, momentiParlati, richiestaMusica, scegliBrano } from './musica.mjs';
 import { AUDIO_EXT, IMAGE_EXT, NOMI_DISPOSITIVO, VIDEO_EXT, dispositivo, prioritaAudio, tagsPiatti } from './sorgenti.mjs';
 import { regolaStile } from './regolatore.mjs';
-import { cacheSorgente, improntaMateriale, riusoAnalisiIntera } from './cache-analisi.mjs';
+import { cacheSorgente, improntaMateriale, riusoAnalisiIntera, scegliCacheAnalisi } from './cache-analisi.mjs';
 
 const REMOTE = process.env.REGISTA_REMOTE || 'gdrive';
 const IN_DIR = DIR_EDITARE;
@@ -124,6 +124,41 @@ function scaricaDaR2(id, dest) {
 function cancellaR2(id) {
   try { rclone(...comandiCancellaR2({ id, bucket: process.env.R2_BUCKET || '' })); }
   catch (e) { log('R2 non svuotato', e.message); }
+}
+function r2PezziAttivo() {
+  const bucket = process.env.R2_BUCKET || '';
+  return /^[a-z0-9][a-z0-9.-]{1,61}[a-z0-9]$/.test(bucket)
+    && process.env.R2_ACCESS_KEY_ID && process.env.R2_SECRET_ACCESS_KEY && process.env.R2_ACCOUNT_ID;
+}
+function caricaPezzoSuR2(dir, indice) {
+  if (!r2PezziAttivo()) return false;
+  try {
+    assicuraRemoteR2();
+    rclone(...comandiCopiaPezzoR2({ dir, bucket: process.env.R2_BUCKET, giro: GIRO_PEZZI, indice }));
+    return true;
+  } catch (e) {
+    log('pezzo su R2 non caricato, lo metto su Drive', String(e.message).split('\n')[0]);
+    return false;
+  }
+}
+function scaricaPezziDelGiro(dest, nomeCartella) {
+  fs.mkdirSync(dest, { recursive: true });
+  if (r2PezziAttivo()) {
+    try {
+      assicuraRemoteR2();
+      rclone(...comandiScaricaPezziR2({ bucket: process.env.R2_BUCKET, giro: GIRO_PEZZI, dest }));
+    } catch (e) { log('pezzi su R2 non trovati', String(e.message).split('\n')[0]); }
+  }
+  try { rclone('copy', remote(SRC_DIR, nomeCartella, CACHE, 'pezzi', GIRO_PEZZI), dest, '--transfers', '8'); }
+  catch (e) { log('pezzi su Drive non trovati', String(e.message).split('\n')[0]); }
+}
+function cancellaPezziDelGiro(nomeCartella) {
+  if (r2PezziAttivo()) {
+    try { assicuraRemoteR2(); rclone(...comandiCancellaPezziR2({ bucket: process.env.R2_BUCKET, giro: GIRO_PEZZI })); }
+    catch (e) { log('pezzi non cancellati da R2', String(e.message).split('\n')[0]); }
+  }
+  try { rclone('purge', remote(SRC_DIR, nomeCartella, CACHE, 'pezzi')); }
+  catch (e) { log('pezzi non cancellati da Drive', e.message.split('\n')[0]); }
 }
 const remote = (...parts) => `${REMOTE}:${parts.join('/')}`;
 const isVai = (name) => path.parse(name).name.toUpperCase() === 'VAI';
@@ -2005,7 +2040,7 @@ export async function analizza(nome, brief, cache) {
         if (lg.scuro) logScuri.push(id);
         if (lg.luce !== null) log(`  ${id}: luminosità dopo la LUT ${lg.luce.toFixed(2)}${info.colore.alza ? `, schiarita a ${info.colore.alza.a}` : ''}`);
         // solo render e macchine dei pezzi: il confronto colore è già nel giro che ha scritto la regia
-        if (!(RIRENDER && cache?.frasi?.length)) confrontoColore(src, id, info.durata, info.colore);
+        if (!( (RIRENDER && cache?.frasi?.length) || process.env.AZIONE === 'prepara')) confrontoColore(src, id, info.durata, info.colore);
       }
       // `file` è il nome logico usato dalla regia; i pezzi veri si tagliano dall'originale dopo la regia
       // registrazione dello schermo (nome tipico o formato da telefono più stretto di 9:16): ottima come inserto
@@ -2210,7 +2245,11 @@ export async function analizza(nome, brief, cache) {
   }
   movRif.clear();
 
-  await faiFogli(sorgenti, tutteFrasi);
+  if (process.env.AZIONE === 'prepara') {
+    for (const s of sorgenti) if (s.tipo === 'video') s.fogli = [];
+  } else {
+    await faiFogli(sorgenti, tutteFrasi);
+  }
   // camere con audio muto e non sincronizzate: Denis deve saperlo (di solito un
   // ricevitore wireless collegato alla presa microfono ma spento, che esclude il microfono interno)
   const avvisi = sorgenti.filter((s) => s.provataVisiva).map((s) => s.sync
@@ -2380,6 +2419,36 @@ async function archiviaDaR2() {
   await notifica('📥 originali su Drive', nome, `${n.length} file in ${IN_DIR}/${nome}. Il montaggio già partito non li vede: per usarli, 🔁 Rifai da zero.`, { ok: true });
 }
 
+// Parte da sola quando l'app ha finito di caricare su R2, prima del tap «Monta».
+// Non monta, non cancella R2, non scrive materiale.json: solo materiale-anticipato.json.
+// Il montaggio, se i file sono gli stessi, riusa trascrizione e sync.
+async function preparaSolo() {
+  const nome = String(process.env.CARTELLA || '').trim();
+  if (!nome) throw new Error('prepara: manca il nome della cartella');
+  if (!DA_R2) throw new Error('prepara: manca il caricamento R2');
+  fs.rmSync(WORK, { recursive: true, force: true });
+  fs.rmSync(SCARICO, { recursive: true, force: true });
+  fs.rmSync(MEDIA, { recursive: true, force: true });
+  fs.mkdirSync(WORK, { recursive: true });
+  fs.mkdirSync(SCARICO, { recursive: true });
+  fs.mkdirSync(MEDIA, { recursive: true });
+  await fase(nome, '📥 Analizzo il girato appena caricato, prima del montaggio', 'scarico');
+  scaricaDaR2(R2_ID, SCARICO);
+  const n = fs.readdirSync(SCARICO).filter((f) => f !== 'manifest.json');
+  if (!n.length) throw new Error('su R2 non ci sono file per questo caricamento');
+  const briefFile = fs.existsSync(path.join(SCARICO, 'brief.txt')) ? fs.readFileSync(path.join(SCARICO, 'brief.txt'), 'utf8') : '';
+  const brief = unisciBrief(briefFile, process.env.BRIEF_EXTRA, '');
+  const videoInCartella = fs.readdirSync(SCARICO).filter((f) => VIDEO_EXT.includes(path.extname(f).toLowerCase()) && !isNostro(f));
+  DISCORSO = modoDiscorso(videoInCartella.length, brief);
+  const analisi = await analizza(nome, brief, null);
+  const fuori = path.join(WORK, 'materiale-anticipato.json');
+  fs.writeFileSync(fuori, JSON.stringify(analisi, null, 1));
+  try { rclone('mkdir', remote(IN_DIR, nome, CACHE)); } catch (e) { log('cartella analisi non creata', String(e.message).split('\n')[0]); }
+  rclone('copyto', fuori, remote(IN_DIR, nome, CACHE, 'materiale-anticipato.json'));
+  log(`analisi anticipata salvata (${analisi.frasi.length} frasi), R2 lasciato per il montaggio`);
+  await notifica('🎞 analisi pronta', nome, 'Trascrizione e sync sono pronte. Quando monti, parto da qui. Il video non è ancora stato montato.', { ok: true });
+}
+
 // Piano pronto per il render (note, grafica, b/n) senza tagliare i file. La usa il confronto,
 // una volta per stile, prima dell'anteprima da 10 secondi.
 async function rifinisciPiano(regia, risultato, analisi, avvisoStile) {
@@ -2513,6 +2582,13 @@ async function main() {
       process.exitCode = 1;
     });
   }
+  if (process.env.AZIONE === 'prepara') {
+    return preparaSolo().catch(async (e) => {
+      log(e.stack || e.message);
+      await notifica('⚠️ analisi anticipata', process.env.CARTELLA || '—', `Errore: ${e.message}. Il montaggio, quando lo avvii, la rifà.`);
+      process.exitCode = 1;
+    });
+  }
   try { job = trovaCartella() || {}; } catch (e) {
     log(e.stack || e.message);
     await notifica('⚠️ non montato', process.env.CARTELLA || '—', `Errore: ${e.message}`);
@@ -2602,8 +2678,20 @@ async function main() {
       try {
         // solo i file della cache: la sottocartella kit (pezzi in piccolo, decine di MB) non serve al giro
         rclone('copy', remote(SRC_DIR, nome, CACHE), path.join(WORK, 'cache'), '--max-depth', '1');
-        if (fs.existsSync(path.join(WORK, 'cache', 'materiale.json'))) cache = JSON.parse(fs.readFileSync(path.join(WORK, 'cache', 'materiale.json'), 'utf8'));
-        if (fs.existsSync(path.join(WORK, 'cache', 'regia.json'))) regiaPrecedente = JSON.parse(fs.readFileSync(path.join(WORK, 'cache', 'regia.json'), 'utf8'));
+        const leggiCache = (nomeFile) => {
+          try { return JSON.parse(fs.readFileSync(path.join(WORK, 'cache', nomeFile), 'utf8')); }
+          catch { return null; }
+        };
+        const ufficiale = leggiCache('materiale.json');
+        const anticipato = leggiCache('materiale-anticipato.json');
+        const bytePerId = new Map();
+        for (const f of fs.readdirSync(SCARICO)) {
+          const p = path.join(SCARICO, f);
+          try { if (fs.statSync(p).isFile()) bytePerId.set(path.parse(f).name, fs.statSync(p).size); } catch { /* file sparito */ }
+        }
+        cache = scegliCacheAnalisi(ufficiale, anticipato, bytePerId);
+        if (cache && anticipato && cache === anticipato) log('uso l\'analisi fatta prima del tap');
+        regiaPrecedente = leggiCache('regia.json');
       } catch { /* primo giro: nessuna cache */ }
       if (regiaPrecedente || !PEZZO) break;
       log(`regia non ancora visibile su Drive, riprovo (${prova + 1}/12)`);
@@ -2780,7 +2868,7 @@ async function main() {
       log(`pezzo ${PEZZO.i + 1}/${intervalli.length}: fotogrammi ${mio.tratto[0]}–${mio.tratto[1]} di ${pos.durata}, ${solo.size} clip su ${piano.clips.length}`);
     } else if (UNISCI) {
       const qui = path.join(WORK, 'pezzi');
-      try { rclone('copy', remote(SRC_DIR, nome, CACHE, 'pezzi', GIRO_PEZZI), qui, '--transfers', '8'); } catch (e) { log('pezzi non scaricati', e.message.split('\n')[0]); }
+      scaricaPezziDelGiro(qui, nome);
       pezzi = leggiPezzi(qui, impronta);
       // la copertina si fa solo per il video intero: nelle prove non si taglia niente
       if (pezzi && !PROVA_SECONDI) {
@@ -2840,8 +2928,11 @@ async function main() {
       run(process.execPath, [path.join(ROOT, 'scripts', 'render-pezzi.mjs'), '--pezzo', PACCHETTO, stile, path.join(WORK, 'piano.json'),
         String(mio.tratto[0]), String(mio.tratto[1]), path.join(DIR_PEZZO, 'v.ts'), path.join(DIR_PEZZO, 'a.aac'), String(os.availableParallelism())], { cwd: ROOT, stdio: 'inherit' });
       fs.writeFileSync(path.join(DIR_PEZZO, 'pezzo.json'), JSON.stringify({ ...mio, fatto: true }));
-      rclone('copy', DIR_PEZZO, remote(SRC_DIR, nome, CACHE, 'pezzi', GIRO_PEZZI, `pezzo-${mio.i}`), '--transfers', '4');
-      log(`pezzo ${mio.i + 1}/${mio.quanti} pronto e caricato`);
+      if (caricaPezzoSuR2(DIR_PEZZO, mio.i)) log(`pezzo ${mio.i + 1}/${mio.quanti} pronto su R2`);
+      else {
+        rclone('copy', DIR_PEZZO, remote(SRC_DIR, nome, CACHE, 'pezzi', GIRO_PEZZI, `pezzo-${mio.i}`), '--transfers', '4');
+        log(`pezzo ${mio.i + 1}/${mio.quanti} pronto su Drive`);
+      }
       return;
     }
 
@@ -2855,7 +2946,7 @@ async function main() {
     await fase(nome, `🎬 Render: ${durataPiano.toFixed(0)} s, ${piano.clips.length} tagli da ${camereUsate} sorgenti, ${piano.keywords.length} parole chiave`, 'render');
     if (pezzi) {
       await unisciPezzi(pezzi, outFile);
-      try { rclone('purge', remote(SRC_DIR, nome, CACHE, 'pezzi')); } catch (e) { log('pezzi non cancellati da Drive', e.message.split('\n')[0]); }
+      cancellaPezziDelGiro(nome);
       try { rclone('purge', remoteGiro()); } catch { /* già tolti */ }
       // segnali vecchi lasciati da giri finiti male
       try { rclone('delete', remote(OUT_DIR, '_giri'), '--min-age', '1d', '--rmdirs'); } catch { /* niente da togliere */ }

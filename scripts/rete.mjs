@@ -58,6 +58,30 @@ export function comandiCancellaR2({ id, bucket }) {
   return ['purge', `r2:${bucket}/inbox/${id}`];
 }
 
+const GIRO_PEZZI = /^[A-Za-z0-9_-]{1,80}$/;
+
+/** Dove stanno i tratti già renderizzati di un giro. Non è il girato: solo v.ts, audio e pezzo.json. */
+export function chiavePezziR2(giro) {
+  if (!GIRO_PEZZI.test(giro || '')) throw new Error('giro pezzi non valido');
+  return `pezzi/${giro}`;
+}
+
+export function comandiCopiaPezzoR2({ dir, bucket, giro, indice }) {
+  if (!BUCKET.test(bucket)) throw new Error('bucket R2 non valido');
+  if (!Number.isInteger(indice) || indice < 0 || indice > 32) throw new Error('indice pezzo non valido');
+  return ['copy', dir, `r2:${bucket}/${chiavePezziR2(giro)}/pezzo-${indice}`, '--transfers', '4', '--s3-chunk-size', '16M', '--retries', '5'];
+}
+
+export function comandiScaricaPezziR2({ bucket, giro, dest }) {
+  if (!BUCKET.test(bucket)) throw new Error('bucket R2 non valido');
+  return ['copy', `r2:${bucket}/${chiavePezziR2(giro)}`, dest, '--transfers', '16', '--multi-thread-streams', '8', '--s3-chunk-size', '16M', '--retries', '5'];
+}
+
+export function comandiCancellaPezziR2({ bucket, giro }) {
+  if (!BUCKET.test(bucket)) throw new Error('bucket R2 non valido');
+  return ['purge', `r2:${bucket}/${chiavePezziR2(giro)}`];
+}
+
 /** Blocco da accodare a rclone.conf. Il segreto finisce solo nel file, mai nei log. */
 export function bloccoRemoteR2({ accountId, accessKeyId, secretAccessKey }) {
   if (!/^[a-f0-9]{32}$/.test(accountId || '')) throw new Error('R2_ACCOUNT_ID non valido');

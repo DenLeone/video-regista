@@ -85,6 +85,8 @@ export interface Ops {
   lancia(env: Segreti, i: Avvio): Promise<string | null>;
   provaRegia(env: Segreti, cartella: string, brief: string): Promise<string | null>;
   archivia(env: Segreti, cartella: string, r2: string): Promise<string | null>;
+  /** Analisi del girato appena caricato, prima del tap. Non monta. Errore o null. */
+  anticipa(env: Segreti, cartella: string, r2: string): Promise<string | null>;
   /** Studio dello stile sul video di riferimento intero (workflow stile.yml): errore o null. */
   studiaStile(env: Segreti, r2: string): Promise<string | null>;
   giri(env: Segreti): Promise<Giro[] | string>;

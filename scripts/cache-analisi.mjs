@@ -25,3 +25,16 @@ export function riusoAnalisiIntera(cache, impronta, modoDiscorso) {
     && cache.modoDiscorso === modoDiscorso,
   );
 }
+
+// L'analisi anticipata (prima del tap) non deve sovrascrivere materiale.json di un montaggio vero.
+// Si usa solo se i file sul disco sono proprio quelli analizzati.
+export function scegliCacheAnalisi(ufficiale, anticipato, bytePerId) {
+  const coincide = (cache) => {
+    if (!cache?.frasi?.length || !cache.impronta) return false;
+    const attesa = [...bytePerId.entries()].map(([id, byte]) => `${id}:${byte}`).sort().join('|');
+    return cache.impronta === attesa;
+  };
+  if (coincide(ufficiale)) return ufficiale;
+  if (coincide(anticipato)) return anticipato;
+  return ufficiale || anticipato || null;
+}
