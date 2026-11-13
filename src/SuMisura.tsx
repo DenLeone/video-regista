@@ -434,7 +434,11 @@ export const SuMisura: React.FC<Piano> = (piano) => {
       {sfx > 0 ? (
         <>
           {aperture.map((b, i) => <Sfx key={`sa${i}`} nome="whoosh" da={f(b.at) - 6} volume={(i ? 0.3 : 0.45) * sfx} />)}
-          {aperture.flatMap((b, i) => b.righe.filter((r) => r.tipo === 'grande').map((r, j) => <Sfx key={`pa${i}-${j}`} nome="colpo" da={f(b.at + r.parole[0].da)} volume={0.5 * sfx} />))}
+          {/* un colpo per parola grande, ma al massimo uno ogni 1,2 s: di fila coprivano la voce (13/11, Tech Macro) */}
+          {aperture.flatMap((b) => b.righe.filter((r) => r.tipo === 'grande').map((r) => b.at + r.parole[0].da))
+            .sort((x, y) => x - y)
+            .reduce<number[]>((tenuti, t) => (tenuti.length && t - tenuti[tenuti.length - 1] < 1.2 ? tenuti : [...tenuti, t]), [])
+            .map((t, i) => <Sfx key={`pa${i}`} nome="colpo" da={f(t)} volume={0.45 * sfx} />)}
           {frasi.map((k, i) => <Sfx key={`sf${i}`} nome="whoosh" da={f(k.at) - 6} volume={0.45 * sfx} />)}
           {frasi.map((k, i) => <Sfx key={`pf${i}`} nome="colpo" da={f(k.at + 0.15)} volume={0.5 * sfx} />)}
           {titoli.map((k, i) => <Sfx key={`st${i}`} nome="whoosh" da={f(k.at) - 6} volume={0.55 * sfx} />)}

@@ -5,8 +5,8 @@
 // macchine (render a pezzi), video diverso = suoni diversi.
 // I file stanno solo su Drive e sul runner: si scrivono in public/sfx/<ruolo>.wav soltanto su GitHub
 // Actions (sul PC restano i sintetici del repo). Nei log niente nomi dei file del pack (repo pubblico).
-// Ogni suono: silenzio iniziale tolto, al massimo 1,9 s (il riser prende la coda, dove sale), sfumato,
-// 48 kHz stereo, picco portato a quello del sintetico (i volumi in src/ sono tarati su quelli).
+// Ogni suono: silenzio iniziale tolto, accorciato secondo il ruolo (colpo 0,7 s… riser 1,9 s, la coda), sfumato,
+// 48 kHz stereo, mai più forte del sintetico né nel picco né nel volume medio (i volumi in src/ sono tarati su quelli).
 // REGISTA_SUONI_VERI=0 li spegne; =1 li accende anche fuori da GitHub.
 import { spawnSync } from 'node:child_process';
 import crypto from 'node:crypto';
@@ -56,11 +56,16 @@ function indiceEffetti({ rclone, remote, dir }) {
 // numero stabile 0..1 dal seme (nome della cartella) e dal ruolo
 const caso = (seme, k) => crypto.createHash('sha1').update(`${seme}|${k}`).digest().readUInt32BE(0) / 2 ** 32;
 
-function picco(file) {
+// picco e volume medio (dB): i suoni veri sono più «pieni» dei sintetici, a parità di picco suonano più forti
+function livelli(file) {
   const r = spawnSync('ffmpeg', ['-hide_banner', '-nostats', '-i', file, '-af', 'volumedetect', '-f', 'null', '-'], { encoding: 'utf8' });
-  const m = /max_volume:\s*(-?[\d.]+) dB/.exec(String(r.stderr || ''));
-  return m ? Number(m[1]) : null;
+  const t = String(r.stderr || '');
+  const n = (re) => { const m = re.exec(t); return m ? Number(m[1]) : null; };
+  return { picco: n(/max_volume:\s*(-?[\d.]+) dB/), medio: n(/mean_volume:\s*(-?[\d.]+) dB/) };
 }
+// lunghezza massima per ruolo (13/11, Tech Macro: i colpi veri da 1,9 s, uno per parola grande nell'apertura,
+// facevano un rimbombo di 3–4 s sopra la voce). Il riser prende la coda, dove sale
+const DURATA = { colpo: 0.7, impatto: 1.2, ui_in: 0.6, ui_conferma: 1.0, whoosh: 1.2, glitch: 0.8, strappo: 1.0, riser: 1.9 };
 
 function durata(run, file) {
   try { return Number(run('ffprobe', ['-v', 'error', '-show_entries', 'format=duration', '-of', 'csv=p=0', file]).trim()) || 0; } catch { return 0; }
@@ -107,15 +112,18 @@ export function preparaSuoni({ ROOT, WORK, rclone, remote, run, log, seme }) {
         const d = durata(run, grezzo);
         if (!d || d > (ruolo === 'riser' ? 12 : 6)) continue;
         const dest = path.join(ROOT, 'public', 'sfx', `${ruolo}.wav`);
-        const rif = picco(dest);
+        const rif = livelli(dest);
         const pulito = path.join(dir, `${ruolo}.wav`);
-        const tieni = 1.9;
+        const tieni = DURATA[ruolo] || 1.2;
+        const coda = Math.min(0.25, tieni / 3);
         const filtri = ruolo === 'riser'
           ? [`atrim=start=${Math.max(0, d - tieni).toFixed(3)}`, 'asetpts=N/SR/TB', 'afade=t=in:d=0.08']
-          : ['silenceremove=start_periods=1:start_threshold=-50dB', `atrim=end=${tieni}`, 'asetpts=N/SR/TB', `afade=t=out:st=${(tieni - 0.25).toFixed(2)}:d=0.25`];
+          : ['silenceremove=start_periods=1:start_threshold=-50dB', `atrim=end=${tieni}`, 'asetpts=N/SR/TB', `afade=t=out:st=${(tieni - coda).toFixed(2)}:d=${coda.toFixed(2)}`];
         run('ffmpeg', ['-y', '-v', 'error', '-i', grezzo, '-af', [...filtri, 'aresample=48000'].join(','), '-ac', '2', '-ar', '48000', pulito]);
-        const p = picco(pulito);
-        const gain = rif != null && p != null ? Math.max(-30, Math.min(24, rif - p)) : 0;
+        const p = livelli(pulito);
+        // mai più forte del sintetico né nel picco né nel volume medio (prende il guadagno più basso dei due)
+        const guadagni = [rif.picco != null && p.picco != null ? rif.picco - p.picco : null, rif.medio != null && p.medio != null ? rif.medio - p.medio : null].filter((x) => x != null);
+        const gain = guadagni.length ? Math.max(-30, Math.min(24, ...guadagni)) : 0;
         run('ffmpeg', ['-y', '-v', 'error', '-i', pulito, '-af', `volume=${gain.toFixed(2)}dB,alimiter=limit=0.97`, '-ac', '2', '-ar', '48000', '-c:a', 'pcm_s16le', dest]);
         scelti[ruolo] = { fonte: da.includes(PACK) ? 'pack' : da.includes(EFFETTI) ? 'effetti' : da.includes(SUONI) ? 'suoni di Denis' : 'sfx-regista', varianti: pool.length };
         break;
