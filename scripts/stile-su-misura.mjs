@@ -49,7 +49,8 @@ Inizio: normale               # sempre normale ("prima e dopo" disattivato: colo
 Tagli dentro le frasi: no     # sì = ritmo veloce: l'inquadratura può cambiare a metà frase, sulla parola che nomina la cosa
 Chiusura: no                  # no | il tuo nome Instagram (es. @_black_den): finale scurito con logo e nome
 Firma: no                     # no | il tuo nome Instagram: logo e nome fissi in basso a sinistra per tutto il video
-Transizioni: no               # no | fumo (nuvola che copre il taglio nei cambi di scena scelti dall'AI) | sfocata (scia sfocata veloce sul taglio)
+Transizioni: no               # no | fumo (nuvola che copre il taglio nei cambi di scena scelti dall'AI) | sfocata (scia sfocata veloce sul taglio) | pellicola (bruciatura di pellicola, lampo caldo arancione sul taglio: film burn / light leak)
+Cornice pellicola: no         # no | super 8 (bordo nero da pellicola Super 8 con i fori, fisso per tutto il video: look vintage/analogico)
 Inserti: scheda               # scheda (arrotondata, tipo telefono) | laterale (piccola e inclinata accanto a te, al massimo una ogni 10 s: Ultra) | tv (televisore anni '70 con barre colorate all'accensione) | reazione (le clip di un altro in una scheda in prospettiva dietro di te, con la sua voce più bassa; schede informative di vetro scritte dall'AI: Blackden)
 B-roll stock: no              # sì = l'AI può coprire alcune frasi con video di repertorio da Pexels (serve il secret PIXABAY_API_KEY)
 
@@ -107,7 +108,7 @@ const GRAFICA = ['nome', 'apertura', 'font apertura', 'colore apertura', 'sottot
   'maiuscolo sottotitoli', 'posizione sottotitoli', 'dimensione sottotitoli', 'titoli', 'font titoli', 'colore titoli',
   'colore accento', 'posizione titoli', 'look', 'bianco e nero', 'vignettatura', 'effetti sonori', 'musica', 'volume musica',
   'font corsivo', 'enfasi corsivo', 'scritte dietro di me', 'soggetto in risalto', 'sfondo sfocato', 'inizio', 'chiusura', 'tagli dentro le frasi',
-  'entrata parole grandi', 'firma', 'transizioni', 'inserti', 'b-roll stock', 'colori parole grandi', 'montaggio',
+  'entrata parole grandi', 'firma', 'transizioni', 'cornice pellicola', 'inserti', 'b-roll stock', 'colori parole grandi', 'montaggio',
   'maiuscolo parole grandi', 'righe'];
 
 /** stile.txt → { grafica, testoAI, musica, campi } */
@@ -173,9 +174,11 @@ export function leggiStile(testo, nomeCartella) {
   if (campi.righe) g.righe = numero(campi.righe, 4, 1, 4);
   if (campi.transizioni) {
     const t = norm(campi.transizioni);
-    g.fumo = /fum|sfoc|scia|blur/.test(t);
+    g.fumo = /fum|sfoc|scia|blur|pellicol|burn|leak|bruciat/.test(t);
     if (/sfoc|scia|blur/.test(t)) g.transizione = 'sfocata';
+    if (/pellicol|burn|leak|bruciat/.test(t)) g.transizione = 'pellicola';
   }
+  if (campi['cornice pellicola'] && !/^no\b/.test(norm(campi['cornice pellicola']))) g.vuoleCornicePellicola = true;
   const palette = (campi['colori parole grandi'] || '').match(/#?[0-9a-f]{6}\b/gi);
   if (palette?.length) g.palette = palette.map((c) => colore(c, '#FFFFFF'));
   if (campi.inserti) g.cornice = /tv|telev/.test(norm(campi.inserti)) ? 'tv' : /reaz|rispost|blackden/.test(norm(campi.inserti)) ? 'reazione' : /lato|later|piccol/.test(norm(campi.inserti)) ? 'laterale' : 'scheda';
@@ -247,7 +250,7 @@ export function promptSuMisura(g, testoAI, disponibili = {}) {
       '  - Stacca sulla parola che nomina la cosa, per mostrarla in quell\'istante (es. frase sul volto "…e poi c\'è lo schermettino" → `"stacco": {"dopo": "schermettino", "broll": "<dettaglio dello schermo>", "da": 12.0}`). Il ritmo (quanto durano le inquadrature) lo dicono le indicazioni di Denis per questo stile qui sotto.',
       '  - **Raffica di dettagli**: `stacco` può essere una lista (fino a 6), in ordine di parola: quando Denis elenca cose che si vedono ("ha il display, il knob, le luci"), un dettaglio per ognuna, 0,5–1 s l\'uno (es. `"stacco": [{"dopo": "display", "broll": "C0928", "da": 3.0}, {"dopo": "knob", "broll": "C0930", "da": 8.5}]`). Ogni pezzo almeno ~0,5 s; nei B-roll a 50/60 fps puoi aggiungere `"lento": true` al singolo stacco.');
   }
-  if (g.fumo) righe.push(`- **Transizioni ${g.transizione === 'sfocata' ? 'sfocate' : 'a fumo'}**: \`"fumo": true\` sull'elemento della sequenza dove la scena cambia davvero (dal volto a un B-roll o al repertorio e ritorno, o quando cambia argomento): ${g.transizione === 'sfocata' ? 'l\'immagine si sfoca con una scia veloce sul taglio' : 'una nuvola copre il taglio'}. 2–5 in un video di un minuto, almeno 8 s una dall'altra, mai sul primo elemento.`);
+  if (g.fumo) righe.push(`- **Transizioni ${g.transizione === 'sfocata' ? 'sfocate' : g.transizione === 'pellicola' ? 'a pellicola bruciata' : 'a fumo'}**: \`"fumo": true\` sull'elemento della sequenza dove la scena cambia davvero (dal volto a un B-roll o al repertorio e ritorno, o quando cambia argomento): ${g.transizione === 'sfocata' ? 'l\'immagine si sfoca con una scia veloce sul taglio' : 'una nuvola copre il taglio'}. 2–5 in un video di un minuto, almeno 8 s una dall'altra, mai sul primo elemento.`);
   if (g.stock && disponibili.stock) {
     righe.push('- **B-roll di repertorio**: su un elemento con `frase` puoi mettere `"stock": "<ricerca in inglese, 2–4 parole>"` al posto di `camera`/`broll`: lo script cerca un video di repertorio e lo mostra a tutto schermo mentre Denis parla. La ricerca descrive una cosa concreta che si vede e illustra quello che dice in quel momento (es. "server room lights", "crowd protest street", "old tv static", "money counting hands"), niente nomi di persone o marchi.',
       '  - Circa uno ogni 10–15 s, su frasi da 1,5 a 6 s; mai l\'aggancio né la chiusura (lì il volto), mai due di fila; stessa ricerca su due frasi = stesso video, pezzi diversi. Se non trova niente resta l\'inquadratura normale.');

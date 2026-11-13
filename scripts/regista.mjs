@@ -1452,6 +1452,42 @@ function caricaStile(nome) {
     log(`stile ${nome}: ${suoni.length} effetti sonori propri (${Object.keys(grafica.suoni).join(', ')})`);
     try { suoniDelloStile({ ROOT, run, log, suoni: grafica.suoni }); } catch (e) { log('suoni dello stile non applicati', String(e.message).split('\n')[0]); }
   }
+  // 🛠️ mattoni con gli asset comprati da Denis (13/11): bruciatura di pellicola sui tagli e cornice Super 8.
+  // Il file si cerca in asset/ dello stile (nome con «pellicola»/«burn» o «cornice»/«super 8»), poi nella
+  // libreria (Assets/Film Burns, Assets/Letterboxes+). Sul runner, mai nel repo; un video orizzontale si
+  // gira di 90° e riempie il verticale. Se manca il file la transizione torna il fumo e la cornice non c'è.
+  const mattone = (cosa, nomeStile, cartellaLibreria, nomeLibreria, filtri, secondi) => {
+    try {
+      let src = tutti.find((p) => /\.(mov|mp4|m4v|webm)$/i.test(p) && nomeStile.test(path.basename(p)));
+      if (!src) {
+        const candidati = elencoLibreria(cartellaLibreria).filter((p) => /\.(mov|mp4|m4v|webm)$/i.test(p) && nomeLibreria.test(p) && !/tutorial/i.test(p))
+          .sort((a, b) => /mobile/i.test(b) - /mobile/i.test(a) || a.localeCompare(b));
+        if (!candidati.length) return null;
+        src = path.join(dir, '_libreria', `${cosa}${path.extname(candidati[0]).toLowerCase()}`);
+        rclone('copyto', remote(DIR_ASSETS, cartellaLibreria, candidati[0]), src);
+      }
+      const info = JSON.parse(run('ffprobe', ['-v', 'error', '-print_format', 'json', '-show_streams', '-show_format', src]));
+      const v = (info.streams || []).find((x) => x.codec_type === 'video');
+      const d = Number(info.format?.duration) || 0;
+      if (!v || !d) return null;
+      const veloce = secondi && d > secondi ? Math.min(3, d / secondi) : 1; // una bruciatura lunga si stringe, così c'è tutta
+      const vf = [veloce > 1 ? `setpts=PTS/${veloce.toFixed(3)}` : null, v.width > v.height ? 'transpose=1' : null, 'scale=1080:1920', 'fps=30', ...filtri].filter(Boolean).join(',');
+      const dest = `${cosa}.mp4`;
+      run('ffmpeg', ['-y', '-v', 'error', '-i', src, ...(secondi ? ['-t', String(secondi)] : ['-t', '8']), '-vf', vf, '-an', '-c:v', 'libx264', '-preset', 'veryfast', '-crf', '18', '-pix_fmt', 'yuv420p', path.join(pub, dest)]);
+      const durata = Math.min(secondi || 8, d / veloce);
+      log(`stile ${nome}: ${cosa} pronta (${durata.toFixed(1)} s)`);
+      return { file: `stili/corrente/${dest}`, durata: +durata.toFixed(2) };
+    } catch (e) { log(`${cosa} non preparata`, String(e.message).split('\n')[0]); return null; }
+  };
+  if (grafica.transizione === 'pellicola') {
+    grafica.pellicola = mattone('pellicola', /pellicol|burn|leak/i, 'Film Burns', /burn|screen/i, [], 1.6);
+    if (!grafica.pellicola) avvisi.push(`stile ${nome}: bruciatura di pellicola non trovata (Assets/Film Burns), uso il fumo`);
+  }
+  if (grafica.vuoleCornicePellicola) {
+    grafica.cornicePellicola = mattone('cornice', /cornice|super ?8|letterbox/i, 'Letterboxes+', /multiply/i, [], 0);
+    if (!grafica.cornicePellicola) avvisi.push(`stile ${nome}: cornice Super 8 non trovata (Assets/Letterboxes+ … multiply)`);
+  }
+  delete grafica.vuoleCornicePellicola;
   // LUT: quella in asset/ dello stile; con "Look: teal e arancio" il look 12K del repo (lut/12k.cube,
   // scripts/look/lut12k.py) con l'esposizione adattata a ogni pezzo
   // colori sempre naturali (25/10): la LUT creativa in asset/ non si usa più

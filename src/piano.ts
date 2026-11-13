@@ -109,7 +109,9 @@ export type GraficaStile = {
   righe?: number;                            // strati: quante righe restano insieme prima di chiudere il blocco (1–4)
   maiuscoloGrandi?: boolean;                 // solo le parole grosse in maiuscolo, il resto come è detto
   fumo?: boolean;                            // transizioni a nuvola di fumo sui cambi di scena scelti dall'AI
-  transizione?: 'fumo' | 'sfocata';          // sfocata = scia sfocata veloce sul taglio (Ultra); senza, fumo
+  transizione?: 'fumo' | 'sfocata' | 'pellicola'; // sfocata = scia veloce (Ultra); pellicola = bruciatura di pellicola (asset di Denis); senza, fumo
+  pellicola?: { file: string; durata: number };  // 🛠️ bruciatura di pellicola sui tagli (video su fondo nero, fusione «scolora»)
+  cornicePellicola?: { file: string; durata: number }; // 🛠️ cornice Super 8 sopra tutto il video (video su fondo bianco, fusione «moltiplica»)
   palette?: string[];                        // colori a giro delle parole grandi (sottotitoli a strati)
   firma?: string;                            // logo Instagram e nome (es. @_black_den) fissi in basso a sinistra
   cornice?: 'scheda' | 'tv' | 'reazione' | 'laterale'; // inserti: scheda arrotondata, televisore anni '70, scheda in prospettiva dietro a Denis o piccola inclinata di lato (Ultra)

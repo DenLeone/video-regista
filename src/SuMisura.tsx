@@ -4,7 +4,7 @@ import { Clips, f, Inserti, Ritagli, Sfx, usaFps, volumeSfx, Icone, MusicaSotto 
 import { gruppiParole } from './Cinematico';
 import { durataTotale, FontStile, GraficaStile, Keyword, Piano, Posizione, W } from './piano';
 import { clamp, dentro, norm, OMBRA, pulisci, RACCORDO, SICURA, stileFont, larghezzaTesto } from './testo';
-import { BlocchiMotion, blocchiParlato, Cartello, Firma, Fumi, tagliFumo } from './Motion';
+import { BlocchiMotion, blocchiParlato, Cartello, CornicePellicola, Firma, Fumi, Pellicole, tagliFumo } from './Motion';
 import { BlocchiUltra, Sfocature } from './Ultra';
 import { InsertiReazione, SchedeInfo } from './Reazione';
 import { Beat } from './Beat';
@@ -395,9 +395,11 @@ export const SuMisura: React.FC<Piano> = (piano) => {
       {reazione ? <InsertiReazione piano={piano} g={g} sfx={sfx} /> : null}
       {g.dietro || reazione ? <Ritagli piano={piano} filtro={LOOK[g.look]} /> : null}
       {reazione ? <SchedeInfo piano={piano} g={g} sfx={sfx} /> : <Inserti piano={piano} sfx={sfx} cornice={g.cornice} sopra={strati && g.posizione === 'basso' && !g.dietro ? 920 : undefined} />}
-      {g.fumo && g.transizione !== 'sfocata' ? <Fumi piano={piano} /> : null}
+      {g.fumo && g.transizione === 'pellicola' && g.pellicola ? <Pellicole piano={piano} file={g.pellicola.file} durata={g.pellicola.durata} /> : null}
+      {g.fumo && g.transizione !== 'sfocata' && !(g.transizione === 'pellicola' && g.pellicola) ? <Fumi piano={piano} /> : null}
       {g.fumo && g.transizione === 'sfocata' ? <Sfocature piano={piano} /> : null}
       {strati ? <BlocchiUltra blocchi={blocchi} g={g} solo={g.dietro ? 'piccole' : 'tutte'} /> : <BlocchiMotion blocchi={blocchi} g={g} />}
+      {g.cornicePellicola ? <CornicePellicola file={g.cornicePellicola.file} durata={g.cornicePellicola.durata} totale={totale} /> : null}
       {cartelli.map((k, i) => (
         <Sequence key={`ca${i}`} from={f(k.at)} durationInFrames={Math.max(8, f(k.dur))}>
           <Cartello k={k} len={Math.max(8, f(k.dur))} g={g} />

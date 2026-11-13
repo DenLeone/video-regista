@@ -1,5 +1,5 @@
 import React from 'react';
-import { AbsoluteFill, Easing, interpolate, random, Sequence, useCurrentFrame } from 'remotion';
+import { AbsoluteFill, Easing, interpolate, OffthreadVideo, random, Sequence, staticFile, useCurrentFrame } from 'remotion';
 import { f } from './comune';
 import { durataClip, GraficaStile, Keyword, Piano } from './piano';
 import { clamp, dentro, norm, pulisci, RACCORDO, SICURA, stileFont } from './testo';
@@ -247,6 +247,39 @@ const FumoView: React.FC<{ len: number; seme: number }> = ({ len, seme }) => {
         <rect width="540" height="960" fill="#E9E9EA" opacity={pieno} mask={`url(#${id}m)`} />
       </svg>
     </AbsoluteFill>
+  );
+};
+
+// ---------- 🛠️ transizione a pellicola bruciata e cornice Super 8 (asset comprati da Denis) ----------
+// I file stanno su Drive (Assets/Film Burns, Assets/Letterboxes+ o asset/ dello stile): regista.mjs li porta
+// in public/stili/corrente sul runner, mai nel repo. La bruciatura è un video su fondo nero messo in
+// «scolora» (screen) a cavallo del taglio; la cornice è un video su fondo bianco in «moltiplica», in ciclo.
+export const Pellicole: React.FC<{ piano: Piano; file: string; durata: number }> = ({ piano, file, durata }) => {
+  const len = Math.max(6, f(Math.min(1.6, durata)));
+  return (
+    <>
+      {tagliFumo(piano).map((at, i) => (
+        <Sequence key={`pe${i}`} from={Math.max(0, at - Math.round(len / 2))} durationInFrames={len}>
+          <AbsoluteFill style={{ mixBlendMode: 'screen' }}>
+            <OffthreadVideo src={staticFile(file)} muted style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+          </AbsoluteFill>
+        </Sequence>
+      ))}
+    </>
+  );
+};
+export const CornicePellicola: React.FC<{ file: string; durata: number; totale: number }> = ({ file, durata, totale }) => {
+  const giro = Math.max(6, f(durata) - 1);
+  return (
+    <>
+      {Array.from({ length: Math.ceil(totale / giro) }, (_, i) => (
+        <Sequence key={`co${i}`} from={i * giro} durationInFrames={giro}>
+          <AbsoluteFill style={{ mixBlendMode: 'multiply' }}>
+            <OffthreadVideo src={staticFile(file)} muted style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+          </AbsoluteFill>
+        </Sequence>
+      ))}
+    </>
   );
 };
 
