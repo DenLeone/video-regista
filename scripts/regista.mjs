@@ -41,6 +41,7 @@ import { filtroRampa, grigliaBattute, motoRipresa, pianoBeat, scegliTratto } fro
 import { analizzaBrano, descriviCatalogo, DIR_MUSICA, ESTENSIONI_MUSICA, momentiParlati, richiestaMusica, scegliBrano } from './musica.mjs';
 import { AUDIO_EXT, IMAGE_EXT, NOMI_DISPOSITIVO, VIDEO_EXT, dispositivo, prioritaAudio, tagsPiatti } from './sorgenti.mjs';
 import { regolaStile } from './regolatore.mjs';
+import { cacheSorgente, improntaMateriale, riusoAnalisiIntera } from './cache-analisi.mjs';
 
 const REMOTE = process.env.REGISTA_REMOTE || 'gdrive';
 const IN_DIR = DIR_EDITARE;
@@ -910,29 +911,45 @@ const FONT = ['/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf', 'C:/Window
 // Fogli provino: fino a 32 riquadri per clip, 16 per foglio, col tempo scritto sopra.
 // offset: tempo scritto = tempo nella clip - offset (per le camere sincronizzate = tempo della voce)
 // Dal girato originale si decodificano solo i fotogrammi chiave (molto più veloce sul 4K).
-function fogliProvino(file, id, durata, offset = 0, colore = null) {
+// I riquadri partono insieme: uno dopo l'altro, su un 4K lungo, era il pezzo lento dell'analisi.
+function argsRiquadro(file, out, t, filtro, soloChiave) {
+  return ['-y', '-v', 'error', ...(soloChiave ? ['-skip_frame', 'nokey'] : []), '-ss', t.toFixed(2), '-i', file, '-frames:v', '1', '-vf', filtro, ...JPG_PIENO, '-q:v', '4', out];
+}
+function ffmpegSilenzioso(args) {
+  return new Promise((ok) => {
+    const c = spawn('ffmpeg', args, { stdio: 'ignore' });
+    c.on('error', () => ok(false));
+    c.on('close', (code) => ok(code === 0));
+  });
+}
+async function fogliProvino(file, id, durata, offset = 0, colore = null) {
   const n = Math.min(32, Math.max(4, Math.ceil(durata / 1.5)));
   const passo = durata / n;
   const dir = path.join(WORK, 'fogli', '_riquadri', id);
   fs.mkdirSync(dir, { recursive: true });
   let etichette = Boolean(FONT);
   let soloChiave = true;
-  for (let k = 0; k < n; k++) {
-    const t = (k + 0.5) * passo;
-    const out = path.join(dir, `${String(k).padStart(3, '0')}.jpg`);
-    const scritta = `${(t - offset).toFixed(1)}s`;
-    const base = `scale=240:-2,${filtroColore(colore)}`;
-    const filtro = etichette
-      ? `${base},drawtext=fontfile='${FONT.replace(/:/g, '\\:')}':text='${scritta}':x=6:y=6:fontsize=24:fontcolor=white:box=1:boxcolor=black@0.65:boxborderw=4`
-      : base;
-    try {
-      run('ffmpeg', ['-y', '-v', 'error', ...(soloChiave ? ['-skip_frame', 'nokey'] : []), '-ss', t.toFixed(2), '-i', file, '-frames:v', '1', '-vf', filtro, ...JPG_PIENO, '-q:v', '4', out]);
-      if (!fs.existsSync(out) || fs.statSync(out).size === 0) throw new Error('nessun fotogramma');
-    } catch (e) {
-      if (soloChiave) { soloChiave = false; k--; continue; } // fotogrammi chiave troppo radi: decodifica normale
-      if (!etichette) throw e;
-      etichette = false; k--; // drawtext non disponibile: rifaccio senza scritte
-    }
+  const base = `scale=240:-2,${filtroColore(colore)}`;
+  let pending = [...Array(n).keys()];
+  for (let giro = 0; giro < 4 && pending.length; giro++) {
+    const falliti = [];
+    await pool(pending.map((k) => async () => {
+      const t = (k + 0.5) * passo;
+      const out = path.join(dir, `${String(k).padStart(3, '0')}.jpg`);
+      const scritta = `${(t - offset).toFixed(1)}s`;
+      const filtro = etichette
+        ? `${base},drawtext=fontfile='${FONT.replace(/:/g, '\\:')}':text='${scritta}':x=6:y=6:fontsize=24:fontcolor=white:box=1:boxcolor=black@0.65:boxborderw=4`
+        : base;
+      const ok = await ffmpegSilenzioso(argsRiquadro(file, out, t, filtro, soloChiave));
+      if (!ok || !fs.existsSync(out) || fs.statSync(out).size === 0) {
+        try { fs.rmSync(out, { force: true }); } catch { /* file assente */ }
+        falliti.push(k);
+      }
+    }), 4);
+    if (!falliti.length) { pending = []; break; }
+    if (soloChiave) { soloChiave = false; pending = falliti; continue; }
+    if (etichette) { etichette = false; pending = falliti; continue; }
+    throw new Error('nessun fotogramma');
   }
   const fogli = [];
   for (let s = 0; s * 16 < n; s++) {
@@ -942,6 +959,22 @@ function fogliProvino(file, id, durata, offset = 0, colore = null) {
     fogli.push(path.relative(ROOT, foglio).replace(/\\/g, '/'));
   }
   return { fogli, passo: +passo.toFixed(1), etichette };
+}
+
+// Fogli di tutte le clip insieme (3 alla volta). Nel discorso non servono: niente scelte di inquadratura.
+// forza: la correzione li vuole comunque, l'AI deve vedere i B-roll.
+async function faiFogli(sorgenti, frasi, { forza = false } = {}) {
+  const clip = sorgenti.filter((x) => x.tipo === 'video');
+  if (!forza && DISCORSO && frasi.length >= 3) {
+    for (const s of clip) s.fogli = [];
+    return;
+  }
+  const insieme = Math.max(1, Math.min(3, os.availableParallelism() - 1));
+  await pool(clip.map((s) => async () => {
+    const fp = await fogliProvino(s.originale, s.id, s.durata, s.sync ? s.sync.offset : 0, s.colore);
+    s.fogli = fp.fogli;
+    s.passoFogli = fp.passo;
+  }), insieme);
 }
 
 // ---------- musica sotto il video (solo se Denis la chiede nel messaggio: scripts/musica.mjs) ----------
@@ -1971,19 +2004,20 @@ export async function analizza(nome, brief, cache) {
       if (iLog) {
         if (lg.scuro) logScuri.push(id);
         if (lg.luce !== null) log(`  ${id}: luminosità dopo la LUT ${lg.luce.toFixed(2)}${info.colore.alza ? `, schiarita a ${info.colore.alza.a}` : ''}`);
-        confrontoColore(src, id, info.durata, info.colore);
+        // solo render e macchine dei pezzi: il confronto colore è già nel giro che ha scritto la regia
+        if (!(RIRENDER && cache?.frasi?.length)) confrontoColore(src, id, info.durata, info.colore);
       }
       // `file` è il nome logico usato dalla regia; i pezzi veri si tagliano dall'originale dopo la regia
       // registrazione dello schermo (nome tipico o formato da telefono più stretto di 9:16): ottima come inserto
       const schermo = /screen|registraz|rpreplay|schermo|scherm/i.test(f) || (info.h > info.w && info.w / info.h < 0.5);
-      sorgenti.push({ id, file: `${id}.mp4`, originale: src, tipo: 'video', dispositivo: disp, nomeDispositivo: NOMI_DISPOSITIVO[disp],
+      sorgenti.push({ id, file: `${id}.mp4`, originale: src, byte: fs.statSync(src).size, tipo: 'video', dispositivo: disp, nomeDispositivo: NOMI_DISPOSITIVO[disp],
         durata: +info.durata.toFixed(2), orient: info.w > info.h ? 'h' : 'v', haAudio: info.audio, colore: info.colore, data: dataRipresa(info.tags, f), ora: oraRipresa(info.tags), fps: info.fps,
         ...(schermo ? { schermo: true } : {}) });
     } else if (AUDIO_EXT.includes(ext)) {
       const info = probe(src);
       log(`audio ${f} (mic esterno, ${info.durata.toFixed(1)} s)`);
       estraiVoce(src, path.join(MEDIA, `${id}.voce.wav`));
-      sorgenti.push({ id, file: null, originale: src, voce: `${id}.voce.wav`, tipo: 'audio', dispositivo: 'mic', nomeDispositivo: NOMI_DISPOSITIVO.mic,
+      sorgenti.push({ id, file: null, originale: src, byte: fs.statSync(src).size, voce: `${id}.voce.wav`, tipo: 'audio', dispositivo: 'mic', nomeDispositivo: NOMI_DISPOSITIVO.mic,
         durata: +info.durata.toFixed(2), haAudio: true });
     } else if (IMAGE_EXT.includes(ext)) {
       foto.push(f);
@@ -2020,20 +2054,41 @@ export async function analizza(nome, brief, cache) {
     if (perche) { s.soloImmagini = perche; log(`${s.id}: solo immagini (${perche})`); }
   }
 
-  // correzione: stesse frasi e stessa sincronizzazione del montaggio da correggere,
-  // così gli id F001... della regia precedente puntano agli stessi pezzi
-  if (CORREZIONE && cache?.frasi?.length) {
+  // correzione, solo render e macchine dei pezzi: stesse frasi e stessa sincronizzazione,
+  // così gli id F001... della regia precedente puntano agli stessi pezzi.
+  // Stesso girato rilanciato (stesso nome e stessa dimensione): si saltano Groq e l'aggancio
+  // visivo del 4K. I fogli provino si rifanno solo se l'AI deve scegliere di nuovo.
+  const impronta = improntaMateriale(sorgenti);
+  const opzioniCache = { correzione: Boolean(CORREZIONE), soloRender: Boolean(RIRENDER) };
+  const intera = riusoAnalisiIntera(cache, impronta, DISCORSO);
+  if ((CORREZIONE || (RIRENDER && cache?.frasi?.length) || intera) && cache?.frasi?.length) {
     for (const s of sorgenti) {
-      const c = cache.sorgenti?.find((x) => x.id === s.id);
+      const c = (CORREZIONE || RIRENDER)
+        ? (cache.sorgenti || cache.video || []).find((x) => x.id === s.id)
+        : cacheSorgente(cache, s, opzioniCache);
       if (!c) continue;
-      Object.assign(s, { principale: c.principale, sync: c.sync, parlato: c.parlato, parole: c.parole, livello: c.livello, ...(c.testoClip ? { testoClip: c.testoClip } : {}) });
-      if (c.principale) { s.voce = c.voce; if (!fs.existsSync(path.join(MEDIA, s.voce))) estraiVoce(s.originale, path.join(MEDIA, s.voce)); }
+      Object.assign(s, {
+        principale: c.principale, sync: c.sync, parlato: c.parlato, parole: c.parole, livello: c.livello,
+        ...(c.audioMuto ? { audioMuto: true } : {}),
+        ...(c.provataVisiva ? { provataVisiva: true } : {}),
+        ...(c.testoClip ? { testoClip: c.testoClip } : {}),
+      });
+      if (c.principale && c.voce) {
+        s.voce = c.voce;
+        if (!fs.existsSync(path.join(MEDIA, s.voce))) estraiVoce(s.originale, path.join(MEDIA, s.voce));
+      }
     }
-    for (const s of sorgenti.filter((x) => x.tipo === 'video')) {
-      const fp = fogliProvino(s.originale, s.id, s.durata, s.sync ? s.sync.offset : 0, s.colore);
-      s.fogli = fp.fogli; s.passoFogli = fp.passo;
+    log(`analisi dalla cache${RIRENDER ? ' (solo render: niente trascrizione né fogli)' : intera ? ' (stessi file, trascrizione e sync già fatti)' : ''}`);
+    if (RIRENDER) {
+      for (const s of sorgenti) if (s.tipo === 'video') s.fogli = [];
+    } else {
+      await faiFogli(sorgenti, cache.frasi, { forza: Boolean(CORREZIONE) });
     }
-    return { cartella: nome, brief, sorgenti, frasi: cache.frasi, foto, fps: fpsVideo(sorgenti) };
+    return {
+      cartella: nome, brief, sorgenti, frasi: cache.frasi, foto, fps: fpsVideo(sorgenti),
+      impronta, modoDiscorso: DISCORSO,
+      ...(intera && !CORREZIONE && !RIRENDER ? { avvisi: cache.avvisi || [] } : {}),
+    };
   }
 
   // inviluppi audio (dall'originale: si legge solo la traccia audio) e rilevamento parlato
@@ -2076,7 +2131,10 @@ export async function analizza(nome, brief, cache) {
   for (let k = 0; k < principali.length; k++) {
     const p = principali[k];
     if (!p.voce) { p.voce = `${p.id}.voce.wav`; estraiVoce(p.originale, path.join(MEDIA, p.voce)); }
-    let parole = parolePrecedenti(p.file) || parolePrecedenti(p.voce);
+    const cCache = cacheSorgente(cache, p, opzioniCache);
+    const byteDiverso = (cache?.sorgenti || []).some((x) => x.id === p.id && x.byte != null && x.byte !== p.byte);
+    let parole = cCache?.parole || (!byteDiverso ? (parolePrecedenti(p.file) || parolePrecedenti(p.voce)) : undefined);
+    if (cCache?.parole) log(`${p.id}: trascrizione dalla cache`);
     if (!parole && process.env.GROQ_API_KEY) {
       parole = await trascrivi(path.join(MEDIA, p.voce), 'it', nomiDelVideo(brief, nome));
       consumi.groqSec += p.durata;
@@ -2101,6 +2159,8 @@ export async function analizza(nome, brief, cache) {
   }
   // clip "audio …" (stile reazione): cosa dice l'altro e quando, per scegliere il pezzo giusto da far sentire
   for (const s of sorgenti.filter((x) => x.audioClip && !x.testoClip)) {
+    const gia = cacheSorgente(cache, s, opzioniCache);
+    if (gia?.testoClip) { s.testoClip = gia.testoClip; continue; }
     if (!process.env.GROQ_API_KEY) break;
     try {
       const w = await trascrivi(s.originale, null);
@@ -2121,8 +2181,15 @@ export async function analizza(nome, brief, cache) {
   // (il volto che parla dura quanto il parlato; i B-roll corti restano B-roll) e solo 45 s.
   const vociVideo = sorgenti.filter((s) => s.principale && s.tipo === 'video');
   const durataVoce = Math.max(0, ...vociVideo.map((p) => p.durata));
+  for (const s of sorgenti.filter((x) => x.tipo === 'video' && x.audioMuto && !x.sync && !x.principale)) {
+    const c = cacheSorgente(cache, s, opzioniCache);
+    if (!c?.provataVisiva && !c?.sync?.visivo) continue;
+    if (c.sync) s.sync = c.sync;
+    s.provataVisiva = true;
+    log(`sync dalle immagini ${s.id}: già in cache, non ricodifico il 4K`);
+  }
   const movRif = new Map();
-  for (const s of sorgenti.filter((x) => x.tipo === 'video' && x.audioMuto && !x.sync && !x.principale && x.durata >= Math.max(15, durataVoce * 0.4))) {
+  for (const s of sorgenti.filter((x) => x.tipo === 'video' && x.audioMuto && !x.sync && !x.principale && !x.provataVisiva && x.durata >= Math.max(15, durataVoce * 0.4))) {
     s.provataVisiva = true;
     const t0 = Date.now();
     await fase(nome, `🔗 ${s.id} ha l'audio muto: la aggancio alla voce dalle immagini (qualche minuto)`, 'prepara');
@@ -2143,14 +2210,7 @@ export async function analizza(nome, brief, cache) {
   }
   movRif.clear();
 
-  // fogli provino: per le camere sincronizzate i tempi scritti sono quelli della voce. Nel discorso
-  // non servono (niente scelte di inquadrature): su 4–5 minuti di girato si risparmia tempo
-  const senzaFogli = DISCORSO && tutteFrasi.length >= 3;
-  for (const s of sorgenti.filter((x) => x.tipo === 'video')) {
-    if (senzaFogli) { s.fogli = []; continue; }
-    const fp = fogliProvino(s.originale, s.id, s.durata, s.sync ? s.sync.offset : 0, s.colore);
-    s.fogli = fp.fogli; s.passoFogli = fp.passo;
-  }
+  await faiFogli(sorgenti, tutteFrasi);
   // camere con audio muto e non sincronizzate: Denis deve saperlo (di solito un
   // ricevitore wireless collegato alla presa microfono ma spento, che esclude il microfono interno)
   const avvisi = sorgenti.filter((s) => s.provataVisiva).map((s) => s.sync
@@ -2161,7 +2221,7 @@ export async function analizza(nome, brief, cache) {
   if (/\bi-?log\b/i.test(brief || '') && !/\b(senza|no)\s+i-?log\b/i.test(brief || '') && !sorgenti.some((s) => s.colore?.log)) {
     avvisi.push('nel brief c\'è "i-Log" ma nessuna clip è riconosciuta come Insta360: colori lasciati come sono');
   }
-  return { cartella: nome, brief, sorgenti, frasi: tutteFrasi, foto, avvisi, fps: fpsVideo(sorgenti) };
+  return { cartella: nome, brief, sorgenti, frasi: tutteFrasi, foto, avvisi, fps: fpsVideo(sorgenti), impronta, modoDiscorso: DISCORSO };
 }
 
 // ---------- main ----------
