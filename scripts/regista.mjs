@@ -279,9 +279,21 @@ const modelloDebole = () => /lite/i.test(String(consumi.ai?.modello || ''));
 function sequenzaPulita(r) {
   if (modelloDebole()) { discorso.tenute = discorso.sequenza.length; discorso.riserva = true; return discorso.sequenza; }
   const scelte = new Set((r.sequenza || []).map((y) => normFrase(y.frase)));
-  const tenute = discorso.sequenza.filter((it) => scelte.has(it.frase));
+  let tenute = discorso.sequenza.filter((it) => scelte.has(it.frase));
+  // se una frase tenuta rimanda a prima e la precedente è stata tolta, la rimetto:
+  // «quindi questo per» → «me è un best buy» non deve più succedere
+  const RIMANDO_LOC = /^(appunto|però|quindi|anche|ma|perché|poi|infatti|cioè|questo|questa|questi|queste|l'unica|l'unico|invece|allora|comunque)\b/i;
+  for (let i = 0; i < tenute.length; i++) {
+    const f = analisiCorrente?.frasi.find((x) => x.id === tenute[i].frase);
+    if (!f || !RIMANDO_LOC.test(f.testo.trim())) continue;
+    const k = analisiCorrente.frasi.indexOf(f);
+    const prec = analisiCorrente.frasi.slice(Math.max(0, k - 2), k).reverse().find((g) => g.principale === f.principale);
+    if (!prec || tenute.some((it) => it.frase === prec.id)) continue;
+    const pos = discorso.sequenza.findIndex((it) => it.frase === prec.id);
+    if (pos >= 0) tenute.splice(i, 0, discorso.sequenza[pos]);
+  }
   const durata = (seq) => seq.reduce((t, it) => { const f = analisiCorrente?.frasi.find((x) => x.id === it.frase); return t + (f ? f.fine - f.inizio : 0); }, 0);
-  const buona = tenute.length >= 3 && durata(tenute) >= 0.6 * durata(discorso.sequenza);
+  const buona = tenute.length >= 3 && durata(tenute) >= 0.7 * durata(discorso.sequenza);
   discorso.tenute = buona ? tenute.length : discorso.sequenza.length;
   return buona ? tenute : discorso.sequenza;
 }

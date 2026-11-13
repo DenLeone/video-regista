@@ -202,6 +202,10 @@ export function risolviRegia(regia, analisi) {
         // col rallentatore serve meno sorgente: dur / lento secondi
         if (b && b.tipo === 'video' && b.durata >= dur / lento) {
           let da = Math.max(0, Number(it.da) || 0);
+          // evita i primi e gli ultimi 0,4 s: spesso sono l'attacco e lo stop della mano
+          const margine = 0.4;
+          if (da < margine && b.durata - dur / lento > margine * 2) da = margine;
+          if (da + dur / lento > b.durata - margine && b.durata > dur / lento + margine) da = Math.max(0, b.durata - dur / lento - margine);
           if (da + dur / lento > b.durata) da = Math.max(0, b.durata - dur / lento - 0.05);
           clip = { file: b.file, start: +da.toFixed(3), end: +(da + dur).toFixed(3), orient: b.orient, audio, broll: true, ...(lento > 1 ? { lento } : {}) };
         } else avvisi.push(`B-roll ${it.broll} ${b ? 'troppo corto' : 'inesistente'} per ${f.id}: uso un'inquadratura della voce`);
@@ -323,6 +327,13 @@ export function risolviRegia(regia, analisi) {
   });
   if (usate[0] && (RIMANDO.test(usate[0].testo.trim()) || /\bappunto\b/i.test(usate[0].testo.split(/\s+/).slice(0, 8).join(' ')))) {
     avvisi.push(`l'apertura (${usate[0].id}) rimanda a qualcosa detto prima: scegli un aggancio che si capisce da solo`);
+    // se c'è una frase più avanti che non rimanda, la porto in testa
+    const migliore = usate.findIndex((f, i) => i > 0 && !RIMANDO.test(f.testo.trim()) && !/\bappunto\b/i.test(f.testo.split(/\s+/).slice(0, 8).join(' ')));
+    if (migliore > 0) {
+      const it = sequenza.splice(sequenza.findIndex((x) => normFrase(x.frase) === usate[migliore].id), 1)[0];
+      sequenza.unshift(it);
+      avvisi.push(`apertura spostata su ${usate[migliore].id}: la prima rimandava a prima`);
+    }
   }
   // una frase che rimanda a prima va dopo una delle 3 frasi che la precedono nel girato
   // (si possono saltare una falsa partenza o un inciso, non un pezzo di discorso)
@@ -330,7 +341,16 @@ export function risolviRegia(regia, analisi) {
     if (!RIMANDO.test(f.testo.trim())) return;
     const k = analisi.frasi.indexOf(f);
     const prima = analisi.frasi.slice(Math.max(0, k - 3), k).filter((g) => g.principale === f.principale);
-    if (prima.length && !prima.includes(usate[i - 1])) avvisi.push(`${f.id} ("${f.testo.split(' ').slice(0, 3).join(' ')}…") è staccata da ciò a cui si riferisce (${prima[prima.length - 1].id})`);
+    if (prima.length && !prima.includes(usate[i - 1])) {
+      avvisi.push(`${f.id} ("${f.testo.split(' ').slice(0, 3).join(' ')}…") è staccata da ciò a cui si riferisce (${prima[prima.length - 1].id})`);
+      // inserisco la frase a cui si riferisce, se non è già nella sequenza
+      const ref = prima[prima.length - 1];
+      if (!sequenza.some((it) => normFrase(it.frase) === ref.id)) {
+        const pos = sequenza.findIndex((it) => normFrase(it.frase) === f.id);
+        if (pos >= 0) sequenza.splice(pos, 0, { frase: ref.id, camera: sequenza[pos].camera });
+        avvisi.push(`${f.id} agganciata a ${ref.id}: era staccata`);
+      }
+    }
   });
   // con parlato disponibile, una regia che non usa (quasi) nessuna frase valida è da rifare con l'altra AI
   if (analisi.frasi.length) {
