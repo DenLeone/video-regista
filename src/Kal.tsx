@@ -111,13 +111,15 @@ const Tappetino: React.FC = () => (
   </AbsoluteFill>
 );
 
-const Riquadro: React.FC<{ clip: Clip; len: number }> = ({ clip, len }) => {
+const Riquadro: React.FC<{ clip: Clip; len: number; parola: boolean }> = ({ clip, len, parola }) => {
   const fr = useCurrentFrame();
   const entra = interpolate(fr, [0, 8], [0, 1], { ...clamp, easing: Easing.out(Easing.cubic) });
   const ins = clip.inserto;
   const immagine = ins?.tipo === 'immagine';
   // sotto la parola grande (in alto da 250): prima il riquadro partiva da 240 e la parola ci finiva sopra (banco, 11/11)
-  const w = 720, h = 1000, top = 700;
+  // Il prodotto deve vedersi GRANDE (Denis, 13/11: «la finestra è piccola e in basso»): quasi tutta la larghezza
+  // e più di metà schermo. Con la parola grande in alto parte subito sotto; senza, sale e prende quasi tutto.
+  const w = 940, top = parola ? 730 : 300, h = parola ? 1070 : 1380; // 730: sotto una parola grande su due righe
   return (
     <AbsoluteFill>
       <Tappetino />
@@ -151,7 +153,7 @@ export const Kal: React.FC<Piano> = (piano) => {
       <Clips piano={{ ...piano, clips: piano.clips.map((c) => (c.inserto ? { ...c, inserto: undefined } : c)) }} fondo="#0A0A0A" />
       {riquadri.map(({ c, da, len }, i) => (
         <Sequence key={`r${i}`} from={da} durationInFrames={len}>
-          <Riquadro clip={c} len={len} />
+          <Riquadro clip={c} len={len} parola={titoli.some((k) => f(k.at) < da + len && f(k.at + k.dur) > da)} />
         </Sequence>
       ))}
       <Icone piano={piano} sfx={sfx} />
