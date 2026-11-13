@@ -373,12 +373,22 @@ export async function pianoDelGiorno(d: DepsSocial, ora = Date.now()): Promise<s
 }
 
 // pagine minime richieste dalla configurazione dell'app TikTok (uso personale, nessun dato di terzi)
-export const PAGINA_PRIVACY = `<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Privacy</title>
-<body style="font:16px/1.5 system-ui;max-width:640px;margin:40px auto;padding:0 16px">
-<h1>Privacy</h1><p>Questo strumento è ad uso personale di Denis Nusinovic (.blackden). Legge solo le statistiche pubbliche e aggregate dei video del suo account (visualizzazioni, like, commenti, condivisioni) per inviargli un riepilogo privato su Telegram.</p>
-<p>Non raccoglie dati di altri utenti, non li vende né li condivide. I token di accesso sono conservati cifrati su Cloudflare e si possono revocare in qualsiasi momento dalle impostazioni di TikTok.</p>
-</body>`;
-export const PAGINA_TERMINI = `<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Termini</title>
-<body style="font:16px/1.5 system-ui;max-width:640px;margin:40px auto;padding:0 16px">
-<h1>Termini di servizio</h1><p>Strumento privato, usato solo dal titolare dell'account per leggere le statistiche dei propri video. Nessun servizio è offerto a terzi. Fornito così com'è, senza garanzie.</p>
-</body>`;
+export const PAGINA_PRIVACY = `<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Privacy Policy · BlackDen Regista</title><style>body{font:17px/1.6 system-ui,sans-serif;max-width:720px;margin:0 auto;padding:32px 16px;color:#1b1b1b;background:#fff}h1{font-size:26px}h2{font-size:19px;margin-top:28px}</style>
+<h1>Privacy Policy</h1>
+<p><b>BlackDen Regista</b> is a private tool used only by the owner of the TikTok account it is connected to (the creator @_black_den). It is not offered to other users.</p>
+<h2>What data we access</h2>
+<p>With the creator's explicit authorization (TikTok Login Kit), the tool uses: basic profile info (open ID, display name) to confirm the connected account; the <i>video.upload</i> permission to send videos edited by the creator to his own TikTok inbox as drafts, which he reviews and posts himself in the TikTok app; and, when authorized, the list and public statistics of his own videos (views, likes, comments, shares) to send him a private summary.</p>
+<h2>What we do not do</h2>
+<p>We do not access data of other TikTok users, we do not sell, share or use data for advertising, and we do not post anything without the creator's action in the TikTok app.</p>
+<h2>Storage and deletion</h2>
+<p>Access tokens are stored encrypted on Cloudflare and used only for the purposes above. The creator can revoke access at any time from TikTok (Settings → Security → Apps and permissions); tokens are then deleted. Video files are processed on temporary servers and deleted after upload.</p>
+<h2>Contact</h2>
+<p>For any request about this policy, contact the account owner via TikTok direct message to @_black_den.</p>
+<hr><p lang="it"><i>In italiano: strumento privato del titolare dell'account. Carica come bozze i suoi video montati e legge le statistiche dei suoi video. Non tocca dati di altri, non vende né condivide nulla; l'accesso si revoca da TikTok in qualsiasi momento.</i></p>`;
+export const PAGINA_TERMINI = `<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Terms of Service · BlackDen Regista</title><style>body{font:17px/1.6 system-ui,sans-serif;max-width:720px;margin:0 auto;padding:32px 16px;color:#1b1b1b;background:#fff}h1{font-size:26px}h2{font-size:19px;margin-top:28px}</style>
+<h1>Terms of Service</h1>
+<p><b>BlackDen Regista</b> is a private video-editing assistant used exclusively by the owner of the connected TikTok account (@_black_den) to edit his own videos and send them to his TikTok inbox as drafts, and to read the statistics of his own videos.</p>
+<p>No service is offered to third parties and there is no registration. By connecting the account, the owner authorizes only the permissions shown on the TikTok authorization screen and can revoke them at any time from TikTok.</p>
+<p>All content uploaded is created by the account owner, who reviews and publishes it himself in the TikTok app and remains responsible for it in accordance with TikTok's Terms of Service and Community Guidelines.</p>
+<p>The tool is provided "as is", without warranties. These terms may be updated; the current version is always at this address.</p>
+<hr><p lang="it"><i>In italiano: strumento privato del titolare dell'account, che lo usa per montare i propri video e mandarli come bozze su TikTok. Nessun servizio a terzi; i permessi si revocano da TikTok in qualsiasi momento.</i></p>`;
