@@ -46,6 +46,10 @@ export function risolviRegia(regia, analisi) {
   // al massimo 2 e 7 s in più; se il punto non arriva non aggiungo niente e lo segnalo
   const sequenza = [...(regia.sequenza || [])];
   const ultimo = sequenza.map((it) => Boolean(it.frase)).lastIndexOf(true);
+  // una frase chiude il discorso se ha il punto, oppure se dopo non c'è altro detto di seguito
+  // (fine della ripresa o pausa lunga): Whisper spesso non mette il punto all'ultima frase
+  // (13/11, X5 Video 01: «…nel Black Friday scenda | perché dovrebbe scendere» senza punto finale)
+  const chiude = (g) => /[.!?…]/.test(g.testo) || !successiva(analisi.frasi, g);
   const fUltima = ultimo >= 0 ? frasi.get(normFrase(sequenza[ultimo].frase)) : null;
   if (fUltima && successiva(analisi.frasi, fUltima)) {
     const catena = [];
@@ -53,9 +57,9 @@ export function risolviRegia(regia, analisi) {
       const g = successiva(analisi.frasi, f);
       if (!g || sequenza.some((it) => normFrase(it.frase) === g.id) || (extra += g.fine - g.inizio) > 7) break;
       catena.push(g); f = g;
-      if (/[.!?…]/.test(g.testo)) break;
+      if (chiude(g)) break;
     }
-    const fino = catena.findIndex((g) => /[.!?…]/.test(g.testo));
+    const fino = catena.findIndex(chiude);
     if (fino >= 0) {
       catena.slice(0, fino + 1).forEach((g, n) => sequenza.splice(ultimo + 1 + n, 0, { frase: g.id, camera: sequenza[ultimo].camera }));
       avvisi.push(`chiusura completata con ${catena.slice(0, fino + 1).map((g) => g.id).join(', ')}: l'ultima frase era a metà`);
