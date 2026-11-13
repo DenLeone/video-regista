@@ -38,6 +38,8 @@ Colore titoli: #FFFFFF
 Colore accento: #FFE62E       # sottotitolo dei titoli
 Colori parole grandi: #F4E41C, #F2231B, #C6E01F, #E4E4E4   # con Sottotitoli: strati, le parole chiave prendono questi colori a giro
 Posizione titoli: alto        # alto | centro | basso
+Titolo prodotto: no           # marca e modello = una volta, all'inizio: marca enorme nel colore d'accento e modello bianco largo sopra
+Etichette tecniche: no        # sì = specifiche (es. «0,2 s», «8K») con una linea che punta al dettaglio inquadrato
 
 # --- IMMAGINE ---
 Look: naturale                # sempre naturale: Denis non vuole modifiche ai colori (gli altri look sono disattivati)
@@ -47,6 +49,7 @@ Bianco e nero: no             # no | uno (un solo momento breve: Ultra) | moment
 Vignettatura: 0               # sempre 0 (colori naturali)
 Inizio: normale               # sempre normale ("prima e dopo" disattivato: colori naturali)
 Tagli dentro le frasi: no     # sì = ritmo veloce: l'inquadratura può cambiare a metà frase, sulla parola che nomina la cosa
+Invito a commentare: no       # sì = finale «COMMENTA: PAROLA» + «CHE TI MANDO IL LINK» (la parola la sceglie l'AI)
 Chiusura: no                  # no | il tuo nome Instagram (es. @_black_den): finale scurito con logo e nome
 Firma: no                     # no | il tuo nome Instagram: logo e nome fissi in basso a sinistra per tutto il video
 Transizioni: no               # no | fumo (nuvola che copre il taglio nei cambi di scena scelti dall'AI) | sfocata (scia sfocata veloce sul taglio) | pellicola (bruciatura di pellicola, lampo caldo arancione sul taglio: film burn / light leak)
@@ -109,7 +112,7 @@ const GRAFICA = ['nome', 'apertura', 'font apertura', 'colore apertura', 'sottot
   'colore accento', 'posizione titoli', 'look', 'bianco e nero', 'vignettatura', 'effetti sonori', 'musica', 'volume musica',
   'font corsivo', 'enfasi corsivo', 'scritte dietro di me', 'soggetto in risalto', 'sfondo sfocato', 'inizio', 'chiusura', 'tagli dentro le frasi',
   'entrata parole grandi', 'firma', 'transizioni', 'cornice pellicola', 'inserti', 'b-roll stock', 'colori parole grandi', 'montaggio',
-  'maiuscolo parole grandi', 'righe'];
+  'maiuscolo parole grandi', 'righe', 'titolo prodotto', 'etichette tecniche', 'invito a commentare'];
 
 /** stile.txt → { grafica, testoAI, musica, campi } */
 export function leggiStile(testo, nomeCartella) {
@@ -183,6 +186,10 @@ export function leggiStile(testo, nomeCartella) {
   if (palette?.length) g.palette = palette.map((c) => colore(c, '#FFFFFF'));
   if (campi.inserti) g.cornice = /tv|telev/.test(norm(campi.inserti)) ? 'tv' : /reaz|rispost|blackden/.test(norm(campi.inserti)) ? 'reazione' : /lato|later|piccol/.test(norm(campi.inserti)) ? 'laterale' : 'scheda';
   if (campi['b-roll stock']) g.stock = si(campi['b-roll stock']);
+  // mattoni del 13/11 (src/Mattoni.tsx)
+  if (campi['titolo prodotto']) g.titoloProdotto = !/^no\b/.test(norm(campi['titolo prodotto']));
+  if (campi['etichette tecniche']) g.etichette = si(campi['etichette tecniche']);
+  if (campi['invito a commentare']) g.commenta = si(campi['invito a commentare']);
   // Montaggio: beat = video a tempo di musica, senza voce né regia dell'AI (scripts/beat.mjs)
   if (/beat|tempo/.test(norm(campi.montaggio))) g.beat = true;
   // i blocchi fanno già le parole chiave enormi: "parole grandi" o "frasi" in più si sovrapporrebbero
@@ -227,6 +234,10 @@ export function promptSuMisura(g, testoAI, disponibili = {}) {
       '- `enfasi` (campo in cima alla regia, accanto a `titolo`): le parole chiave di TUTTO il video, nell\'ordine in cui le dice: una ogni ~2–3 s di parlato (circa 20–25 al minuto). Ognuna 1–3 parole dette di fila (al massimo ~13 caratteri), copiate esattamente come le dice (es. `["DIMESSO", "I SUOI RUOLI", "CENSURATO", "45 EURO"]`): i concetti che pesano (nomi, numeri, verbi e aggettivi forti), mai articoli, preposizioni o verbi di servizio. Una parola ripetuta più volte va scritta tante volte quante deve uscire grande.');
   }
   if (g.dietro) righe.push('- Le scritte grandi passano dietro a Denis (ritaglio automatico): mettile su inquadrature dove lui è in campo, a figura intera o mezzo busto.');
+  // mattoni del 13/11 (src/Mattoni.tsx)
+  if (g.titoloProdotto) righe.push('- **Titolo prodotto** (campo in cima alla regia): `"titolo_prodotto": {"marca": "INSTA360", "modello": "X5", "frase": "F003", "ritardo": 0.2}`: UNA volta, quando Denis nomina il prodotto per la prima volta (di solito nei primi secondi), su un\'inquadratura dove si vede bene il prodotto e NON c\'è un altro titolo. Marca e modello esatti, come scritti sul prodotto.');
+  if (g.etichette) righe.push('- **Etichette tecniche** (campo in cima alla regia): `"etichette": [{"frase": "F010", "ritardo": 0.3, "testo": "8K 360°", "sotto": "risoluzione", "x": 0.55, "y": 0.40}]`: 2–4 in tutto, quando Denis dice un dato tecnico (numero, misura, funzione) MENTRE si vede il pezzo del prodotto a cui si riferisce (B-roll o macro). `testo` = il dato, cortissimo (max ~10 caratteri, es. "0,2 S", "1/1.5\"", "IP68"); `sotto` = 1–3 parole su cosa è (facoltativo); `x`, `y` = dove si trova quel pezzo nel video verticale finale (0–1 da sinistra e dall\'alto; guardalo nei fogli provino; il centro è 0.5, 0.45). Mai due etichette a meno di 4 s, mai sul volto di Denis. Solo dati che Denis dice davvero.');
+  if (g.commenta) righe.push('- **Invito a commentare** (campo in cima alla regia): `"commenta": {"parola": "X5", "riga": "CHE TI MANDO IL LINK"}`: finale a tutto schermo negli ultimi 3 s. `parola` = una parola corta (max 10 lettere) legata al prodotto, che la gente scrive nei commenti per ricevere il link (di solito il nome o il modello). Lascia gli ultimi 3 s del video su un\'inquadratura tranquilla (prodotto o Denis), senza altre scritte.');
   if (g.titoli && g.tipoTitoli === 'frasi') {
     righe.push('- `keywords` = le FRASI FORTI: 3–5 momenti del video (dopo l\'apertura) in cui Denis dice qualcosa di forte (una promessa, un numero, una svolta del racconto, la chiusura). Ognuna ancorata alla frase in cui la dice (`frase`, `ritardo` 0–1 s), `dur` 2–3,5 s, a distanza di almeno 6 s una dall\'altra.',
       '  - Sono le SUE parole, prese dalla frase: `tag` = la parte piccola che introduce (in corsivo, 2–6 parole, es. "e la cosa che mi ha"), `word` = 1–3 parole chiave enormi (es. "STUPITO", "45 EURO"), `note` = coda piccola facoltativa (es. "più di tutto"). Mai inventare parole che non dice.',

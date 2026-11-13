@@ -422,6 +422,29 @@ export function risolviRegia(regia, analisi) {
   schermate.sort((a, b) => a.at - b.at);
   for (let i = 1; i < schermate.length; i++) if (schermate[i - 1].at + schermate[i - 1].dur > schermate[i].at - 0.1) schermate[i - 1].dur = q(Math.max(0.8, schermate[i].at - schermate[i - 1].at - 0.1));
 
+  // mattoni del 13/11 (src/Mattoni.tsx): titolo marca/modello, etichette tecniche, invito a commentare
+  let titoloProdotto = null;
+  const tp = regia.titolo_prodotto;
+  if (tp?.marca && tp?.modello) {
+    const at = tp.frase ? inizioFrase(tp.frase) : tp.elemento != null ? inizioElemento(tp.elemento) : 0;
+    if (at == null) avvisi.push('titolo prodotto: frase non usata nel montaggio, tolto');
+    else titoloProdotto = { at: q(Math.max(0, Math.min(totale - 1.5, at + (Number(tp.ritardo) || 0)))), dur: q(Math.min(3.5, Math.max(1.5, Number(tp.dur) || 2.6))),
+      marca: String(tp.marca).trim().slice(0, 20), modello: String(tp.modello).trim().slice(0, 24) };
+  }
+  const tra = (v, min, max, rip) => (Number.isFinite(Number(v)) ? Math.min(max, Math.max(min, Number(v))) : rip);
+  const etichette = [];
+  for (const e of Array.isArray(regia.etichette) ? regia.etichette.slice(0, 8) : []) {
+    const at = e?.frase ? inizioFrase(e.frase) : e?.elemento != null ? inizioElemento(e.elemento) : null;
+    if (at == null || !e?.testo) { avvisi.push(`etichetta ${e?.testo || '?'}: ${e?.testo ? 'frase non usata nel montaggio' : 'senza testo'}, tolta`); continue; }
+    etichette.push({ at: q(Math.min(totale - 1, at + Math.max(0, Number(e.ritardo) || 0))), dur: q(tra(e.dur, 1.2, 3.2, 2.2)),
+      testo: String(e.testo).trim().slice(0, 22), ...(e.sotto ? { sotto: String(e.sotto).trim().slice(0, 30) } : {}),
+      x: +tra(e.x, 0.08, 0.92, 0.5).toFixed(3), y: +tra(e.y, 0.15, 0.8, 0.45).toFixed(3) });
+  }
+  etichette.sort((a, b) => a.at - b.at);
+  for (let i = 1; i < etichette.length; i++) if (etichette[i - 1].at + etichette[i - 1].dur > etichette[i].at - 0.1) etichette[i - 1].dur = q(Math.max(0.8, etichette[i].at - etichette[i - 1].at - 0.1));
+  const commenta = regia.commenta?.parola ? { parola: String(regia.commenta.parola).trim().toUpperCase().slice(0, 16),
+    riga: String(regia.commenta.riga || 'CHE TI MANDO IL LINK').trim().toUpperCase().slice(0, 32), dur: q(tra(regia.commenta.dur, 2, 4, 3)) } : null;
+
   const sponsorAt = regia.sponsor && regia.sponsorFrase ? inizioFrase(regia.sponsorFrase) ?? 0 : 0;
 
   return {
@@ -433,6 +456,9 @@ export function risolviRegia(regia, analisi) {
       ...(icone.length ? { icone } : {}),
       ...(schede.length ? { schede } : {}),
       ...(schermate.length ? { schermate } : {}),
+      ...(titoloProdotto ? { titoloProdotto } : {}),
+      ...(etichette.length ? { etichette } : {}),
+      ...(commenta ? { commenta } : {}),
       sponsor: regia.sponsor || null,
       sponsorAt,
       note: [regia.note, ...avvisi.map((a) => `⚠️ ${a}`)].filter(Boolean).join(' · '),

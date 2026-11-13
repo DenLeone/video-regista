@@ -81,6 +81,11 @@ export type Piano = {
   // stile su misura: la grafica letta da Drive (Stili/<nome>/stile.txt, vedi scripts/stile-su-misura.mjs)
   grafica?: GraficaStile;
   enfasi?: string[];        // parole dell'apertura da fare enormi (scelte dall'AI negli stili su misura)
+  // mattoni del 13/11 (stile Tech Macro, src/Mattoni.tsx): titolo marca/modello a due livelli, etichette
+  // tecniche con puntatore sul dettaglio (x, y = punto nel video verticale, 0–1), invito a commentare finale
+  titoloProdotto?: { at: number; dur: number; marca: string; modello: string };
+  etichette?: { at: number; dur: number; testo: string; sotto?: string; x: number; y: number }[];
+  commenta?: { parola: string; riga: string; dur: number };
   // fotogrammi al secondo del video: quelli della camera principale (24 con la Sony a 23,98, 30
   // con l'iPhone). Senza, 30. A 30 fps il girato a 24p ripeteva un fotogramma ogni quattro (scatti)
   fps?: number;
@@ -116,6 +121,9 @@ export type GraficaStile = {
   firma?: string;                            // logo Instagram e nome (es. @_black_den) fissi in basso a sinistra
   cornice?: 'scheda' | 'tv' | 'reazione' | 'laterale'; // inserti: scheda arrotondata, televisore anni '70, scheda in prospettiva dietro a Denis o piccola inclinata di lato (Ultra)
   suoni?: Record<string, string>;            // effetti sonori dello stile (asset/suoni): nome → file in public
+  titoloProdotto?: boolean;                  // «Titolo prodotto: marca e modello» (src/Mattoni.tsx)
+  etichette?: boolean;                       // «Etichette tecniche: sì»
+  commenta?: boolean;                        // «Invito a commentare: sì»
   beat?: boolean;                            // montaggio a tempo di musica (stile Beat)
   stock?: boolean;                           // l'AI può chiedere B-roll di repertorio (Pixabay o Pexels, se c'è la chiave)
   fontCorsivo: FontStile;                    // la frase piccola delle scritte a due livelli

@@ -8,6 +8,7 @@ import { BlocchiMotion, blocchiParlato, Cartello, CornicePellicola, Firma, Fumi,
 import { BlocchiUltra, Sfocature } from './Ultra';
 import { InsertiReazione, SchedeInfo } from './Reazione';
 import { Beat } from './Beat';
+import { Mattoni } from './Mattoni';
 
 // Stile "su misura": tutta la grafica arriva da Drive (Stili/<nome>/stile.txt, letto da
 // scripts/stile-su-misura.mjs) dentro piano.grafica. Nessun codice per uno stile nuovo.
@@ -424,6 +425,7 @@ export const SuMisura: React.FC<Piano> = (piano) => {
       ))}
 
       <Icone piano={piano} sfx={sfx} />
+      <Mattoni piano={piano} g={g} totale={totale} sfx={sfx} />
       <MusicaSotto piano={piano} />
 
       {g.chiusura && totale > CHIUSURA * 2 ? (
