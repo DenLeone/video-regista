@@ -1317,7 +1317,9 @@ async function regiaConGemini(prompt, fogli, valida) {
         if (problemi.length) {
           log(`Gemini: rilettura della regia (${problemi.join(' | ')})`);
           await fase(job.nome, `✍️ Rileggo la regia: ${problemi.length} punt${problemi.length === 1 ? 'o' : 'i'} da sistemare nel racconto`, 'regia');
-          const correzione = [...contents, { role: 'model', parts: [{ text: testo }] }, { role: 'user', parts: [{ text:
+          // senza i fogli: la rilettura è solo sul testo, e con le immagini andava in timeout
+          const soloTesto = contents.map((c) => ({ ...c, parts: (c.parts || []).filter((p) => p.text) }));
+          const correzione = [...soloTesto, { role: 'model', parts: [{ text: testo }] }, { role: 'user', parts: [{ text:
             `Il controllo automatico del tuo montaggio ha trovato:\n- ${problemi.join('\n- ')}\n`
             + 'Riscrivi la regia COMPLETA correggendo questi punti: ordine del discorso di Denis, frasi che rimandano a prima messe dopo ciò a cui si riferiscono, frasi lasciate a metà seguite dalla loro continuazione, apertura che si capisce da sola, chiusura su una frase che finisce col punto. Stesse regole, stesso formato JSON.' }] }];
           const esito2 = await chiamaGemini(modello, JSON.stringify({ contents: correzione, generationConfig }), headers, { scadenza });

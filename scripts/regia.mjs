@@ -43,7 +43,7 @@ export function risolviRegia(regia, analisi) {
 
   // la chiusura non resta mai a metà frase: se l'ultima frase continua nella successiva
   // (stessa voce, senza punto né pausa) aggiungo le frasi che servono ad arrivare a un punto,
-  // al massimo 2 e 7 s in più; se il punto non arriva non aggiungo niente e lo segnalo
+  // al massimo 4 e 12 s in più; se il punto non arriva non aggiungo niente e lo segnalo
   const sequenza = [...(regia.sequenza || [])];
   const ultimo = sequenza.map((it) => Boolean(it.frase)).lastIndexOf(true);
   // una frase chiude il discorso se ha il punto, oppure se dopo non c'è altro detto di seguito
@@ -53,9 +53,9 @@ export function risolviRegia(regia, analisi) {
   const fUltima = ultimo >= 0 ? frasi.get(normFrase(sequenza[ultimo].frase)) : null;
   if (fUltima && successiva(analisi.frasi, fUltima)) {
     const catena = [];
-    for (let f = fUltima, extra = 0; catena.length < 2;) {
+    for (let f = fUltima, extra = 0; catena.length < 4;) {
       const g = successiva(analisi.frasi, f);
-      if (!g || sequenza.some((it) => normFrase(it.frase) === g.id) || (extra += g.fine - g.inizio) > 7) break;
+      if (!g || sequenza.some((it) => normFrase(it.frase) === g.id) || (extra += g.fine - g.inizio) > 12) break;
       catena.push(g); f = g;
       if (chiude(g)) break;
     }
@@ -68,14 +68,15 @@ export function risolviRegia(regia, analisi) {
 
   // ripartenze dentro la stessa frase: "…in più versioni e quindi mi | E quindi mi interessava…"
   // (Lark A2): se la frase dopo comincia con le ultime parole di quella prima, la prima si
-  // accorcia prima delle parole ripetute (tempi parola di Whisper, con un filo di margine)
+  // accorcia prima delle parole ripetute. Solo con almeno 3 parole in comune: 2 parole
+  // (o una congiunzione) tagliano troppo e lasciano frasi monche.
   const fineTaglio = new Map();
   sequenza.forEach((it, idx) => {
     const f = frasi.get(normFrase(it.frase)), g = frasi.get(normFrase(sequenza[idx + 1]?.frase));
     if (!f || !g || f.principale !== g.principale) return;
     const pf = paroleDi(f.testo), pg = paroleDi(g.testo);
     let k = 0;
-    for (let n = Math.min(5, pf.length - 2, pg.length - 1); n >= 2; n--) if (pf.slice(-n).join(' ') === pg.slice(0, n).join(' ')) { k = n; break; }
+    for (let n = Math.min(5, pf.length - 2, pg.length - 1); n >= 3; n--) if (pf.slice(-n).join(' ') === pg.slice(0, n).join(' ')) { k = n; break; }
     if (!k) return;
     const parole = (sorgenti.find((x) => x.id === f.principale)?.parole || []).filter((w) => w.s >= f.inizio - 0.3 && w.s < f.fine);
     const prima = parole[parole.length - k];
