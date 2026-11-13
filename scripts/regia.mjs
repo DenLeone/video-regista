@@ -72,7 +72,7 @@ export function risolviRegia(regia, analisi) {
   const falsaPartenza = (g) => (segni.get(g.id) || []).includes('interrotta');
   for (let i = 0; i < sequenza.length; i++) {
     const f = frasi.get(normFrase(sequenza[i].frase));
-    if (!f) continue;
+    if (!f || sequenza[i].fino_a) continue; // «fino_a»: l'AI ha tagliato la coda apposta
     const g = successiva(analisi.frasi, f);
     if (!g || sequenza.some((it) => normFrase(it.frase) === g.id)) continue;
     if (/[,;:]$/.test(f.testo.trim())) continue;
@@ -80,6 +80,35 @@ export function risolviRegia(regia, analisi) {
     if (dopo && falsaPartenza(g) && dopo.principale === g.principale && analisi.frasi.indexOf(dopo) - analisi.frasi.indexOf(g) <= 2) continue;
     sequenza.splice(i + 1, 0, { frase: g.id, camera: sequenza[i].camera });
     avvisi.push(`${f.id} continuata con ${g.id}: era stata lasciata a metà`);
+  }
+
+  // aperture e frasi staccate: si sistemano QUI, prima di costruire le clip (14/11: fatte dopo,
+  // cambiavano solo gli avvisi e spostavano le scritte sulla frase sbagliata)
+  const testaRimanda = (f) => RIMANDO.test(f.testo.trim()) || /\bappunto\b/i.test(f.testo.split(/\s+/).slice(0, 8).join(' '));
+  {
+    const conF = sequenza.map((it, i) => ({ it, i, f: frasi.get(normFrase(it.frase)) })).filter((x) => x.f);
+    // apertura che rimanda a prima: porto in testa una frase che si capisce da sola (chiusa da un
+    // punto, non la chiusura del video e non seguita da una frase che rimanda a lei)
+    if (conF.length > 2 && testaRimanda(conF[0].f)) {
+      const k = conF.findIndex((x, n) => n > 0 && n < conF.length - 1 && finita(x.f.testo) && !testaRimanda(x.f) && !RIMANDO.test(conF[n + 1].f.testo.trim()));
+      if (k > 0) {
+        sequenza.unshift(...sequenza.splice(conF[k].i, 1));
+        avvisi.push(`apertura spostata su ${conF[k].f.id}: ${conF[0].f.id} rimandava a qualcosa detto prima`);
+      }
+    }
+    // frase che rimanda a prima, staccata da ciò a cui si riferisce: inserisco la frase giusta
+    for (let i = 1; i < sequenza.length; i++) {
+      const f = frasi.get(normFrase(sequenza[i].frase));
+      if (!f || !RIMANDO.test(f.testo.trim())) continue;
+      const k = analisi.frasi.indexOf(f);
+      const prima = analisi.frasi.slice(Math.max(0, k - 3), k).filter((g) => g.principale === f.principale);
+      const prec = frasi.get(normFrase(sequenza[i - 1].frase));
+      const ref = prima[prima.length - 1];
+      if (!ref || prima.includes(prec) || sequenza.some((it) => normFrase(it.frase) === ref.id)) continue;
+      sequenza.splice(i, 0, { frase: ref.id, camera: sequenza[i].camera });
+      avvisi.push(`${f.id} agganciata a ${ref.id}: era staccata da ciò a cui si riferisce`);
+      i++;
+    }
   }
 
   // ripartenze dentro la stessa frase: "…in più versioni e quindi mi | E quindi mi interessava…"
@@ -327,13 +356,6 @@ export function risolviRegia(regia, analisi) {
   });
   if (usate[0] && (RIMANDO.test(usate[0].testo.trim()) || /\bappunto\b/i.test(usate[0].testo.split(/\s+/).slice(0, 8).join(' ')))) {
     avvisi.push(`l'apertura (${usate[0].id}) rimanda a qualcosa detto prima: scegli un aggancio che si capisce da solo`);
-    // se c'è una frase più avanti che non rimanda, la porto in testa
-    const migliore = usate.findIndex((f, i) => i > 0 && !RIMANDO.test(f.testo.trim()) && !/\bappunto\b/i.test(f.testo.split(/\s+/).slice(0, 8).join(' ')));
-    if (migliore > 0) {
-      const it = sequenza.splice(sequenza.findIndex((x) => normFrase(x.frase) === usate[migliore].id), 1)[0];
-      sequenza.unshift(it);
-      avvisi.push(`apertura spostata su ${usate[migliore].id}: la prima rimandava a prima`);
-    }
   }
   // una frase che rimanda a prima va dopo una delle 3 frasi che la precedono nel girato
   // (si possono saltare una falsa partenza o un inciso, non un pezzo di discorso)
@@ -341,16 +363,7 @@ export function risolviRegia(regia, analisi) {
     if (!RIMANDO.test(f.testo.trim())) return;
     const k = analisi.frasi.indexOf(f);
     const prima = analisi.frasi.slice(Math.max(0, k - 3), k).filter((g) => g.principale === f.principale);
-    if (prima.length && !prima.includes(usate[i - 1])) {
-      avvisi.push(`${f.id} ("${f.testo.split(' ').slice(0, 3).join(' ')}…") è staccata da ciò a cui si riferisce (${prima[prima.length - 1].id})`);
-      // inserisco la frase a cui si riferisce, se non è già nella sequenza
-      const ref = prima[prima.length - 1];
-      if (!sequenza.some((it) => normFrase(it.frase) === ref.id)) {
-        const pos = sequenza.findIndex((it) => normFrase(it.frase) === f.id);
-        if (pos >= 0) sequenza.splice(pos, 0, { frase: ref.id, camera: sequenza[pos].camera });
-        avvisi.push(`${f.id} agganciata a ${ref.id}: era staccata`);
-      }
-    }
+    if (prima.length && !prima.includes(usate[i - 1])) avvisi.push(`${f.id} ("${f.testo.split(' ').slice(0, 3).join(' ')}…") è staccata da ciò a cui si riferisce (${prima[prima.length - 1].id})`);
   });
   // con parlato disponibile, una regia che non usa (quasi) nessuna frase valida è da rifare con l'altra AI
   if (analisi.frasi.length) {
@@ -560,7 +573,8 @@ function distanza(a, b) {
   return riga[b.length];
 }
 
-const RIMANDO = /^(appunto|però|quindi|anche|ma|perché|poi|infatti|cioè|questo|questa|questi|queste|l'unica|l'unico|invece|allora|comunque)\b/i;
+// fine parola senza \b: con le lettere accentate (però, perché, cioè) \b non scatta mai
+export const RIMANDO = /^(appunto|però|quindi|anche|ma|perché|poi|infatti|cioè|questo|questa|questi|queste|l'unica|l'unico|invece|allora|comunque)(?![\p{L}\p{N}])/iu;
 const finita = (t) => /[.!?…]["»”)]?$/.test(String(t).trim());
 // Tagli dentro un pezzo (10/11, mouse Ajazz: «anche se anche completely black», «nel receiver, nel
 // ricevitore»): gli inciampi stanno nello stesso respiro, senza pausa, e a blocchi interi non si

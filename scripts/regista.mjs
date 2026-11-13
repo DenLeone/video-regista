@@ -30,7 +30,7 @@ import { DIR_ASSETS, DIR_EDITARE, DIR_FATTI, DIR_STILI } from './cartelle.mjs';
 import { preparaSuoni, suoniDelloStile } from './suoni-veri.mjs';
 import { loghiDetti, nomiLogo, scegliFont } from './libreria.mjs';
 import { HDR, curvaChiara, curvaEsposizione, filtroTecnico, misuraPezzo, perFiltro, probe, riconosciLog } from './colore.mjs';
-import { chiaveStock, materialePerAI, normFrase, risolviRegia, sequenzaDiscorso, usaTuttoIlMateriale } from './regia.mjs';
+import { chiaveStock, materialePerAI, normFrase, RIMANDO, risolviRegia, sequenzaDiscorso, usaTuttoIlMateriale } from './regia.mjs';
 import { movimento, syncMovimento } from './sync-visivo.mjs';
 import { LOOK_FFMPEG, leggiStile, promptSuMisura } from './stile-su-misura.mjs';
 import { chiaveStileR2, preparaStileApp } from './stile-app.mjs';
@@ -282,10 +282,9 @@ function sequenzaPulita(r) {
   let tenute = discorso.sequenza.filter((it) => scelte.has(it.frase));
   // se una frase tenuta rimanda a prima e la precedente è stata tolta, la rimetto:
   // «quindi questo per» → «me è un best buy» non deve più succedere
-  const RIMANDO_LOC = /^(appunto|però|quindi|anche|ma|perché|poi|infatti|cioè|questo|questa|questi|queste|l'unica|l'unico|invece|allora|comunque)\b/i;
   for (let i = 0; i < tenute.length; i++) {
     const f = analisiCorrente?.frasi.find((x) => x.id === tenute[i].frase);
-    if (!f || !RIMANDO_LOC.test(f.testo.trim())) continue;
+    if (!f || !RIMANDO.test(f.testo.trim())) continue;
     const k = analisiCorrente.frasi.indexOf(f);
     const prec = analisiCorrente.frasi.slice(Math.max(0, k - 2), k).reverse().find((g) => g.principale === f.principale);
     if (!prec || tenute.some((it) => it.frase === prec.id)) continue;
