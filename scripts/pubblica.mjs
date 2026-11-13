@@ -221,14 +221,20 @@ export async function tiktok(d, video) {
     if (!r.ok) throw new Error(`caricamento TikTok, pezzo ${i + 1}/${totale}: HTTP ${r.status} ${(await r.text()).slice(0, 200)}`);
   }
   log(`TikTok: caricato (${(dati.length / 1e6).toFixed(0)} MB, ${totale} pezzi), attendo la bozza…`);
-  for (let i = 0; i < 40; i++) {
+  // TikTok a volte elabora un video grande per più di 7 minuti (13/11, 116 MB): si aspetta fino a 15, si scrive
+  // nel log ogni cambio di stato e, se sta ancora elaborando, non è un errore: la bozza di solito arriva dopo
+  let ultimo = '';
+  for (let i = 0; i < 90; i++) {
     await attesa(i ? 10000 : 5000);
-    const s = await json(await fetch(`${TT()}/v2/post/publish/status/fetch/`, { method: 'POST', headers: h, body: JSON.stringify({ publish_id: id }) }), 'stato TikTok');
-    const st = s.data?.status;
+    let s;
+    try { s = await json(await fetch(`${TT()}/v2/post/publish/status/fetch/`, { method: 'POST', headers: h, body: JSON.stringify({ publish_id: id }) }), 'stato TikTok'); }
+    catch (e) { log(`TikTok: stato non letto (${String(e.message).slice(0, 80)}), riprovo`); continue; }
+    const st = s.data?.status || s.error?.code || '?';
+    if (st !== ultimo) { log(`TikTok: stato ${st}${s.data?.uploaded_bytes ? ` (${(s.data.uploaded_bytes / 1e6).toFixed(0)} MB ricevuti)` : ''} dopo ${Math.round(i * 10)} s`); ultimo = st; }
     if (st === 'SEND_TO_USER_INBOX' || st === 'PUBLISH_COMPLETE') { log(`TikTok: bozza pronta (${st})`); return { ok: true, bozza: true }; }
     if (st === 'FAILED') throw new Error(`TikTok ha rifiutato il video: ${s.data?.fail_reason || 'motivo non indicato'}`);
   }
-  throw new Error('TikTok non ha finito di elaborare il video in 7 minuti');
+  return { ok: false, inAttesa: true, stato: ultimo, errore: `TikTok sta ancora elaborando il video dopo 15 minuti (stato ${ultimo}): la bozza di solito arriva lo stesso nella posta di TikTok. Se tra un'ora non c'è, ritenta solo TikTok.` };
 }
 
 async function avvisaBot(esito) {
