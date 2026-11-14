@@ -1055,10 +1055,11 @@ function preparaMusica(piano, regia, richiesta) {
   if (!nomeBrano) return null;
   const sorgente = path.join(WORK, 'musica', nomeBrano);
   if (!fs.existsSync(sorgente)) rclone('copyto', remote(DIR_MUSICA, nomeBrano), sorgente);
+  // solo l'audio: gli mp3 di Suno hanno la copertina come flusso video e l'.m4a la rifiutava (14/11, AJ139 V3 senza musica)
   // video senza voce (unboxing a tempo, 14/11): la musica è la protagonista, piena e al volume dei social
   const parlato = momentiParlati(piano.parole);
   const soloMusica = !parlato.length;
-  run('ffmpeg', ['-y', '-v', 'error', '-i', sorgente, '-af', `loudnorm=I=${soloMusica ? -14 : -18}:TP=-1.5:LRA=11`, '-ar', '48000', '-ac', '2', '-c:a', 'aac', '-b:a', '192k', path.join(MEDIA, 'musica.m4a')]);
+  run('ffmpeg', ['-y', '-v', 'error', '-i', sorgente, '-map', '0:a:0', '-vn', '-af', `loudnorm=I=${soloMusica ? -14 : -18}:TP=-1.5:LRA=11`, '-ar', '48000', '-ac', '2', '-c:a', 'aac', '-b:a', '192k', path.join(MEDIA, 'musica.m4a')]);
   log(`musica: ${nomeBrano}${regia?.musica && !richiesta?.nome ? ' (scelta dall\'AI)' : richiesta?.nome ? ' (chiesta da Denis)' : ''}${soloMusica ? ' · senza voce: volume pieno' : ''}`);
   return { file: 'media/musica.m4a', nome: nomeBrano, da: catalogoMusica[nomeBrano].entrata || 0, volume: soloMusica ? 1 : 0.35, parlato };
 }
@@ -1089,7 +1090,7 @@ async function montaBeat(analisi, nome) {
     rampa: { ...c.rampa, fonte: c.fonte }, transizione: c.transizione }));
   // il tratto del brano, a volume pieno e uniforme, con le battute che partono dallo 0 del video
   run('ffmpeg', ['-y', '-v', 'error', '-ss', tratto.da.toFixed(3), '-i', brano, '-t', (tratto.dur + 1).toFixed(3),
-    '-af', 'loudnorm=I=-14:TP=-1:LRA=11', '-ar', '48000', '-ac', '2', '-c:a', 'aac', '-b:a', '192k', path.join(MEDIA, 'musica.m4a')]);
+    '-map', '0:a:0', '-vn', '-af', 'loudnorm=I=-14:TP=-1:LRA=11', '-ar', '48000', '-ac', '2', '-c:a', 'aac', '-b:a', '192k', path.join(MEDIA, 'musica.m4a')]);
   const usate = new Set(scelte.map((c) => c.sorgente)).size;
   const piano = {
     titolo: nome, tavola: '', soggetto: nome.toUpperCase(), clips, keywords: [], flickers: [], sponsor: null, sponsorAt: 0,
@@ -2924,7 +2925,11 @@ async function main() {
         piano.musica = preparaMusica(piano, regia, musicaChiesta);
         if (piano.musica) piano.note = [`🎵 musica: ${piano.musica.nome}`, piano.note].filter(Boolean).join(' · ');
         else piano.note = ['⚠️ musica chiesta ma nessun brano nella cartella Musica', piano.note].filter(Boolean).join(' · ');
-      } catch (e) { log('musica non preparata', e.message.split('\n')[0]); }
+      } catch (e) {
+        log('musica non preparata', e.message.split('\n')[0]);
+        // si vede nel messaggio a Denis: un video senza la musica chiesta non deve sembrare riuscito
+        piano.note = [`⚠️ musica chiesta («${musicaChiesta.nome || 'a scelta'}») ma non preparata: video senza musica`, piano.note].filter(Boolean).join(' · ');
+      }
     }
     fs.writeFileSync(path.join(WORK, 'piano.json'), JSON.stringify(piano, null, 1));
     validaPiano(piano, solo);
