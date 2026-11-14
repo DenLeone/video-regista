@@ -440,11 +440,12 @@ export function comandiTaglio(s, start, dur, out, conAudio, senzaLook = false, z
   let curva = null;
   if (!senzaLook) {
     // look 12K: la sua curva; look chiari ("chiaro caldo" del Narrativo): centro e volto ben esposti;
-    // gli altri stili: solo se il soggetto è proprio al buio (Moero air, 20/10: volto a 0,14 in controluce)
+    // gli altri stili: solo se il soggetto è proprio al buio (Moero air, 20/10: volto a 0,14 in controluce),
+    // e solo su chi parla: un unboxing su scrivania nera non è «al buio» (14/11, AJ139 V3: primo pezzo schiarito)
     // repertorio (Pexels): già esposto bene, prende solo il colore dello stile
     const m = s.stock ? null : misuraPerLook(s, start, dur);
     curva = !m ? null : LOOK_12K ? curvaEsposizione(m) : LOOK_STILE?.esposizione ? curvaChiara(m, LOOK_STILE.esposizione)
-      : (m.pelle != null && m.pelle < 0.2) || m.medio < 0.25 ? curvaChiara(m, { obiettivo: 0.45, obiettivoPelle: 0.3 }) : null;
+      : (s.parlato || s.principale) && ((m.pelle != null && m.pelle < 0.2) || m.medio < 0.25) ? curvaChiara(m, { obiettivo: 0.45, obiettivoPelle: 0.3 }) : null;
     if (m) log(`  ${path.basename(out)}: soggetto ${m.medio.toFixed(2)}${m.pelle != null ? `, volto ${m.pelle.toFixed(2)}` : ''}, neri ${m.nero.toFixed(2)}, bianchi ${m.bianco.toFixed(2)}${curva ? ` → curva ${curva}` : ''}`);
   }
   return ['-y', '-v', 'error', '-ss', start.toFixed(3), '-i', s.originale, '-t', (rampa ? dur + 0.03 : dur * lento + 0.1).toFixed(3),
@@ -1112,6 +1113,12 @@ function promptRegia({ modo, testoMateriale, regiaPrecedente }) {
       : fs.readFileSync(path.join(ROOT, 'scripts', 'stili', `${stileCorrente}.md`), 'utf8').trim());
   if (regiaPrecedente) {
     p += `\n\n## MODALITÀ CORREZIONE\nEsiste già un montaggio, questa è la sua regia:\n\`\`\`json\n${JSON.stringify(regiaPrecedente, null, 1)}\n\`\`\`\nDenis l'ha guardato e chiede queste modifiche:\n\n> ${CORREZIONE.replace(/\n/g, '\n> ')}\n\nParti da questa regia e applica SOLO quello che chiede, lasciando invariato il resto. I tempi li ricalcola lo script. Nella \`note\` elenca in breve cosa hai cambiato.`;
+  }
+  // video senza voce con la sequenza dell'originale nello stile (Copiatore): si copia inquadratura per
+  // inquadratura, stesse durate e stessa azione (Denis, 14/11: «nei video senza parlato copia frame per frame»)
+  const sequenzaOriginale = /Sequenza dell'originale\s*:/i.test(stileSuMisura?.testoAI || '');
+  if (sequenzaOriginale && (analisiCorrente?.frasi?.length || 0) < 3) {
+    p += `\n\n## COPIA INQUADRATURA PER INQUADRATURA (video senza voce)\nLo stile contiene la «Sequenza dell'originale»: il video di riferimento inquadratura per inquadratura, con i secondi. Il montaggio la deve COPIARE: \`sequenza\` con lo STESSO numero di elementi \`{"broll": "<id>", "da": <s>, "dur": <s>}\`, nello stesso ordine, ogni \`dur\` UGUALE alla durata di quella inquadratura dell'originale (anche 0,4–0,5 s: è il ritmo dello stile). Per ogni inquadratura scegli nel girato (fogli provino) il momento che mostra la STESSA azione e la stessa inquadratura (es. «mano mostra il cavo vicino alla camera» → il momento in cui Denis mostra il cavo); \`da\` = l'istante esatto in cui l'azione è nel pieno, non l'attacco né lo stop della mano. Se un'azione dell'originale nel girato non c'è, usa quella più simile, senza saltare inquadrature e senza cambiarne la durata. Niente scritte se lo stile non le ha. In \`note\` scrivi per ogni inquadratura quale clip hai usato.`;
   }
   if (discorso && !regiaPrecedente) {
     const durata = discorso.durata;

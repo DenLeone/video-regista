@@ -67,6 +67,7 @@ Ritmo dei tagli:
 Inquadrature:
 Apertura e chiusura:
 Cose da evitare:
+Sequenza dell'originale:      # video senza voce: una inquadratura per riga «N) da–a s · cosa si vede» (il Copiatore la misura); il montaggio la copia identica
 Altro:
 `;
 
