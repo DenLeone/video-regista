@@ -1055,9 +1055,12 @@ function preparaMusica(piano, regia, richiesta) {
   if (!nomeBrano) return null;
   const sorgente = path.join(WORK, 'musica', nomeBrano);
   if (!fs.existsSync(sorgente)) rclone('copyto', remote(DIR_MUSICA, nomeBrano), sorgente);
-  run('ffmpeg', ['-y', '-v', 'error', '-i', sorgente, '-af', 'loudnorm=I=-18:TP=-1.5:LRA=11', '-ar', '48000', '-ac', '2', '-c:a', 'aac', '-b:a', '192k', path.join(MEDIA, 'musica.m4a')]);
-  log(`musica: ${nomeBrano}${regia?.musica && !richiesta?.nome ? ' (scelta dall\'AI)' : richiesta?.nome ? ' (chiesta da Denis)' : ''}`);
-  return { file: 'media/musica.m4a', nome: nomeBrano, da: catalogoMusica[nomeBrano].entrata || 0, volume: 0.35, parlato: momentiParlati(piano.parole) };
+  // video senza voce (unboxing a tempo, 14/11): la musica è la protagonista, piena e al volume dei social
+  const parlato = momentiParlati(piano.parole);
+  const soloMusica = !parlato.length;
+  run('ffmpeg', ['-y', '-v', 'error', '-i', sorgente, '-af', `loudnorm=I=${soloMusica ? -14 : -18}:TP=-1.5:LRA=11`, '-ar', '48000', '-ac', '2', '-c:a', 'aac', '-b:a', '192k', path.join(MEDIA, 'musica.m4a')]);
+  log(`musica: ${nomeBrano}${regia?.musica && !richiesta?.nome ? ' (scelta dall\'AI)' : richiesta?.nome ? ' (chiesta da Denis)' : ''}${soloMusica ? ' · senza voce: volume pieno' : ''}`);
+  return { file: 'media/musica.m4a', nome: nomeBrano, da: catalogoMusica[nomeBrano].entrata || 0, volume: soloMusica ? 1 : 0.35, parlato };
 }
 
 // ---------- stile Beat: montaggio a tempo di musica, senza regia dell'AI (scripts/beat.mjs) ----------
