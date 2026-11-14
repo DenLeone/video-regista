@@ -366,10 +366,13 @@ export function risolviRegia(regia, analisi) {
     if (prima.length && !prima.includes(usate[i - 1])) avvisi.push(`${f.id} ("${f.testo.split(' ').slice(0, 3).join(' ')}…") è staccata da ciò a cui si riferisce (${prima[prima.length - 1].id})`);
   });
   // con parlato disponibile, una regia che non usa (quasi) nessuna frase valida è da rifare con l'altra AI
+  // parlato «vero»: almeno 3 frasi o 4 s di voce. Una sola parola trascritta su un video solo musica
+  // (14/11, AJ139 V3: F001 = «a») non obbliga la regia a usare frasi: si monta sulle immagini
+  const parlatoVero = analisi.frasi.length >= 3 || analisi.frasi.reduce((t, f) => t + (f.fine - f.inizio), 0) >= 4;
   if (analisi.frasi.length) {
     const conFrase = sequenza.filter((it) => it.frase);
     const valide = conFrase.filter((it) => frasi.has(normFrase(it.frase)));
-    if (!valide.length || valide.length < conFrase.length / 2) throw new Error(`la regia usa frasi inesistenti (${conFrase.length - valide.length} su ${conFrase.length})`);
+    if ((!valide.length && (conFrase.length || parlatoVero)) || valide.length < conFrase.length / 2) throw new Error(`la regia usa frasi inesistenti (${conFrase.length - valide.length} su ${conFrase.length})`);
   }
   const inizioFrase = (id) => {
     const n = normFrase(id);
