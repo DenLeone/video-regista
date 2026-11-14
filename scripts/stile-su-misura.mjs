@@ -124,7 +124,8 @@ export function leggiStile(testo, nomeCartella) {
     if (/^\s*#/.test(riga)) continue;
     const m = /^\s*([^:\d][^:]{1,39}):\s*(.*)$/.exec(riga);
     if (!m) {
-      if (continua && riga.trim()) perAI[perAI.length - 1] += ` ${riga.trim()}`;
+      // le righe numerate («1) 0,00–1,33 s · …», la Sequenza dell'originale) restano una per riga
+      if (continua && riga.trim()) perAI[perAI.length - 1] += /^\s*\d+[).]/.test(riga) ? `\n${riga.trim()}` : ` ${riga.trim()}`;
       else continua = false;
       continue;
     }
@@ -132,7 +133,8 @@ export function leggiStile(testo, nomeCartella) {
     const valore = m[2].replace(/\s+#(?![0-9a-f]{6}\b).*$/i, '').replace(/\s*\([^)]*\)\s*$/, '').trim();
     continua = false;
     if (GRAFICA.includes(chiave)) campi[chiave] = valore;
-    else if (valore && !/^per usarlo$/.test(chiave)) { perAI.push(`${m[1].trim()}: ${valore}`); continua = true; }
+    // un campo di regia col valore sulle righe sotto (es. «Sequenza dell'originale:») non va perso
+    else if (!/^per usarlo$/.test(chiave)) { perAI.push(`${m[1].trim()}: ${valore}`.trimEnd()); continua = true; }
   }
   const g = structuredClone(BASE);
   g.nome = campi.nome || nomeCartella || BASE.nome;
@@ -216,7 +218,7 @@ export function leggiStile(testo, nomeCartella) {
   // su Drive lo chiede ancora (12K Quality aveva "Chiusura: @_black_den")
   g.chiusura = null;
   g.firma = null;
-  return { grafica: g, testoAI: perAI.join('\n'), musica, volumeMusica };
+  return { grafica: g, testoAI: perAI.filter((r) => !/:\s*$/.test(r)).join('\n'), musica, volumeMusica };
 }
 
 // istruzioni di grafica per l'AI (sezione {{GRAFICA}} del prompt) per uno stile su misura
