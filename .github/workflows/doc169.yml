@@ -61,7 +61,8 @@ jobs:
           npm ci || npm install
           sudo mkdir -p /mnt/doc && sudo chown "$USER" /mnt/doc
 
-      - name: Colore, voce, titoli e video
+      # una fase per passo: la scheda su Telegram le mostra una per una
+      - name: Scarico il girato
         env:
           SORGENTE: ${{ inputs.sorgente }}
           USCITA: ${{ inputs.uscita }}
@@ -70,4 +71,53 @@ jobs:
           DOC_SCARICO: /mnt/doc
           GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          DOC_FASE: scarica
+        run: node scripts/doc169.mjs
+
+      - name: Colore (pelle naturale)
+        env:
+          SORGENTE: ${{ inputs.sorgente }}
+          USCITA: ${{ inputs.uscita }}
+          BRIEF: ${{ inputs.brief }}
+          DOC_TITOLI: ${{ inputs.titoli }}
+          DOC_SCARICO: /mnt/doc
+          GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          DOC_FASE: colore
+        run: node scripts/doc169.mjs
+
+      - name: Voce e titoli
+        env:
+          SORGENTE: ${{ inputs.sorgente }}
+          USCITA: ${{ inputs.uscita }}
+          BRIEF: ${{ inputs.brief }}
+          DOC_TITOLI: ${{ inputs.titoli }}
+          DOC_SCARICO: /mnt/doc
+          GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          DOC_FASE: titoli
+        run: node scripts/doc169.mjs
+
+      - name: Video 16:9
+        env:
+          SORGENTE: ${{ inputs.sorgente }}
+          USCITA: ${{ inputs.uscita }}
+          BRIEF: ${{ inputs.brief }}
+          DOC_TITOLI: ${{ inputs.titoli }}
+          DOC_SCARICO: /mnt/doc
+          GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          DOC_FASE: video
+        run: node scripts/doc169.mjs
+
+      - name: Su Drive
+        env:
+          SORGENTE: ${{ inputs.sorgente }}
+          USCITA: ${{ inputs.uscita }}
+          BRIEF: ${{ inputs.brief }}
+          DOC_TITOLI: ${{ inputs.titoli }}
+          DOC_SCARICO: /mnt/doc
+          GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          DOC_FASE: drive
         run: node scripts/doc169.mjs

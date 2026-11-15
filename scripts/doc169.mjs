@@ -94,50 +94,65 @@ export function pulisciTitoli(lista, durata) {
   return fuori.slice(0, 5);
 }
 
+// Fasi (DOC_FASE): scarica, colore, titoli, video, drive — una per passo del workflow, così la scheda di
+// avanzamento su Telegram mostra ognuna (15/11). Lo stato passa da una all'altra in work/doc169/stato.json.
+// Senza DOC_FASE fa tutto di fila.
+const STATO = path.join(WORK, 'stato.json');
+const leggiStato = () => JSON.parse(fs.readFileSync(STATO, 'utf8'));
+const FASI = {
+  scarica() {
+    const sorgente = process.env.SORGENTE, uscita = process.env.USCITA;
+    if (!sorgente || !uscita) throw new Error('servono SORGENTE e USCITA');
+    fs.rmSync(WORK, { recursive: true, force: true });
+    fs.mkdirSync(SCARICO, { recursive: true });
+    fs.mkdirSync(PUB, { recursive: true });
+    const src = path.join(SCARICO, `girato${path.extname(sorgente) || '.mp4'}`);
+    run('rclone', ['copyto', `${REMOTE}:${sorgente}`, src, '--multi-thread-streams', '4']);
+    const info = probe(src);
+    const lg = riconosciLog(src, info, dispositivo(path.basename(sorgente), info.tags), process.env.BRIEF || '', WORK);
+    const base = filtroTecnico(info.colore).replace(/,?format=yuv420p$/, '') || 'null';
+    log(`${sorgente}: ${info.w}x${info.h} · ${info.fps} fps · ${info.durata.toFixed(1)} s${lg.iLog ? ' · I-Log' : ''}`);
+    fs.writeFileSync(STATO, JSON.stringify({ sorgente, uscita, src, base, durata: info.durata, fps: Math.round(Number(info.fps) || 24) || 24 }));
+  },
+  colore() {
+    const st = leggiStato();
+    const { py, modello } = preparaMediaPipe();
+    const esito = run(py, [path.join(ROOT, 'scripts', 'look', 'pelle.py'), st.src, path.join(PUB, 'girato.mp4'), modello, st.base,
+      `lut3d=file='${path.join(ROOT, 'lut', 'documentario.cube')}':interp=tetrahedral`, "curves=all='0/0.03 1/0.97'", '--fps', String(st.fps)]);
+    log(esito.trim().split('\n').pop());
+  },
+  async titoli() {
+    const st = leggiStato();
+    const frasi = await trascrivi(st.src).catch((e) => { log(e.message); return []; });
+    fs.writeFileSync(path.join(WORK, 'trascrizione.txt'), frasi.map((f) => `[${f.a}–${f.b}] ${f.t}`).join('\n'));
+    log(`trascrizione: ${frasi.length} frasi`);
+    // DOC_TITOLI: titoli scritti a mano (JSON), per correggere quelli dell'AI senza rifare la scelta
+    const scelti = process.env.DOC_TITOLI ? pulisciTitoli(JSON.parse(process.env.DOC_TITOLI), st.durata) : await titoli(frasi, st.durata, process.env.BRIEF || '');
+    log(`titoli: ${scelti.map((t) => `${t.at}s ${t.piccolo || ''} | ${t.grande}${t.rosso ? ` | ${t.rosso}` : ''}`).join(' · ') || 'nessuno'}`);
+    fs.writeFileSync(STATO, JSON.stringify({ ...st, titoli: scelti }));
+  },
+  video() {
+    const st = leggiStato();
+    const props = { video: 'doc169/girato.mp4', durata: +probe(path.join(PUB, 'girato.mp4')).durata.toFixed(2), fps: st.fps, bande: true, titoli: st.titoli || [] };
+    const pj = path.join(WORK, 'props.json');
+    fs.writeFileSync(pj, JSON.stringify(props, null, 1));
+    run('npx', ['remotion', 'render', 'src/index.ts', 'Doc169', path.join(WORK, nomeFinale(st)), `--props=${pj}`, '--codec=h264', '--video-bitrate=14M', '--audio-bitrate=320k',
+      '--concurrency=100%', '--color-space=bt709', ...(process.env.REMOTION_BROWSER ? [`--browser-executable=${process.env.REMOTION_BROWSER}`] : [])],
+    { cwd: ROOT, stdio: 'inherit' });
+  },
+  drive() {
+    const st = leggiStato();
+    const pj = path.join(WORK, 'props.json');
+    for (const f of [path.join(WORK, nomeFinale(st)), pj, path.join(WORK, 'trascrizione.txt')]) run('rclone', ['copyto', f, `${REMOTE}:${st.uscita}/${f === pj ? 'titoli.json' : path.basename(f)}`]);
+    log(`fatto: ${st.uscita}/${nomeFinale(st)}`);
+  },
+};
+const nomeFinale = (st) => `${path.parse(st.sorgente).name} - DOCUMENTARIO.mp4`;
+
 async function main() {
-  const sorgente = process.env.SORGENTE, uscita = process.env.USCITA;
-  if (!sorgente || !uscita) throw new Error('servono SORGENTE e USCITA');
-  fs.rmSync(WORK, { recursive: true, force: true });
-  fs.mkdirSync(SCARICO, { recursive: true });
-  fs.mkdirSync(PUB, { recursive: true });
-  const src = path.join(SCARICO, `girato${path.extname(sorgente) || '.mp4'}`);
-  run('rclone', ['copyto', `${REMOTE}:${sorgente}`, src, '--multi-thread-streams', '4']);
-  const info = probe(src);
-  const disp = dispositivo(path.basename(sorgente), info.tags);
-  const lg = riconosciLog(src, info, disp, process.env.BRIEF || '', WORK);
-  const base = filtroTecnico(info.colore).replace(/,?format=yuv420p$/, '') || 'null';
-  log(`${sorgente}: ${info.w}x${info.h} · ${info.fps} fps · ${info.durata.toFixed(1)} s${lg.iLog ? ' · I-Log' : ''}`);
-  const fps = Math.round(Number(info.fps) || 24) || 24;
-
-  // 1. colore (in parallelo la trascrizione)
-  const { py, modello } = preparaMediaPipe();
-  const girato = path.join(PUB, 'girato.mp4');
-  const colore = new Promise((ok, ko) => {
-    import('node:child_process').then(({ execFile }) => execFile(py, [path.join(ROOT, 'scripts', 'look', 'pelle.py'), src, girato, modello, base,
-      `lut3d=file='${path.join(ROOT, 'lut', 'documentario.cube')}':interp=tetrahedral`, "curves=all='0/0.03 1/0.97'", '--fps', String(fps)],
-    { maxBuffer: 1 << 26, timeout: 40 * 60 * 1000 }, (e, out, err) => (e ? ko(new Error(`${e.message}\n${err}`)) : ok(out))));
-  });
-  const frasi = await trascrivi(src).catch((e) => { log(e.message); return []; });
-  fs.writeFileSync(path.join(WORK, 'trascrizione.txt'), frasi.map((f) => `[${f.a}–${f.b}] ${f.t}`).join('\n'));
-  log(`trascrizione: ${frasi.length} frasi`);
-  // DOC_TITOLI: titoli scritti a mano (JSON), per correggere quelli dell'AI senza rifare la scelta
-  const scelti = process.env.DOC_TITOLI ? pulisciTitoli(JSON.parse(process.env.DOC_TITOLI), info.durata) : await titoli(frasi, info.durata, process.env.BRIEF || '');
-  log(`titoli: ${scelti.map((t) => `${t.at}s ${t.piccolo || ''} | ${t.grande}${t.rosso ? ` | ${t.rosso}` : ''}`).join(' · ') || 'nessuno'}`);
-  log((await colore).trim().split('\n').pop());
-
-  // 2. render
-  const props = { video: 'doc169/girato.mp4', durata: +probe(girato).durata.toFixed(2), fps, bande: true, titoli: scelti };
-  const pj = path.join(WORK, 'props.json');
-  fs.writeFileSync(pj, JSON.stringify(props, null, 1));
-  const nome = `${path.parse(sorgente).name} - DOCUMENTARIO.mp4`;
-  const out = path.join(WORK, nome);
-  run('npx', ['remotion', 'render', 'src/index.ts', 'Doc169', out, `--props=${pj}`, '--codec=h264', '--video-bitrate=14M', '--audio-bitrate=320k',
-    '--concurrency=100%', '--color-space=bt709', ...(process.env.REMOTION_BROWSER ? [`--browser-executable=${process.env.REMOTION_BROWSER}`] : [])],
-  { cwd: ROOT, stdio: 'inherit' });
-
-  // 3. su Drive: video, titoli e trascrizione
-  for (const f of [out, pj, path.join(WORK, 'trascrizione.txt')]) run('rclone', ['copyto', f, `${REMOTE}:${uscita}/${f === pj ? 'titoli.json' : path.basename(f)}`]);
-  log(`fatto: ${uscita}/${nome}`);
+  const fase = process.env.DOC_FASE;
+  if (fase && !FASI[fase]) throw new Error(`fase sconosciuta: ${fase}`);
+  for (const f of fase ? [fase] : Object.keys(FASI)) await FASI[f]();
 }
 
 if (import.meta.url === `file://${process.argv[1]}`) main().catch((e) => { console.error(e); process.exit(1); });
