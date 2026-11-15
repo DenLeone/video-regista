@@ -30,7 +30,7 @@ import { DIR_ASSETS, DIR_EDITARE, DIR_FATTI, DIR_STILI } from './cartelle.mjs';
 import { preparaSuoni, suoniDelloStile } from './suoni-veri.mjs';
 import { loghiDetti, nomiLogo, scegliFont } from './libreria.mjs';
 import { HDR, curvaChiara, curvaEsposizione, filtroTecnico, misuraPezzo, perFiltro, probe, riconosciLog } from './colore.mjs';
-import { chiaveStock, materialePerAI, normFrase, RIMANDO, risolviRegia, sequenzaDiscorso, usaTuttoIlMateriale } from './regia.mjs';
+import { chiaveStock, materialePerAI, normFrase, RIMANDO, risolviRegia, senzaBuchi, sequenzaDiscorso, usaTuttoIlMateriale } from './regia.mjs';
 import { movimento, syncMovimento } from './sync-visivo.mjs';
 import { LOOK_FFMPEG, leggiStile, promptSuMisura } from './stile-su-misura.mjs';
 import { chiaveStileR2, preparaStileApp } from './stile-app.mjs';
@@ -251,14 +251,17 @@ export function discorsoConBroll(sorgenti, brief = '') {
 }
 export function modoDiscorso(nVideo, brief = '') {
   if (/\bregia\s+(completa|normale)\b|\bmontaggio\s+completo\b|\bdurata\s*:\s*\d/i.test(brief)) return false;
-  if (/\bmodalit[àa]\s+discorso\b|\bsolo\s+pulizia\b|\bniente\s+regia\b/i.test(brief)) return true;
+  if (/\bmodalit[àa]\s+discorso\b|\bsolo\s+pulizia\b|\bniente\s+regia\b/i.test(brief) || senzaTagli(brief)) return true;
   return nVideo === 1;
 }
+// «senza tagli» nel brief (Denis, 15/11): il girato resta intero, pause comprese; l'AI sceglie solo la grafica
+export const senzaTagli = (brief = '') => /\bsenza\s+tagli\b/i.test(brief);
+let SENZA_TAGLI = false;
 let DISCORSO = false;     // modalità discorso del giro in corso
 let analisiCorrente = null; // il materiale del giro in corso (per il prompt)
 let discorso = null;      // { sequenza, tolte, durata } della modalità discorso (per il prompt)
 function preparaDiscorso(analisi) {
-  const d = sequenzaDiscorso(analisi);
+  const d = sequenzaDiscorso(analisi, { tutte: SENZA_TAGLI });
   const durata = d.sequenza.reduce((t, it) => { const f = analisi.frasi.find((x) => x.id === it.frase); return t + (f ? f.fine - f.inizio : 0); }, 0);
   // B-roll di Denis nella cartella (con i loro fogli provino): l'AI li mette sopra la voce
   const conBroll = analisi.sorgenti.some((s) => !s.principale && s.tipo === 'video' && s.fogli?.length);
@@ -277,6 +280,7 @@ const aggiunteDi = (x) => Object.fromEntries(AGGIUNTE_DISCORSO.filter((k) => (k 
 // tolto pezzi buoni («quindi questo per» → «me è un best buy»). Con lui il discorso resta intero.
 const modelloDebole = () => /lite/i.test(String(consumi.ai?.modello || ''));
 function sequenzaPulita(r) {
+  if (SENZA_TAGLI) { discorso.tenute = discorso.sequenza.length; return discorso.sequenza; }
   if (modelloDebole()) { discorso.tenute = discorso.sequenza.length; discorso.riserva = true; return discorso.sequenza; }
   const scelte = new Set((r.sequenza || []).map((y) => normFrase(y.frase)));
   let tenute = discorso.sequenza.filter((it) => scelte.has(it.frase));
@@ -299,11 +303,11 @@ function sequenzaPulita(r) {
 const conSequenza = (r) => (discorso ? { ...r, sequenza: sequenzaPulita(r).map((it) => {
   const x = (r.sequenza || []).find((y) => normFrase(y.frase) === it.frase);
   const piu = x ? aggiunteDi(x) : {};
-  if (modelloDebole()) { delete piu.da_parola; delete piu.fino_a; }
+  if (modelloDebole() || SENZA_TAGLI) { delete piu.da_parola; delete piu.fino_a; }
   return { ...it, ...piu };
 }) } : r);
 // in più: i video e le immagini di Denis che l'AI non ha usato vanno messi lo stesso (usaTuttoIlMateriale)
-const perRegia = (r) => usaTuttoIlMateriale(DISCORSO ? { ...conSequenza(r), discorso: true } : r, analisiCorrente);
+const perRegia = (r) => usaTuttoIlMateriale(DISCORSO ? { ...conSequenza(r), discorso: true, ...(SENZA_TAGLI ? { senzaTagli: true } : {}) } : r, analisiCorrente);
 
 // ---------- 1. trova la cartella da fare ----------
 // video da Telegram: la cartella non esiste ancora, scelgo un nome libero in 97 e 98
@@ -1130,7 +1134,7 @@ function promptRegia({ modo, testoMateriale, regiaPrecedente }) {
       ? `Il video dura circa ${Math.round(durata)} s: distribuisci ${cartelli ? 'al massimo' : 'circa'} ${quante} ${cartelli ? 'cartelli' : 'scritte grandi'} su tutta la durata (${cartelli ? 'uno ogni ~45 s' : 'una ogni ~20 s'}), sulle frasi più forti; questo vale più del numero indicato nella sezione Grafica.`
       : 'Questo stile non ha scritte grandi: `keywords` vuoto.';
     const { conBroll } = discorso;
-    p += `\n\n## MODALITÀ DISCORSO (regola di Denis: nella cartella c'è un solo video parlato)\nÈ un discorso di Denis: l'ORDINE resta il suo, ma il testo deve uscire sensato, conciso e lineare (Denis, 10/11: «non posso ripetere tre volte la stessa cosa»). Parti da questa sequenza (lo script ha già tolto pause e false partenze evidenti):\n\`\`\`json\n"sequenza": ${JSON.stringify(discorso.sequenza)}\n\`\`\`\nOgni elemento è un pezzo di frase tra due respiri, corto apposta: puoi togliere un pezzo in mezzo a una frase se quello che resta, letto di fila, sta in piedi. Copiala nella regia togliendo SOLO gli elementi che appesantiscono: lo stesso concetto detto due volte (tieni la versione più chiara, di solito l'ultima), le autocorrezioni («nel receiver, nel ricevitore»: resta solo la parola giusta), le frasi lasciate a metà e poi riprese, gli incisi e i giri di parole che non aggiungono niente. Non riordinare, non aggiungere frasi che non sono nell'elenco, non togliere informazioni (un dato, un pregio o un difetto detti una volta sola restano), non togliere l'aggancio né la chiusura; togli al massimo un terzo del discorso. Gli inciampi DENTRO un pezzo (stesso respiro, niente pausa) si tolgono con due campi sull'elemento: \`"da_parola": "<prime parole da tenere>"\` fa partire il pezzo da lì (toglie una falsa partenza: «anche se anche completely black non è male» → \`"da_parola": "anche completely"\`), \`"fino_a": "<ultime parole da tenere>"\` lo chiude lì (toglie una coda poi ridetta: «in carica nel receiver,» seguito da «nel ricevitore ed è qui» → \`"fino_a": "carica"\`). Scrivi le parole esattamente come nel testo del pezzo. Controlla una per una le coppie di pezzi vicini: se il secondo ridice o corregge il primo (stessa parola in italiano e in inglese, stesso soggetto ripreso, «cioè», «anzi»), uno dei due esce. Scrivi \`testo_montato\` con le frasi rimaste e rileggilo: nessun concetto due volte, nessuna frase monca, il filo si segue. In \`note\` elenca le frasi tolte e perché. Poi la grafica dello stile (sezione Grafica): \`titolo\`, \`soggetto\`, \`copertina\`, \`enfasi\` se lo stile ha l'apertura a lettere enormi (sulle prime parole del discorso), le \`keywords\` con le regole dello stile e, se lo stile ha il bianco e nero nei momenti, \`"bn": true\` su qualche elemento della sequenza${stileSuMisura?.grafica.fumo || stileSuMisura?.grafica.stock ? '; se la sezione Grafica li prevede, puoi aggiungere agli elementi anche `fumo`, `stock` e `inserto` (sempre con la stessa `frase`)' : ''}. ${scritte} ${stileSuMisura?.grafica.cornice === 'reazione' && analisiCorrente?.sorgenti?.some((s) => s.reazione) ? 'Nella cartella ci sono le clip dell\'altro creator a cui Denis risponde (vedi Sorgenti, con cosa dicono e quando): mettile come `"inserto": "<id>", "inserto_da": <secondi>` sulle frasi in cui Denis ne parla, le cita o le commenta, come dice la sezione Grafica; anche le immagini (screenshot, copertina) come `inserto`. Le clip "DA GUARDARE IN SILENZIO" invece vanno con `"guarda": "<id>"` (e `"guarda_da"`) sulla frase subito prima del silenzio in cui Denis la guarda (vedi i silenzi elencati in Sorgenti), una per silenzio. Usale TUTTE almeno una volta. Ignora le regole su durata, scaletta e scelta delle frasi.' : conBroll ? 'Nella cartella ci sono anche dei B-roll di Denis (vedi Sorgenti e fogli provino): mettili sopra la voce aggiungendo all\'elemento `"broll": "<id>", "da": <secondi>` (stessa `frase`), dove mostrano quello che dice in quel momento, ' + (stileCorrente === 'Cinematico' ? 'ALTERNANDO Denis alla scrivania e i B-roll del prodotto in modo coerente (stile Cinematico, 10/11): circa metà del video sui B-roll, pezzi da 2–4 s, sulle frasi che descrivono il prodotto, le sue parti e cosa fa; Denis in volto su aggancio, opinioni, confronti e verdetto; mai due B-roll uguali di fila, riusa la stessa clip solo da un momento diverso ("da")' : 'circa uno ogni 8–12 s') + ', mai sull\'aggancio né sulla chiusura: usali TUTTI almeno una volta (anche le registrazioni dello schermo e le immagini, come `inserto`). Le regole sui B-roll valgono (niente bocca che parla, non riusare lo stesso momento); ignora quelle su durata, scaletta e scelta delle frasi.' : 'Ignora le regole su durata, scaletta, inquadrature e B-roll.'} \`scaletta\` = i 3–6 temi del discorso.`;
+    p += `\n\n## MODALITÀ DISCORSO (regola di Denis: nella cartella c'è un solo video parlato)\nÈ un discorso di Denis: l'ORDINE resta il suo, ma il testo deve uscire sensato, conciso e lineare (Denis, 10/11: «non posso ripetere tre volte la stessa cosa»). ${SENZA_TAGLI ? '**SENZA TAGLI** (lo chiede Denis nel brief): il video resta INTERO, pause comprese. Copia la sequenza qui sotto IDENTICA, tutti gli elementi, senza togliere niente e senza `da_parola`/`fino_a`; le regole qui sotto su cosa togliere NON valgono. Il tuo lavoro è solo la grafica dello stile. ' : ''}Parti da questa sequenza (lo script ha già tolto pause e false partenze evidenti):\n\`\`\`json\n"sequenza": ${JSON.stringify(discorso.sequenza)}\n\`\`\`\nOgni elemento è un pezzo di frase tra due respiri, corto apposta: puoi togliere un pezzo in mezzo a una frase se quello che resta, letto di fila, sta in piedi. Copiala nella regia togliendo SOLO gli elementi che appesantiscono: lo stesso concetto detto due volte (tieni la versione più chiara, di solito l'ultima), le autocorrezioni («nel receiver, nel ricevitore»: resta solo la parola giusta), le frasi lasciate a metà e poi riprese, gli incisi e i giri di parole che non aggiungono niente. Non riordinare, non aggiungere frasi che non sono nell'elenco, non togliere informazioni (un dato, un pregio o un difetto detti una volta sola restano), non togliere l'aggancio né la chiusura; togli al massimo un terzo del discorso. Gli inciampi DENTRO un pezzo (stesso respiro, niente pausa) si tolgono con due campi sull'elemento: \`"da_parola": "<prime parole da tenere>"\` fa partire il pezzo da lì (toglie una falsa partenza: «anche se anche completely black non è male» → \`"da_parola": "anche completely"\`), \`"fino_a": "<ultime parole da tenere>"\` lo chiude lì (toglie una coda poi ridetta: «in carica nel receiver,» seguito da «nel ricevitore ed è qui» → \`"fino_a": "carica"\`). Scrivi le parole esattamente come nel testo del pezzo. Controlla una per una le coppie di pezzi vicini: se il secondo ridice o corregge il primo (stessa parola in italiano e in inglese, stesso soggetto ripreso, «cioè», «anzi»), uno dei due esce. Scrivi \`testo_montato\` con le frasi rimaste e rileggilo: nessun concetto due volte, nessuna frase monca, il filo si segue. In \`note\` elenca le frasi tolte e perché. Poi la grafica dello stile (sezione Grafica): \`titolo\`, \`soggetto\`, \`copertina\`, \`enfasi\` se lo stile ha l'apertura a lettere enormi (sulle prime parole del discorso), le \`keywords\` con le regole dello stile e, se lo stile ha il bianco e nero nei momenti, \`"bn": true\` su qualche elemento della sequenza${stileSuMisura?.grafica.fumo || stileSuMisura?.grafica.stock ? '; se la sezione Grafica li prevede, puoi aggiungere agli elementi anche `fumo`, `stock` e `inserto` (sempre con la stessa `frase`)' : ''}. ${scritte} ${stileSuMisura?.grafica.cornice === 'reazione' && analisiCorrente?.sorgenti?.some((s) => s.reazione) ? 'Nella cartella ci sono le clip dell\'altro creator a cui Denis risponde (vedi Sorgenti, con cosa dicono e quando): mettile come `"inserto": "<id>", "inserto_da": <secondi>` sulle frasi in cui Denis ne parla, le cita o le commenta, come dice la sezione Grafica; anche le immagini (screenshot, copertina) come `inserto`. Le clip "DA GUARDARE IN SILENZIO" invece vanno con `"guarda": "<id>"` (e `"guarda_da"`) sulla frase subito prima del silenzio in cui Denis la guarda (vedi i silenzi elencati in Sorgenti), una per silenzio. Usale TUTTE almeno una volta. Ignora le regole su durata, scaletta e scelta delle frasi.' : conBroll ? 'Nella cartella ci sono anche dei B-roll di Denis (vedi Sorgenti e fogli provino): mettili sopra la voce aggiungendo all\'elemento `"broll": "<id>", "da": <secondi>` (stessa `frase`), dove mostrano quello che dice in quel momento, ' + (stileCorrente === 'Cinematico' ? 'ALTERNANDO Denis alla scrivania e i B-roll del prodotto in modo coerente (stile Cinematico, 10/11): circa metà del video sui B-roll, pezzi da 2–4 s, sulle frasi che descrivono il prodotto, le sue parti e cosa fa; Denis in volto su aggancio, opinioni, confronti e verdetto; mai due B-roll uguali di fila, riusa la stessa clip solo da un momento diverso ("da")' : 'circa uno ogni 8–12 s') + ', mai sull\'aggancio né sulla chiusura: usali TUTTI almeno una volta (anche le registrazioni dello schermo e le immagini, come `inserto`). Le regole sui B-roll valgono (niente bocca che parla, non riusare lo stesso momento); ignora quelle su durata, scaletta e scelta delle frasi.' : 'Ignora le regole su durata, scaletta, inquadrature e B-roll.'} \`scaletta\` = i 3–6 temi del discorso.`;
   }
   if (catalogoMusica && Object.keys(catalogoMusica).length) {
     p += `\n\n## Musica\nDenis vuole la musica sotto la voce (bassa, scende quando parla). Scegli il brano più adatto al tono e al ritmo di QUESTO video e scrivilo nel campo \`"musica"\` in cima alla regia (il nome esatto, tra virgolette): energico e veloce per prodotti, tech e ritmo serrato; morbido e lento per racconti, riflessioni e discorsi seri; mai un brano allegro su un argomento serio.\n${descriviCatalogo(catalogoMusica)}`;
@@ -2343,6 +2347,8 @@ async function provaRegia() {
   for (const s of analisi.sorgenti) s.fogli = []; // i fogli provino non sono salvati: prova solo sul testo
   // un solo video (discorso): come nel montaggio vero, sequenza fissa e l'AI sceglie solo le scritte
   DISCORSO = modoDiscorso(analisi.sorgenti.filter((s) => s.tipo === 'video').length, analisi.brief) && analisi.frasi.length >= 3;
+  SENZA_TAGLI = DISCORSO && senzaTagli(analisi.brief);
+  if (SENZA_TAGLI) senzaBuchi(analisi);
   if (DISCORSO) preparaDiscorso(analisi);
   const testoMateriale = `${materialePerAI(analisi)}\n\n(Prova veloce: i fogli provino non sono inclusi, scegli le inquadrature solo in base alle sorgenti.)`;
   await fase(nome, `📝 Prova della regia${discorso ? ' del discorso' : ''}: solo il testo, senza render`, 'regia');
@@ -2731,9 +2737,13 @@ async function main() {
     const brief = unisciBrief(briefFile, process.env.BRIEF_EXTRA, CORREZIONE || RIRENDER ? cache?.brief : '');
     const videoInCartella = fs.readdirSync(SCARICO).filter((f) => VIDEO_EXT.includes(path.extname(f).toLowerCase()) && !isNostro(f));
     DISCORSO = modoDiscorso(videoInCartella.length, brief);
+    SENZA_TAGLI = senzaTagli(brief);
     discorso = null;
     if (DISCORSO) log(`modalità discorso: ${videoInCartella.length === 1 ? 'un solo video in cartella' : 'chiesta nel brief'} (niente regia, solo pulizia e stile)`);
     const analisi = await analizza(nome, brief, cache);
+    // «senza tagli»: le frasi coprono tutto il girato, pause comprese (solo le prime volte: in correzione e
+    // "Solo render" il materiale salvato è già così)
+    if (SENZA_TAGLI) { senzaBuchi(analisi); log('senza tagli: il girato resta intero, l\'AI sceglie solo la grafica'); }
     const { immagini, foglio: foglioImmagini } = preparaImmagini(analisi.foto || []);
     analisi.immagini = immagini;
     loghiDallaLibreria(analisi);

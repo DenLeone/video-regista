@@ -40,6 +40,8 @@ export function risolviRegia(regia, analisi) {
   // 18/10), quindi l'audio delle clip (fruscio, mani, stanza) va tolto, salvo "audio": "ambiente"
   const senzaVoce = !(regia.sequenza || []).some((it) => it.frase);
   let girandolaBroll = 0;
+  // «senza tagli» (Denis, 15/11): il video resta com'è, niente frasi aggiunte, spostate o accorciate
+  const intatto = regia.senzaTagli === true;
 
   // la chiusura non resta mai a metà frase: se l'ultima frase continua nella successiva
   // (stessa voce, senza punto né pausa) aggiungo le frasi che servono ad arrivare a un punto,
@@ -51,7 +53,7 @@ export function risolviRegia(regia, analisi) {
   // (13/11, X5 Video 01: «…nel Black Friday scenda | perché dovrebbe scendere» senza punto finale)
   const chiude = (g) => /[.!?…]/.test(g.testo) || !successiva(analisi.frasi, g);
   const fUltima = ultimo >= 0 ? frasi.get(normFrase(sequenza[ultimo].frase)) : null;
-  if (fUltima && successiva(analisi.frasi, fUltima)) {
+  if (!intatto && fUltima && successiva(analisi.frasi, fUltima)) {
     const catena = [];
     for (let f = fUltima, extra = 0; catena.length < 4;) {
       const g = successiva(analisi.frasi, f);
@@ -70,7 +72,7 @@ export function risolviRegia(regia, analisi) {
   // la inserisco (stesso criterio della chiusura). Evita "lasciata a metà" nel racconto.
   const segni = segniFrasi(analisi.frasi);
   const falsaPartenza = (g) => (segni.get(g.id) || []).includes('interrotta');
-  for (let i = 0; i < sequenza.length; i++) {
+  for (let i = 0; !intatto && i < sequenza.length; i++) {
     const f = frasi.get(normFrase(sequenza[i].frase));
     if (!f || sequenza[i].fino_a) continue; // «fino_a»: l'AI ha tagliato la coda apposta
     const g = successiva(analisi.frasi, f);
@@ -85,7 +87,7 @@ export function risolviRegia(regia, analisi) {
   // aperture e frasi staccate: si sistemano QUI, prima di costruire le clip (14/11: fatte dopo,
   // cambiavano solo gli avvisi e spostavano le scritte sulla frase sbagliata)
   const testaRimanda = (f) => RIMANDO.test(f.testo.trim()) || /\bappunto\b/i.test(f.testo.split(/\s+/).slice(0, 8).join(' '));
-  {
+  if (!intatto) {
     const conF = sequenza.map((it, i) => ({ it, i, f: frasi.get(normFrase(it.frase)) })).filter((x) => x.f);
     // apertura che rimanda a prima: porto in testa una frase che si capisce da sola (chiusa da un
     // punto, non la chiusura del video e non seguita da una frase che rimanda a lei)
@@ -118,7 +120,7 @@ export function risolviRegia(regia, analisi) {
   const fineTaglio = new Map();
   sequenza.forEach((it, idx) => {
     const f = frasi.get(normFrase(it.frase)), g = frasi.get(normFrase(sequenza[idx + 1]?.frase));
-    if (!f || !g || f.principale !== g.principale) return;
+    if (intatto || !f || !g || f.principale !== g.principale) return;
     const pf = paroleDi(f.testo), pg = paroleDi(g.testo);
     let k = 0;
     for (let n = Math.min(5, pf.length - 2, pg.length - 1); n >= 3; n--) if (pf.slice(-n).join(' ') === pg.slice(0, n).join(' ')) { k = n; break; }
@@ -709,11 +711,27 @@ function ripresaNelDiscorso(frasi, i) {
   return null;
 }
 
-export function sequenzaDiscorso(analisi) {
+// «senza tagli»: le frasi di ogni ripresa si allungano fino alla successiva (la prima dall'inizio, l'ultima
+// fino alla fine), così messe di fila ridanno il video intero, pause comprese
+export function senzaBuchi(analisi) {
+  const durata = (id) => analisi.sorgenti.find((s) => s.id === id)?.durata;
+  const perRipresa = new Map();
+  for (const f of analisi.frasi) perRipresa.set(f.principale, [...(perRipresa.get(f.principale) || []), f]);
+  for (const [id, lista] of perRipresa) {
+    lista.sort((a, b) => a.inizio - b.inizio);
+    lista.forEach((f, i) => {
+      f.inizio = i === 0 ? 0 : lista[i - 1].fine;
+      f.fine = i === lista.length - 1 ? +(durata(id) || f.fine).toFixed(3) : lista[i + 1].inizio;
+    });
+  }
+  return analisi;
+}
+
+export function sequenzaDiscorso(analisi, { tutte = false } = {}) {
   const frasi = analisi.frasi;
   const tolte = new Map();
   frasi.forEach((f, i) => {
-    if (tolte.has(f.id)) return;
+    if (tutte || tolte.has(f.id)) return;
     const parole = paroleDi(f.testo);
     if (parole.length && parole.every((w) => RIEMPITIVI.has(w))) { tolte.set(f.id, 'riempitivo'); return; }
     const h = ripresaNelDiscorso(frasi, i);
