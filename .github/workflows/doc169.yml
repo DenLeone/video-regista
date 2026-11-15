@@ -16,6 +16,10 @@ on:
         description: 'Indicazioni per i titoli (facoltative)'
         required: false
         default: ''
+      musica:
+        description: 'Brano in 12 · Risorse/Assets/Music (es. Sly and Nimble), facoltativo'
+        required: false
+        default: ''
       titoli:
         description: 'Titoli scritti a mano in JSON (facoltativo: sostituisce la scelta dell AI)'
         required: false
@@ -67,6 +71,7 @@ jobs:
           SORGENTE: ${{ inputs.sorgente }}
           USCITA: ${{ inputs.uscita }}
           BRIEF: ${{ inputs.brief }}
+          MUSICA: ${{ inputs.musica }}
           DOC_TITOLI: ${{ inputs.titoli }}
           DOC_SCARICO: /mnt/doc
           GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
@@ -79,6 +84,7 @@ jobs:
           SORGENTE: ${{ inputs.sorgente }}
           USCITA: ${{ inputs.uscita }}
           BRIEF: ${{ inputs.brief }}
+          MUSICA: ${{ inputs.musica }}
           DOC_TITOLI: ${{ inputs.titoli }}
           DOC_SCARICO: /mnt/doc
           GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
@@ -91,6 +97,7 @@ jobs:
           SORGENTE: ${{ inputs.sorgente }}
           USCITA: ${{ inputs.uscita }}
           BRIEF: ${{ inputs.brief }}
+          MUSICA: ${{ inputs.musica }}
           DOC_TITOLI: ${{ inputs.titoli }}
           DOC_SCARICO: /mnt/doc
           GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
@@ -103,6 +110,7 @@ jobs:
           SORGENTE: ${{ inputs.sorgente }}
           USCITA: ${{ inputs.uscita }}
           BRIEF: ${{ inputs.brief }}
+          MUSICA: ${{ inputs.musica }}
           DOC_TITOLI: ${{ inputs.titoli }}
           DOC_SCARICO: /mnt/doc
           GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
@@ -115,6 +123,7 @@ jobs:
           SORGENTE: ${{ inputs.sorgente }}
           USCITA: ${{ inputs.uscita }}
           BRIEF: ${{ inputs.brief }}
+          MUSICA: ${{ inputs.musica }}
           DOC_TITOLI: ${{ inputs.titoli }}
           DOC_SCARICO: /mnt/doc
           GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}

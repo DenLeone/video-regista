@@ -44,27 +44,36 @@ async function trascrivi(src) {
   form.append('language', 'it');
   form.append('response_format', 'verbose_json');
   form.append('timestamp_granularities[]', 'segment');
+  form.append('timestamp_granularities[]', 'word');
   const r = await fetch('https://api.groq.com/openai/v1/audio/transcriptions', { method: 'POST', headers: { Authorization: `Bearer ${process.env.GROQ_API_KEY || ''}` }, body: form });
   if (!r.ok) throw new Error(`trascrizione: Groq ${r.status}`);
   const j = await r.json();
-  return (j.segments || []).map((g) => ({ a: +g.start.toFixed(2), b: +g.end.toFixed(2), t: g.text.trim() }));
+  return { frasi: (j.segments || []).map((g) => ({ a: +g.start.toFixed(2), b: +g.end.toFixed(2), t: g.text.trim() })),
+    parole: (j.words || []).map((w) => ({ w: String(w.word).trim(), a: +w.start.toFixed(2), b: +w.end.toFixed(2) })) };
 }
 
 const PROMPT = (frasi, durata, brief) => `Sei il regista di un breve documentario in stile Netflix. Questa è la trascrizione di Denis che parla in camera (${durata.toFixed(0)} s), con i tempi in secondi:
 ${frasi.map((f) => `[${f.a}–${f.b}] ${f.t}`).join('\n')}
 ${brief ? `\nIndicazioni di Denis: ${brief}\n` : ''}
-Scegli i TITOLI che compaiono sopra il video, come nei documentari: pochi ed eleganti.
-- Da 2 a 4 titoli, distanziati (almeno 12 s tra uno e l'altro); il primo entro i primi 3 s, come apertura.
-- "at": il secondo in cui parte la frase a cui il titolo si riferisce. "dur": da 4 a 6 secondi.
-- "piccolo": 1–3 parole sopra (es. "Capitolo 1", un luogo, un anno, un nome). Può mancare.
+Scegli le SCRITTE che compaiono sopra il video.
+
+1. "titoli": da 2 a 3 titoli, distanziati (almeno 15 s tra uno e l'altro); il primo entro i primi 3 s, come apertura.
+- "at": il secondo in cui parte la frase a cui il titolo si riferisce. "dur": 5 o 6 secondi.
+- "piccolo": 1–3 parole sopra (es. "Capitolo 1", un luogo, un anno, un nome).
 - "grande": 2–4 parole che riassumono quel momento, in italiano, al massimo 18 caratteri. Niente punto finale.
-- "rosso": UNA sola parola forte presa da quello che Denis dice in quel momento (il concetto chiave, un'emozione, un numero), oppure null. Al massimo metà dei titoli ha la parola rossa: è un accento, non una regola. La parola rossa NON ripete una parola già nel "grande".
-- Non inventare fatti che Denis non dice.
-Rispondi SOLO con JSON: {"titoli":[{"at":0.5,"dur":5,"piccolo":"…","grande":"…","rosso":"…"}]}`;
+- "rosso": UNA parola forte detta da Denis in quel momento, diversa da quelle del "grande".
+
+2. "parole": le parole da far esplodere in rosso, grandi, da sole. Denis vuole UNA PAROLA OGNI 4–5 SECONDI per tutto il video, tranne mentre c'è un titolo.
+- Ognuna è una parola che Denis DICE davvero in quel punto (scritta esattamente come nella trascrizione): il concetto chiave della frase, un numero, un nome, un'emozione. Mai articoli, congiunzioni, verbi generici ("è", "fare", "ho").
+- "at": il secondo in cui Denis la pronuncia (dentro l'intervallo della sua frase).
+- Niente due parole uguali di fila.
+
+Non inventare fatti che Denis non dice.
+Rispondi SOLO con JSON: {"titoli":[{"at":0.5,"dur":5,"piccolo":"…","grande":"…","rosso":"…"}],"parole":[{"at":7.2,"parola":"…"}]}`;
 
 async function titoli(frasi, durata, brief) {
   const chiave = process.env.GEMINI_API_KEY;
-  if (!chiave || !frasi.length) return [];
+  if (!chiave || !frasi.length) return { titoli: [], parole: [] };
   for (const modello of (process.env.DOC_MODELLI || 'gemini-flash-latest,gemini-flash-lite-latest').split(',')) {
     try {
       const r = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${modello}:generateContent`, {
@@ -74,10 +83,11 @@ async function titoli(frasi, durata, brief) {
       const j = await r.json();
       if (!r.ok) { log(`${modello}: ${r.status}`); continue; }
       const testo = (j.candidates?.[0]?.content?.parts || []).map((x) => x.text || '').join('');
-      return pulisciTitoli(JSON.parse(testo).titoli || [], durata);
+      const j2 = JSON.parse(testo);
+      return { titoli: pulisciTitoli(j2.titoli || [], durata), parole: j2.parole || [] };
     } catch (e) { log(`${modello}: ${e.message}`); }
   }
-  return [];
+  return { titoli: [], parole: [] };
 }
 
 // numeri nei limiti, niente sovrapposizioni, niente titoli oltre la fine
@@ -112,7 +122,23 @@ const FASI = {
     const lg = riconosciLog(src, info, dispositivo(path.basename(sorgente), info.tags), process.env.BRIEF || '', WORK);
     const base = filtroTecnico(info.colore).replace(/,?format=yuv420p$/, '') || 'null';
     log(`${sorgente}: ${info.w}x${info.h} · ${info.fps} fps · ${info.durata.toFixed(1)} s${lg.iLog ? ' · I-Log' : ''}`);
-    fs.writeFileSync(STATO, JSON.stringify({ sorgente, uscita, src, base, durata: info.durata, fps: Math.round(Number(info.fps) || 24) || 24 }));
+    // musica (facoltativa): il nome di un brano in Assets/Music, preparato a volume uniforme (solo l'audio:
+    // gli mp3 di Suno hanno la copertina)
+    let musica = null;
+    if (process.env.MUSICA) {
+      const dir = `${process.env.DIR_ASSETS || '12 · Risorse/Assets'}/Music`;
+      const cerca = norm(process.env.MUSICA.replace(/\.[a-z0-9]+$/i, ''));
+      const nome = run('rclone', ['lsf', `${REMOTE}:${dir}`, '--files-only']).split('\n').find((f) => norm(f.replace(/\.[a-z0-9]+$/i, '')) === cerca);
+      if (!nome) log(`musica «${process.env.MUSICA}» non trovata in ${dir}: video senza musica`);
+      else {
+        const grezzo = path.join(WORK, `musica${path.extname(nome)}`);
+        run('rclone', ['copyto', `${REMOTE}:${dir}/${nome}`, grezzo]);
+        musica = path.join(WORK, 'musica.m4a');
+        run('ffmpeg', ['-y', '-v', 'error', '-i', grezzo, '-map', '0:a:0', '-vn', '-af', 'loudnorm=I=-18:TP=-2', '-ar', '48000', '-c:a', 'aac', '-b:a', '256k', musica]);
+        log(`musica: ${nome}`);
+      }
+    }
+    fs.writeFileSync(STATO, JSON.stringify({ sorgente, uscita, src, base, musica, durata: info.durata, fps: Math.round(Number(info.fps) || 24) || 24 }));
   },
   colore() {
     const st = leggiStato();
@@ -123,22 +149,27 @@ const FASI = {
   },
   async titoli() {
     const st = leggiStato();
-    const frasi = await trascrivi(st.src).catch((e) => { log(e.message); return []; });
+    const { frasi, parole: detti } = await trascrivi(st.src).catch((e) => { log(e.message); return { frasi: [], parole: [] }; });
     fs.writeFileSync(path.join(WORK, 'trascrizione.txt'), frasi.map((f) => `[${f.a}–${f.b}] ${f.t}`).join('\n'));
     log(`trascrizione: ${frasi.length} frasi`);
     // DOC_TITOLI: titoli scritti a mano (JSON), per correggere quelli dell'AI senza rifare la scelta
-    const scelti = process.env.DOC_TITOLI ? pulisciTitoli(JSON.parse(process.env.DOC_TITOLI), st.durata) : await titoli(frasi, st.durata, process.env.BRIEF || '');
+    const mano = process.env.DOC_TITOLI ? JSON.parse(process.env.DOC_TITOLI) : null;
+    const ai = mano ? { titoli: pulisciTitoli(Array.isArray(mano) ? mano : mano.titoli || [], st.durata), parole: mano.parole || [] } : await titoli(frasi, st.durata, process.env.BRIEF || '');
+    const scelti = ai.titoli;
+    const parole = pulisciParole(ai.parole || [], detti, scelti, st.durata);
     log(`titoli: ${scelti.map((t) => `${t.at}s ${t.piccolo || ''} | ${t.grande}${t.rosso ? ` | ${t.rosso}` : ''}`).join(' · ') || 'nessuno'}`);
-    fs.writeFileSync(STATO, JSON.stringify({ ...st, titoli: scelti }));
+    log(`parole rosse: ${parole.length} · ${parole.map((p) => `${p.at}s ${p.parola}`).join(' · ')}`);
+    fs.writeFileSync(STATO, JSON.stringify({ ...st, titoli: scelti, parole }));
   },
   video() {
     const st = leggiStato();
-    const props = { video: 'doc169/girato.mp4', durata: +probe(path.join(PUB, 'girato.mp4')).durata.toFixed(2), fps: st.fps, bande: true, titoli: st.titoli || [] };
+    const props = { video: 'doc169/girato.mp4', durata: +probe(path.join(PUB, 'girato.mp4')).durata.toFixed(2), fps: st.fps, bande: true, titoli: st.titoli || [], parole: st.parole || [] };
     const pj = path.join(WORK, 'props.json');
     fs.writeFileSync(pj, JSON.stringify(props, null, 1));
     run('npx', ['remotion', 'render', 'src/index.ts', 'Doc169', path.join(WORK, nomeFinale(st)), `--props=${pj}`, '--codec=h264', '--video-bitrate=14M', '--audio-bitrate=320k',
       '--concurrency=100%', '--color-space=bt709', ...(process.env.REMOTION_BROWSER ? [`--browser-executable=${process.env.REMOTION_BROWSER}`] : [])],
     { cwd: ROOT, stdio: 'inherit' });
+    if (st.musica) mixaMusica(path.join(WORK, nomeFinale(st)), st.musica, props.durata);
   },
   drive() {
     const st = leggiStato();
@@ -147,7 +178,40 @@ const FASI = {
     log(`fatto: ${st.uscita}/${nomeFinale(st)}`);
   },
 };
+// la musica sotto la voce: bassa, scende ancora quando Denis parla (sidechain), entra e esce in dissolvenza;
+// alla fine tutto a -14 LUFS (come i reel). Il video non si ricodifica
+function mixaMusica(file, musica, durata) {
+  const tmp = file.replace(/\.mp4$/, '.musica.mp4');
+  const fine = Math.max(0, durata - 3).toFixed(2);
+  run('ffmpeg', ['-y', '-v', 'error', '-i', file, '-stream_loop', '-1', '-i', musica, '-filter_complex',
+    `[0:a]asplit=2[voce][chiave];[1:a]atrim=0:${durata},afade=t=in:d=1.5,afade=t=out:st=${fine}:d=3,volume=0.35[m];`
+    + `[m][chiave]sidechaincompress=threshold=0.02:ratio=6:attack=30:release=500[giu];`
+    + `[voce][giu]amix=inputs=2:duration=first:normalize=0,loudnorm=I=-14:TP=-1.5[a]`,
+    '-map', '0:v', '-map', '[a]', '-c:v', 'copy', '-c:a', 'aac', '-b:a', '256k', '-ar', '48000', '-movflags', '+faststart', tmp]);
+  fs.renameSync(tmp, file);
+  log('musica mixata sotto la voce');
+}
+
 const nomeFinale = (st) => `${path.parse(st.sorgente).name} - DOCUMENTARIO.mp4`;
+
+// parole rosse: agganciate al momento vero in cui Denis le dice (tempi di Whisper), 3,5 s di distanza almeno,
+// mai sopra un titolo; restano 1,8 s (o fino alla successiva)
+const norm = (t) => String(t).toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^\p{L}\p{N}]/gu, '');
+export function pulisciParole(lista, detti, titoli, durata) {
+  const fuori = [];
+  for (const p of [...lista].sort((a, b) => a.at - b.at)) {
+    const n = norm(p.parola);
+    if (!n) continue;
+    const vicine = detti.filter((w) => norm(w.w) === n).sort((x, y) => Math.abs(x.a - p.at) - Math.abs(y.a - p.at));
+    const at = vicine.length && Math.abs(vicine[0].a - p.at) < 4 ? vicine[0].a : Number(p.at);
+    if (!Number.isFinite(at) || at < 0 || at > durata - 1) continue;
+    if (titoli.some((t) => at > t.at - 0.5 && at < t.at + t.dur + 0.3)) continue;
+    if (fuori.length && at - fuori.at(-1).at < 3.5) continue;
+    fuori.push({ at: +at.toFixed(2), dur: 1.8, parola: String(vicine[0]?.w || p.parola).replace(/[^\p{L}\p{N}'’-]/gu, '').slice(0, 16) });
+  }
+  for (let i = 0; i < fuori.length - 1; i++) fuori[i].dur = +Math.min(1.8, fuori[i + 1].at - fuori[i].at - 0.2).toFixed(2);
+  return fuori;
+}
 
 async function main() {
   const fase = process.env.DOC_FASE;
