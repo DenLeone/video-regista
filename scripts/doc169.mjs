@@ -197,17 +197,42 @@ const nomeFinale = (st) => `${path.parse(st.sorgente).name} - DOCUMENTARIO.mp4`;
 // parole rosse: agganciate al momento vero in cui Denis le dice (tempi di Whisper), 3,5 s di distanza almeno,
 // mai sopra un titolo; restano 1,8 s (o fino alla successiva)
 const norm = (t) => String(t).toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^\p{L}\p{N}]/gu, '');
+// parole che non reggono da sole in rosso
+const VUOTE = new Set(['talmente', 'veramente', 'davvero', 'proprio', 'sempre', 'ancora', 'quindi', 'perche', 'questo', 'questa', 'quello', 'quella',
+  'questi', 'quelle', 'quelli', 'allora', 'comunque', 'pero', 'anche', 'molto', 'tanto', 'tutto', 'tutti', 'niente', 'qualcosa', 'cosa', 'cose',
+  'essere', 'avere', 'fare', 'fatto', 'stato', 'stata', 'sono', 'siamo', 'hanno', 'abbiamo', 'avevo', 'faccio', 'dire', 'detto', 'diciamo',
+  'adesso', 'oggi', 'voglio', 'volevo', 'posso', 'devo', 'facciamo', 'abbiamo', 'perche', 'praticamente', 'insomma', 'magari', 'tipo', 'ovviamente', 'sicuramente', 'nella', 'nello', 'sulla', 'dalla', 'degli',
+  'delle', 'della', 'dello', 'dove', 'come', 'quando', 'mentre', 'ogni', 'altro', 'altra', 'altri', 'stesso', 'stessa', 'vedere', 'andare', 'volta']);
 export function pulisciParole(lista, detti, titoli, durata) {
   const fuori = [];
   for (const p of [...lista].sort((a, b) => a.at - b.at)) {
     const n = norm(p.parola);
-    if (!n) continue;
+    if (!n || VUOTE.has(n)) continue;
     const vicine = detti.filter((w) => norm(w.w) === n).sort((x, y) => Math.abs(x.a - p.at) - Math.abs(y.a - p.at));
     const at = vicine.length && Math.abs(vicine[0].a - p.at) < 4 ? vicine[0].a : Number(p.at);
     if (!Number.isFinite(at) || at < 0 || at > durata - 1) continue;
     if (titoli.some((t) => at > t.at - 0.5 && at < t.at + t.dur + 0.3)) continue;
     if (fuori.length && at - fuori.at(-1).at < 3.5) continue;
     fuori.push({ at: +at.toFixed(2), dur: 1.8, parola: String(vicine[0]?.w || p.parola).replace(/[^\p{L}\p{N}'’-]/gu, '').slice(0, 16) });
+  }
+  // Denis vuole una parola ogni 4–5 s: i buchi più lunghi di 5,5 s (fuori dai titoli) si riempiono con la parola
+  // più "forte" detta lì (la più lunga che non sia una parola vuota)
+  const libero = (a) => !titoli.some((t) => a > t.at - 0.5 && a < t.at + t.dur + 0.3);
+  for (let giro = 0; giro < 40; giro++) {
+    const punti = [0, ...fuori.map((p) => p.at), ...titoli.flatMap((t) => [t.at, t.at + t.dur]), durata - 1].sort((a, b) => a - b);
+    let messo = false;
+    for (let i = 0; i < punti.length - 1 && !messo; i++) {
+      const [a, b] = [punti[i], punti[i + 1]];
+      // dentro il buco, tolti i titoli: tratti liberi lunghi più di 5,5 s
+      const cand = detti.filter((w) => w.a > a + 2.5 && w.a < b - 2.5 && libero(w.a) && norm(w.w).length >= 4 && !VUOTE.has(norm(w.w)));
+      if (b - a <= 5.5 || !libero((a + b) / 2) || !cand.length) continue;
+      const mezzo = (a + b) / 2;
+      const w = cand.sort((x, y) => (norm(y.w).length - Math.abs(y.a - mezzo) * 0.8) - (norm(x.w).length - Math.abs(x.a - mezzo) * 0.8))[0];
+      fuori.push({ at: w.a, dur: 1.8, parola: String(w.w).replace(/[^\p{L}\p{N}'’-]/gu, '').slice(0, 16) });
+      fuori.sort((x, y) => x.at - y.at);
+      messo = true;
+    }
+    if (!messo) break;
   }
   for (let i = 0; i < fuori.length - 1; i++) fuori[i].dur = +Math.min(1.8, fuori[i + 1].at - fuori[i].at - 0.2).toFixed(2);
   return fuori;
