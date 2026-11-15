@@ -2,7 +2,7 @@ name: doc169
 
 # Documentario 16:9 (scripts/doc169.mjs, 15/11): un girato di Denis che parla → look D2 con la pelle naturale,
 # titoli con la parola rossa scelti dall'AI, bande cinema. Risultato su Drive (mai nel repo: è pubblico).
-run-name: ${{ format('doc169 · {0}', inputs.sorgente) }}
+run-name: ${{ format('🎬 Documentario · {0}', inputs.sorgente) }}
 on:
   workflow_dispatch:
     inputs:
@@ -35,7 +35,7 @@ jobs:
     steps:
       - uses: actions/checkout@v5
 
-      - name: Drive (rclone)
+      - name: Collego Drive
         env:
           RCLONE_CONF: ${{ secrets.RCLONE_CONF }}
         run: |
@@ -53,7 +53,7 @@ jobs:
         with:
           node-version: 22
 
-      - name: Dipendenze
+      - name: Preparo gli strumenti
         timeout-minutes: 16
         run: |
           # libegl1 e libgles2: MediaPipe (pelle protetta)
@@ -61,7 +61,7 @@ jobs:
           npm ci || npm install
           sudo mkdir -p /mnt/doc && sudo chown "$USER" /mnt/doc
 
-      - name: Monta
+      - name: Colore, voce, titoli e video
         env:
           SORGENTE: ${{ inputs.sorgente }}
           USCITA: ${{ inputs.uscita }}
