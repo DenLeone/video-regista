@@ -19,6 +19,7 @@ import { Documentario } from './documentario/Documentario';
 import { Redazione, type PropsRedazione } from './redazione/Redazione';
 import type { PropsDocumentario } from './documentario/tipi';
 import { Racconto } from './racconto/Racconto';
+import { Doc169, type PropsDoc169 } from './doc169/Doc169';
 import { Racconto as PropsRacconto } from './racconto/tipi';
 import { durataTotale, FPS, fpsDi, H, Piano, W } from './piano';
 
@@ -75,6 +76,10 @@ export const Root: React.FC = () => (
     <Composition id="Focus" component={Focus} fps={FPS} width={W} height={H}
       durationInFrames={90} calculateMetadata={metadati} defaultProps={esempio} />
     {/* Racconto: piano sequenza cinematografico 21:9 disegnato col codice (src/racconto, props in work/racconto) */}
+    {/* Documentario 16:9 (scripts/doc169.mjs): girato col look D2 e titoli con la parola rossa */}
+    <Composition id="Doc169" component={Doc169} width={1920} height={1080} fps={24} durationInFrames={240}
+      defaultProps={{ video: '', durata: 10, fps: 24, bande: true, titoli: [{ at: 0.5, dur: 6, piccolo: 'Capitolo 1', grande: 'Come è iniziato', rosso: 'tutto' }] } as PropsDoc169}
+      calculateMetadata={({ props }) => ({ fps: props.fps || 24, durationInFrames: Math.max(24, Math.round(props.durata * (props.fps || 24))) })} />
     <Composition id="Racconto" component={Racconto} fps={30} width={3840} height={1646} durationInFrames={300}
       calculateMetadata={({ props }: { props: PropsRacconto }) => ({ durationInFrames: Math.max(30, Math.round(props.durata * 30)) })}
       defaultProps={{ durata: 10, mondo: { w: 4000, h: 3000 }, camera: [{ t: 0, x: 2000, y: 1500, zoom: 1 }, { t: 10, x: 2100, y: 1500, zoom: 1.1 }], oggetti: [], eventi: [] } as PropsRacconto} />

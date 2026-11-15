@@ -1,0 +1,73 @@
+name: doc169
+
+# Documentario 16:9 (scripts/doc169.mjs, 15/11): un girato di Denis che parla → look D2 con la pelle naturale,
+# titoli con la parola rossa scelti dall'AI, bande cinema. Risultato su Drive (mai nel repo: è pubblico).
+run-name: ${{ format('doc169 · {0}', inputs.sorgente) }}
+on:
+  workflow_dispatch:
+    inputs:
+      sorgente:
+        description: 'File su Drive (es. 05 · Archivio/Test Netflix /VID_….mp4)'
+        required: true
+      uscita:
+        description: 'Cartella su Drive per il risultato'
+        required: true
+      brief:
+        description: 'Indicazioni per i titoli (facoltative)'
+        required: false
+        default: ''
+      titoli:
+        description: 'Titoli scritti a mano in JSON (facoltativo: sostituisce la scelta dell AI)'
+        required: false
+        default: ''
+
+concurrency:
+  group: doc169-${{ inputs.sorgente }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  monta:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Drive (rclone)
+        env:
+          RCLONE_CONF: ${{ secrets.RCLONE_CONF }}
+        run: |
+          curl -fsSL https://rclone.org/install.sh | sudo bash > /dev/null
+          mkdir -p ~/.config/rclone
+          printf '%s\n' "$RCLONE_CONF" | tr -d '\r' | sed -e '1s/^\xEF\xBB\xBF//' -e 's/^[[:space:]]*//' > ~/.config/rclone/rclone.conf
+
+      - name: Cache strumenti
+        uses: actions/cache@v5
+        with:
+          path: ~/opt/regista-strumenti
+          key: regista-strumenti-v2-${{ runner.os }}
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+
+      - name: Dipendenze
+        timeout-minutes: 16
+        run: |
+          # libegl1 e libgles2: MediaPipe (pelle protetta)
+          bash scripts/programma-video.sh fonts-dejavu-core libegl1 libgles2
+          npm ci || npm install
+          sudo mkdir -p /mnt/doc && sudo chown "$USER" /mnt/doc
+
+      - name: Monta
+        env:
+          SORGENTE: ${{ inputs.sorgente }}
+          USCITA: ${{ inputs.uscita }}
+          BRIEF: ${{ inputs.brief }}
+          DOC_TITOLI: ${{ inputs.titoli }}
+          DOC_SCARICO: /mnt/doc
+          GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+        run: node scripts/doc169.mjs
