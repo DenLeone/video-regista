@@ -1,0 +1,16 @@
+{
+  "uscita": "05 · Archivio/Test Netflix /_laboratorio colore 2",
+  "privato": true,
+  "griglia": 3,
+  "nomeBase": "A naturale",
+  "fotogrammi": [
+    { "file": "05 · Archivio/Test Netflix /VID_20261115_171708_043.mp4", "punti": [0.15, 0.65] }
+  ],
+  "varianti": [
+    { "id": "C come prima", "filtro": "curves=master='0/0.01 0.25/0.17 0.5/0.45 0.75/0.77 1/0.97',colorbalance=rs=-0.03:bs=0.04:rh=0.03:bh=-0.03,eq=saturation=0.85" },
+    { "id": "C2 senza schiarita", "crudo": true, "filtro": "lut3d=file=lut/Luna_I-Log_to_Rec709_BT1886_s33_v2.cube:interp=tetrahedral,curves=master='0/0.01 0.25/0.17 0.5/0.45 0.75/0.77 1/0.97',colorbalance=rs=-0.03:bs=0.04:rh=0.03:bh=-0.03,eq=saturation=0.85" },
+    { "id": "C3 + bordi scuri", "crudo": true, "filtro": "lut3d=file=lut/Luna_I-Log_to_Rec709_BT1886_s33_v2.cube:interp=tetrahedral,curves=master='0/0.01 0.25/0.17 0.5/0.45 0.75/0.77 1/0.97',colorbalance=rs=-0.03:bs=0.04:rh=0.03:bh=-0.03,eq=saturation=0.85,vignette=angle=PI/5" },
+    { "id": "C4 + bordi piu scuri", "crudo": true, "filtro": "lut3d=file=lut/Luna_I-Log_to_Rec709_BT1886_s33_v2.cube:interp=tetrahedral,curves=master='0/0.01 0.25/0.17 0.5/0.45 0.75/0.77 1/0.97',colorbalance=rs=-0.03:bs=0.04:rh=0.03:bh=-0.03,eq=saturation=0.85,vignette=angle=PI/4,curves=master='0/0 0.5/0.47 1/1'" },
+    { "id": "C5 + pelle calda", "crudo": true, "filtro": "lut3d=file=lut/Luna_I-Log_to_Rec709_BT1886_s33_v2.cube:interp=tetrahedral,curves=master='0/0.01 0.25/0.17 0.5/0.45 0.75/0.77 1/0.97',colorbalance=rs=-0.03:bs=0.04:rh=0.03:bh=-0.03,eq=saturation=0.85,vignette=angle=PI/5,colorbalance=rm=0.03:bm=-0.02" }
+  ]
+}
