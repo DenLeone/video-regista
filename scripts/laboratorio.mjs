@@ -222,12 +222,36 @@ function sequenze(ric) {
   }
 }
 
+// MediaPipe (segmentazione) in un ambiente a parte, come nel montaggio: il Python del runner non accetta pip
+let mediapipe = null;
+function preparaMediaPipe() {
+  if (mediapipe) return mediapipe;
+  const venv = path.join(ROOT, 'work', 'venv-lab'), modello = path.join(ROOT, 'work', 'selfie_multiclass.tflite');
+  let py = 'python3';
+  try { run(py, ['-c', 'import mediapipe, cv2']); } catch {
+    if (!fs.existsSync(path.join(venv, 'bin', 'python'))) run('python3', ['-m', 'venv', venv]);
+    py = path.join(venv, 'bin', 'python');
+    run(py, ['-m', 'pip', 'install', '--quiet', 'mediapipe', 'opencv-python-headless']);
+  }
+  if (!fs.existsSync(modello)) run('curl', ['-fsSL', '--retry', '3', '-o', modello, 'https://storage.googleapis.com/mediapipe-models/image_segmenter/selfie_multiclass_256x256/float32/latest/selfie_multiclass_256x256.tflite']);
+  return (mediapipe = { py, modello });
+}
+
 function clip(ric) {
   const varianti = Object.fromEntries((ric.varianti || []).map((v) => [v.id, v]));
   for (const c of ric.clip || []) {
     const s = sorgente(c.file);
     const v = c.variante ? varianti[c.variante] : null;
     const out = path.join(OUT, `clip-${pulito(path.parse(c.file).name)}-${c.da}s-${pulito(c.variante || 'base')}.mp4`);
+    // "pelle": look su tutto tranne la pelle, che resta col colore del girato (scripts/look/pelle.py), anche in 16:9
+    if (v?.pelle) {
+      const { py, modello } = preparaMediaPipe();
+      const base = s.tecnico.replace(/,?format=yuv420p$/, '') || 'null';
+      const esito = run(py, [path.join(ROOT, 'scripts', 'look', 'pelle.py'), s.u, out, modello, base, conPercorsi(v.filtro || 'null'), v.pelle,
+        '--da', String(c.da || 0), ...(c.dur ? ['--dur', String(c.dur)] : []), '--fps', String(s.info.fps || 24), ...(v.bande ? ['--bande'] : [])]);
+      log(`clip ${path.basename(out)}: ${esito.trim().split('\n').pop()}`);
+      continue;
+    }
     run('ffmpeg', ['-y', '-v', 'error', '-ss', String(c.da), '-i', s.u, '-t', String(c.dur || 4),
       '-vf', `scale='if(gt(iw,ih),1920,1080)':-2:flags=lanczos,${s.tecnico.replace(/,?format=yuv420p$/, '') || 'null'}${v ? `,${conPercorsi(v.filtro)}` : ''},format=yuv420p`,
       '-c:v', 'libx264', '-preset', 'slow', '-crf', '16', '-an', '-movflags', '+faststart',

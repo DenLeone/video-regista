@@ -1,0 +1,10 @@
+{
+  "uscita": "05 · Archivio/Test Netflix /_laboratorio video",
+  "privato": true,
+  "varianti": [
+    { "id": "D2 pelle naturale", "filtro": "lut3d=file=lut/documentario.cube:interp=tetrahedral", "pelle": "curves=all='0/0.03 1/0.97'", "bande": true }
+  ],
+  "clip": [
+    { "file": "05 · Archivio/Test Netflix /VID_20261115_171708_043.mp4", "da": 0, "variante": "D2 pelle naturale" }
+  ]
+}
