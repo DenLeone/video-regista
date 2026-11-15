@@ -64,7 +64,8 @@ jobs:
           if [ "$USA_IMMAGINE" = "1" ]; then
             bash scripts/collega-immagine.sh
           else
-            bash scripts/programma-video.sh fonts-dejavu-core
+            # libegl1 e libgles2: MediaPipe (scripts/look/pelle.py) per le clip con la pelle protetta
+            bash scripts/programma-video.sh fonts-dejavu-core libegl1 libgles2
           fi
 
       - uses: actions/setup-node@v5
