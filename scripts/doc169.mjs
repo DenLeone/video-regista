@@ -71,7 +71,7 @@ Scegli le SCRITTE che compaiono sopra il video.
 
 ${ARCHIVIO ? `3. "capitoli": il video diviso in capitoli, come un documentario YouTube: uno a ogni cambio di argomento (2–4 per un minuto di video; il primo non prima di 8 s). "at" = inizio della frase che apre il capitolo; "titolo" = 2–4 parole.
 
-4. "immagini": 3–6 immagini d'archivio da mostrare a tutto schermo mentre Denis parla (foto storiche, mappe, documenti, luoghi, persone, opere) su quello che sta dicendo in quel momento. Mai sopra un titolo. "at" = quando inizia a parlarne, "dur" = 3–5 s. "cerca" = ricerca IN INGLESE per Wikimedia Commons, precisa (es. "Second Italo-Ethiopian War 1935 soldiers", "Haile Gerima director", "Addis Ababa 1936"). "didascalia" = 2–6 parole in italiano.
+4. "immagini": immagini d'archivio (almeno una ogni 12–15 s di video, 3–8 in tutto) da mostrare a tutto schermo mentre Denis parla (foto storiche, mappe, documenti, luoghi, persone, opere) su quello che sta dicendo in quel momento. Mai sopra un titolo. "at" = quando inizia a parlarne, "dur" = 3–5 s. "cerca" = ricerca IN INGLESE per Wikimedia Commons, precisa (es. "Second Italo-Ethiopian War 1935 soldiers", "Haile Gerima director", "Addis Ababa 1936"). "didascalia" = 2–6 parole in italiano.
 
 ` : ''}Non inventare fatti che Denis non dice.
 Rispondi SOLO con JSON: {"titoli":[{"at":0.5,"dur":5,"piccolo":"…","grande":"…","rosso":"…"}],"parole":[{"at":7.2,"parola":"…"}]${ARCHIVIO ? ',"capitoli":[{"at":12.3,"titolo":"…"}],"immagini":[{"at":20.1,"dur":4,"cerca":"…","didascalia":"…"}]' : ''}}`;
@@ -114,7 +114,7 @@ export async function cercaArchivio(cerca) {
     const ii = p.imageinfo?.[0];
     const lic = testoSemplice(ii?.extmetadata?.LicenseShortName?.value);
     if (!ii?.thumburl || !LIBERA.test(lic) || (ii.width || 0) < 700) continue;
-    const autore = testoSemplice(ii.extmetadata?.Artist?.value).slice(0, 60) || 'Wikimedia Commons';
+    const autore = testoSemplice(ii.extmetadata?.Artist?.value).replace(/^(.+?)\s*\1$/, '$1').slice(0, 60) || 'Wikimedia Commons';
     return { url: ii.thumburl, pagina: ii.descriptionurl, credito: `${autore} · ${lic}` };
   }
   return null;
@@ -127,7 +127,10 @@ export async function scaricaArchivio(lista, durata, titoli) {
     if (!im.cerca || at > durata - 2 || (fuori.length && at < fuori.at(-1).at + fuori.at(-1).dur + 0.5)) continue;
     if (titoli.some((t) => at < t.at + t.dur && at + dur > t.at)) continue;
     try {
-      const trovata = await cercaArchivio(String(im.cerca));
+      const parole = String(im.cerca).split(/\s+/);
+      // se la ricerca precisa non trova niente di libero, riprova più larga (meno parole)
+      const trovata = await cercaArchivio(parole.join(' ')) || (parole.length > 3 ? await cercaArchivio(parole.slice(0, 3).join(' ')) : null)
+        || (parole.length > 2 ? await cercaArchivio(parole.slice(0, 2).join(' ')) : null);
       if (!trovata) { log(`archivio: niente di libero per «${im.cerca}»`); continue; }
       const r = await fetch(trovata.url, { headers: { 'user-agent': 'doc169-prototipo/1.0 (montaggio documentari)' }, signal: AbortSignal.timeout(60_000) });
       if (!r.ok) continue;
@@ -252,6 +255,18 @@ const FASI = {
     const st = leggiStato();
     const pj = path.join(WORK, 'props.json');
     for (const f of [path.join(WORK, nomeFinale(st)), pj, path.join(WORK, 'trascrizione.txt'), path.join(WORK, 'crediti.txt')].filter((x) => fs.existsSync(x))) run('rclone', ['copyto', f, `${REMOTE}:${st.uscita}/${f === pj ? 'titoli.json' : path.basename(f)}`]);
+    // provino: i momenti con grafica in un'unica immagine piccola, nei registri (per controllare senza scaricare il video)
+    try {
+      const momenti = [...(st.titoli || []).map((t) => t.at + 2.5), ...(st.capitoli || []).map((c) => c.at + 1.5), ...(st.immagini || []).map((im) => im.at + 1.5),
+        ...(st.parole || []).slice(0, 3).map((p) => p.at + 0.6)].filter((t) => t < st.durata).sort((a, b) => a - b).slice(0, 12);
+      if (momenti.length) {
+        const fotogrammi = momenti.map((t, i) => { const f = path.join(WORK, `prov_${i}.jpg`); run('ffmpeg', ['-y', '-v', 'error', '-ss', t.toFixed(2), '-i', path.join(WORK, nomeFinale(st)), '-frames:v', '1', '-vf', 'scale=640:-2', f]); return f; });
+        const provino = path.join(WORK, 'provino.jpg');
+        if (fotogrammi.length === 1) fs.copyFileSync(fotogrammi[0], provino);
+        else run('ffmpeg', ['-y', '-v', 'error', ...fotogrammi.flatMap((f) => ['-i', f]), '-filter_complex', `${fotogrammi.map((_, i) => `[${i}:v]`).join('')}xstack=inputs=${fotogrammi.length}:layout=${fotogrammi.map((_, i) => `${(i % 3) ? Array.from({ length: i % 3 }, () => 'w0').join('+') : '0'}_${Math.floor(i / 3) ? Array.from({ length: Math.floor(i / 3) }, () => 'h0').join('+') : '0'}`).join('|')}:fill=black`, '-q:v', '4', provino].filter(Boolean));
+        run('rclone', ['copyto', provino, `${REMOTE}:12 · Risorse/_registri/provino-doc169-${process.env.GITHUB_RUN_ID || 'locale'}.jpg`]);
+      }
+    } catch (e) { log(`provino non riuscito: ${e.message.split('\n')[0]}`); }
     log(`fatto: ${st.uscita}/${nomeFinale(st)}`);
   },
 };
@@ -269,7 +284,8 @@ function mixaMusica(file, musica, durata) {
   log('musica mixata sotto la voce');
 }
 
-const nomeFinale = (st) => `${st.nome || path.parse(st.sorgente).name} - DOCUMENTARIO.mp4`;
+// con l'archivio (prototipo YouTube) un nome diverso: non sovrascrive il documentario già fatto
+const nomeFinale = (st) => `${st.nome || path.parse(st.sorgente).name} - ${st.immagini?.length || st.capitoli?.length ? 'YOUTUBE' : 'DOCUMENTARIO'}.mp4`;
 
 // parole rosse: agganciate al momento vero in cui Denis le dice (tempi di Whisper), 3,5 s di distanza almeno,
 // mai sopra un titolo; restano 1,8 s (o fino alla successiva)
