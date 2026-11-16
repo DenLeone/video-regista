@@ -672,6 +672,7 @@ const GUIDA: Schermo = {
 type Brief = {
   cartella?: string; scritta?: string; stile?: string; sponsor?: string; durata?: string; tono?: string;
   giudizio?: string; tavola?: string; note?: string; telegram?: boolean; confronta?: string[];
+  senzaTagli?: boolean; // ✂️ il girato resta intero, la regia fa solo la grafica (16/11)
 };
 type Passo = 'cartella' | 'stile' | 'sponsor' | 'sponsor_testo' | 'durata' | 'tono' | 'giudizio' | 'tavola' | 'note' | 'riepilogo' | 'confronta';
 type Attesa =
@@ -787,6 +788,7 @@ function riassunto(d: Brief, imp: Imp): string {
     d.tono ? `🎭 ${esc(d.tono)}` : '',
     d.giudizio ? `🏁 ${d.giudizio === '-' ? 'nessuna scritta' : esc(d.giudizio)}` : '',
     d.tavola && conTavola(d, imp.stile) ? `📐 ${esc(d.tavola)}` : '',
+    d.senzaTagli ? '✂️ senza tagli' : '',
   ].filter(Boolean);
   return [
     d.telegram ? `📥 <b>Video</b>       ${esc(d.cartella || '')} · file da Telegram` : `📁 <b>Cartella</b>   ${d.cartella ? esc(d.cartella) : '⚡ tutte quelle con VAI'}`,
@@ -883,6 +885,7 @@ async function schermoPasso(env: Env, a: Attesa & { tipo: 'nuovo' }): Promise<Sc
         testo: `🆕 <b>Nuovo montaggio</b> · pronto\n\n${riassunto(d, imp)}\n\n<i>🚀 per partire, oppure aggiungi un'opzione.</i>`,
         tasti: [
           [tasto('🚀 Avvia montaggio', 'w:avvia')],
+          [tasto(d.senzaTagli ? '✂️ Senza tagli ✓' : '✂️ Senza tagli: video intero', 'w:st')],
           [tasto(d.confronta?.length ? `👁 Confronta · ${d.confronta.length}` : '👁 Confronta 2–3 stili', 'w:con')],
           [...(d.telegram ? [] : [tasto('📁 Cartella', 'w:mod:cartella')]), tasto('🎨 Stile', 'w:mod:stile'), tasto('💰 Sponsor', 'w:mod:sponsor')],
           [tasto('⏱ Durata', 'w:mod:durata'), tasto('🎭 Tono', 'w:mod:tono'), tasto('🏁 Giudizio', 'w:mod:giudizio')],
@@ -935,6 +938,7 @@ const componiBrief = (d: Brief, stileBase: string) => [
   d.durata ? `Durata: ${d.durata}` : '', d.tono ? `Tono: ${d.tono}` : '',
   d.giudizio ? (d.giudizio === '-' ? 'Giudizio finale: nessuno, niente scritta di esito' : `Giudizio finale: ${d.giudizio}`) : '',
   d.tavola && conTavola(d, stileBase) ? `Tavola: ${d.tavola}` : '', d.note ? `Note: ${d.note}` : '',
+  d.senzaTagli ? 'senza tagli' : '',
 ].filter(Boolean).join('. ');
 // avvii senza domande (/monta, video in chat "Monta subito"): stile predefinito se non è già indicato
 const conStile = (brief: string, stileBase: string) => (/\bstile\s*:/i.test(brief) ? brief : [`Stile: ${stileBase}`, brief].filter(Boolean).join('. '));
@@ -982,7 +986,7 @@ async function mostraRapido(env: Env, chat: string, cartella: string, msgId?: nu
   const c = await leggi<Cartelle>(env, 'cartelle');
   const id = await mostra(env, chat, {
     testo: `📁 <b>${esc(cartella)}</b> · in 01 · Da editare${c?.vai.includes(cartella) ? ' · ⚡ ha il VAI' : ''}\nLa monto adesso?\n\n${riassunto({ cartella }, imp)}`,
-    tasti: [[tasto(`🚀 Monta · ${imp.stile}`, 'q:m')], [tasto('⚙️ Stile e opzioni', 'q:o'), tasto('✖️ No', 'annulla')]],
+    tasti: [[tasto(`🚀 Monta · ${imp.stile}`, 'q:m')], [tasto(`✂️ Senza tagli · ${imp.stile}`, 'q:s')], [tasto('⚙️ Stile e opzioni', 'q:o'), tasto('✖️ No', 'annulla')]],
   }, msgId);
   await mem(env).scrivi(kAttesa(chat), { tipo: 'rapido', cartella, msg: id } satisfies Attesa);
 }
@@ -1218,7 +1222,7 @@ async function onCallback(env: Env, cb: Callback) {
     await richiediElenco(env, chat, data === 'doc:aggiorna');
     return mostra(env, chat, await schermoDoc(env), msgId);
   }
-  const doc = /^doc:(c|s|v):(\d+)(?::(rotolo|tech))?(?::(1080|4k))?$/.exec(data);
+  const doc = /^doc:(c|s|v|n):(\d+)(?::(rotolo|tech))?(?::(1080|4k))?$/.exec(data);
   if (doc) {
     const elenco = (await leggi<Cartelle>(env, 'cartelle'))?.elenco || [];
     const nome = elenco[Number(doc[2])];
@@ -1226,8 +1230,18 @@ async function onCallback(env: Env, cb: Callback) {
     if (doc[1] === 'c') {
       await avviso();
       return mostra(env, chat, {
-        testo: `🎞 <b>Documentario</b> · ${esc(nome)}\n\nChe stile?\n📜 <b>Rotolo</b>: carta di riso, inchiostro, timbri rossi (storie, epoche)\n💻 <b>Tech</b>: canvas scuro, card di vetro, numeri enormi (prodotti, tecnologia)`,
-        tasti: [[tasto('📜 Rotolo', `doc:s:${doc[2]}:rotolo`), tasto('💻 Tech', `doc:s:${doc[2]}:tech`)], [tasto('◀ Cartelle', 'doc')]],
+        testo: `🎞 <b>Documentario</b> · ${esc(nome)}\n\nChe stile?\n📜 <b>Rotolo</b>: carta di riso, inchiostro, timbri rossi (storie, epoche)\n💻 <b>Tech</b>: canvas scuro, card di vetro, numeri enormi (prodotti, tecnologia)\n🎬 <b>Netflix 16:9</b>: il tuo video che parla, colore da documentario, titoli e parole rosse (se nella cartella c'è un brano, fa da musica)`,
+        tasti: [[tasto('📜 Rotolo', `doc:s:${doc[2]}:rotolo`), tasto('💻 Tech', `doc:s:${doc[2]}:tech`)], [tasto('🎬 Netflix 16:9', `doc:n:${doc[2]}`)], [tasto('◀ Cartelle', 'doc')]],
+      }, msgId);
+    }
+    if (doc[1] === 'n') {
+      // 🎬 Documentario 16:9 (workflow doc169, 16/11): il video più grande della cartella, la musica se c'è
+      const r = await gh(env, '/actions/workflows/doc169.yml/dispatches', { method: 'POST', body: JSON.stringify({ ref: 'main', inputs: { sorgente: `01 · Da editare/${nome}`, uscita: `02 · Fatti/${nome}` } }) });
+      if (r.status !== 204) { await avviso(); return mostra(env, chat, { testo: `⚠️ Non parte: GitHub ${r.status}\n<code>${esc(tronca(await r.text(), 300))}</code>`, tasti: [[tasto('◀ Cartelle', 'doc'), MENU_TASTO]] }, msgId); }
+      await avviso('Partito');
+      return mostra(env, chat, {
+        testo: `🎬 <b>Netflix 16:9</b> · ${esc(nome)}\n\n🚀 Partito: colore → voce e titoli → video. Circa 15 minuti.\nLa scheda con la barra arriva sul bot della Squadra; il video va in <b>02 · Fatti/${esc(nome)}</b>.`,
+        tasti: [[link('📂 02 · Fatti', URL_98), MENU_TASTO]],
       }, msgId);
     }
     if (doc[1] === 's') {
@@ -1294,6 +1308,7 @@ Ti mando il video qui quando è pronto; il file intero va in <b>02 · Fatti/${es
     const a = await leggi<Attesa>(env, kAttesa(chat));
     if (a?.tipo !== 'rapido') { await avviso('Questa proposta è scaduta'); return mostra(env, chat, await pannello(env), msgId); }
     if (azione === 'm') { await avviso('Avvio…'); return lancia(env, chat, { cartella: a.cartella, brief: `Stile: ${(await impostazioni(env)).stile}` }, msgId); }
+    if (azione === 's') { await avviso('Avvio senza tagli…'); return lancia(env, chat, { cartella: a.cartella, brief: `Stile: ${(await impostazioni(env)).stile}. senza tagli` }, msgId); }
     if (azione === 'o') { await avviso(); return vaiAPasso(env, chat, { tipo: 'nuovo', passo: 'stile', dati: { cartella: a.cartella } }, msgId); }
     return avviso();
   }
@@ -1377,6 +1392,11 @@ Ti mando il video qui quando è pronto; il file intero va in <b>02 · Fatti/${es
     if (azione === 'usa' && a.passo === 'cartella' && a.dati.scritta) { await avviso(); return rispondiPasso(env, chat, a, a.dati.scritta, msgId); }
     if (azione === 'riepilogo') { await avviso(); return vaiAPasso(env, chat, { ...a, passo: 'riepilogo', modifica: false }, msgId); }
     if (azione === 'mod') { await avviso(); return vaiAPasso(env, chat, { ...a, passo: x as Passo, modifica: true }, msgId); }
+    if (azione === 'st') {
+      const senzaTagli = !a.dati.senzaTagli;
+      await avviso(senzaTagli ? 'Senza tagli: il video resta intero' : 'Con i tagli della regia');
+      return vaiAPasso(env, chat, { ...a, dati: { ...a.dati, senzaTagli }, passo: 'riepilogo', modifica: false }, msgId);
+    }
     if (azione === 'avvia' || azione === 'ante') {
       const stili = azione === 'ante' ? (a.dati.confronta || []) : [];
       if (azione === 'ante' && stili.length < 2) return avviso('Scegline almeno 2');

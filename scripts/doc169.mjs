@@ -115,11 +115,25 @@ const STATO = path.join(WORK, 'stato.json');
 const leggiStato = () => JSON.parse(fs.readFileSync(STATO, 'utf8'));
 const FASI = {
   scarica() {
-    const sorgente = process.env.SORGENTE, uscita = process.env.USCITA;
+    let sorgente = process.env.SORGENTE;
+    const uscita = process.env.USCITA;
     if (!sorgente || !uscita) throw new Error('servono SORGENTE e USCITA');
     fs.rmSync(WORK, { recursive: true, force: true });
     fs.mkdirSync(SCARICO, { recursive: true });
     fs.mkdirSync(PUB, { recursive: true });
+    // una cartella (tasto 🎬 Netflix 16:9 del bot, 16/11): il video più grande è il girato; un brano audio
+    // nella cartella fa da musica, se non è già indicata
+    let musicaCartella = null, nomeCartella = null;
+    if (!/\.(mp4|mov|m4v|mkv)$/i.test(sorgente)) {
+      const files = JSON.parse(run('rclone', ['lsjson', `${REMOTE}:${sorgente}`, '--files-only'])).filter((f) => !f.Name.startsWith('_') && !/FINALE|DOCUMENTARIO/i.test(f.Name));
+      const video = files.filter((f) => /\.(mp4|mov|m4v|mkv)$/i.test(f.Name)).sort((a, b) => b.Size - a.Size)[0];
+      if (!video) throw new Error(`nella cartella ${sorgente} non c'è un video`);
+      const brano = files.find((f) => /\.(mp3|m4a|wav|aac|flac)$/i.test(f.Name));
+      if (brano) musicaCartella = `${sorgente}/${brano.Name}`;
+      nomeCartella = path.basename(sorgente);
+      sorgente = `${sorgente}/${video.Name}`;
+      log(`cartella: girato ${video.Name}${brano ? `, musica ${brano.Name}` : ''}`);
+    }
     const src = path.join(SCARICO, `girato${path.extname(sorgente) || '.mp4'}`);
     run('rclone', ['copyto', `${REMOTE}:${sorgente}`, src, '--multi-thread-streams', '4']);
     const info = probe(src);
@@ -129,7 +143,12 @@ const FASI = {
     // musica (facoltativa): il nome di un brano in Assets/Music, preparato a volume uniforme (solo l'audio:
     // gli mp3 di Suno hanno la copertina)
     let musica = null;
-    if (process.env.MUSICA) {
+    if (musicaCartella && !process.env.MUSICA) {
+      const grezzo = path.join(WORK, `musica${path.extname(musicaCartella)}`);
+      run('rclone', ['copyto', `${REMOTE}:${musicaCartella}`, grezzo]);
+      musica = path.join(WORK, 'musica.m4a');
+      run('ffmpeg', ['-y', '-v', 'error', '-i', grezzo, '-map', '0:a:0', '-vn', '-af', 'loudnorm=I=-18:TP=-2', '-ar', '48000', '-c:a', 'aac', '-b:a', '256k', musica]);
+    } else if (process.env.MUSICA) {
       const dir = `${process.env.DIR_ASSETS || '12 · Risorse/Assets'}/Music`;
       const cerca = norm(process.env.MUSICA.replace(/\.[a-z0-9]+$/i, ''));
       const nome = run('rclone', ['lsf', `${REMOTE}:${dir}`, '--files-only']).split('\n').find((f) => norm(f.replace(/\.[a-z0-9]+$/i, '')) === cerca);
@@ -142,7 +161,7 @@ const FASI = {
         log(`musica: ${nome}`);
       }
     }
-    fs.writeFileSync(STATO, JSON.stringify({ sorgente, uscita, src, base, musica, durata: info.durata, fps: Math.round(Number(info.fps) || 24) || 24 }));
+    fs.writeFileSync(STATO, JSON.stringify({ sorgente, uscita, src, base, musica, nome: nomeCartella, durata: info.durata, fps: Math.round(Number(info.fps) || 24) || 24 }));
   },
   colore() {
     const st = leggiStato();
@@ -196,7 +215,7 @@ function mixaMusica(file, musica, durata) {
   log('musica mixata sotto la voce');
 }
 
-const nomeFinale = (st) => `${path.parse(st.sorgente).name} - DOCUMENTARIO.mp4`;
+const nomeFinale = (st) => `${st.nome || path.parse(st.sorgente).name} - DOCUMENTARIO.mp4`;
 
 // parole rosse: agganciate al momento vero in cui Denis le dice (tempi di Whisper), 3,5 s di distanza almeno,
 // mai sopra un titolo; restano 1,8 s (o fino alla successiva)
