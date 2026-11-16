@@ -63,7 +63,7 @@ Scegli le SCRITTE che compaiono sopra il video.
 
 1. "titoli": da 2 a 3 titoli, distanziati (almeno 15 s tra uno e l'altro); il primo entro i primi 3 s, come apertura.
 - "at": il secondo in cui parte la frase a cui il titolo si riferisce. "dur": 5 o 6 secondi.
-- "piccolo": 1–3 parole sopra (es. "Capitolo 1", un luogo, un anno, un nome).
+- "piccolo": 1–3 parole sopra (${ARCHIVIO ? 'un luogo, un anno, un nome; MAI "Capitolo …": i capitoli hanno già i loro cartelli' : 'es. "Capitolo 1", un luogo, un anno, un nome'}).
 - "grande": 2–4 parole che riassumono quel momento, in italiano, al massimo 18 caratteri. Niente punto finale.
 - "rosso": UNA parola forte detta da Denis in quel momento, diversa da quelle del "grande".
 
@@ -74,7 +74,7 @@ Scegli le SCRITTE che compaiono sopra il video.
 
 ${ARCHIVIO ? `3. "capitoli": il video diviso in capitoli, come un documentario YouTube: ${copione ? 'USA I CAPITOLI DEL COPIONE, con i loro titoli accorciati a 2–4 parole: "at" = la frase in cui Denis inizia quel capitolo (il primo non prima di 8 s; se non lo trovi, saltalo).' : `uno a ogni cambio di argomento (${durata > LUNGO ? 'ogni 1–3 minuti' : '2–4 per un minuto di video'}; il primo non prima di 8 s). "at" = inizio della frase che apre il capitolo; "titolo" = 2–4 parole.`}
 
-4. "immagini": immagini d'archivio (${durata > LUNGO ? `una ogni 20–30 s, ${Math.min(30, Math.round(durata / 25))} circa in tutto` : 'almeno una ogni 12–15 s di video, 3–8 in tutto'}${copione ? '; parti dalle idee per le immagini del copione' : ''}) da mostrare a tutto schermo mentre Denis parla (foto storiche, mappe, documenti, luoghi, persone, opere) su quello che sta dicendo in quel momento. Mai sopra un titolo. "at" = quando inizia a parlarne, "dur" = 3–5 s. "cerca" = ricerca IN INGLESE per Wikimedia Commons, precisa (es. "Second Italo-Ethiopian War 1935 soldiers", "Haile Gerima director", "Addis Ababa 1936"). "didascalia" = 2–6 parole in italiano. SOLO soggetti reali e precisi (persone, luoghi, eventi, opere, documenti): quando Denis parla del video stesso, di sé o di cose generiche, niente immagine.
+4. "immagini": immagini d'archivio (${durata > LUNGO ? `una ogni 20–30 s, ${Math.min(30, Math.round(durata / 25))} circa in tutto` : 'almeno una ogni 12–15 s di video, 3–8 in tutto'}${copione ? '; parti dalle idee per le immagini del copione' : ''}) da mostrare a tutto schermo mentre Denis parla (foto storiche, mappe, documenti, luoghi, persone, opere) su quello che sta dicendo in quel momento. Mai sopra un titolo. "at" = quando inizia a parlarne, "dur" = 3–5 s. "cerca" = ricerca IN INGLESE per Wikimedia Commons, precisa (es. "Second Italo-Ethiopian War 1935 soldiers", "Haile Gerima director", "Addis Ababa 1936"). "didascalia" = 2–6 parole in italiano che dicono COSA SI VEDE (es. "Addis Abeba, la cattedrale"), mai un'epoca o un evento che non sei sicuro sia nella foto ("durante il conflitto"): l'anno lo aggiungo io dai dati della foto. SOLO soggetti reali e precisi (persone, luoghi, eventi, opere, documenti): quando Denis parla del video stesso, di sé o di cose generiche, niente immagine.
 ${durata > LUNGO ? `
 5. "date": la linea del tempo. Quando Denis dice un anno o una data importante (un evento), un cartello a tutto schermo con l'anno grande. 1 ogni 1–2 minuti al massimo, solo le date chiave. "at" = quando la dice; "anno" = "1935" (o "3 ottobre 1935"); "cosa" = l'evento in 2–6 parole.
 ` : ''}
@@ -121,7 +121,7 @@ export function copioneBreve(r) {
 // (pubblico dominio, CC0, CC BY, CC BY-SA) con il credito scritto sull'immagine e in crediti.txt
 const LIBERA = /public domain|^pd\b|pd-|cc0|cc[- ]by(?:-sa)?(?:[- ]\d|$)/i;
 const testoSemplice = (h) => String(h || '').replace(/<[^>]+>/g, '').replace(/\s+/g, ' ').trim();
-export async function cercaArchivio(cerca) {
+export async function cercaArchivio(cerca, annoChiesto = null) {
   const u = new URL('https://commons.wikimedia.org/w/api.php');
   Object.entries({ action: 'query', format: 'json', generator: 'search', gsrsearch: `${cerca} filetype:bitmap`, gsrnamespace: '6', gsrlimit: '10',
     prop: 'imageinfo', iiprop: 'url|extmetadata|size', iiurlwidth: '1600' }).forEach(([k, v]) => u.searchParams.set(k, v));
@@ -132,9 +132,13 @@ export async function cercaArchivio(cerca) {
     const ii = p.imageinfo?.[0];
     const lic = testoSemplice(ii?.extmetadata?.LicenseShortName?.value);
     if (!ii?.thumburl || !LIBERA.test(lic) || (ii.width || 0) < 700) continue;
+    // ricerca storica (un anno prima del 1990 nella ricerca): niente foto scattate molto dopo (una cattedrale di
+    // oggi spacciata per «durante il conflitto», 16/11)
+    const annoFoto = Number((/\b(1[5-9]\d\d|20\d\d)\b/.exec(testoSemplice(ii.extmetadata?.DateTimeOriginal?.value)) || [])[1]) || null;
+    if (annoChiesto && annoChiesto < 1990 && (!annoFoto || annoFoto > annoChiesto + 15)) continue;
     const autore = testoSemplice(ii.extmetadata?.Artist?.value).replace(/^(.+?)\s*\1$/, '$1').slice(0, 60) || 'Wikimedia Commons';
     // foto verticali (ritratti): nel video si vedono intere su sfondo sfocato, non tagliate a metà viso
-    return { url: ii.thumburl, pagina: ii.descriptionurl, credito: `${autore} · ${lic}`, verticale: (ii.thumbheight || 0) > (ii.thumbwidth || 1) * 0.85 };
+    return { url: ii.thumburl, pagina: ii.descriptionurl, credito: `${autore} · ${lic}`, anno: annoFoto, verticale: (ii.thumbheight || 0) > (ii.thumbwidth || 1) * 0.85 };
   }
   return null;
 }
@@ -147,15 +151,16 @@ export async function scaricaArchivio(lista, durata, titoli) {
     if (titoli.some((t) => at < t.at + t.dur && at + dur > t.at)) continue;
     try {
       const parole = String(im.cerca).split(/\s+/);
+      const annoChiesto = Number((/\b(1[5-9]\d\d|20\d\d)\b/.exec(String(im.cerca)) || [])[1]) || null;
       // se la ricerca precisa non trova niente di libero, riprova più larga (meno parole)
-      const trovata = await cercaArchivio(parole.join(' ')) || (parole.length > 3 ? await cercaArchivio(parole.slice(0, 3).join(' ')) : null)
-        || (parole.length > 2 ? await cercaArchivio(parole.slice(0, 2).join(' ')) : null);
+      const trovata = await cercaArchivio(parole.join(' '), annoChiesto) || (parole.length > 3 ? await cercaArchivio(parole.slice(0, 3).join(' '), annoChiesto) : null)
+        || (parole.length > 2 ? await cercaArchivio(parole.slice(0, 2).join(' '), annoChiesto) : null);
       if (!trovata) { log(`archivio: niente di libero per «${im.cerca}»`); continue; }
       const r = await fetch(trovata.url, { headers: { 'user-agent': 'doc169-prototipo/1.0 (montaggio documentari)' }, signal: AbortSignal.timeout(60_000) });
       if (!r.ok) continue;
       const file = `arch_${i}.jpg`;
       fs.writeFileSync(path.join(PUB, file), Buffer.from(await r.arrayBuffer()));
-      fuori.push({ file: `doc169/${file}`, at: +at.toFixed(2), dur: +Math.min(dur, durata - at).toFixed(2), didascalia: String(im.didascalia || '').slice(0, 50), credito: trovata.credito, pagina: trovata.pagina, verticale: trovata.verticale });
+      fuori.push({ file: `doc169/${file}`, at: +at.toFixed(2), dur: +Math.min(dur, durata - at).toFixed(2), didascalia: `${String(im.didascalia || '').replace(/,?\s*\b(1[5-9]\d\d|20\d\d)\b\s*$/, '').slice(0, 44)}${trovata.anno ? `, ${trovata.anno}` : ''}`, credito: trovata.credito, pagina: trovata.pagina, verticale: trovata.verticale });
     } catch (e) { log(`archivio «${im.cerca}»: ${e.message}`); }
   }
   return fuori;
