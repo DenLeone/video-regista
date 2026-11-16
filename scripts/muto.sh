@@ -4,10 +4,12 @@
 # fasi, tempi, avvisi ed errori (righe brevi, mai trascrizioni, descrizioni o testi dei video).
 # Uscita: quella del comando.
 set -o pipefail
-mkdir -p work
+# fuori da work/: il Regista la svuota all'inizio (16/11: il registro spariva e non arrivava su Drive)
+CARTELLA="${RUNNER_TEMP:-/tmp}/registri"
+mkdir -p "$CARTELLA"
 pezzo="${PEZZO:+-pezzo${PEZZO%%/*}}"
-REG="work/registro-${GITHUB_WORKFLOW:-giro}-${GITHUB_RUN_ID:-0}-${GITHUB_RUN_ATTEMPT:-1}-${GITHUB_JOB:-job}${pezzo}${DOC_FASE:+-$DOC_FASE}.txt"
-REG="${REG// /_}"
+REG="$CARTELLA/registro-${GITHUB_WORKFLOW:-giro}-${GITHUB_RUN_ID:-0}-${GITHUB_RUN_ATTEMPT:-1}-${GITHUB_JOB:-job}${pezzo}${DOC_FASE:+-$DOC_FASE}.txt"
+REG="$CARTELLA/$(basename "$REG" | tr ' ' '_')"
 "$@" 2>&1 | tee -a "$REG" \
   | grep --line-buffered -E '\[fase\]|\] tempi:|\] fatto|##\[|::(error|warning)|Error:|ERRORE|[Nn]on riuscit|[Ff]allit|HTTP [0-9]{3}|exit code' \
   | cut -c1-200
