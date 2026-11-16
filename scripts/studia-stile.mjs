@@ -297,4 +297,4 @@ async function main() {
 }
 
 if (process.argv[1] && path.resolve(process.argv[1]) === path.resolve(ROOT, 'scripts', 'studia-stile.mjs')) main();
-export { leggiRisposta, prompt, contaTagli };
+export { leggiRisposta, prompt, contaTagli, caricaSuGemini };

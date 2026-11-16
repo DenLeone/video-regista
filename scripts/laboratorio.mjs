@@ -25,6 +25,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { curvaChiara, curvaEsposizione, filtroTecnico, misuraPezzo, probe, riconosciLog, statisticheColore } from './colore.mjs';
 import { VIDEO_EXT, dispositivo } from './sorgenti.mjs';
+import { caricaSuGemini } from './studia-stile.mjs';
 
 const ROOT = path.resolve(path.dirname(new URL(import.meta.url).pathname.replace(/^\/([A-Za-z]:)/, '$1')), '..');
 const REMOTE = process.env.REGISTA_REMOTE || 'gdrive';
@@ -484,6 +485,42 @@ async function youtube(ric) {
   }
 }
 
+// analisi di un video su Drive con Gemini (16/11: i riferimenti di Denis montati da lui, es. «TikTok AI»):
+// { "analizza": [{ "file": "<video su Drive>", "domanda": "<scheda da scrivere>", "risoluzione"?: "MEDIA_RESOLUTION_MEDIUM" }] }
+// Il video va sulla File API di Gemini solo per l'analisi e si cancella subito dopo. Testo solo su Drive.
+async function analizza(ric) {
+  const chiave = process.env.GEMINI_API_KEY_GRATIS || process.env.GEMINI_API_KEY;
+  if (!chiave) throw new Error('manca GEMINI_API_KEY');
+  const modelli = (process.env.LAB_MODELLI || 'gemini-flash-latest,gemini-flash-lite-latest').split(',');
+  const API = 'https://generativelanguage.googleapis.com/v1beta';
+  for (const a of ric.analizza) {
+    const s = sorgente(a.file);
+    log(s.riga);
+    let f = null, testo = null;
+    try { f = await caricaSuGemini(s.u, chiave); } catch (e) { log(`analisi ${a.file}: ${e.message}`); }
+    for (const modello of f ? modelli : []) {
+      try {
+        const r = await fetch(`${API}/models/${modello}:generateContent`, {
+          method: 'POST', headers: { 'content-type': 'application/json', 'x-goog-api-key': chiave },
+          signal: AbortSignal.timeout(10 * 60 * 1000),
+          body: JSON.stringify({
+            contents: [{ role: 'user', parts: [{ file_data: { file_uri: f.uri, mime_type: f.mimeType || 'video/mp4' } }, { text: a.domanda }] }],
+            generationConfig: { mediaResolution: a.risoluzione || 'MEDIA_RESOLUTION_MEDIUM', temperature: 0.3 },
+          }),
+        });
+        const j = await r.json();
+        if (!r.ok) { log(`analisi ${a.file} ${modello}: ${r.status} ${JSON.stringify(j).slice(0, 200)}`); continue; }
+        testo = (j.candidates?.[0]?.content?.parts || []).map((x) => x.text || '').join('').trim() || null;
+        if (testo) { testo = `# ${a.file}\n_${modello} · token ${j.usageMetadata?.promptTokenCount ?? '?'}_\n\n${testo}\n`; break; }
+      } catch (e) { log(`analisi ${a.file} ${modello}: ${e.message}`); }
+    }
+    if (f?.name) await fetch(`${API}/${f.name}`, { method: 'DELETE', headers: { 'x-goog-api-key': chiave } }).catch(() => {});
+    const o = path.join(OUT, `analisi-${pulito(path.parse(a.file).name)}.md`);
+    fs.writeFileSync(o, testo || `# ${a.file}\nanalisi non riuscita\n`);
+    log(`analisi ${a.file}: ${testo ? `${testo.length} caratteri` : 'NON riuscita'}`);
+  }
+}
+
 async function main() {
   const file = process.env.RICETTA || 'lab/ricetta.json';
   const ric = JSON.parse(fs.readFileSync(path.join(ROOT, file), 'utf8'));
@@ -501,6 +538,7 @@ async function main() {
   if (ric.audio) audio(ric);
   if (ric.racconto) racconto(ric);
   if (ric.youtube) await youtube(ric);
+  if (ric.analizza) await analizza(ric);
   if (ric.sequenze) { sequenze(ric); carica(); }
   if (ric.fotogrammi) { fotogrammiEVarianti(ric); carica(); }
   if (ric.clip) { clip(ric); carica(); }
