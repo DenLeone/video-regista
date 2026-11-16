@@ -20,6 +20,7 @@ const REMOTE = process.env.REGISTA_REMOTE || 'gdrive';
 const WORK = path.join(ROOT, 'work', 'doc169');
 const SCARICO = process.env.DOC_SCARICO || path.join(WORK, 'in');
 const PUB = path.join(ROOT, 'public', 'doc169');
+const ARCHIVIO = /^(1|true|s[iì])$/i.test(String(process.env.DOC_ARCHIVIO || '').trim());
 const log = (...a) => console.log('[doc169]', ...a);
 const run = (cmd, args, opts = {}) => String(execFileSync(cmd, args, { stdio: ['ignore', 'pipe', 'inherit'], maxBuffer: 1 << 28, timeout: 40 * 60 * 1000, ...opts }) ?? '');
 
@@ -68,8 +69,12 @@ Scegli le SCRITTE che compaiono sopra il video.
 - "at": il secondo in cui Denis la pronuncia (dentro l'intervallo della sua frase).
 - Niente due parole uguali di fila.
 
-Non inventare fatti che Denis non dice.
-Rispondi SOLO con JSON: {"titoli":[{"at":0.5,"dur":5,"piccolo":"…","grande":"…","rosso":"…"}],"parole":[{"at":7.2,"parola":"…"}]}`;
+${ARCHIVIO ? `3. "capitoli": il video diviso in capitoli, come un documentario YouTube: uno a ogni cambio di argomento (2–4 per un minuto di video; il primo non prima di 8 s). "at" = inizio della frase che apre il capitolo; "titolo" = 2–4 parole.
+
+4. "immagini": 3–6 immagini d'archivio da mostrare a tutto schermo mentre Denis parla (foto storiche, mappe, documenti, luoghi, persone, opere) su quello che sta dicendo in quel momento. Mai sopra un titolo. "at" = quando inizia a parlarne, "dur" = 3–5 s. "cerca" = ricerca IN INGLESE per Wikimedia Commons, precisa (es. "Second Italo-Ethiopian War 1935 soldiers", "Haile Gerima director", "Addis Ababa 1936"). "didascalia" = 2–6 parole in italiano.
+
+` : ''}Non inventare fatti che Denis non dice.
+Rispondi SOLO con JSON: {"titoli":[{"at":0.5,"dur":5,"piccolo":"…","grande":"…","rosso":"…"}],"parole":[{"at":7.2,"parola":"…"}]${ARCHIVIO ? ',"capitoli":[{"at":12.3,"titolo":"…"}],"immagini":[{"at":20.1,"dur":4,"cerca":"…","didascalia":"…"}]' : ''}}`;
 
 async function titoli(frasi, durata, brief) {
   // lavoro facile (solo testo): chiave gratuita con Flash e Flash-Lite, poi quella a pagamento solo con Flash-Lite
@@ -88,11 +93,53 @@ async function titoli(frasi, durata, brief) {
       if (!r.ok) { log(`${modello}: ${r.status}`); continue; }
       const testo = (j.candidates?.[0]?.content?.parts || []).map((x) => x.text || '').join('');
       const j2 = JSON.parse(testo);
-      return { titoli: pulisciTitoli(j2.titoli || [], durata), parole: j2.parole || [] };
+      return { titoli: pulisciTitoli(j2.titoli || [], durata), parole: j2.parole || [], capitoli: j2.capitoli || [], immagini: j2.immagini || [] };
     } catch (e) { log(`${modello}: ${e.message}`); }
   }
   return { titoli: [], parole: [] };
 }
+
+// 🏛️ immagini d'archivio (prototipo Redazione, 16/11): ricerca su Wikimedia Commons, SOLO licenze libere
+// (pubblico dominio, CC0, CC BY, CC BY-SA) con il credito scritto sull'immagine e in crediti.txt
+const LIBERA = /public domain|^pd\b|pd-|cc0|cc[- ]by(?:-sa)?(?:[- ]\d|$)/i;
+const testoSemplice = (h) => String(h || '').replace(/<[^>]+>/g, '').replace(/\s+/g, ' ').trim();
+export async function cercaArchivio(cerca) {
+  const u = new URL('https://commons.wikimedia.org/w/api.php');
+  Object.entries({ action: 'query', format: 'json', generator: 'search', gsrsearch: `${cerca} filetype:bitmap`, gsrnamespace: '6', gsrlimit: '10',
+    prop: 'imageinfo', iiprop: 'url|extmetadata|size', iiurlwidth: '1600' }).forEach(([k, v]) => u.searchParams.set(k, v));
+  const r = await fetch(u, { headers: { 'user-agent': 'doc169-prototipo/1.0 (montaggio documentari)' }, signal: AbortSignal.timeout(30_000) });
+  if (!r.ok) return null;
+  const pagine = Object.values((await r.json()).query?.pages || {}).sort((a, b) => (a.index || 0) - (b.index || 0));
+  for (const p of pagine) {
+    const ii = p.imageinfo?.[0];
+    const lic = testoSemplice(ii?.extmetadata?.LicenseShortName?.value);
+    if (!ii?.thumburl || !LIBERA.test(lic) || (ii.width || 0) < 700) continue;
+    const autore = testoSemplice(ii.extmetadata?.Artist?.value).slice(0, 60) || 'Wikimedia Commons';
+    return { url: ii.thumburl, pagina: ii.descriptionurl, credito: `${autore} · ${lic}` };
+  }
+  return null;
+}
+export async function scaricaArchivio(lista, durata, titoli) {
+  const fuori = [];
+  fs.mkdirSync(PUB, { recursive: true });
+  for (const [i, im] of [...lista].sort((a, b) => a.at - b.at).entries()) {
+    const at = Math.max(0, Number(im.at) || 0), dur = Math.min(5, Math.max(2.5, Number(im.dur) || 4));
+    if (!im.cerca || at > durata - 2 || (fuori.length && at < fuori.at(-1).at + fuori.at(-1).dur + 0.5)) continue;
+    if (titoli.some((t) => at < t.at + t.dur && at + dur > t.at)) continue;
+    try {
+      const trovata = await cercaArchivio(String(im.cerca));
+      if (!trovata) { log(`archivio: niente di libero per «${im.cerca}»`); continue; }
+      const r = await fetch(trovata.url, { headers: { 'user-agent': 'doc169-prototipo/1.0 (montaggio documentari)' }, signal: AbortSignal.timeout(60_000) });
+      if (!r.ok) continue;
+      const file = `arch_${i}.jpg`;
+      fs.writeFileSync(path.join(PUB, file), Buffer.from(await r.arrayBuffer()));
+      fuori.push({ file: `doc169/${file}`, at: +at.toFixed(2), dur: +Math.min(dur, durata - at).toFixed(2), didascalia: String(im.didascalia || '').slice(0, 50), credito: trovata.credito, pagina: trovata.pagina });
+    } catch (e) { log(`archivio «${im.cerca}»: ${e.message}`); }
+  }
+  return fuori;
+}
+export const pulisciCapitoli = (lista, durata) => [...lista].map((c) => ({ at: +Math.max(0, Number(c.at) || 0).toFixed(2), titolo: String(c.titolo || '').slice(0, 40) }))
+  .filter((c) => c.titolo && c.at >= 5 && c.at < durata - 4).sort((a, b) => a.at - b.at).filter((c, i, v) => !i || c.at - v[i - 1].at >= 8).slice(0, 6);
 
 // numeri nei limiti, niente sovrapposizioni, niente titoli oltre la fine
 export function pulisciTitoli(lista, durata) {
@@ -182,11 +229,18 @@ const FASI = {
     const parole = pulisciParole(ai.parole || [], detti, scelti, st.durata);
     log(`titoli: ${scelti.map((t) => `${t.at}s ${t.piccolo || ''} | ${t.grande}${t.rosso ? ` | ${t.rosso}` : ''}`).join(' · ') || 'nessuno'}`);
     log(`parole rosse: ${parole.length} · ${parole.map((p) => `${p.at}s ${p.parola}`).join(' · ')}`);
-    fs.writeFileSync(STATO, JSON.stringify({ ...st, titoli: scelti, parole }));
+    const capitoli = ARCHIVIO ? pulisciCapitoli(ai.capitoli || [], st.durata) : [];
+    const immagini = ARCHIVIO ? await scaricaArchivio(ai.immagini || [], st.durata, scelti) : [];
+    const sopra = (a, d) => immagini.some((im) => a < im.at + im.dur && a + d > im.at);
+    const capitoliLiberi = capitoli.filter((c) => !sopra(c.at, 3.2) && !scelti.some((t) => c.at < t.at + t.dur && c.at + 3.2 > t.at));
+    const paroleLibere = parole.filter((p) => !sopra(p.at, p.dur) && !capitoliLiberi.some((c) => p.at < c.at + 3.2 && p.at + p.dur > c.at));
+    if (ARCHIVIO) log(`capitoli: ${capitoliLiberi.length} · immagini d'archivio: ${immagini.length} su ${(ai.immagini || []).length} · parole rosse rimaste: ${paroleLibere.length}`);
+    fs.writeFileSync(STATO, JSON.stringify({ ...st, titoli: scelti, parole: paroleLibere, capitoli: capitoliLiberi, immagini }));
+    if (immagini.length) fs.writeFileSync(path.join(WORK, 'crediti.txt'), `Immagini d'archivio (Wikimedia Commons):\n${immagini.map((im) => `- ${im.didascalia || im.file}: ${im.credito} · ${im.pagina}`).join('\n')}\n`);
   },
   video() {
     const st = leggiStato();
-    const props = { video: 'doc169/girato.mp4', durata: +probe(path.join(PUB, 'girato.mp4')).durata.toFixed(2), fps: st.fps, bande: true, titoli: st.titoli || [], parole: st.parole || [] };
+    const props = { video: 'doc169/girato.mp4', durata: +probe(path.join(PUB, 'girato.mp4')).durata.toFixed(2), fps: st.fps, bande: true, titoli: st.titoli || [], parole: st.parole || [], capitoli: st.capitoli || [], immagini: st.immagini || [] };
     const pj = path.join(WORK, 'props.json');
     fs.writeFileSync(pj, JSON.stringify(props, null, 1));
     run('npx', ['remotion', 'render', 'src/index.ts', 'Doc169', path.join(WORK, nomeFinale(st)), `--props=${pj}`, '--codec=h264', '--video-bitrate=14M', '--audio-bitrate=320k',
@@ -197,7 +251,7 @@ const FASI = {
   drive() {
     const st = leggiStato();
     const pj = path.join(WORK, 'props.json');
-    for (const f of [path.join(WORK, nomeFinale(st)), pj, path.join(WORK, 'trascrizione.txt')]) run('rclone', ['copyto', f, `${REMOTE}:${st.uscita}/${f === pj ? 'titoli.json' : path.basename(f)}`]);
+    for (const f of [path.join(WORK, nomeFinale(st)), pj, path.join(WORK, 'trascrizione.txt'), path.join(WORK, 'crediti.txt')].filter((x) => fs.existsSync(x))) run('rclone', ['copyto', f, `${REMOTE}:${st.uscita}/${f === pj ? 'titoli.json' : path.basename(f)}`]);
     log(`fatto: ${st.uscita}/${nomeFinale(st)}`);
   },
 };

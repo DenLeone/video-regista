@@ -1,5 +1,5 @@
 import React from 'react';
-import { AbsoluteFill, interpolate, OffthreadVideo, Sequence, spring, staticFile, useCurrentFrame, useVideoConfig } from 'remotion';
+import { AbsoluteFill, Img, interpolate, OffthreadVideo, Sequence, spring, staticFile, useCurrentFrame, useVideoConfig } from 'remotion';
 import { loadFont as rajdhani } from '@remotion/google-fonts/Rajdhani';
 import { loadFont as anton } from '@remotion/google-fonts/Anton';
 
@@ -15,7 +15,62 @@ export const BANDA = 138; // 1080 − 1920/2,39 ≈ 276 → 138 sopra e 138 sott
 
 export type Titolo = { at: number; dur: number; piccolo?: string; grande: string; rosso?: string | null; lato?: 'destra' | 'sinistra' };
 export type Parola = { at: number; dur: number; parola: string };
-export type PropsDoc169 = { video: string; durata: number; fps: number; bande?: boolean; titoli: Titolo[]; parole?: Parola[] };
+export type Capitolo = { at: number; titolo: string };
+export type Immagine = { file: string; at: number; dur: number; didascalia?: string; credito?: string };
+export type PropsDoc169 = { video: string; durata: number; fps: number; bande?: boolean; titoli: Titolo[]; parole?: Parola[]; capitoli?: Capitolo[]; immagini?: Immagine[] };
+
+// 🏛️ immagine d'archivio a tutto schermo (prototipo Redazione, 16/11): entra con un lampo nero, si muove piano
+// (Ken Burns), un po' fredda come il look D2; didascalia in basso a sinistra e credito piccolo (licenza libera)
+const Archivio: React.FC<{ im: Immagine; n: number }> = ({ im, n }) => {
+  const frame = useCurrentFrame();
+  const { fps } = useVideoConfig();
+  const s = frame / fps;
+  const vis = interpolate(s, [0, 0.25, im.dur - 0.3, im.dur], [0, 1, 1, 0], { extrapolateLeft: 'clamp', extrapolateRight: 'clamp' });
+  const k = s / im.dur;
+  const verso = n % 2 ? -1 : 1;
+  const testo = interpolate(s, [0.4, 0.9], [0, 1], { extrapolateLeft: 'clamp', extrapolateRight: 'clamp' });
+  return (
+    <AbsoluteFill style={{ backgroundColor: `rgba(0,0,0,${vis})` }}>
+      <AbsoluteFill style={{ opacity: vis, overflow: 'hidden' }}>
+        <Img src={staticFile(im.file)} style={{ width: '100%', height: '100%', objectFit: 'cover',
+          transform: `scale(${1.06 + 0.08 * k}) translateX(${verso * (k - 0.5) * 2.5}%)`,
+          filter: 'saturate(0.72) contrast(1.06) brightness(0.92) sepia(0.08) hue-rotate(-6deg)' }} />
+        <AbsoluteFill style={{ background: 'radial-gradient(ellipse at center, rgba(0,0,0,0) 55%, rgba(0,0,0,0.55) 100%)' }} />
+        <AbsoluteFill style={{ background: 'linear-gradient(0deg, rgba(0,0,0,0.6) 0%, rgba(0,0,0,0) 32%)' }} />
+      </AbsoluteFill>
+      {im.didascalia ? (
+        <div style={{ position: 'absolute', left: 96, bottom: BANDA + 46, opacity: testo * vis, transform: `translateY(${(1 - testo) * 10}px)`,
+          fontFamily: SOTTILE, fontWeight: 500, fontSize: 40, letterSpacing: '0.2em', color: '#fff', textTransform: 'uppercase',
+          borderLeft: `5px solid ${ROSSO}`, paddingLeft: 18, textShadow: '0 2px 14px rgba(0,0,0,0.7)' }}>{im.didascalia}</div>
+      ) : null}
+      {im.credito ? (
+        <div style={{ position: 'absolute', right: 40, bottom: BANDA + 14, opacity: 0.75 * vis, fontFamily: SOTTILE, fontWeight: 500,
+          fontSize: 17, letterSpacing: '0.04em', color: '#ddd', textShadow: '0 1px 6px rgba(0,0,0,0.8)' }}>{im.credito}</div>
+      ) : null}
+    </AbsoluteFill>
+  );
+};
+
+// 📖 cartello di capitolo, come nei documentari YouTube: «CAPITOLO 2» piccolo e rosso, titolo grande largo, a sinistra
+const CartelloCapitolo: React.FC<{ c: Capitolo; n: number; dur: number }> = ({ c, n, dur }) => {
+  const frame = useCurrentFrame();
+  const { fps } = useVideoConfig();
+  const s = frame / fps;
+  const entra = spring({ frame, fps, config: { damping: 18, stiffness: 140 } });
+  const esce = interpolate(s, [dur - 0.5, dur], [1, 0], { extrapolateLeft: 'clamp', extrapolateRight: 'clamp' });
+  const linea = interpolate(s, [0.15, 0.8], [0, 1], { extrapolateLeft: 'clamp', extrapolateRight: 'clamp' });
+  return (
+    <AbsoluteFill style={{ justifyContent: 'flex-end', paddingLeft: 96, paddingBottom: BANDA + 70, opacity: esce }}>
+      <div style={{ background: 'radial-gradient(ellipse 100% 100% at 0% 100%, rgba(0,0,0,0.6) 0%, rgba(0,0,0,0.35) 45%, rgba(0,0,0,0) 100%)', position: 'absolute', left: 0, bottom: BANDA, width: 1300, height: 420 }} />
+      <div style={{ position: 'relative', opacity: entra, transform: `translateX(${(1 - entra) * -30}px)` }}>
+        <div style={{ fontFamily: SOTTILE, fontWeight: 500, fontSize: 30, letterSpacing: '0.35em', color: ROSSO }}>CAPITOLO {n}</div>
+        <div style={{ width: 340 * linea, height: 3, background: ROSSO, margin: '12px 0 14px' }} />
+        <div style={{ fontFamily: SOTTILE, fontWeight: 500, fontSize: 64, letterSpacing: '0.22em', color: '#fff', textTransform: 'uppercase', whiteSpace: 'nowrap',
+          textShadow: '0 2px 18px rgba(0,0,0,0.6)' }}>{c.titolo}</div>
+      </div>
+    </AbsoluteFill>
+  );
+};
 
 // la parola rossa da sola (Denis, 15/11: «almeno una ogni 4–5 secondi»): entra col colpo, resta, sfuma
 const ParolaRossa: React.FC<{ p: Parola }> = ({ p }) => {
@@ -67,7 +122,7 @@ const TitoloDoc: React.FC<{ t: Titolo }> = ({ t }) => {
   );
 };
 
-export const Doc169: React.FC<PropsDoc169> = ({ video, bande = true, titoli, parole = [] }) => {
+export const Doc169: React.FC<PropsDoc169> = ({ video, bande = true, titoli, parole = [], capitoli = [], immagini = [] }) => {
   const { fps } = useVideoConfig();
   return (
     <AbsoluteFill style={{ backgroundColor: 'black' }}>
@@ -82,6 +137,16 @@ export const Doc169: React.FC<PropsDoc169> = ({ video, bande = true, titoli, par
       {titoli.map((t) => (
         <Sequence key={`${t.at}`} from={Math.round(t.at * fps)} durationInFrames={Math.max(1, Math.round(t.dur * fps))}>
           <TitoloDoc t={t} />
+        </Sequence>
+      ))}
+      {capitoli.map((c, i) => (
+        <Sequence key={`c${c.at}`} from={Math.round(c.at * fps)} durationInFrames={Math.round(3.2 * fps)}>
+          <CartelloCapitolo c={c} n={i + 1} dur={3.2} />
+        </Sequence>
+      ))}
+      {immagini.map((im, i) => (
+        <Sequence key={`a${im.at}`} from={Math.round(im.at * fps)} durationInFrames={Math.max(1, Math.round(im.dur * fps))}>
+          <Archivio im={im} n={i} />
         </Sequence>
       ))}
       {bande ? (
