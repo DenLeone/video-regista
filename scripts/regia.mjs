@@ -443,6 +443,9 @@ export function risolviRegia(regia, analisi) {
     const nome = paroleDi(im.id.replace(/[_-]+/g, ' ')).filter((w) => w.length >= 2 && !/^(img|icona|icon|logo|\d+)$/.test(w));
     const detta = nome.length ? parole.find((w) => nome.includes(paroleDi(w.w)[0])) : null;
     if (detta) { metti(im, Math.max(0, detta.at - 0.15)); return; }
+    // logo automatico della libreria (Assets/Loghi) nominato solo in pezzi tagliati: fuori, non a caso a metà
+    // video (16/11, Great Vita e Luce per tv: TikTok, Meta, Dell, Audi, Philips «spammati» senza c'entrare)
+    if (im.libreria) { avvisi.push(`logo ${im.id}: nominato solo in parti tagliate, tolto`); return; }
     avvisi.push(`icona ${im.id}: non ho capito quando la nomini, l'ho messa a metà video (chiamala come l'app, es. "VN.png")`);
     metti(im, Math.min(totale - 2, (totale * (k + 1)) / (mancanti.length + 1)));
   });

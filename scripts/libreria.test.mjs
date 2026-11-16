@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { detto, loghiDetti, nomiLogo, scegliFont } from './libreria.mjs';
+import { detto, dettoComeMarca, loghiDetti, nomiLogo, scegliFont } from './libreria.mjs';
 
 test('nomi dei loghi dal file', () => {
   assert.deepEqual(nomiLogo('Tech/ChatGPT.png'), ['chatgpt']);
@@ -16,6 +16,18 @@ test('loghi detti nel parlato', () => {
   assert.ok(!detto('sony', 'personale'));
   const l = loghiDetti(['Tech/ChatGPT.png', 'Tech/final-cut-pro.png', 'Tech/Sony.png', 'Social/TikTok.png', 'Fonts/x.ttf', 'Tech/claude.svg'], testo);
   assert.deepEqual(l.map((x) => x.nome), ['claude', 'chatgpt', 'final cut pro', 'sony']);
+});
+
+test('marche che sono anche parole italiane', () => {
+  const testo = "potete selezionarli dell'app, a metà video, e vivo qui; il portatile è un Dell e lo dico su Meta";
+  assert.ok(!dettoComeMarca('dell', "potete selezionarli dell'app"));
+  assert.ok(!dettoComeMarca('meta', 'a metà video'));
+  assert.ok(!dettoComeMarca('vivo', 'e vivo qui'));
+  assert.ok(dettoComeMarca('dell', 'il portatile è un Dell e'));
+  assert.ok(dettoComeMarca('meta', 'lo dico su Meta'));
+  assert.ok(dettoComeMarca('tiktok', 'su tiktok'));
+  const l = loghiDetti(['Tech/Dell.png', 'Social/Meta.png', 'Tech/vivo.png'], "selezionarli dell'app, a metà video, e vivo qui");
+  assert.deepEqual(l, []);
 });
 
 test('font col peso giusto', () => {

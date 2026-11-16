@@ -19,12 +19,23 @@ const regexNome = (nome) => new RegExp(`(?:^|\\s)${[...nome.replace(/\s+/g, '')]
 export const detto = (nome, testo) => regexNome(nome).test(pulito(testo));
 
 // loghi della libreria nominati nel parlato, al massimo `max`, nell'ordine in cui escono la prima volta
+// marche che sono anche parole italiane (16/11: «dell'app» → logo Dell, «a metà» → logo Meta): valgono solo
+// scritte come marca nel parlato, con la maiuscola, gli accenti giusti e senza apostrofo dopo
+const AMBIGUE = new Set(['dell', 'meta', 'vivo', 'tim', 'uno', 'via', 'alfa', 'ape', 'nova', 'sole', 'vela', 'luce', 'casa', 'bose']);
+export function dettoComeMarca(nome, testo) {
+  if (!AMBIGUE.has(nome)) return true;
+  const lettere = [...nome];
+  const re = new RegExp(`(?<![\\p{L}])${lettere[0].toUpperCase()}${lettere.slice(1).map((c) => `[${c}${c.toUpperCase()}]`).join('')}(?![\\p{L}'’])`, 'u');
+  return re.test(String(testo || ''));
+}
+
 export function loghiDetti(files, testo, max = 8) {
   const t = pulito(testo);
   const trovati = [];
   for (const f of files) {
     if (!/\.(png|webp|svg)$/i.test(f)) continue;
     for (const nome of nomiLogo(f)) {
+      if (!dettoComeMarca(nome, testo)) continue;
       const pos = t.search(regexNome(nome));
       if (pos >= 0) { trovati.push({ file: f, nome, pos }); break; }
     }
