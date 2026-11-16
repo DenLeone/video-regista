@@ -432,7 +432,7 @@ jobs:
           # l'archivio non installa i pacchetti: la cartella sul disco grande va creata lo stesso
           sudo mkdir -p /mnt/regista && sudo chown "$USER" /mnt/regista
           export REGISTA_PACCHETTO_DIR="$HOME/.cache/regista-pacchetto"
-          node scripts/regista.mjs
+          bash scripts/muto.sh node scripts/regista.mjs
 
       # Chiavi mancanti e cartella inesistente hanno già avvisato e non si rilanciano.
       # Lo script, se parte e fallisce, avvisa lui. Qui resta il resto: apt, Drive, immagine.
@@ -526,21 +526,17 @@ jobs:
           printf '{}' > /tmp/fine.json
           rclone copyto /tmp/fine.json "gdrive:$DIR_FATTI/_giri/$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT/fine.json" || true
 
-      - name: Conserva piano e note (debug)
+      # debug su Drive, non come allegato del giro: gli allegati di un repo pubblico li scarica chiunque
+      # (16/11: dentro c'erano trascrizione e fogli provino del girato)
+      - name: Conserva piano e note (debug, su Drive)
         if: always() && steps.check.outputs.cartella != ''
-        uses: actions/upload-artifact@v6
-        with:
-          name: lavoro
-          path: |
-            work/regia.json
-            work/piano.json
-            work/materiale.json
-            work/materiale.md
-            work/fogli/*.jpg
-            work/NOTE.txt
-            work/ERRORE.txt
-          if-no-files-found: ignore
-          retention-days: 7
+        run: |
+          dove="12 · Risorse/_registri/regista-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          for f in work/regia.json work/piano.json work/materiale.json work/materiale.md work/NOTE.txt work/ERRORE.txt; do
+            [ -f "$f" ] && rclone copyto "$f" "gdrive:$dove/$(basename "$f")" > /dev/null 2>&1 || true
+          done
+          [ -d work/fogli ] && rclone copy work/fogli "gdrive:$dove/fogli" --include '*.jpg' > /dev/null 2>&1 || true
+          echo "debug su Drive: $dove"
 
   # ---------- montaggio su più macchine (10/11) ----------
   # «monta» ha scritto e salvato la regia: ogni «pezzo» taglia, ritaglia e renderizza il suo tratto e lo
@@ -641,7 +637,7 @@ jobs:
           ATTENDI: '1'
         run: |
           export REGISTA_PACCHETTO_DIR="$HOME/.cache/regista-pacchetto"
-          node scripts/regista.mjs
+          bash scripts/muto.sh node scripts/regista.mjs
 
   unisci:
     needs: [monta, pezzo]
@@ -718,4 +714,4 @@ jobs:
           UNISCI: '1'
         run: |
           export REGISTA_PACCHETTO_DIR="$HOME/.cache/regista-pacchetto"
-          node scripts/regista.mjs
+          bash scripts/muto.sh node scripts/regista.mjs

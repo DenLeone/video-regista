@@ -500,8 +500,10 @@ async function main() {
   if (elenco) fs.writeFileSync(path.join(OUT, 'sorgenti.txt'), `${elenco}\n`);
   if (elenco && fs.existsSync(GIT)) fs.copyFileSync(path.join(OUT, 'sorgenti.txt'), path.join(GIT, 'sorgenti.txt'));
   carica();
-  // "privato": true = materiale di Denis (faccia, voce): niente copia sul ramo pubblico laboratorio-esiti
-  if (ric.privato) fs.rmSync(GIT, { recursive: true, force: true });
+  // Il repo è pubblico: i risultati restano SOLO su Drive. Il ramo laboratorio-esiti si scrive solo con
+  // "pubblico": true, per materiale che si può mostrare a tutti (16/11: sui rami c'erano fotogrammi del girato
+  // di Denis e trascrizioni di video altrui)
+  if (!ric.pubblico) fs.rmSync(GIT, { recursive: true, force: true });
   log(`risultati in ${ric.uscita}: ${fs.readdirSync(OUT).length} file`);
 }
 

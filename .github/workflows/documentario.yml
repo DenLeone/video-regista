@@ -127,7 +127,7 @@ jobs:
           opz+=(--mondo "${MONDO:-rotolo}")
           [ -f "work/sorgente/$CARTELLA/beats.json" ] && opz+=(--solo-render) && echo "beats.json già nella cartella: solo render"
           T0=$SECONDS
-          node pc/rotolo/rotolo.mjs "work/sorgente/$CARTELLA" --nome "$CARTELLA" --uscita "out/rotolo/$CARTELLA.mp4" "${opz[@]}" 2>&1 | grep -v -E 'Rendered [0-9]+/|Encoded [0-9]+/' | tee rotolo.log
+          node pc/rotolo/rotolo.mjs "work/sorgente/$CARTELLA" --nome "$CARTELLA" --uscita "out/rotolo/$CARTELLA.mp4" "${opz[@]}" 2>&1 | grep -v -E 'Rendered [0-9]+/|Encoded [0-9]+/' | tee rotolo.log | { grep -E '\[fase\]|tempi|Error|errore|⚠' || true; } | cut -c1-200  # log pubblico muto: il resto in rotolo.log (su Drive)
           echo "minuti=$(( (SECONDS - T0) / 60 ))" >> "$GITHUB_OUTPUT"
 
       - name: Carica su Drive e manda al bot
@@ -182,14 +182,11 @@ jobs:
             '{tipo:"esito", esito:"⚠️ documentario non finito", nome:$n, ok:false, run_url:$u, run_id:$id, testo:("Errore: "+$e), info:{errore:$e, documentario:true}}' \
             | curl -s -X POST "$NOTIFY_URL" -H 'content-type: application/json' -H "x-regista-token: $NOTIFY_TOKEN" -d @- > /dev/null || true
 
-      - name: Conserva beats ed eventi (debug)
+      # debug su Drive, non come allegato (repo pubblico: parole.json è la trascrizione)
+      - name: Conserva beats ed eventi (debug, su Drive)
         if: always()
-        uses: actions/upload-artifact@v6
-        with:
-          name: documentario
-          path: |
-            public/collage/rotolo-*/beats.json
-            public/collage/rotolo-*/eventi.json
-            public/collage/rotolo-*/parole.json
-            rotolo.log
-          if-no-files-found: ignore
+        run: |
+          dove="12 · Risorse/_registri/documentario-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          for f in public/collage/rotolo-*/beats.json public/collage/rotolo-*/eventi.json public/collage/rotolo-*/parole.json rotolo.log; do
+            [ -f "$f" ] && rclone copyto "$f" "gdrive:$dove/$(basename "$f")" > /dev/null 2>&1 || true
+          done

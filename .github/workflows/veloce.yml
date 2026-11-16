@@ -126,7 +126,7 @@ jobs:
           NOTIFY_TOKEN: ${{ secrets.NOTIFY_TOKEN }}
         run: |
           export REGISTA_PACCHETTO_DIR="$HOME/.cache/regista-pacchetto"
-          node scripts/regista.mjs
+          bash scripts/muto.sh node scripts/regista.mjs
 
   unisci:
     needs: pezzo
@@ -159,4 +159,4 @@ jobs:
           NOTIFY_TOKEN: ${{ secrets.NOTIFY_TOKEN }}
         run: |
           export REGISTA_PACCHETTO_DIR="$HOME/.cache/regista-pacchetto"
-          node scripts/regista.mjs
+          bash scripts/muto.sh node scripts/regista.mjs
