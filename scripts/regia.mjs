@@ -596,7 +596,7 @@ function distanza(a, b) {
 
 // fine parola senza \b: con le lettere accentate (però, perché, cioè) \b non scatta mai
 // intercalari che in fondo al video lasciano il discorso aperto
-export const CODA_FINALE = /(?:^|\s)(quindi|e|ma|cioè|allora|però|insomma|comunque|niente|ok|ecco|praticamente|tipo|diciamo)[\s.,!?…]*$/iu;
+export const CODA_FINALE = /(?:^|\s)(quindi|e|ma|cioè|allora|però|insomma|comunque|ok|ecco|praticamente|diciamo)[\s.,!?…]*$/iu;
 export const RIMANDO = /^(appunto|però|quindi|anche|ma|perché|poi|infatti|cioè|questo|questa|questi|queste|l'unica|l'unico|invece|allora|comunque)(?![\p{L}\p{N}])/iu;
 const finita = (t) => /[.!?…]["»”)]?$/.test(String(t).trim());
 // Tagli dentro un pezzo (10/11, mouse Ajazz: «anche se anche completely black», «nel receiver, nel

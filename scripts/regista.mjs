@@ -30,7 +30,7 @@ import { DIR_ASSETS, DIR_EDITARE, DIR_FATTI, DIR_STILI } from './cartelle.mjs';
 import { preparaSuoni, suoniDelloStile } from './suoni-veri.mjs';
 import { loghiDetti, nomiLogo, scegliFont } from './libreria.mjs';
 import { HDR, curvaChiara, curvaEsposizione, filtroTecnico, misuraPezzo, perFiltro, probe, riconosciLog } from './colore.mjs';
-import { chiaveStock, materialePerAI, normFrase, RIMANDO, risolviRegia, senzaBuchi, sequenzaDiscorso, usaTuttoIlMateriale } from './regia.mjs';
+import { chiaveStock, materialePerAI, normFrase, RIMANDO, risolviRegia, senzaBuchi, sequenzaDiscorso, successiva, usaTuttoIlMateriale } from './regia.mjs';
 import { movimento, syncMovimento } from './sync-visivo.mjs';
 import { LOOK_FFMPEG, leggiStile, promptSuMisura } from './stile-su-misura.mjs';
 import { chiaveStileR2, preparaStileApp } from './stile-app.mjs';
@@ -315,34 +315,47 @@ export function spostaGancio(seq, r, frasi) {
   if (!f || RIMANDO.test(testo.trim())) return { seq, avviso: `gancio ${id} non usato: rimanda a qualcosa detto prima («${testo.trim().split(/\s+/).slice(0, 4).join(' ')}…»)` };
   const resto = seq.filter((_, i) => i !== k);
   const prima = resto[k - 1] && frasi.find((x) => x.id === resto[k - 1].frase);
-  const via = prima && FINE_APPESA.test(String(prima.testo).trim().replace(/[,;:]$/, '')) ? k - 1 : -1;
+  const via = prima && (successiva(frasi, prima)?.id === id || FINE_APPESA.test(String(prima.testo).trim().replace(/[,;:]$/, ''))) ? k - 1 : -1;
   return { seq: [seq[k], ...resto.filter((_, i) => i !== via)], avviso: `gancio: ${id} in apertura${via >= 0 ? `, tolto ${resto[via].frase} che lo introduceva` : ''}` };
 }
 // 🧵 il filo del discorso, anche nelle CORREZIONI (lì l'AI riordina libera: 16/11, FIFINE v2 «A 50€… | Quindi se
-// volete aumentare il livello | Ho appena sbustato… | Il prezzo è ultra competitivo perché | questo qua…»):
-// - un pezzo che comincia con un rimando («quindi», «perché», «ma»…) senza il suo pezzo di prima subito prima esce
-//   (salvo un da_parola che lo fa partire da altro);
-// - un pezzo che finisce appeso («…perché») senza il suo pezzo dopo subito dopo esce;
-// - dove il montaggio torna indietro, il pezzo prima del salto esce se non chiude la frase (niente punto).
-// Il primo pezzo (il gancio) resta; mai sotto 3 pezzi.
-// solo le congiunzioni: «questo qua è un ottimo prodotto» si capisce anche dopo un salto
-const CONGIUNZIONE = /^(quindi|però|ma|perché|poi|infatti|cioè|invece|appunto|comunque|anche|e)(?![\p{L}\p{N}])/iu;
+// volete aumentare il livello | Ho appena sbustato… | Il prezzo è ultra competitivo perché | questo qua…»).
+// Criterio del Regista per «continua nella successiva» (regia.mjs successiva: stessa voce, senza punto, pausa
+// sotto 0,8 s):
+// - un pezzo che continua in un altro pezzo presente ma messo altrove va SUBITO PRIMA della sua continuazione;
+//   se la continuazione è il gancio in apertura, il pezzo esce;
+// - un pezzo che finisce appeso («…perché», «…e») e la cui continuazione non c'è, esce.
+// Il primo pezzo (il gancio) non si tocca; mai sotto 3 pezzi. Le frasi complete (col punto, o con una pausa
+// dopo) non si toccano: spostamenti chiesti da Denis restano.
 export function controllaFilo(seq, frasi) {
-  const ordine = new Map(frasi.map((f, i) => [f.id, i]));
-  const testo = (it) => { const f = frasi.find((x) => x.id === normFrase(it.frase)); if (!f) return ''; const t = String(f.testo || ''); return it.da_parola ? t.slice(Math.max(0, t.toLowerCase().indexOf(String(it.da_parola).toLowerCase()))) : t; };
-  const vicini = (a, b) => a && b && ordine.has(normFrase(a.frase)) && ordine.get(normFrase(b.frase)) - ordine.get(normFrase(a.frase)) === 1;
-  let out = [...seq], tolti = [];
-  for (let giro = 0; giro < 6; giro++) {
-    const via = out.findIndex((it, i) => it.frase && i > 0 && out.length > 3 && (
-      (CONGIUNZIONE.test(testo(it).trim()) && !vicini(out[i - 1], it))
-      || (FINE_APPESA.test(testo(it).trim().replace(/[,;:]$/, '')) && !it.fino_a && !vicini(it, out[i + 1]))
-      // dove il montaggio torna indietro, il pezzo prima del salto deve chiudere la frase
-      || (out[i + 1] && ordine.get(normFrase(out[i + 1].frase)) < ordine.get(normFrase(it.frase)) && !/[.!?]["»”]?$/.test(testo(it).trim()))));
-    if (via < 0) break;
-    tolti.push(out[via].frase);
-    out = out.filter((_, i) => i !== via);
+  const per = new Map(frasi.map((f) => [f.id, f]));
+  const id = (it) => (it?.frase ? normFrase(it.frase) : '');
+  const parlati = (v) => v.filter((x) => x.frase).length;
+  let out = [...seq];
+  const tolti = [], spostati = [];
+  for (let giro = 0; giro < 8; giro++) {
+    let cambiato = false;
+    for (let i = 1; i < out.length && !cambiato; i++) {
+      const it = out[i];
+      const f = it.frase && !it.fino_a ? per.get(id(it)) : null;
+      if (!f) continue;
+      const s = successiva(frasi, f);
+      if (s && id(out[i + 1]) === s.id) continue; // la continuazione è al suo posto
+      const j = s ? out.findIndex((x) => id(x) === s.id) : -1;
+      if (j > 0) {
+        out.splice(i, 1);
+        out.splice(out.findIndex((x) => id(x) === s.id), 0, it);
+        spostati.push(it.frase);
+        cambiato = true;
+      } else if ((j === 0 || FINE_APPESA.test(String(f.testo).trim().replace(/[,;:]$/, ''))) && parlati(out) > 3) {
+        out.splice(i, 1);
+        tolti.push(it.frase);
+        cambiato = true;
+      }
+    }
+    if (!cambiato) break;
   }
-  return { seq: out, tolti };
+  return { seq: out, tolti, spostati };
 }
 function conGancio(seq, r) {
   if (SENZA_TAGLI || modelloDebole() || !analisiCorrente) return seq;
@@ -360,8 +373,8 @@ const conSequenza = (r) => (discorso ? { ...r, sequenza: sequenzaPulita(r).map((
 const conFilo = (r) => {
   // correzione di un discorso (niente sequenza nuova): il filo si controlla sulla sequenza dell'AI
   if (discorso || SENZA_TAGLI || !analisiCorrente?.frasi?.length || !Array.isArray(r.sequenza)) return r;
-  const { seq, tolti } = controllaFilo(r.sequenza, analisiCorrente.frasi);
-  if (tolti.length) log(`filo del discorso: tolti ${tolti.join(', ')} (appesi o fuori posto)`);
+  const { seq, tolti, spostati } = controllaFilo(r.sequenza, analisiCorrente.frasi);
+  if (tolti.length || spostati.length) log(`filo del discorso:${spostati.length ? ` spostati ${spostati.join(', ')} prima della loro continuazione;` : ''}${tolti.length ? ` tolti ${tolti.join(', ')} (appesi)` : ''}`);
   return { ...r, sequenza: seq };
 };
 const perRegia = (r) => usaTuttoIlMateriale(DISCORSO ? { ...conFilo(conSequenza(r)), discorso: true, ...(SENZA_TAGLI ? { senzaTagli: true } : {}) } : r, analisiCorrente);
@@ -2165,9 +2178,14 @@ async function provaDiLetturaInterna(regia, piano, avvisi, analisi, brief) {
   const primo = pezzi[0].id;
   const togli = [...new Set((esito.togli || []).map(normFrase))].filter((id) => id !== primo && pezzi.some((x) => x.id === id)).slice(0, 3);
   if (!SENZA_TAGLI && togli.length && pezzi.length - togli.length >= 3) {
-    regia = { ...regia, sequenza: (regia.sequenza || []).filter((it) => !togli.includes(normFrase(it.frase))) };
-    ({ piano, avvisi } = risolviRegia(perRegia(regia), analisi));
-    note.push(`tolti ${togli.join(', ')} (appesi o fuori filo)`);
+    const nuova = { ...regia, sequenza: (regia.sequenza || []).filter((it) => !togli.includes(normFrase(it.frase))) };
+    const dopo = (perRegia(nuova).sequenza || []).filter((it) => it.frase).map((it) => normFrase(it.frase));
+    // nei discorsi, sotto il 70% del parlato il Regista torna al discorso INTERO: togliere allungherebbe il video
+    if (dopo.length < pezzi.length && !togli.some((x) => dopo.includes(x))) {
+      regia = nuova;
+      ({ piano, avvisi } = risolviRegia(perRegia(regia), analisi));
+      note.push(`tolti ${togli.join(', ')} (appesi o fuori filo)`);
+    } else log(`prova di lettura: non tolgo ${togli.join(', ')} (il discorso tornerebbe intero)`);
   }
   const parole = applicaParole(piano, regia, esito.parole);
   if (parole.length) note.push(`parole corrette: ${parole.join(', ')}`);
