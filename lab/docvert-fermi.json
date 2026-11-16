@@ -1,4 +1,15 @@
 {
-  "uscita": "12 · Risorse/Stili/Documentario verticale/_laboratorio",
-  "fermi": { "composizione": "SuMisura", "props": "lab/props/docvert.json", "fotogrammi": [45, 120, 260, 330, 420, 540] }
+ "uscita": "12 · Risorse/Stili/Impact/_laboratorio",
+ "fermi": {
+  "composizione": "SuMisura",
+  "props": "lab/props/docvert.json",
+  "fotogrammi": [
+   200,
+   240,
+   262,
+   280,
+   310,
+   345
+  ]
+ }
 }

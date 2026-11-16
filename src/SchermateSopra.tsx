@@ -53,31 +53,61 @@ const Scheda: React.FC<{ len: number; sfondo?: string; bordo?: string; children:
   );
 };
 
-// chat di Claude: la domanda si scrive nel fumetto, poi la risposta arriva parola per parola
+// il simbolo di Claude: raggi corallo; `gira` = sta pensando (ruota e pulsa)
+const Stella: React.FC<{ size: number; frame: number; gira?: boolean }> = ({ size, frame, gira }) => (
+  <svg width={size} height={size} viewBox="-50 -50 100 100" style={{ flex: 'none', transform: `rotate(${gira ? frame * 7 : 0}deg) scale(${gira ? 0.9 + 0.12 * Math.sin(frame / 3) : 1})` }}>
+    {Array.from({ length: 10 }, (_, i) => <rect key={i} x={-5} y={-48} width={10} height={36} rx={5} fill={CORALLO} transform={`rotate(${i * 36})`} />)}
+  </svg>
+);
+
+// chat di Claude come nell'app (Denis, 16/11: «la barra della chat in cui si scrivono le cose, il caricamento»):
+// 1) la domanda si batte nella barra in basso, la freccia si accende; 2) invio: la barra si svuota e la domanda
+// sale nel fumetto; 3) Claude pensa (stella che gira, puntini); 4) la risposta arriva parola per parola
 const Chat: React.FC<{ s: SchermataSopra; len: number }> = ({ s, len }) => {
   const frame = useCurrentFrame();
+  const { fps } = useVideoConfig();
+  const domanda = s.testo || '';
   const risposta = s.risposta || '';
-  const fineDomanda = risposta ? len * 0.42 : len * 0.8;
-  const domanda = scritto(s.testo || '', frame, 6, Math.max(10, fineDomanda));
-  const vista = risposta ? paroleScritte(risposta, frame, len * 0.5, len * 0.9) : '';
+  const invio = Math.round(len * (risposta ? 0.4 : 0.7));       // fotogramma dell'invio
+  const pensa = invio + Math.round(Math.min(fps * 0.9, len * 0.14)); // fine del caricamento
+  const battuto = scritto(domanda, frame, 5, invio - 6);
+  const inviato = frame >= invio;
+  const sale = molla(frame, fps, invio);
+  const pronto = !inviato && battuto.length === domanda.length;
+  const vista = risposta && frame >= pensa ? paroleScritte(risposta, frame, pensa, len * 0.9) : '';
+  const puntini = '.'.repeat(1 + (Math.floor(frame / 6) % 3));
   return (
     <Scheda len={len} sfondo="#FAF9F5">
-      <div style={{ padding: '26px 34px 30px', fontFamily: SANS }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 20 }}>
-          <span style={{ width: 22, height: 22, borderRadius: 11, background: CORALLO, display: 'inline-block' }} />
+      <div style={{ padding: '22px 30px 24px', fontFamily: SANS, display: 'flex', flexDirection: 'column', minHeight: 430, boxSizing: 'border-box' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 14 }}>
+          <Stella size={30} frame={frame} />
           <span style={{ fontSize: 30, fontWeight: 700, color: '#3D3929' }}>{s.titolo || 'Claude'}</span>
         </div>
-        <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
-          <div style={{ maxWidth: 760, background: '#EFECE3', borderRadius: 24, padding: '18px 24px', fontSize: 36, fontWeight: 600, color: '#1F1E1D', lineHeight: 1.3 }}>
-            {domanda}{frame < fineDomanda + 4 ? <Cursore frame={frame} colore="#1F1E1D" /> : null}
-          </div>
+        <div style={{ flex: 1 }}>
+          {inviato ? (
+            <div style={{ display: 'flex', justifyContent: 'flex-end', opacity: Math.min(1, sale * 1.5), transform: `translateY(${(1 - sale) * 70}px)` }}>
+              <div style={{ maxWidth: 760, background: '#EFECE3', borderRadius: 22, padding: '14px 22px', fontSize: 31, fontWeight: 600, color: '#1F1E1D', lineHeight: 1.28 }}>{domanda}</div>
+            </div>
+          ) : null}
+          {inviato && risposta ? (
+            <div style={{ marginTop: 16, display: 'flex', gap: 14, alignItems: 'flex-start' }}>
+              <div style={{ marginTop: 4 }}><Stella size={34} frame={frame} gira={frame < pensa} /></div>
+              {frame < pensa
+                ? <span style={{ fontSize: 30, fontWeight: 600, color: '#8A8577', lineHeight: 1.4 }}>Sto pensando{puntini}</span>
+                : <span style={{ fontSize: 31, fontWeight: 600, color: '#3D3929', lineHeight: 1.34 }}>{vista}</span>}
+            </div>
+          ) : null}
         </div>
-        {risposta && frame >= len * 0.46 ? (
-          <div style={{ marginTop: 22, fontSize: 32, fontWeight: 600, color: '#3D3929', lineHeight: 1.38, display: 'flex', gap: 14 }}>
-            <span style={{ width: 16, height: 16, marginTop: 14, borderRadius: 8, background: CORALLO, flex: 'none', opacity: 0.85 }} />
-            <span>{vista}</span>
+        {/* la barra della chat */}
+        <div style={{ marginTop: 16, display: 'flex', alignItems: 'center', gap: 14, background: '#FFFFFF', border: `2px solid ${pronto ? CORALLO : '#DEDACF'}`, borderRadius: 24, padding: '14px 14px 14px 22px',
+          boxShadow: '0 4px 14px rgba(60,50,30,0.08)' }}>
+          <span style={{ fontSize: 28, fontWeight: 600, color: '#B5B0A3' }}>+</span>
+          <div style={{ flex: 1, fontSize: 30, fontWeight: 600, lineHeight: 1.28, color: inviato ? '#B5B0A3' : '#1F1E1D', minHeight: 40 }}>
+            {inviato ? 'Rispondi a Claude…' : <>{battuto}<Cursore frame={frame} colore="#1F1E1D" /></>}
           </div>
-        ) : null}
+          <div style={{ width: 54, height: 54, borderRadius: 16, flex: 'none', background: pronto ? CORALLO : '#E7E3D8', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', fontSize: 32, fontWeight: 900,
+            transform: `scale(${pronto ? 1 + 0.1 * Math.max(0, Math.sin(frame / 2.5)) : inviato && frame < invio + 5 ? 0.86 : 1})` }}>↑</div>
+        </div>
       </div>
     </Scheda>
   );
@@ -200,7 +230,7 @@ export const SchermateSopra: React.FC<{ piano: Piano; sfx: number }> = ({ piano,
         );
       })}
       {sfx > 0 ? schermate.map((s, i) => <Sfx key={`sx${i}`} nome="whoosh" da={f(s.at) - 4} volume={0.32 * sfx} />) : null}
-      {sfx > 0 ? schermate.filter((s) => s.tipo === 'chat' && s.risposta).map((s, i) => <Sfx key={`sr${i}`} nome="ui_conferma" da={f(s.at + s.dur * 0.46)} volume={0.3 * sfx} />) : null}
+      {sfx > 0 ? schermate.filter((s) => s.tipo === 'chat' && s.risposta).map((s, i) => <Sfx key={`sr${i}`} nome="ui_conferma" da={f(s.at + s.dur * 0.4)} volume={0.3 * sfx} />) : null}
     </AbsoluteFill>
   );
 };
