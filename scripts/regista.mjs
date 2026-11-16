@@ -2086,6 +2086,95 @@ async function scriviDidascalie({ titolo, testo, brief, keywords }) {
   return didascalieSemplici({ titolo, testo, keywords });
 }
 
+// 📖 Prova di lettura (16/11, Denis dopo il FIFINE: «trova il modo di rendere questi errori meno presenti»).
+// Prima del render un'AI economica legge il testo ESATTAMENTE come lo sentirà chi guarda, pezzo per pezzo:
+//   - pezzi appesi o fuori filo («Quindi se volete aumentare il livello» staccato da tutto) → si tolgono
+//     (mai il primo, al massimo 3, ne restano almeno 3) e il piano si rifà;
+//   - parole che Whisper ha capito male e che lì non hanno senso («mutuo» in un video su un microfono → «muto»)
+//     → si correggono nei sottotitoli e nel testo.
+// Chiave gratuita con i Flash-Lite (lavoro facile), poi la chiave a pagamento solo Lite; se nessuna risponde
+// il video esce com'era. Non vale per «senza tagli» (solo le parole) né per «Solo render».
+const PROMPT_LETTURA = `Sei il primo spettatore di un video verticale di Denis, creator italiano di recensioni tech. Questo è il testo che si sentirà, nell'ordine, diviso nei pezzi del montaggio:
+{{PEZZI}}
+{{CONTESTO}}
+Leggilo come lo sentirà chi guarda e trova SOLO errori veri:
+1. "togli": i pezzi che rendono il discorso sconnesso: frasi lasciate a metà che non continuano nel pezzo dopo, pezzi che cominciano rimandando a qualcosa che non c'è subito prima («quindi…», «perché…»), lo stesso concetto detto due volte. Mai il primo pezzo, al massimo 3. Se il discorso fila, lista vuota.
+2. "parole": parole che il riconoscimento vocale ha scritto male e che in questo contesto non hanno senso (es. «mutuo» in un video su un microfono è «muto»; nomi di prodotti e marche storpiati). Solo errori evidenti di trascrizione, mai sinonimi o cambi di stile. "sbagliata" = UNA parola, scritta esattamente come nel testo.
+Rispondi SOLO con JSON: {"togli":["F009"],"parole":[{"sbagliata":"mutuo","giusta":"muto"}],"filo":"una frase: il discorso fila o no, e perché"}`;
+const normParola = (w) => String(w || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^\p{L}\p{N}]+/gu, '');
+// le parole corrette: nei sottotitoli (piano.parole, stessa punteggiatura e maiuscola) e nei testi
+export function applicaParole(piano, regia, correzioni) {
+  const fatte = [];
+  for (const c of correzioni || []) {
+    const da = String(c?.sbagliata || '').trim(), a = String(c?.giusta || '').trim();
+    if (!da || !a || /\s/.test(da) || normParola(da) === normParola(a) || a.length > 30) continue;
+    let n = 0;
+    for (const p of piano.parole || []) {
+      if (normParola(p.w) !== normParola(da)) continue;
+      const fuori = String(p.w).match(/^([^\p{L}\p{N}]*)[\s\S]*?([^\p{L}\p{N}]*)$/u);
+      const maiuscola = /^\p{Lu}/u.test(String(p.w).replace(/^[^\p{L}\p{N}]+/u, ''));
+      p.w = `${fuori?.[1] || ''}${maiuscola ? a[0].toUpperCase() + a.slice(1) : a}${fuori?.[2] || ''}`;
+      n++;
+    }
+    const re = new RegExp(`(?<![\\p{L}\\p{N}])${da.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(?![\\p{L}\\p{N}])`, 'giu');
+    for (const o of [piano, regia]) for (const k of ['testo', 'testo_montato']) if (typeof o?.[k] === 'string') o[k] = o[k].replace(re, (m) => (/^\p{Lu}/u.test(m) ? a[0].toUpperCase() + a.slice(1) : a));
+    if (n) fatte.push(`«${da}» → «${a}» (${n})`);
+  }
+  return fatte;
+}
+// il testo di un pezzo come si sente (da_parola / fino_a)
+function testoPezzo(it, frasi) {
+  const f = frasi.find((x) => x.id === normFrase(it.frase));
+  let t = String(f?.testo || '');
+  if (it.da_parola) { const i = t.toLowerCase().indexOf(String(it.da_parola).toLowerCase()); if (i > 0) t = t.slice(i); }
+  if (it.fino_a) { const fa = String(it.fino_a).toLowerCase(); const i = t.toLowerCase().lastIndexOf(fa); if (i >= 0) t = t.slice(0, i + fa.length); }
+  return t.trim();
+}
+async function provaDiLettura(regia, piano, avvisi, analisi, brief) {
+  // mai un montaggio fermo per colpa della prova di lettura: se qualcosa va storto, il video resta com'era
+  try { return await provaDiLetturaInterna(regia, piano, avvisi, analisi, brief); } catch (e) { log('prova di lettura saltata:', e.message.split('\n')[0]); return { regia, piano, avvisi }; }
+}
+async function provaDiLetturaInterna(regia, piano, avvisi, analisi, brief) {
+  if (!piano?.testo || !analisi?.frasi?.length) return { regia, piano, avvisi };
+  const seq = (perRegia(regia).sequenza || []).filter((it) => it.frase);
+  const pezzi = seq.map((it) => ({ id: normFrase(it.frase), testo: testoPezzo(it, analisi.frasi) })).filter((x) => x.testo);
+  if (pezzi.length < 2) return { regia, piano, avvisi };
+  const testo = PROMPT_LETTURA.replace('{{PEZZI}}', pezzi.map((x) => `[${x.id}] ${x.testo}`).join('\n'))
+    .replace('{{CONTESTO}}', brief ? `\nContesto (brief): ${String(brief).replace(/\s+/g, ' ').slice(0, 400)}\n` : '');
+  const body = JSON.stringify({ contents: [{ role: 'user', parts: [{ text: testo }] }], generationConfig: { responseMimeType: 'application/json', temperature: 0.1 } });
+  const prova = async (chiave, soloLite) => {
+    const headers = { 'content-type': 'application/json', 'x-goog-api-key': chiave };
+    const scadenza = Date.now() + 90_000;
+    const tutti = soloLite ? ['gemini-flash-lite-latest'] : (await modelliGemini(headers)).filter((m) => !quotaGiornoFinita(m)).sort((a, b) => Number(/lite/.test(b)) - Number(/lite/.test(a)));
+    for (const modello of tutti.slice(0, 3)) {
+      if (Date.now() >= scadenza) break;
+      const esito = await chiamaGemini(modello, body, headers, { scadenza });
+      if (!esito.risposta) continue;
+      try { const j = await esito.risposta.json(); return JSON.parse((j.candidates?.[0]?.content?.parts || []).map((x) => x.text || '').join('').replace(/^```(?:json)?\s*|\s*```$/g, '')); } catch { /* il prossimo */ }
+    }
+    return null;
+  };
+  let esito = null;
+  try {
+    if (process.env.GEMINI_API_KEY_GRATIS) esito = await prova(process.env.GEMINI_API_KEY_GRATIS, false);
+    if (!esito && process.env.GEMINI_API_KEY) esito = await prova(process.env.GEMINI_API_KEY, true);
+  } catch (e) { log('prova di lettura: non riuscita', e.message.split('\n')[0]); }
+  if (!esito) { log('prova di lettura: nessuna AI ha risposto, il video resta com\'è'); return { regia, piano, avvisi }; }
+  if (esito.filo) log(`prova di lettura: ${String(esito.filo).slice(0, 200)}`);
+  const note = [];
+  const primo = pezzi[0].id;
+  const togli = [...new Set((esito.togli || []).map(normFrase))].filter((id) => id !== primo && pezzi.some((x) => x.id === id)).slice(0, 3);
+  if (!SENZA_TAGLI && togli.length && pezzi.length - togli.length >= 3) {
+    regia = { ...regia, sequenza: (regia.sequenza || []).filter((it) => !togli.includes(normFrase(it.frase))) };
+    ({ piano, avvisi } = risolviRegia(perRegia(regia), analisi));
+    note.push(`tolti ${togli.join(', ')} (appesi o fuori filo)`);
+  }
+  const parole = applicaParole(piano, regia, esito.parole);
+  if (parole.length) note.push(`parole corrette: ${parole.join(', ')}`);
+  if (note.length) { log(`prova di lettura: ${note.join(' · ')}`); piano.note = [`📖 Prova di lettura: ${note.join(' · ')}`, piano.note].filter(Boolean).join(' · '); }
+  return { regia, piano, avvisi };
+}
+
 // comando lungo in parallelo al resto (es. copia degli originali su Drive)
 function inSottofondo(cmd, args) {
   const p = new Promise((ok, ko) => {
@@ -2562,6 +2651,7 @@ async function preparaSolo() {
 async function rifinisciPiano(regia, risultato, analisi, avvisoStile) {
   let { piano, avvisi } = risultato;
   if (stileSuMisura?.grafica.stock && await scaricaStock(conSequenza(regia), analisi)) ({ piano, avvisi } = risolviRegia(perRegia(regia), analisi));
+  if (!stileSuMisura?.grafica.beat) ({ regia, piano, avvisi } = await provaDiLettura(regia, piano, avvisi, analisi, process.env.BRIEF_EXTRA || ''));
   if (DISCORSO) { Object.assign(regia, { sequenza: conSequenza(regia).sequenza, discorso: true }); fs.writeFileSync(path.join(WORK, 'regia.json'), JSON.stringify(regia, null, 1)); }
   if (avvisi.length) log('avvisi regia:', avvisi.join(' | '));
   if (avvisoStile) piano.note = [`⚠️ ${avvisoStile}`, piano.note].filter(Boolean).join(' · ');
@@ -2903,6 +2993,11 @@ async function main() {
       ({ piano, avvisi } = fatto.risultato);
       // B-roll di repertorio: si scaricano le ricerche dell'AI e si rifà il piano con quei video
       if (stileSuMisura?.grafica.stock && await scaricaStock(conSequenza(regia), analisi)) ({ piano, avvisi } = risolviRegia(perRegia(regia), analisi));
+      // 📖 prova di lettura del testo montato, prima di tagliare e renderizzare
+      if (nuovaRegia && !stileSuMisura?.grafica.beat) {
+        await fase(nome, '📖 Rileggo il testo montato come lo sentirà chi guarda', 'regia');
+        ({ regia, piano, avvisi } = await provaDiLettura(regia, piano, avvisi, analisi, [process.env.BRIEF_EXTRA || '', CORREZIONE || ''].join(' ')));
+      }
       // salvata con la sequenza vera: "Solo render" e "Correggi" ripartono da questa
       if (DISCORSO && nuovaRegia) { Object.assign(regia, { sequenza: conSequenza(regia).sequenza, discorso: true }); fs.writeFileSync(path.join(WORK, 'regia.json'), JSON.stringify(regia, null, 1)); }
       if (avvisi.length) log('avvisi regia:', avvisi.join(' | '));

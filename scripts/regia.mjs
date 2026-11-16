@@ -67,6 +67,19 @@ export function risolviRegia(regia, analisi) {
       avvisi.push(`chiusura completata con ${catena.slice(0, fino + 1).map((g) => g.id).join(', ')}: l'ultima frase era a metà`);
     } else avvisi.push(`la chiusura (${fUltima.id}) finisce a metà frase`);
   } else if (fUltima && !finita(fUltima.testo)) avvisi.push(`la chiusura (${fUltima.id}) finisce senza punto: controlla`);
+  // 🧹 coda finale (16/11, FIFINE: «…è il muto quindi»): se l'ultima frase finisce con un intercalare che apre
+  // qualcosa che non arriva («quindi», «e», «ma», «cioè»…), si chiude sulla parola prima (fino_a)
+  const ultimoOra = sequenza.map((it) => Boolean(it.frase)).lastIndexOf(true);
+  const fFine = ultimoOra >= 0 ? frasi.get(normFrase(sequenza[ultimoOra].frase)) : null;
+  if (!intatto && fFine && !sequenza[ultimoOra].fino_a) {
+    const t = String(fFine.testo).trim();
+    const coda = CODA_FINALE.exec(t);
+    const resto = coda ? t.slice(0, coda.index).trim().replace(/[,;:]$/, '').split(/\s+/) : [];
+    if (coda && resto.length >= 3) {
+      sequenza[ultimoOra] = { ...sequenza[ultimoOra], fino_a: resto.slice(-2).join(' ') };
+      avvisi.push(`chiusura: tolto «${coda[0].trim()}» in fondo a ${fFine.id}`);
+    }
+  }
 
   // in mezzo alla sequenza: se una frase continua nella successiva e l'AI l'ha saltata,
   // la inserisco (stesso criterio della chiusura). Evita "lasciata a metà" nel racconto.
@@ -582,6 +595,8 @@ function distanza(a, b) {
 }
 
 // fine parola senza \b: con le lettere accentate (però, perché, cioè) \b non scatta mai
+// intercalari che in fondo al video lasciano il discorso aperto
+export const CODA_FINALE = /(?:^|\s)(quindi|e|ma|cioè|allora|però|insomma|comunque|niente|ok|ecco|praticamente|tipo|diciamo)[\s.,!?…]*$/iu;
 export const RIMANDO = /^(appunto|però|quindi|anche|ma|perché|poi|infatti|cioè|questo|questa|questi|queste|l'unica|l'unico|invece|allora|comunque)(?![\p{L}\p{N}])/iu;
 const finita = (t) => /[.!?…]["»”)]?$/.test(String(t).trim());
 // Tagli dentro un pezzo (10/11, mouse Ajazz: «anche se anche completely black», «nel receiver, nel

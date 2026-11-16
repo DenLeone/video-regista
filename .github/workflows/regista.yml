@@ -1,6 +1,7 @@
 name: regista
 # nome del giro con la cartella: il 🧭 Capo squadra di Den Squadra riconosce così la fine del montaggio
-run-name: ${{ inputs.cartella && format('regista · {0}', inputs.cartella) || 'regista' }}
+# (16/11) con «chi» il nome dice anche chi l'ha lanciato: «regista · Fifine AM8 · Revisore» (il bot di Den lo riconosce lo stesso)
+run-name: ${{ inputs.cartella && format('regista · {0}{1}', inputs.cartella, inputs.chi && format(' · {0}', inputs.chi) || '') || 'regista' }}
 
 on:
   workflow_dispatch:          # avvio dal bot, dall'app o dal tab Actions
@@ -61,6 +62,10 @@ on:
         description: 'Interno, non cambiare. 1 = primo giro, 2 = rilancio automatico se il server ha fallito'
         required: false
         default: '1'
+      chi:
+        description: 'Chi lo lancia, solo per il nome del giro (es. Revisore, Claude). Vuoto = Denis dal bot'
+        required: false
+        default: ''
 
 # cartelle di Drive (rinominate da Denis il 20/10): le legge anche scripts/cartelle.mjs
 env:
@@ -471,6 +476,7 @@ jobs:
           TELEGRAM: ${{ inputs.telegram }}
           SECONDI: ${{ inputs.secondi }}
           STILI: ${{ inputs.stili }}
+          CHI: ${{ inputs.chi }}
         run: |
           if ! command -v gh >/dev/null 2>&1; then
             echo "ok=0" >> "$GITHUB_OUTPUT"
@@ -482,8 +488,8 @@ jobs:
             --arg cartella "$CARTELLA" --arg brief "$BRIEF" --arg origine "$ORIGINE" \
             --arg correzione "$CORREZIONE" --arg ai "$AI" --arg modello "$MODELLO" \
             --arg modello_gemini "$MODELLO_GEMINI" --arg azione "$AZIONE" \
-            --arg r2 "$R2" --arg telegram "$TELEGRAM" --arg secondi "$SECONDI" --arg stili "$STILI" \
-            '{ref:$ref, inputs:{cartella:$cartella, brief:$brief, origine:$origine, correzione:$correzione, ai:$ai, modello:$modello, modello_gemini:$modello_gemini, azione:$azione, r2:$r2, telegram:$telegram, secondi:$secondi, stili:$stili, tentativo:"2"}}' \
+            --arg r2 "$R2" --arg telegram "$TELEGRAM" --arg secondi "$SECONDI" --arg stili "$STILI" --arg chi "$CHI" \
+            '{ref:$ref, inputs:{cartella:$cartella, brief:$brief, origine:$origine, correzione:$correzione, ai:$ai, modello:$modello, modello_gemini:$modello_gemini, azione:$azione, r2:$r2, telegram:$telegram, secondi:$secondi, stili:$stili, chi:$chi, tentativo:"2"}}' \
             | gh api --method POST "/repos/${GITHUB_REPOSITORY}/actions/workflows/regista.yml/dispatches" --input -; then
             echo "ok=1" >> "$GITHUB_OUTPUT"
             echo "rilancio avviato (tentativo 2): Telegram solo se fallisce anche quello"

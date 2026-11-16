@@ -40,3 +40,30 @@ test('nelle correzioni i pezzi appesi o fuori posto escono (FIFINE v2)', async (
   // l'ordine giusto non si tocca
   assert.deepEqual(controllaFilo(tutte.map((f) => ({ frase: f.id })), tutte).tolti, []);
 });
+
+// 🧹 la coda finale e 📖 le parole corrette (16/11, FIFINE: «…è il mutuo quindi»)
+const paroleDi = (testo, da) => testo.split(' ').map((w, i) => ({ w, s: da + i * 0.4, e: da + i * 0.4 + 0.3 }));
+const analisiFinale = () => {
+  const f1 = 'A 50 euro vi portate a casa un microfono.', f2 = 'una cosa utile è il mutuo quindi';
+  return { fps: 30, sorgenti: [{ id: 'A', file: 'a.mp4', principale: true, tipo: 'video', durata: 20, orient: 'v', parole: [...paroleDi(f1, 0), ...paroleDi(f2, 4)] }],
+    frasi: [{ id: 'F001', principale: 'A', inizio: 0, fine: 3.6, testo: f1 }, { id: 'F002', principale: 'A', inizio: 4, fine: 6.8, testo: f2 }] };
+};
+
+test('l\'ultima frase non finisce più su «quindi»', async () => {
+  const { risolviRegia } = await import('./regia.mjs');
+  const { piano, avvisi } = risolviRegia({ sequenza: [{ frase: 'F001', camera: 'A' }, { frase: 'F002', camera: 'A' }], keywords: [] }, analisiFinale());
+  assert.ok(avvisi.some((a) => /tolto «quindi»/.test(a)), avvisi.join(' | '));
+  assert.match(piano.testo, /è il mutuo$/);
+  assert.ok(!piano.parole.some((p) => /quindi/i.test(p.w)));
+});
+
+test('le parole sbagliate si correggono nei sottotitoli e nel testo, con punteggiatura e maiuscola', async () => {
+  const { applicaParole } = await import('./regista.mjs');
+  const piano = { testo: 'è il mutuo. Mutuo!', parole: [{ w: 'il' }, { w: 'mutuo.' }, { w: 'Mutuo!' }] };
+  const regia = { testo_montato: 'è il mutuo.' };
+  const fatte = applicaParole(piano, regia, [{ sbagliata: 'mutuo', giusta: 'muto' }, { sbagliata: 'due parole', giusta: 'x' }, { sbagliata: 'il', giusta: 'il' }]);
+  assert.deepEqual(piano.parole.map((p) => p.w), ['il', 'muto.', 'Muto!']);
+  assert.equal(piano.testo, 'è il muto. Muto!');
+  assert.equal(regia.testo_montato, 'è il muto.');
+  assert.equal(fatte.length, 1);
+});
