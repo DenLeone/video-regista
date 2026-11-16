@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { AbsoluteFill, Audio, continueRender, delayRender, Easing, interpolate, Sequence, staticFile, useCurrentFrame } from 'remotion';
 import { Clips, f, Inserti, Ritagli, Sfx, usaFps, volumeSfx, Icone, MusicaSotto } from './comune';
+import { SchermateSopra } from './SchermateSopra';
 import { gruppiParole } from './Cinematico';
 import { durataTotale, FontStile, GraficaStile, Keyword, Piano, Posizione, W } from './piano';
 import { clamp, dentro, norm, OMBRA, pulisci, RACCORDO, SICURA, stileFont, larghezzaTesto } from './testo';
@@ -29,6 +30,7 @@ const LOOK: Record<GraficaStile['look'], string | undefined> = {
   'bianco e nero': 'grayscale(1) contrast(1.08)',
   teal: undefined, // LUT teal e arancio già applicata in ffmpeg
   'chiaro caldo': undefined, // in ffmpeg: volto ben esposto e luce calda (regista.mjs)
+  'caldo naturale': undefined, // in ffmpeg (documentario verticale, 16/11)
 };
 // basso: sopra la descrizione e i pulsanti di TikTok (zona sicura, testo.ts)
 const Y: Record<Posizione, number> = { alto: 420, centro: 1060, basso: 1320 };
@@ -407,6 +409,8 @@ export const SuMisura: React.FC<Piano> = (piano) => {
         </Sequence>
       ))}
       {g.firma ? <Firma nome={g.firma} g={g} /> : null}
+      {/* documentario verticale: schermate animate nella fascia alta, sopra la persona */}
+      {g.schermate === 'sopra' ? <SchermateSopra piano={piano} sfx={sfx} /> : null}
 
       {pezzi.map((p, i) => (
         <Sequence key={`s${i}`} from={f(p.at)} durationInFrames={len(p.at, p.fine)}>

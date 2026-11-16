@@ -68,8 +68,9 @@ export type Piano = {
   // schede informative di vetro (stile reazione): scritte dall'AI su quello che Denis spiega
   schede?: { at: number; dur: number; titolo: string; colore: string; sezioni: { titolo: string; testo: string }[]; sintesi?: string }[];
   // schermate animate dello stile ListaUI (vedi scripts/stili/ListaUI.md); media = file in public/media
-  schermate?: { at: number; dur: number; tipo: 'capitolo' | 'chat' | 'finestra' | 'griglia' | 'app' | 'pillola';
-    titolo?: string; testo?: string; numero?: number; voci?: string[]; media?: string[] }[];
+  // + quelle del documentario verticale (src/SchermateSopra.tsx): chat con `risposta`, terminale, numeri, titolo, repo, immagine
+  schermate?: { at: number; dur: number; tipo: 'capitolo' | 'chat' | 'finestra' | 'griglia' | 'app' | 'pillola' | 'terminale' | 'numeri' | 'titolo' | 'repo' | 'immagine';
+    titolo?: string; testo?: string; risposta?: string; numero?: number; voci?: string[]; media?: string[] }[];
   sponsor?: { material: string; test: string } | null;
   sponsorAt?: number;       // da quando mostrare il cartiglio
   note?: string;            // dubbi/scelte di Claude, finiscono in NOTE.txt
@@ -130,8 +131,13 @@ export type GraficaStile = {
   // strati: le parole chiave usano il corsivo, i numeri il sans nero e sono sempre enormi
   enfasiCorsivo?: boolean;
   dietro: boolean;                           // le scritte grandi passano dietro alla persona
-  look: 'naturale' | 'caldo' | 'freddo' | 'bianco e nero' | 'teal' | 'chiaro caldo';  // teal e chiaro caldo: in ffmpeg, non CSS
-  risalto?: boolean;                         // soggetto in risalto: tu luminoso, sfondo buio e petrolio (scripts/look/risalto.py)
+  look: 'naturale' | 'caldo' | 'freddo' | 'bianco e nero' | 'teal' | 'chiaro caldo' | 'caldo naturale';  // teal, chiaro caldo e caldo naturale: in ffmpeg, non CSS
+  // soggetto in risalto: tu luminoso, sfondo buio e petrolio (scripts/look/risalto.py); «naturale» = sfondo solo un po'
+  // più scuro (risaltoLuce, 0,8 = −20%), senza petrolio (documentario verticale, 16/11)
+  risalto?: boolean | 'naturale';
+  risaltoLuce?: number;
+  voce?: 'podcast';                          // traccia della voce «da podcast» (regista.mjs voceStile)
+  schermate?: 'sopra';                       // schermate animate nella fascia alta, sopra la persona (documentario verticale)
   sfoca?: boolean;                           // con il risalto, anche lo sfondo sfocato
   rivela?: boolean;                          // inizio "prima e dopo": l'immagine piatta che si colora
   stacchi?: boolean;                         // ritmo veloce: la regia può cambiare inquadratura a metà frase

@@ -1,0 +1,19 @@
+{
+  "titolo": "ECC", "tavola": "", "soggetto": "ECC", "fps": 30,
+  "clips": [{ "file": "zz_prova_doc.mp4", "start": 0, "end": 21, "orient": "v" }],
+  "keywords": [], "flickers": [],
+  "parole": [
+    { "at": 0.2, "dur": 0.4, "w": "C'è" }, { "at": 0.6, "dur": 0.4, "w": "una" }, { "at": 1.0, "dur": 0.5, "w": "skill" }, { "at": 1.5, "dur": 0.6, "w": "talmente" }, { "at": 2.1, "dur": 0.6, "w": "potente" },
+    { "at": 6.2, "dur": 0.4, "w": "basta" }, { "at": 6.6, "dur": 0.4, "w": "che" }, { "at": 7.0, "dur": 0.5, "w": "scrivi" }, { "at": 7.5, "dur": 0.4, "w": "a" }, { "at": 7.9, "dur": 0.6, "w": "Claude" }
+  ],
+  "grafica": { "nome": "Documentario verticale", "schermate": "sopra", "sottotitoli": "frase", "maiuscolo": true, "posizione": "basso", "dimensione": 60,
+    "fontSottotitoli": { "famiglia": "Montserrat", "peso": 800 }, "titoli": false, "look": "caldo naturale", "sfx": false, "vignetta": 0 },
+  "sfx": false,
+  "schermate": [
+    { "at": 0.3, "dur": 2.6, "tipo": "titolo", "titolo": "Claude Code", "testo": "LA *GOD MODE* DI CLAUDE" },
+    { "at": 3.0, "dur": 3.0, "tipo": "numeri", "titolo": "Everything Claude Code", "voci": ["300+ skill", "70+ agenti", "gratis"] },
+    { "at": 6.2, "dur": 5.5, "tipo": "chat", "titolo": "Claude", "testo": "Voglio installare Everything Claude Code, direttamente da GitHub", "risposta": "Certo! È un plugin gratuito con più di 300 skill. Ti spiego cosa fa e come installarlo in due comandi." },
+    { "at": 11.9, "dur": 4.2, "tipo": "terminale", "titolo": "Claude Code", "voci": ["/plugin marketplace add https://github.com/affaan-m/ECC", "/plugin install ecc@ecc"] },
+    { "at": 16.3, "dur": 3.5, "tipo": "repo", "titolo": "affaan-m / ECC", "testo": "Skill, agenti e comandi per Claude Code", "voci": ["gratis", "MIT"] }
+  ]
+}

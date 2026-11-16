@@ -400,6 +400,33 @@ function audio(ric) {
   }
 }
 
+// fermi: fotogrammi di una composizione Remotion con un piano finto, per vedere la grafica senza girato
+// (16/11, schermate del documentario verticale). Il video sotto è una stanza finta fatta qui con ffmpeg
+// (public/media/zz_prova_doc.mp4): nel repo pubblico niente girato vero.
+// { "fermi": { "composizione": "SuMisura", "props": "lab/props/docvert.json", "fotogrammi": [45, 120] } }
+function fermi(ric) {
+  const r = ric.fermi;
+  if (!fs.existsSync(path.join(ROOT, 'node_modules', 'remotion'))) run('npm', ['ci', '--no-audit', '--no-fund'], { cwd: ROOT, stdio: 'inherit' });
+  fs.mkdirSync(path.join(ROOT, 'public', 'media'), { recursive: true });
+  run('ffmpeg', ['-v', 'error', '-y', '-f', 'lavfi', '-i', 'color=c=0x1a1410:s=1080x1920:d=30:r=30', '-vf',
+    'drawbox=x=0:y=0:w=1080:h=700:color=0x2a2230@1:t=fill,drawbox=x=120:y=60:w=40:h=520:color=0xff3c78@0.9:t=fill,'
+    + 'drawbox=x=640:y=430:w=360:h=70:color=0x2ad4ff@0.8:t=fill,drawbox=x=300:y=640:w=480:h=560:color=0x8a6a52@1:t=fill,'
+    + 'drawbox=x=180:y=1150:w=720:h=770:color=0xd9cfc2@1:t=fill', '-c:v', 'libx264', '-pix_fmt', 'yuv420p', path.join(ROOT, 'public', 'media', 'zz_prova_doc.mp4')]);
+  const fatti = [];
+  for (const fr of r.fotogrammi || [0]) {
+    const o = path.join(OUT, `fermo-${String(fr).padStart(4, '0')}.jpg`);
+    try {
+      run('npx', ['remotion', 'still', 'src/index.ts', r.composizione, o, `--props=${path.join(ROOT, r.props)}`, `--frame=${fr}`, '--image-format=jpeg', '--jpeg-quality=85', '--log=error'], { cwd: ROOT, stdio: ['ignore', 'pipe', 'inherit'] });
+      fatti.push(o);
+    } catch (e) { log(`fermo ${fr}: ${e.message.split('\n')[0]}`); }
+  }
+  // miniatura leggera di tutti i fermi in fila (~40 KB): si guarda anche da dove non si scaricano immagini grandi
+  if (fatti.length) run('ffmpeg', ['-y', '-v', 'error', ...fatti.flatMap((o) => ['-i', o]), '-filter_complex',
+    `${fatti.map((_, k) => `[${k}]scale=200:-2[m${k}]`).join(';')};${fatti.map((_, k) => `[m${k}]`).join('')}${fatti.length > 1 ? `hstack=${fatti.length}` : 'null'}`,
+    '-q:v', '5', path.join(OUT, 'fermi-mini.jpg')]);
+  log(`fermi: ${fatti.length} su ${(r.fotogrammi || [0]).length}`);
+}
+
 // Racconto 21:9 (src/racconto): voce e foto da Drive, render Remotion qui sul runner, video su Drive.
 // { "racconto": { "dati": "scripts/racconto/ai.json", "voce": "<file audio su Drive>",
 //   "foto": [{ "a": "racconto/denis.jpg", "file": "<video su Drive>", "t": 12 }], "video": "<mp4 su Drive>" } }
@@ -572,6 +599,7 @@ async function main() {
   if (ric.ritmo) ritmo(ric);
   if (ric.audio) audio(ric);
   if (ric.racconto) racconto(ric);
+  if (ric.fermi) fermi(ric);
   if (ric.youtube) await youtube(ric);
   if (ric.analizza) await analizza(ric);
   if (ric.sequenze) { sequenze(ric); carica(); }

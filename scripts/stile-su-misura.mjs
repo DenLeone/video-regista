@@ -105,7 +105,13 @@ export const BASE = {
 // curvaChiara) e poi il colore. "chiaro caldo": scelto da Denis tra 9 prove su Manifestazioni (20/10)
 export const LOOK_FFMPEG = {
   'chiaro caldo': { esposizione: { obiettivo: 0.5, obiettivoPelle: 0.33 }, filtro: 'colortemperature=temperature=5600,eq=saturation=1.08' },
+  // documentario verticale (16/11): la variante «E caldo» scelta da Denis tra le prove sul girato Sony S-Log3
+  'caldo naturale': { filtro: 'colorbalance=rs=0.02:bs=-0.03:rm=0.03:gm=0.005:bm=-0.035:rh=0.02:bh=-0.025,eq=saturation=1.04' },
 };
+// 🎙 voce «da podcast» (campo «Voce: podcast»): la versione 3 delle prove del 16/11, scelta da Denis.
+// Equalizzatore (corpo sui bassi, meno rimbombo, presenza e aria), de-esser, compressore e limitatore
+export const CATENA_PODCAST = 'highpass=f=70,lowshelf=f=120:g=3,equalizer=f=300:t=q:w=1.5:g=-3,equalizer=f=3500:t=q:w=1.4:g=3,'
+  + 'highshelf=f=10000:g=2,deesser=i=0.4,acompressor=threshold=0.063:ratio=4:attack=5:release=120:makeup=3,alimiter=limit=0.89,loudnorm=I=-14:TP=-1:LRA=5';
 
 // campi che decidono la grafica; tutto il resto va all'AI come indicazione di regia
 const GRAFICA = ['nome', 'apertura', 'font apertura', 'colore apertura', 'sottotitoli', 'font sottotitoli', 'colore sottotitoli',
@@ -113,7 +119,7 @@ const GRAFICA = ['nome', 'apertura', 'font apertura', 'colore apertura', 'sottot
   'colore accento', 'posizione titoli', 'look', 'bianco e nero', 'vignettatura', 'effetti sonori', 'musica', 'volume musica',
   'font corsivo', 'enfasi corsivo', 'scritte dietro di me', 'soggetto in risalto', 'sfondo sfocato', 'inizio', 'chiusura', 'tagli dentro le frasi',
   'entrata parole grandi', 'firma', 'transizioni', 'cornice pellicola', 'inserti', 'b-roll stock', 'colori parole grandi', 'montaggio',
-  'maiuscolo parole grandi', 'righe', 'titolo prodotto', 'etichette tecniche', 'invito a commentare'];
+  'maiuscolo parole grandi', 'righe', 'titolo prodotto', 'etichette tecniche', 'invito a commentare', 'colore su misura', 'voce', 'schermate'];
 
 /** stile.txt → { grafica, testoAI, musica, campi } */
 export function leggiStile(testo, nomeCartella) {
@@ -163,7 +169,7 @@ export function leggiStile(testo, nomeCartella) {
   g.accento = colore(campi['colore accento'], g.accento);
   g.posTitoli = posizione(campi['posizione titoli'], g.posTitoli);
   const look = norm(campi.look);
-  if (look) g.look = /teal|petrol|arancio/.test(look) ? 'teal' : /chiar/.test(look) && /cald/.test(look) ? 'chiaro caldo' : /cald/.test(look) ? 'caldo' : /fredd/.test(look) ? 'freddo' : /bianco|b\/n|bn/.test(look) ? 'bianco e nero' : 'naturale';
+  if (look) g.look = /teal|petrol|arancio/.test(look) ? 'teal' : /chiar/.test(look) && /cald/.test(look) ? 'chiaro caldo' : /cald/.test(look) && /natur/.test(look) ? 'caldo naturale' : /cald/.test(look) ? 'caldo' : /fredd/.test(look) ? 'freddo' : /bianco|b\/n|bn/.test(look) ? 'bianco e nero' : 'naturale';
   if (campi['soggetto in risalto']) g.risalto = si(campi['soggetto in risalto']);
   if (campi['sfondo sfocato']) g.sfoca = si(campi['sfondo sfocato']);
   if (campi.inizio) g.rivela = /prima|dopo|rivel/.test(norm(campi.inizio));
@@ -206,10 +212,25 @@ export function leggiStile(testo, nomeCartella) {
   // musica: "sì" = a caso tra i brani in asset, altrimenti il nome del file da usare
   const musica = campi.musica && !/^no\b/.test(norm(campi.musica)) ? (si(campi.musica) ? '*' : campi.musica) : null;
   const volumeMusica = numero(campi['volume musica'], 12, 0, 100) / 100;
+  // voce «da podcast» sulla traccia della voce (regista.mjs voceStile)
+  if (/podcast|radio|piena/.test(norm(campi.voce || ''))) g.voce = 'podcast';
+  // schermate animate nella fascia alta, sopra la persona (documentario verticale, 16/11)
+  if (campi.schermate && !/^no\b/.test(norm(campi.schermate))) g.schermate = 'sopra';
   // colori sempre naturali, qualunque cosa dica lo stile (Denis, 25/10: "non voglio modifiche"):
-  // niente look, risalto, sfocatura, vignetta né "prima e dopo". Resta solo la conversione I-Log
-  g.look = 'naturale';
-  g.risalto = false;
+  // niente look, risalto, sfocatura, vignetta né "prima e dopo". Resta solo la conversione tecnica (I-Log, S-Log3).
+  // Eccezione SOLO per gli stili con «Colore su misura: sì» (Denis, 16/11, documentario verticale: «più caldo il
+  // color grading, con il back leggermente più scuro»): look «caldo naturale» e risalto «naturale» (sfondo un po'
+  // più scuro, niente petrolio, es. «naturale -20%»). Tutto il resto resta spento anche lì.
+  if (si(campi['colore su misura'] || '')) {
+    if (g.look !== 'caldo naturale') g.look = 'naturale';
+    const r = norm(campi['soggetto in risalto'] || '');
+    const pct = /(\d{1,2})\s*%/.exec(r);
+    g.risalto = /natur/.test(r) ? 'naturale' : false;
+    if (g.risalto) g.risaltoLuce = pct ? +(1 - Number(pct[1]) / 100).toFixed(2) : 0.8;
+  } else {
+    g.look = 'naturale';
+    g.risalto = false;
+  }
   g.sfoca = false;
   g.rivela = false;
   g.vignetta = 0;
@@ -286,6 +307,17 @@ export function promptSuMisura(g, testoAI, disponibili = {}) {
   }
   if (g.cornice === 'laterale') righe.push('- **Inserti piccoli di lato** (foto, schermate, B-roll come `inserto`): una scheda piccola e inclinata accanto a Denis, mai sopra di lui. Pochi: al massimo uno ogni 10 s (2–3 in 30 s), ognuno su una frase da 1,5–3 s che nomina proprio quella cosa. Lo script toglie quelli in più.');
   if (g.cornice === 'tv') righe.push('- Gli inserti compaiono dentro un televisore anni \'70 (barre colorate all\'accensione): perfetti per filmati, schermate e foto di cui Denis parla.');
+  // 📱 documentario verticale (16/11): schermate animate nella fascia alta, sopra la testa (src/SchermateSopra.tsx)
+  if (g.schermate === 'sopra') righe.push(
+    '- **Schermate sopra la testa** (la parte principale dello stile): Denis parla nella metà bassa; nella fascia alta, sopra la sua testa, compaiono schermate animate pulite. Campo `schermate` in cima alla regia (accanto a `keywords`): una lista di `{"frase": "F012", "ritardo": 0.2, "dur": 3, "tipo": "...", ...}`, ognuna ancorata a una frase usata nel montaggio (`ritardo` = secondi dopo l\'inizio della frase). Ritmo: una schermata ogni 2–4 s, quasi sempre una in scena, mai due insieme; l\'ultima frase (la chiusura) senza schermata. SOLO questi tipi:',
+    '  - `chat`: la chat di Claude (o dell\'AI che Denis nomina). `{"tipo": "chat", "titolo": "Claude", "testo": "<quello che Denis dice di scrivere, con le sue parole>", "risposta": "<1–2 frasi brevi di risposta, vere e coerenti, max ~200 caratteri>"}`. Sulla frase in cui dice di chiedere o scrivere qualcosa all\'AI. `dur` 4–6.',
+    '  - `terminale`: comandi che si battono da soli. `{"tipo": "terminale", "titolo": "Claude Code", "voci": ["<comando 1>", "<comando 2>"]}` (1–4 righe; solo comandi veri, dal brief o detti da Denis, mai inventati). Quando parla di installare o di un comando. `dur` 3–5.',
+    '  - `numeri`: dati enormi, uno sotto l\'altro. `{"tipo": "numeri", "titolo": "<2–3 parole>", "voci": ["300+ skill", "70+ agenti", "gratis"]}` (2–4 voci: numero + parola). Quando dice numeri o quantità. `dur` 2,5–4.',
+    '  - `titolo`: scritta grande, la parola chiave tra asterischi finisce nel riquadro arancio. `{"tipo": "titolo", "titolo": "<riga piccola, facoltativa>", "testo": "LA *GOD MODE* DI CLAUDE"}` (max ~28 caratteri). Per il gancio e per i concetti forti. `dur` 2–3.',
+    '  - `repo`: scheda di GitHub. `{"tipo": "repo", "titolo": "<utente / progetto>", "testo": "<descrizione breve>", "voci": ["gratis", "MIT"]}`. Quando nomina un progetto su GitHub. `dur` 2,5–4.',
+    '  - `immagine`: una foto della cartella (`media`: id o nome del file, vedi immagini). `{"tipo": "immagine", "titolo": "<didascalia breve>", "media": ["IMG_1234"]}`. `dur` 2–3.',
+    '- Nelle schermate: parole di Denis e fatti veri, niente numeri o nomi inventati (i dati veri, se ci sono, sono nel brief e vincono). Se la trascrizione ha sbagliato un nome (es. «Cloud» per «Claude», «Digit Hub» per «GitHub»), scrivi il nome giusto.',
+    '- `keywords`: [] (le schermate prendono il posto delle scritte grandi).');
   if (g.biancoNero === 'uno') righe.push('- **Bianco e nero**: UN SOLO momento in tutto il video, breve (1–3 s): `"bn": true` su un solo elemento della sequenza, su un passaggio di racconto o riflessione. Mai sul volto che dà un dato o sul prodotto. Lo script tiene solo il primo.');
   if (g.biancoNero === 'momenti') righe.push('- **Bianco e nero**: metti `"bn": true` sugli elementi della sequenza che raccontano (ricordi, riflessioni, B-roll d\'atmosfera), circa un terzo; il volto che parla al presente e il prodotto restano a colori.');
   righe.push('- `flickers`: []. `tavola`: "". `soggetto`: nome breve del prodotto o del tema. `sponsor`: null (se il brief cita uno sponsor, mettilo come titolo, se lo stile ha i titoli).');

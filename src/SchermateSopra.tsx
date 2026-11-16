@@ -1,0 +1,206 @@
+import React from 'react';
+import { AbsoluteFill, Img, interpolate, Sequence, spring, staticFile, useCurrentFrame, useVideoConfig } from 'remotion';
+import { loadFont } from '@remotion/google-fonts/Montserrat';
+import { loadFont as loadMono } from '@remotion/google-fonts/JetBrainsMono';
+import { f, Sfx } from './comune';
+import { Piano } from './piano';
+
+// 📱 Documentario verticale (16/11): Denis parla nella metà bassa, nella fascia alta (sopra la testa: dal
+// fotogramma del girato Sony la testa parte a ~1/3 dell'altezza) compaiono schermate animate pulite, angoli
+// arrondati e ombra morbida, che entrano a molla ed escono sfumando (riferimenti: «TikTok AI» montato da Denis
+// e lo Short dell'EQ). Tipi: chat (di Claude: la domanda si scrive, la risposta arriva parola per parola),
+// terminale (comandi battuti), numeri (dati enormi), titolo (parola chiave nel riquadro arancio), repo
+// (scheda GitHub), immagine (foto della cartella). Le scrive la regia in `schermate` (scripts/regia.mjs).
+
+const { fontFamily: SANS } = loadFont('normal', { weights: ['600', '700', '800', '900'], subsets: ['latin'] });
+const { fontFamily: MONO } = loadMono('normal', { weights: ['500', '700'], subsets: ['latin'] });
+
+export type SchermataSopra = NonNullable<Piano['schermate']>[number];
+export const TIPI_SOPRA = new Set(['chat', 'terminale', 'numeri', 'titolo', 'repo', 'immagine']);
+// fascia delle schermate: da 100 px fino a ~1/3 dell'altezza (1920), larghe 940 px
+const AREA = { top: 100, bottom: 640, left: 70, larghezza: 940 };
+const CORALLO = '#D97757';
+const ARANCIO = '#FF6A13';
+
+const molla = (frame: number, fps: number, ritardo = 0) => spring({ frame: frame - ritardo, fps, config: { damping: 14, stiffness: 140 } });
+const scritto = (testo: string, frame: number, da: number, a: number) =>
+  testo.slice(0, Math.round(interpolate(frame, [da, a], [0, testo.length], { extrapolateLeft: 'clamp', extrapolateRight: 'clamp' })));
+const paroleScritte = (testo: string, frame: number, da: number, a: number) => {
+  const parole = testo.split(/\s+/).filter(Boolean);
+  return parole.slice(0, Math.round(interpolate(frame, [da, a], [0, parole.length], { extrapolateLeft: 'clamp', extrapolateRight: 'clamp' }))).join(' ');
+};
+
+const Cursore: React.FC<{ frame: number; colore: string }> = ({ frame, colore }) => (
+  <span style={{ display: 'inline-block', width: 4, height: '1em', background: colore, marginLeft: 3, verticalAlign: 'text-bottom', opacity: Math.floor(frame / 8) % 2 ? 0 : 1 }} />
+);
+
+// la scheda: entra a molla dall'alto, esce sfumando negli ultimi 8 fotogrammi
+const Scheda: React.FC<{ len: number; sfondo?: string; bordo?: string; children: React.ReactNode; senzaScheda?: boolean }> = ({ len, sfondo, bordo, children, senzaScheda }) => {
+  const frame = useCurrentFrame();
+  const { fps } = useVideoConfig();
+  const a = molla(frame, fps, 0);
+  const esce = interpolate(frame, [len - 8, len], [1, 0], { extrapolateLeft: 'clamp', extrapolateRight: 'clamp' });
+  return (
+    <div style={{ position: 'absolute', left: AREA.left, top: AREA.top, width: AREA.larghezza, maxHeight: AREA.bottom - AREA.top, display: 'flex', justifyContent: 'center' }}>
+      <div style={{
+        width: '100%', boxSizing: 'border-box', overflow: 'hidden',
+        ...(senzaScheda ? {} : { background: sfondo, borderRadius: 30, boxShadow: '0 18px 50px rgba(0,0,0,0.55)', border: bordo ? `1.5px solid ${bordo}` : undefined }),
+        transform: `translateY(${(1 - a) * -40}px) scale(${(0.88 + 0.12 * a) * (0.96 + 0.04 * esce)})`, opacity: Math.min(1, a * 1.4) * esce, transformOrigin: '50% 0%',
+      }}>
+        {children}
+      </div>
+    </div>
+  );
+};
+
+// chat di Claude: la domanda si scrive nel fumetto, poi la risposta arriva parola per parola
+const Chat: React.FC<{ s: SchermataSopra; len: number }> = ({ s, len }) => {
+  const frame = useCurrentFrame();
+  const risposta = s.risposta || '';
+  const fineDomanda = risposta ? len * 0.42 : len * 0.8;
+  const domanda = scritto(s.testo || '', frame, 6, Math.max(10, fineDomanda));
+  const vista = risposta ? paroleScritte(risposta, frame, len * 0.5, len * 0.9) : '';
+  return (
+    <Scheda len={len} sfondo="#FAF9F5">
+      <div style={{ padding: '26px 34px 30px', fontFamily: SANS }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 20 }}>
+          <span style={{ width: 22, height: 22, borderRadius: 11, background: CORALLO, display: 'inline-block' }} />
+          <span style={{ fontSize: 30, fontWeight: 700, color: '#3D3929' }}>{s.titolo || 'Claude'}</span>
+        </div>
+        <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+          <div style={{ maxWidth: 760, background: '#EFECE3', borderRadius: 24, padding: '18px 24px', fontSize: 36, fontWeight: 600, color: '#1F1E1D', lineHeight: 1.3 }}>
+            {domanda}{frame < fineDomanda + 4 ? <Cursore frame={frame} colore="#1F1E1D" /> : null}
+          </div>
+        </div>
+        {risposta && frame >= len * 0.46 ? (
+          <div style={{ marginTop: 22, fontSize: 32, fontWeight: 600, color: '#3D3929', lineHeight: 1.38, display: 'flex', gap: 14 }}>
+            <span style={{ width: 16, height: 16, marginTop: 14, borderRadius: 8, background: CORALLO, flex: 'none', opacity: 0.85 }} />
+            <span>{vista}</span>
+          </div>
+        ) : null}
+      </div>
+    </Scheda>
+  );
+};
+
+// terminale: i comandi si battono uno dopo l'altro
+const Terminale: React.FC<{ s: SchermataSopra; len: number }> = ({ s, len }) => {
+  const frame = useCurrentFrame();
+  const righe = (s.voci?.length ? s.voci : [s.testo || '']).filter(Boolean).slice(0, 4);
+  const passo = (len * 0.82 - 6) / Math.max(1, righe.length);
+  return (
+    <Scheda len={len} sfondo="#141414" bordo="rgba(255,255,255,0.08)">
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '16px 22px', background: '#232323' }}>
+        {['#FF5F57', '#FEBC2E', '#28C840'].map((c) => <span key={c} style={{ width: 16, height: 16, borderRadius: 8, background: c, display: 'inline-block' }} />)}
+        <span style={{ marginLeft: 14, fontFamily: SANS, fontSize: 24, fontWeight: 700, color: '#9A9A9A' }}>{s.titolo || 'Claude Code'}</span>
+      </div>
+      <div style={{ padding: '22px 26px 26px', fontFamily: MONO, fontSize: 29, fontWeight: 500, color: '#EDEDED', lineHeight: 1.5 }}>
+        {righe.map((r, i) => {
+          const da = 6 + i * passo;
+          if (frame < da) return null;
+          const t = scritto(r, frame, da, da + passo * 0.8);
+          return (
+            <div key={i} style={{ wordBreak: 'break-all' }}>
+              <span style={{ color: CORALLO, fontWeight: 700 }}>&gt; </span>{t}
+              {t.length < r.length || i === righe.length - 1 ? <Cursore frame={frame} colore="#EDEDED" /> : null}
+            </div>
+          );
+        })}
+      </div>
+    </Scheda>
+  );
+};
+
+// numeri enormi: «300+ skill», «71 agenti», «gratis»
+const Numeri: React.FC<{ s: SchermataSopra; len: number }> = ({ s, len }) => {
+  const frame = useCurrentFrame();
+  const { fps } = useVideoConfig();
+  const voci = (s.voci?.length ? s.voci : [s.testo || '']).filter(Boolean).slice(0, 4);
+  const passo = Math.min(10, (len * 0.5) / Math.max(1, voci.length));
+  return (
+    <Scheda len={len} sfondo="rgba(12,12,12,0.8)" bordo="rgba(255,255,255,0.14)">
+      <div style={{ padding: '26px 38px', fontFamily: SANS }}>
+        {s.titolo ? <div style={{ fontSize: 28, fontWeight: 800, color: '#FFB347', letterSpacing: 1, textTransform: 'uppercase', marginBottom: 8 }}>{s.titolo}</div> : null}
+        {voci.map((v, i) => {
+          const m = /^([\d.,]+\s*[+%k]?|\+?[\d.,]+)\s*(.*)$/i.exec(v.trim());
+          const numero = m ? m[1].trim() : v, etichetta = m ? m[2] : '';
+          const a = molla(frame, fps, 4 + i * passo);
+          return (
+            <div key={i} style={{ display: 'flex', alignItems: 'baseline', gap: 18, opacity: Math.min(1, a * 1.3), transform: `translateX(${(1 - a) * -30}px)` }}>
+              <span style={{ fontSize: m ? 88 : 64, fontWeight: 900, color: '#FFFFFF', lineHeight: 1.05, textTransform: 'uppercase' }}>{numero}</span>
+              {etichetta ? <span style={{ fontSize: 40, fontWeight: 800, color: '#FFB347', textTransform: 'uppercase' }}>{etichetta}</span> : null}
+            </div>
+          );
+        })}
+      </div>
+    </Scheda>
+  );
+};
+
+// titolo: parole tra *asterischi* nel riquadro arancio («LA *GOD MODE* DI CLAUDE»)
+const Titolo: React.FC<{ s: SchermataSopra; len: number }> = ({ s, len }) => {
+  const pezzi = String(s.testo || '').split(/(\*[^*]+\*)/).filter(Boolean);
+  return (
+    <Scheda len={len} senzaScheda>
+      <div style={{ textAlign: 'center', fontFamily: SANS, padding: '10px 0' }}>
+        {s.titolo ? <div style={{ fontSize: 30, fontWeight: 800, color: '#FFB347', letterSpacing: 2, textTransform: 'uppercase', marginBottom: 14, textShadow: '0 2px 10px rgba(0,0,0,0.7)' }}>{s.titolo}</div> : null}
+        <div style={{ fontSize: 82, fontWeight: 900, color: '#FFFFFF', lineHeight: 1.12, textTransform: 'uppercase', textShadow: '0 4px 18px rgba(0,0,0,0.75)' }}>
+          {pezzi.map((p, i) => (p.startsWith('*')
+            ? <span key={i} style={{ background: ARANCIO, color: '#111111', padding: '0 14px', borderRadius: 10, textShadow: 'none', boxDecorationBreak: 'clone', WebkitBoxDecorationBreak: 'clone' }}>{p.slice(1, -1)}</span>
+            : <span key={i}>{p}</span>))}
+        </div>
+      </div>
+    </Scheda>
+  );
+};
+
+// scheda GitHub: «affaan-m / ECC», descrizione, etichette
+const Repo: React.FC<{ s: SchermataSopra; len: number }> = ({ s, len }) => (
+  <Scheda len={len} sfondo="#FFFFFF">
+    <div style={{ padding: '26px 34px 30px', fontFamily: SANS }}>
+      <div style={{ fontSize: 24, fontWeight: 700, color: '#59636E', marginBottom: 10 }}>github.com</div>
+      <div style={{ fontSize: 46, fontWeight: 800, color: '#0969DA', lineHeight: 1.1 }}>{s.titolo || ''}</div>
+      {s.testo ? <div style={{ marginTop: 14, fontSize: 31, fontWeight: 600, color: '#1F2328', lineHeight: 1.35 }}>{s.testo}</div> : null}
+      {s.voci?.length ? (
+        <div style={{ marginTop: 18, display: 'flex', flexWrap: 'wrap', gap: 12 }}>
+          {s.voci.slice(0, 4).map((v) => <span key={v} style={{ background: '#DDF4FF', color: '#0969DA', fontSize: 26, fontWeight: 700, padding: '6px 16px', borderRadius: 999 }}>{v}</span>)}
+        </div>
+      ) : null}
+    </div>
+  </Scheda>
+);
+
+const Immagine: React.FC<{ s: SchermataSopra; len: number }> = ({ s, len }) => (
+  <Scheda len={len} sfondo="#111111">
+    {s.media?.[0] ? <Img src={staticFile(`media/${s.media[0]}`)} style={{ width: '100%', height: AREA.bottom - AREA.top - 20, objectFit: 'cover', display: 'block' }} /> : null}
+    {s.titolo ? <div style={{ position: 'absolute', left: 24, bottom: 18, fontFamily: SANS, fontSize: 30, fontWeight: 800, color: '#fff', textShadow: '0 2px 10px rgba(0,0,0,0.8)' }}>{s.titolo}</div> : null}
+  </Scheda>
+);
+
+const Una: React.FC<{ s: SchermataSopra; len: number }> = ({ s, len }) => {
+  if (s.tipo === 'chat') return <Chat s={s} len={len} />;
+  if (s.tipo === 'terminale') return <Terminale s={s} len={len} />;
+  if (s.tipo === 'numeri') return <Numeri s={s} len={len} />;
+  if (s.tipo === 'titolo') return <Titolo s={s} len={len} />;
+  if (s.tipo === 'repo') return <Repo s={s} len={len} />;
+  if (s.tipo === 'immagine') return <Immagine s={s} len={len} />;
+  return null;
+};
+
+export const SchermateSopra: React.FC<{ piano: Piano; sfx: number }> = ({ piano, sfx }) => {
+  const schermate = (piano.schermate || []).filter((s) => TIPI_SOPRA.has(s.tipo));
+  return (
+    <AbsoluteFill style={{ pointerEvents: 'none' }}>
+      {schermate.map((s, i) => {
+        const len = Math.max(12, f(s.dur));
+        return (
+          <Sequence key={`ss${i}`} from={f(s.at)} durationInFrames={len}>
+            <Una s={s} len={len} />
+          </Sequence>
+        );
+      })}
+      {sfx > 0 ? schermate.map((s, i) => <Sfx key={`sx${i}`} nome="whoosh" da={f(s.at) - 4} volume={0.32 * sfx} />) : null}
+      {sfx > 0 ? schermate.filter((s) => s.tipo === 'chat' && s.risposta).map((s, i) => <Sfx key={`sr${i}`} nome="ui_conferma" da={f(s.at + s.dur * 0.46)} volume={0.3 * sfx} />) : null}
+    </AbsoluteFill>
+  );
+};

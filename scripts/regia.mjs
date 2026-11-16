@@ -479,7 +479,8 @@ export function risolviRegia(regia, analisi) {
   // schermate animate (stile ListaUI, 03/11): cartella "No.N", chat che si scrive, finestra di file,
   // griglia del profilo, scheda di un'app, pillola sopra il volto. Ancorate a una frase come le schede;
   // media = immagini della cartella (id o nome del file), si mostrano come miniature
-  const TIPI_SCHERMATA = new Set(['capitolo', 'chat', 'finestra', 'griglia', 'app', 'pillola']);
+  // + documentario verticale (16/11, src/SchermateSopra.tsx): terminale, numeri, titolo, repo, immagine; la chat con `risposta`
+  const TIPI_SCHERMATA = new Set(['capitolo', 'chat', 'finestra', 'griglia', 'app', 'pillola', 'terminale', 'numeri', 'titolo', 'repo', 'immagine']);
   const schermate = [];
   for (const k of Array.isArray(regia.schermate) ? regia.schermate : []) {
     const tipo = String(k?.tipo || '').toLowerCase();
@@ -489,8 +490,10 @@ export function risolviRegia(regia, analisi) {
       .filter(Boolean).slice(0, 9).map((x) => x.file);
     schermate.push({ at: q(Math.min(totale - 0.5, at + Math.max(0, Number(k.ritardo) || 0))), dur: q(Math.min(6, Math.max(1, Number(k.dur) || 2.5))), tipo,
       ...(k.titolo ? { titolo: String(k.titolo).slice(0, 40) } : {}), ...(k.testo ? { testo: String(k.testo).slice(0, 220) } : {}),
+      ...(k.risposta ? { risposta: String(k.risposta).slice(0, 260) } : {}),
       ...(Number.isInteger(Number(k.numero)) && k.numero != null ? { numero: Number(k.numero) } : {}),
-      ...(Array.isArray(k.voci) ? { voci: k.voci.slice(0, 8).map((v) => String(v).slice(0, 28)) } : {}), ...(media.length ? { media } : {}) });
+      // i comandi del terminale sono più lunghi delle voci di una finestra
+      ...(Array.isArray(k.voci) ? { voci: k.voci.slice(0, 8).map((v) => String(v).slice(0, tipo === 'terminale' ? 72 : 28)) } : {}), ...(media.length ? { media } : {}) });
   }
   schermate.sort((a, b) => a.at - b.at);
   for (let i = 1; i < schermate.length; i++) if (schermate[i - 1].at + schermate[i - 1].dur > schermate[i].at - 0.1) schermate[i - 1].dur = q(Math.max(0.8, schermate[i].at - schermate[i - 1].at - 0.1));

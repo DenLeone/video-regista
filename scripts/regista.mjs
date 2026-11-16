@@ -32,7 +32,7 @@ import { loghiDetti, nomiLogo, scegliFont } from './libreria.mjs';
 import { HDR, curvaChiara, curvaEsposizione, filtroTecnico, misuraPezzo, perFiltro, probe, riconosciLog } from './colore.mjs';
 import { chiaveStock, materialePerAI, normFrase, RIMANDO, risolviRegia, senzaBuchi, sequenzaDiscorso, successiva, usaTuttoIlMateriale } from './regia.mjs';
 import { movimento, syncMovimento } from './sync-visivo.mjs';
-import { LOOK_FFMPEG, leggiStile, promptSuMisura } from './stile-su-misura.mjs';
+import { CATENA_PODCAST, LOOK_FFMPEG, leggiStile, promptSuMisura } from './stile-su-misura.mjs';
 import { chiaveStileR2, preparaStileApp } from './stile-app.mjs';
 import { bloccoRemoteR2, comandiCancellaR2, comandiCopiaDrive, comandiScaricoR2, comandiCopiaPezzoR2, comandiScaricaPezziR2, comandiCancellaPezziR2 } from './rete.mjs';
 import { scegliCartella } from './scegli-cartella.mjs';
@@ -923,6 +923,23 @@ function preparaMediaPipe() {
 // lo sfondo scende al buio e vira al petrolio, sfocato solo con "Sfondo sfocato: sì"
 // (scripts/look/risalto.py). I pezzi senza una
 // persona chiara (dettagli di prodotto) restano come sono; se qualcosa non va, video senza risalto.
+// 🎙 voce «da podcast» (stili su misura con «Voce: podcast», 16/11): la traccia della voce di ogni pezzo
+// (media/*.voce.wav, quella che Remotion mette sotto le clip) passa da CATENA_PODCAST prima del render.
+// Una volta sola per file (segno «.podcast» accanto): le macchine dei pezzi la rifanno uguale sulla loro copia.
+function voceStile(piano) {
+  if (piano.grafica?.voce !== 'podcast') return;
+  for (const f of new Set(piano.clips.map((c) => c.audio?.file).filter(Boolean))) {
+    const p = path.join(MEDIA, f), segno = `${p}.podcast`;
+    if (!fs.existsSync(p) || fs.existsSync(segno)) continue;
+    const tmp = p.replace(/\.wav$/i, '') + '.podcast-tmp.wav';
+    try {
+      run('ffmpeg', ['-y', '-v', 'error', '-i', p, '-af', CATENA_PODCAST, '-ac', '1', '-ar', '48000', '-c:a', 'pcm_s16le', tmp]);
+      fs.renameSync(tmp, p);
+      fs.writeFileSync(segno, '');
+      log(`voce da podcast: ${f}`);
+    } catch (e) { fs.rmSync(tmp, { force: true }); log(`voce da podcast non riuscita su ${f}: ${String(e.message).split('\n')[0]}`); }
+  }
+}
 async function risaltoPersona(piano, solo = null) {
   if (!piano.grafica?.risalto) return;
   try {
@@ -931,7 +948,9 @@ async function risaltoPersona(piano, solo = null) {
     for (const [i, c] of piano.clips.entries()) {
       if (c.orient === 'h' || (solo && !solo.has(i))) continue;
       const src = path.join(MEDIA, c.file), out = path.join(MEDIA, `ris_${c.file}`);
-      const esito = run(py, [path.join(ROOT, 'scripts', 'look', 'risalto.py'), src, out, modello, ...(piano.grafica.sfoca ? ['sfoca'] : [])], { stdio: ['ignore', 'pipe', 'inherit'] });
+      // «naturale» (documentario verticale, 16/11): persona calda, sfondo solo un po' più scuro, niente petrolio
+      const preset = piano.grafica.risalto === 'naturale' ? [`naturale:${piano.grafica.risaltoLuce || 0.8}`] : [];
+      const esito = run(py, [path.join(ROOT, 'scripts', 'look', 'risalto.py'), src, out, modello, ...(piano.grafica.sfoca ? ['sfoca'] : []), ...preset], { stdio: ['ignore', 'pipe', 'inherit'] });
       if (/^risalto/m.test(esito) && fs.existsSync(out)) { fs.renameSync(out, src); n++; }
     }
     log(`soggetto in risalto: ${n} pezzi su ${piano.clips.length}`);
@@ -3191,6 +3210,7 @@ async function main() {
     tappa('ritagli persona');
     if (!pezzi) await ritagliPersona(piano, solo);
     tappa('prima del render');
+    voceStile(piano);
     // prima di cancellarli, gli originali devono essere su Drive; se la copia fallisce il video si consegna lo stesso
     if (copiaOriginali) {
       try {
