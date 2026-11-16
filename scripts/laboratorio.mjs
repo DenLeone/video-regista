@@ -507,32 +507,49 @@ async function youtube(ric) {
 // { "analizza": [{ "file": "<video su Drive>", "domanda": "<scheda da scrivere>", "risoluzione"?: "MEDIA_RESOLUTION_MEDIUM" }] }
 // Il video va sulla File API di Gemini solo per l'analisi e si cancella subito dopo. Testo solo su Drive.
 async function analizza(ric) {
-  const chiave = process.env.GEMINI_API_KEY_GRATIS || process.env.GEMINI_API_KEY;
-  if (!chiave) throw new Error('manca GEMINI_API_KEY');
-  const modelli = (process.env.LAB_MODELLI || 'gemini-flash-latest,gemini-flash-lite-latest').split(',');
+  // prima la chiave gratuita (Flash, poi Flash-Lite); come riserva la chiave a pagamento solo con Flash-Lite
+  // (regola di Denis, 16/11: i lavori facili e medi sulla gratuita). Il primo giro del 16/11 era fallito per
+  // la quota della gratuita (429) e il Lite sovraccarico (503): ora un secondo tentativo dopo 20 s e la riserva.
+  const giri = [
+    ...(process.env.GEMINI_API_KEY_GRATIS ? [{ chiave: process.env.GEMINI_API_KEY_GRATIS, modelli: ['gemini-flash-latest', 'gemini-flash-lite-latest'], nome: 'gratuita' }] : []),
+    ...(process.env.GEMINI_API_KEY ? [{ chiave: process.env.GEMINI_API_KEY, modelli: ['gemini-flash-lite-latest'], nome: 'a pagamento' }] : []),
+  ];
+  if (!giri.length) throw new Error('manca GEMINI_API_KEY');
   const API = 'https://generativelanguage.googleapis.com/v1beta';
   for (const a of ric.analizza) {
     const s = sorgente(a.file);
     log(s.riga);
-    let f = null, testo = null;
-    try { f = await caricaSuGemini(s.u, chiave); } catch (e) { log(`analisi ${a.file}: ${e.message}`); }
-    for (const modello of f ? modelli : []) {
-      try {
-        const r = await fetch(`${API}/models/${modello}:generateContent`, {
-          method: 'POST', headers: { 'content-type': 'application/json', 'x-goog-api-key': chiave },
-          signal: AbortSignal.timeout(10 * 60 * 1000),
-          body: JSON.stringify({
-            contents: [{ role: 'user', parts: [{ file_data: { file_uri: f.uri, mime_type: f.mimeType || 'video/mp4' } }, { text: a.domanda }] }],
-            generationConfig: { mediaResolution: a.risoluzione || 'MEDIA_RESOLUTION_MEDIUM', temperature: 0.3 },
-          }),
-        });
-        const j = await r.json();
-        if (!r.ok) { log(`analisi ${a.file} ${modello}: ${r.status} ${JSON.stringify(j).slice(0, 200)}`); continue; }
-        testo = (j.candidates?.[0]?.content?.parts || []).map((x) => x.text || '').join('').trim() || null;
-        if (testo) { testo = `# ${a.file}\n_${modello} · token ${j.usageMetadata?.promptTokenCount ?? '?'}_\n\n${testo}\n`; break; }
-      } catch (e) { log(`analisi ${a.file} ${modello}: ${e.message}`); }
+    let testo = null;
+    for (const { chiave, modelli, nome } of giri) {
+      let f = null;
+      // il file caricato vale solo per la chiave che l'ha caricato: si ricarica per la riserva
+      try { f = await caricaSuGemini(s.u, chiave); } catch (e) { log(`analisi ${a.file} (chiave ${nome}): ${e.message}`); continue; }
+      for (const modello of modelli) {
+        for (let prova = 1; prova <= 2 && !testo; prova++) {
+          try {
+            const r = await fetch(`${API}/models/${modello}:generateContent`, {
+              method: 'POST', headers: { 'content-type': 'application/json', 'x-goog-api-key': chiave },
+              signal: AbortSignal.timeout(10 * 60 * 1000),
+              body: JSON.stringify({
+                contents: [{ role: 'user', parts: [{ file_data: { file_uri: f.uri, mime_type: f.mimeType || 'video/mp4' } }, { text: a.domanda }] }],
+                generationConfig: { mediaResolution: a.risoluzione || 'MEDIA_RESOLUTION_MEDIUM', temperature: 0.3 },
+              }),
+            });
+            const j = await r.json();
+            if (!r.ok) {
+              log(`analisi ${a.file} ${modello} (chiave ${nome}): ${r.status} ${JSON.stringify(j).slice(0, 160)}`);
+              if (r.status >= 500 && prova === 1) { await new Promise((ok) => setTimeout(ok, 20000)); continue; }
+              break;
+            }
+            testo = (j.candidates?.[0]?.content?.parts || []).map((x) => x.text || '').join('').trim() || null;
+            if (testo) testo = `# ${a.file}\n_${modello} · chiave ${nome} · token ${j.usageMetadata?.promptTokenCount ?? '?'}_\n\n${testo}\n`;
+          } catch (e) { log(`analisi ${a.file} ${modello}: ${e.message}`); }
+        }
+        if (testo) break;
+      }
+      if (f?.name) await fetch(`${API}/${f.name}`, { method: 'DELETE', headers: { 'x-goog-api-key': chiave } }).catch(() => {});
+      if (testo) break;
     }
-    if (f?.name) await fetch(`${API}/${f.name}`, { method: 'DELETE', headers: { 'x-goog-api-key': chiave } }).catch(() => {});
     const o = path.join(OUT, `analisi-${pulito(path.parse(a.file).name)}.md`);
     fs.writeFileSync(o, testo || `# ${a.file}\nanalisi non riuscita\n`);
     log(`analisi ${a.file}: ${testo ? `${testo.length} caratteri` : 'NON riuscita'}`);
