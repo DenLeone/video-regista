@@ -104,6 +104,15 @@ async function titoli(frasi, durata, brief, copione = '') {
   return { titoli: [], parole: [] };
 }
 
+// la cartella con più parole (di almeno 4 lettere) in comune con il nome chiesto; almeno 2 in comune
+export function cartellaSimile(nome, cartelle) {
+  const parole = (t) => new Set(norm2(t).split(' ').filter((w) => w.length >= 4));
+  const chieste = parole(nome);
+  const punti = cartelle.map((c) => ({ c, n: [...parole(c)].filter((w) => chieste.has(w) || [...chieste].some((x) => x.startsWith(w) || w.startsWith(x))).length }));
+  const best = punti.sort((a, b) => b.n - a.n)[0];
+  return best && best.n >= 2 ? best.c : null;
+}
+const norm2 = (t) => String(t).toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^\p{L}\p{N}]+/gu, ' ').trim();
 // 📜 il copione del Redattore, compatto per il prompt: titoli dei capitoli, inizio del testo, idee per le immagini
 export function copioneBreve(r) {
   return (r?.capitoli || []).map((c, i) => `CAPITOLO ${i + 1}: ${c.titolo}\n  inizia: «${String(c.testo || '').split(/\s+/).slice(0, 18).join(' ')}…»${(c.immagini || []).length ? `\n  immagini: ${c.immagini.join(' · ')}` : ''}`).join('\n');
@@ -230,7 +239,18 @@ const FASI = {
     let redazione = false;
     if (redazioneDa) {
       try { run('rclone', ['copyto', `${REMOTE}:${redazioneDa}`, path.join(WORK, 'redazione.json')]); redazione = true; log('copione del Redattore: sì'); }
-      catch { log(`copione del Redattore non trovato (${redazioneDa})`); }
+      catch {
+        // nome scritto a mano o accorciato: la cartella di _redazione con più parole in comune
+        try {
+          const base = path.posix.dirname(path.posix.dirname(redazioneDa));
+          const cartelle = JSON.parse(run('rclone', ['lsjson', `${REMOTE}:${base}`, '--dirs-only'])).map((d) => d.Name);
+          const migliore = cartellaSimile(path.posix.basename(path.posix.dirname(redazioneDa)), cartelle);
+          if (!migliore) throw new Error('nessuna simile');
+          run('rclone', ['copyto', `${REMOTE}:${base}/${migliore}/redazione.json`, path.join(WORK, 'redazione.json')]);
+          redazione = true;
+          log(`copione del Redattore: sì (cartella «${migliore}»)`);
+        } catch { log(`copione del Redattore non trovato (${redazioneDa})`); }
+      }
     }
     fs.writeFileSync(STATO, JSON.stringify({ sorgente, uscita, src, base, musica, nome: nomeCartella, redazione, durata: info.durata, fps: Math.round(Number(info.fps) || 24) || 24 }));
   },

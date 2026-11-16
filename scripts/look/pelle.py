@@ -41,11 +41,12 @@ def main():
     # salva come video in scala di grigi senza perdite; il miscuglio look/pelle in 1080p lo fa ffmpeg
     # (maskedmerge, in C, su più core). Prima mescolava Python fotogramma per fotogramma: ~3 fps.
     cfr = f'fps={o.fps},setpts=N/({o.fps})/TB'
-    nat = lettore(o.src, f'{cfr},{o.base},{o.pelle}', o.da, o.dur, MW, MH)
+    # 16/11: si riduce PRIMA dei filtri colore (il girato I-Log è 4K: le LUT su 4K erano la parte lenta)
+    nat = lettore(o.src, f'{cfr},scale={MW}:{MH}:flags=area,{o.base},{o.pelle}', o.da, o.dur, MW, MH)
     # il miscuglio (ffmpeg) parte subito e riceve la maschera mentre Python la calcola: lavorano insieme
     t = (['-ss', str(o.da)] if o.da else []) + ['-i', o.src] + (['-t', str(o.dur)] if o.dur else [])
     bande = ',crop=1920:804,pad=1920:1080:0:138:black' if o.bande else ''
-    grafo = (f'[0:v]{cfr},{o.base},split=2[x][y];[x]{o.look},scale={W}:{H},format=gbrp[a];[y]{o.pelle},scale={W}:{H},format=gbrp[b];'
+    grafo = (f'[0:v]{cfr},scale={W}:{H}:flags=lanczos,{o.base},split=2[x][y];[x]{o.look},scale={W}:{H},format=gbrp[a];[y]{o.pelle},scale={W}:{H},format=gbrp[b];'
              f'[1:v]setpts=N/({o.fps})/TB,scale={W}:{H}:flags=bilinear,format=gray,format=gbrp[m];[a][b][m]maskedmerge{bande},format=yuv420p[v]')
     scrivi = subprocess.Popen(['ffmpeg', '-v', 'error', '-y', *t, '-f', 'rawvideo', '-pix_fmt', 'gray', '-s', f'{MW}x{MH}', '-r', o.fps, '-i', '-',
                                '-filter_complex', grafo, '-map', '[v]', '-map', '0:a?', '-r', o.fps,
