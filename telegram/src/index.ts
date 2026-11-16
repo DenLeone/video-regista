@@ -24,6 +24,7 @@ import { avvisoUtente } from './push';
 import STILI_BASE from '../../scripts/stili-base.json';
 import type { Ops, Segreti } from './ops';
 import { unisciNomi } from './stile-studio';
+import { briefVocale, capisciVocale, riepilogoVocale, trascriviVocale, type Comando } from './vocale';
 import { commentiNuovi, controllaEsplosioni, K_RADAR, kCommento, nascondiCommento, proposte, reportSettimana, rispondiCommento, testoCommento, type CommentoSalvato } from './crescita';
 import { PAGINA_PRIVACY, PAGINA_TERMINI, chiaveCaricamentoTikTok, chiaveFacebook, completaLoginTikTok, fotografa, linkLoginTikTok, pianoDelGiorno, statoTikTok, type DepsSocial } from './social';
 
@@ -992,7 +993,7 @@ async function mostraRapido(env: Env, chat: string, cartella: string, msgId?: nu
 }
 
 // ---------- messaggi ----------
-type FileMsg = { file_name?: string; file_size?: number; mime_type?: string };
+type FileMsg = { file_id?: string; file_name?: string; file_size?: number; mime_type?: string };
 type Msg = {
   message_id: number; chat: { id: number }; text?: string; caption?: string;
   video?: FileMsg; document?: FileMsg; photo?: FileMsg[]; animation?: FileMsg; video_note?: FileMsg; voice?: FileMsg; audio?: FileMsg;
@@ -1096,7 +1097,7 @@ async function lanciaRaccolta(env: Env, chat: string, nome: string, brief: strin
   return lancia(env, chat, { cartella: nome, brief, telegram, ...(stili ? { stili } : {}) }, msgId);
 }
 
-async function onMessage(env: Env, msg: Msg) {
+async function onMessage(env: Env, msg: Msg): Promise<unknown> {
   const chat = String(msg.chat.id);
   const text = (msg.text || '').trim();
   if (!ok(env, chat)) {
@@ -1105,6 +1106,8 @@ async function onMessage(env: Env, msg: Msg) {
   }
   const f = fileDelMessaggio(msg);
   if (f === 'rifiutato') return invia(env, chat, { testo: '🤔 Questo tipo di file non lo uso. Mandami video, audio del microfono, foto o un <code>brief.txt</code>.' });
+  // 🎙️ un vocale può essere un comando («monta Stuzzicadenti in Ultra»): lo capisce onVocale
+  if (f && msg.voice?.file_id && env.GROQ_API_KEY) return onVocale(env, chat, msg, f);
   if (f) return onFile(env, chat, msg, f);
   const cmd = text.match(/^\/(\w+)(?:@\w+)?\s*(.*)$/s);
   if (cmd) {
@@ -1157,6 +1160,43 @@ async function onMessage(env: Env, msg: Msg) {
   return invia(env, chat, await pannello(env));
 }
 
+// 🎙️ Montaggio a voce (16/11): vocale → trascrizione e comando (Groq, gratis) → riepilogo con ▶️ Parti.
+// Se c'è una domanda in sospeso che vuole testo, il vocale vale come risposta scritta; se si stanno raccogliendo
+// file per un montaggio, o il vocale non è un comando, resta audio per il video (come prima).
+type VocaleInAttesa = { comando: Comando; file: FileTg; testo: string };
+async function onVocale(env: Env, chat: string, msg: Msg, f: FileTg): Promise<unknown> {
+  const raccolta = await leggi<FileTg[]>(env, kR(chat).file);
+  if (raccolta?.length) return onFile(env, chat, msg, f);
+  const testo = await trascriviVocale(fetch, env.GROQ_API_KEY!, env.TELEGRAM_BOT_TOKEN, msg.voice!.file_id!).catch(() => undefined);
+  if (!testo) return onFile(env, chat, msg, f);
+  const attesa = await leggi<Attesa>(env, kAttesa(chat));
+  if (attesa && (['commento', 'didascalia', 'correzione', 'nome_raccolta'].includes(attesa.tipo) || (attesa.tipo === 'nuovo' && A_TESTO.includes(attesa.passo)))) {
+    return onMessage(env, { message_id: msg.message_id, chat: msg.chat, text: testo });
+  }
+  const imp = await impostazioni(env);
+  const cartelle = (await leggi<Cartelle>(env, 'cartelle'))?.elenco || [];
+  const comando = await capisciVocale(fetch, env.GROQ_API_KEY!, testo, cartelle, tuttiStili().map((x) => x.nome));
+  if (comando.azione === 'nessuna') return onFile(env, chat, msg, f);
+  if (comando.azione !== 'correggi' && comando.cartella && !cartelle.includes(comando.cartella)) comando.cartella = simili(comando.cartella, cartelle)[0] || comando.cartella;
+  await mem(env).scrivi(`vocale:${chat}`, { comando, file: f, testo } satisfies VocaleInAttesa);
+  return invia(env, chat, {
+    testo: `🎙 <i>«${esc(tronca(testo, 400))}»</i>\n\n${riepilogoVocale(comando, imp.stile, esc)}${comando.azione !== 'correggi' && !cartelle.includes(comando.cartella || '') ? '\n\n⚠️ Questa cartella non è nell\'elenco di 01 · Da editare: controlla il nome.' : ''}`,
+    tasti: [[tasto('▶️ Parti', 'vc:ok')], [tasto('📎 Era audio per il video', 'vc:file'), tasto('✖️ No', 'vc:no')]],
+  });
+}
+async function eseguiVocale(env: Env, chat: string, v: VocaleInAttesa, msgId?: number) {
+  const c = v.comando, nome = c.cartella || '';
+  if (c.azione === 'monta') return lancia(env, chat, { cartella: nome, brief: briefVocale(c, (await impostazioni(env)).stile) }, msgId);
+  if (c.azione === 'correggi') return lancia(env, chat, { cartella: nome, origine: '98', correzione: c.correzione }, msgId);
+  const [wf, inputs] = c.azione === 'tre_reel'
+    ? ['tre-reel.yml', { sorgente: `01 · Da editare/${nome}` }]
+    : ['doc169.yml', { sorgente: `01 · Da editare/${nome}`, uscita: `02 · Fatti/${nome}`, ...(c.azione === 'youtube' ? { archivio: 'sì' } : {}) }];
+  const r = await gh(env, `/actions/workflows/${wf}/dispatches`, { method: 'POST', body: JSON.stringify({ ref: 'main', inputs }) });
+  return mostra(env, chat, r.status === 204
+    ? { testo: `${riepilogoVocale(c, '', esc)}\n\n🚀 Partito. La scheda con la barra arriva sul bot della Squadra.`, tasti: [[MENU_TASTO]] }
+    : { testo: `⚠️ Non parte: GitHub ${r.status}\n<code>${esc(tronca(await r.text(), 300))}</code>`, tasti: [[MENU_TASTO]] }, msgId);
+}
+
 // ---------- tasti ----------
 type Callback = { id: string; data?: string; message?: { message_id: number; chat: { id: number } } };
 
@@ -1180,6 +1220,15 @@ async function onCallback(env: Env, cb: Callback) {
     return mostra(env, chat, { testo: `✅ <b>${esc(slot.nome)}</b>\nStile scelto: <b>${esc(stile)}</b>\nIl video intero parte adesso, senza riscaricare il girato.`, tasti: [[tasto('📊 Stato', 'stato'), MENU_TASTO]] }, msgId);
   }
 
+  if (data.startsWith('vc:')) {
+    const v = await leggi<VocaleInAttesa>(env, `vocale:${chat}`);
+    if (!v) { await avviso('Vocale scaduto: rimandalo'); return togliTasti(env, chat, msgId); }
+    await mem(env).cancella(`vocale:${chat}`);
+    if (data === 'vc:no') { await avviso('Annullato'); return togliTasti(env, chat, msgId); }
+    if (data === 'vc:file') { await avviso(); await togliTasti(env, chat, msgId); return onFile(env, chat, { message_id: v.file.m, chat: { id: Number(chat) } }, v.file); }
+    await avviso('Parto');
+    return eseguiVocale(env, chat, v, msgId);
+  }
   if (data === 'menu') { await avviso(); return mostra(env, chat, await pannello(env), msgId); }
   if (data === 'social') { await avviso(); return social(env, chat); }
   if (data === 'commenti') { await avviso(); return commentiOra(env, chat); }
