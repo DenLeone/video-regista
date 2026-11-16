@@ -1110,6 +1110,14 @@ async function montaBeat(analisi, nome) {
 }
 
 // ---------- 3. l'AI scrive la regia ----------
+let DNA_LETTO;
+function dnaGusto() {
+  if (DNA_LETTO !== undefined) return DNA_LETTO;
+  try { DNA_LETTO = String(execFileSync('rclone', ['cat', `${REMOTE}:${path.posix.dirname(DIR_STILI)}/_dna/dna.md`], { stdio: ['ignore', 'pipe', 'ignore'], timeout: 30_000 })).trim().slice(0, 2500); }
+  catch { DNA_LETTO = ''; }
+  if (DNA_LETTO) log('gusto di Denis (DNA): sì');
+  return DNA_LETTO;
+}
 function promptRegia({ modo, testoMateriale, regiaPrecedente }) {
   let p = fs.readFileSync(path.join(ROOT, 'scripts', 'prompt-regista.md'), 'utf8')
     .replace('{{GRAFICA}}', stileSuMisura ? promptSuMisura(stileSuMisura.grafica, stileSuMisura.testoAI, { stock: fontiStock().length > 0 && !(analisiCorrente && materialeProprio(analisiCorrente)),
@@ -1139,6 +1147,10 @@ function promptRegia({ modo, testoMateriale, regiaPrecedente }) {
   if (catalogoMusica && Object.keys(catalogoMusica).length) {
     p += `\n\n## Musica\nDenis vuole la musica sotto la voce (bassa, scende quando parla). Scegli il brano più adatto al tono e al ritmo di QUESTO video e scrivilo nel campo \`"musica"\` in cima alla regia (il nome esatto, tra virgolette): energico e veloce per prodotti, tech e ritmo serrato; morbido e lento per racconti, riflessioni e discorsi seri; mai un brano allegro su un argomento serio.\n${descriviCatalogo(catalogoMusica)}`;
   }
+  // 🧬 DNA del gusto (16/11): le preferenze di Denis imparate dai suoi 👍/👎 (squadra Den, scripts/dna.mjs),
+  // lette da Drive (privato): valgono per tutti gli stili, ma lo stile scelto e il brief vincono
+  const dna = dnaGusto();
+  if (dna && !regiaPrecedente) p += `\n\n## Gusto di Denis (DNA)\nImparato dai video che ha votato. Vale per TUTTI gli stili: usalo per le scelte che lo stile e il brief lasciano libere (inquadrature, ritmo, quali frasi tenere, scritte, musica). Se va contro lo stile o il brief, vincono stile e brief.\n${dna}`;
   // discorso: fogli provino solo dei B-roll, se ci sono
   const fogliDaLeggere = !discorso || discorso.conBroll;
   p += modo === 'claude'
