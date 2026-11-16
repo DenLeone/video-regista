@@ -1991,7 +1991,9 @@ async function scriviDidascalie({ titolo, testo, brief, keywords }) {
   const conChiave = async (chiave, soloLite) => {
     const headers = { 'content-type': 'application/json', 'x-goog-api-key': chiave };
     const scadenza = Date.now() + TETTO_DIDASCALIE_MS;
-    const tutti = soloLite ? ['gemini-flash-lite-latest'] : (await modelliGemini(headers)).filter((m) => !quotaGiornoFinita(m));
+    // lavoro facile: prima i Flash-Lite (veloci), poi gli altri (16/11: sulla chiave gratuita Flash andava in timeout)
+    const tutti = soloLite ? ['gemini-flash-lite-latest'] : (await modelliGemini(headers)).filter((m) => !quotaGiornoFinita(m))
+      .sort((a, b) => Number(/lite/.test(b)) - Number(/lite/.test(a)));
     for (const modello of tutti.slice(0, DIDASCALIE_MODELLI)) {
       if (Date.now() >= scadenza) { log('didascalie: tempo massimo'); break; }
       const esito = await chiamaGemini(modello, body, headers, { scadenza });
@@ -2325,7 +2327,7 @@ async function soloDescrizione() {
   // la copertina già fatta, se c'è (la più recente)
   let copertina = null;
   try {
-    const elenco = JSON.parse(rclone('lsjson', remote(OUT_DIR, nome), '--include', '*COPERTINA.jpg')).sort((a, b) => String(b.ModTime).localeCompare(String(a.ModTime)));
+    const elenco = JSON.parse(rclone('lsjson', remote(OUT_DIR, nome), '--files-only', '--include', '*COPERTINA.jpg')).sort((a, b) => String(b.ModTime).localeCompare(String(a.ModTime)));
     if (elenco[0]) { copertina = path.join(WORK, 'copertina.jpg'); rclone('copyto', remote(OUT_DIR, nome, elenco[0].Path), copertina); }
   } catch (e) { log('copertina non trovata', e.message); }
   await inviaCopertina(copertina, nome, scritte);
