@@ -440,7 +440,8 @@ Le 5 scelte di montaggio che più tengono incollati, in concreto.
 Elenco numerato di regole misurabili e applicabili da un programma (es. "un cambio visivo ogni 4–6 s", "scheda specifiche a destra per 5 s quando si nomina un dato tecnico", "zoom 115% ogni 2–3 frasi"). Almeno 20 regole.`;
 
 async function youtube(ric) {
-  const chiave = process.env.GEMINI_API_KEY;
+  // analisi di video pubblici di YouTube: lavoro da chiave gratuita, se c'è
+  const chiave = process.env.GEMINI_API_KEY_GRATIS || process.env.GEMINI_API_KEY;
   if (!chiave) throw new Error('manca GEMINI_API_KEY');
   // Pro è fuori quota sul piano gratuito (429 del 30/10): Flash, poi Flash Lite
   const modelli = (process.env.LAB_MODELLI || 'gemini-flash-latest,gemini-flash-lite-latest').split(',');

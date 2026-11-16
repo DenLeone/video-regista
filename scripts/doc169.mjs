@@ -72,9 +72,13 @@ Non inventare fatti che Denis non dice.
 Rispondi SOLO con JSON: {"titoli":[{"at":0.5,"dur":5,"piccolo":"…","grande":"…","rosso":"…"}],"parole":[{"at":7.2,"parola":"…"}]}`;
 
 async function titoli(frasi, durata, brief) {
-  const chiave = process.env.GEMINI_API_KEY;
-  if (!chiave || !frasi.length) return { titoli: [], parole: [] };
-  for (const modello of (process.env.DOC_MODELLI || 'gemini-flash-latest,gemini-flash-lite-latest').split(',')) {
+  // lavoro facile (solo testo): chiave gratuita con Flash e Flash-Lite, poi quella a pagamento solo con Flash-Lite
+  const giri = [
+    ...(process.env.GEMINI_API_KEY_GRATIS ? (process.env.DOC_MODELLI || 'gemini-flash-latest,gemini-flash-lite-latest').split(',').map((m) => [process.env.GEMINI_API_KEY_GRATIS, m]) : []),
+    ...(process.env.GEMINI_API_KEY ? [[process.env.GEMINI_API_KEY, 'gemini-flash-lite-latest']] : []),
+  ];
+  if (!giri.length || !frasi.length) return { titoli: [], parole: [] };
+  for (const [chiave, modello] of giri) {
     try {
       const r = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${modello}:generateContent`, {
         method: 'POST', headers: { 'content-type': 'application/json', 'x-goog-api-key': chiave }, signal: AbortSignal.timeout(120_000),

@@ -1985,12 +1985,14 @@ function didascalieConClaude(testoPrompt) {
 async function scriviDidascalie({ titolo, testo, brief, keywords }) {
   if (!testo) return null;
   const dati = [`Titolo del video: ${titolo}`, `Testo detto nel video (montato): ${testo}`, `Scritte a schermo: ${keywords.join(' · ') || '—'}`, `Brief: ${brief || '—'}`].join('\n');
-  if (process.env.GEMINI_API_KEY) {
-    const headers = { 'content-type': 'application/json', 'x-goog-api-key': process.env.GEMINI_API_KEY };
-    const body = JSON.stringify({ contents: [{ role: 'user', parts: [{ text: `${PROMPT_DIDASCALIE}\n\n${dati}` }] }], generationConfig: { responseMimeType: 'application/json', temperature: 0.7 } });
+  // lavoro facile (16/11): prima la chiave gratuita (GEMINI_API_KEY_GRATIS), poi Claude (abbonamento), e la chiave
+  // a pagamento solo alla fine e solo con Flash-Lite
+  const body = JSON.stringify({ contents: [{ role: 'user', parts: [{ text: `${PROMPT_DIDASCALIE}\n\n${dati}` }] }], generationConfig: { responseMimeType: 'application/json', temperature: 0.7 } });
+  const conChiave = async (chiave, soloLite) => {
+    const headers = { 'content-type': 'application/json', 'x-goog-api-key': chiave };
     const scadenza = Date.now() + TETTO_DIDASCALIE_MS;
-    const modelli = (await modelliGemini(headers)).filter((m) => !quotaGiornoFinita(m)).slice(0, DIDASCALIE_MODELLI);
-    for (const modello of modelli) {
+    const tutti = soloLite ? ['gemini-flash-lite-latest'] : (await modelliGemini(headers)).filter((m) => !quotaGiornoFinita(m));
+    for (const modello of tutti.slice(0, DIDASCALIE_MODELLI)) {
       if (Date.now() >= scadenza) { log('didascalie: tempo massimo'); break; }
       const esito = await chiamaGemini(modello, body, headers, { scadenza });
       if (!esito.risposta) { log(`didascalie: ${modello} ${esito.motivo}`); continue; }
@@ -2000,10 +2002,15 @@ async function scriviDidascalie({ titolo, testo, brief, keywords }) {
         if (out) return out;
       } catch (e) { log(`didascalie: risposta di ${modello} non usabile`, e.message); }
     }
-  }
+    return null;
+  };
+  const gratis = process.env.GEMINI_API_KEY_GRATIS;
+  if (gratis) { const out = await conChiave(gratis, false); if (out) return out; }
+  else if (process.env.GEMINI_API_KEY) { const out = await conChiave(process.env.GEMINI_API_KEY, true); if (out) return out; }
   // MacBook, 29/10: Gemini sovraccarico (503) e niente descrizione. Prima Claude, poi le parole di Denis
   const daClaude = await didascalieConClaude(`${PROMPT_DIDASCALIE}\n\n${dati}`);
   if (daClaude) { log('didascalie: scritte da Claude'); return daClaude; }
+  if (gratis && process.env.GEMINI_API_KEY) { const out = await conChiave(process.env.GEMINI_API_KEY, true); if (out) return out; }
   log('didascalie: nessuna AI ha risposto, descrizione semplice dalle parole del video');
   return didascalieSemplici({ titolo, testo, keywords });
 }
