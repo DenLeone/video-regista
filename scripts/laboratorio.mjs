@@ -453,7 +453,7 @@ async function youtube(ric) {
   const modelli = (process.env.LAB_MODELLI || 'gemini-flash-latest,gemini-flash-lite-latest').split(',');
   fs.mkdirSync(GIT, { recursive: true });
   for (const v of ric.youtube) {
-    const id = (/(?:youtu\.be\/|v=)([\w-]{11})/.exec(v.url) || [])[1] || pulito(v.url);
+    const id = (/(?:youtu\.be\/|v=|shorts\/)([\w-]{11})/.exec(v.url) || [])[1] || pulito(v.url);
     let testo = null;
     for (const modello of modelli) {
       // i video lunghi (40+ min) a volte danno 500: si riprova con metà dei fotogrammi
@@ -463,8 +463,10 @@ async function youtube(ric) {
             method: 'POST', headers: { 'content-type': 'application/json', 'x-goog-api-key': chiave },
             signal: AbortSignal.timeout(15 * 60 * 1000),
             body: JSON.stringify({
-              contents: [{ role: 'user', parts: [{ file_data: { file_uri: `https://www.youtube.com/watch?v=${id}` }, video_metadata: { fps } }, { text: PROMPT_YOUTUBE(v.genere || 'tech') }] }],
-              generationConfig: { mediaResolution: 'MEDIA_RESOLUTION_LOW', temperature: 0.3 },
+              // "domanda": una scheda su misura (es. un riferimento breve: colore, sfondo, schermate) al posto di quella
+              // per i video lunghi; "risoluzione" più alta quando contano i colori
+              contents: [{ role: 'user', parts: [{ file_data: { file_uri: `https://www.youtube.com/watch?v=${id}` }, video_metadata: { fps } }, { text: v.domanda || PROMPT_YOUTUBE(v.genere || 'tech') }] }],
+              generationConfig: { mediaResolution: v.risoluzione || 'MEDIA_RESOLUTION_LOW', temperature: 0.3 },
             }),
           });
           const j = await r.json();
