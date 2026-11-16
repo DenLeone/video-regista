@@ -73,7 +73,7 @@ Scegli le SCRITTE che compaiono sopra il video.
 
 ${ARCHIVIO ? `3. "capitoli": il video diviso in capitoli, come un documentario YouTube: ${copione ? 'USA I CAPITOLI DEL COPIONE, con i loro titoli accorciati a 2–4 parole: "at" = la frase in cui Denis inizia quel capitolo (il primo non prima di 8 s; se non lo trovi, saltalo).' : `uno a ogni cambio di argomento (${durata > LUNGO ? 'ogni 1–3 minuti' : '2–4 per un minuto di video'}; il primo non prima di 8 s). "at" = inizio della frase che apre il capitolo; "titolo" = 2–4 parole.`}
 
-4. "immagini": immagini d'archivio (${durata > LUNGO ? `una ogni 20–30 s, ${Math.min(30, Math.round(durata / 25))} circa in tutto` : 'almeno una ogni 12–15 s di video, 3–8 in tutto'}${copione ? '; parti dalle idee per le immagini del copione' : ''}) da mostrare a tutto schermo mentre Denis parla (foto storiche, mappe, documenti, luoghi, persone, opere) su quello che sta dicendo in quel momento. Mai sopra un titolo. "at" = quando inizia a parlarne, "dur" = 3–5 s. "cerca" = ricerca IN INGLESE per Wikimedia Commons, precisa (es. "Second Italo-Ethiopian War 1935 soldiers", "Haile Gerima director", "Addis Ababa 1936"). "didascalia" = 2–6 parole in italiano.
+4. "immagini": immagini d'archivio (${durata > LUNGO ? `una ogni 20–30 s, ${Math.min(30, Math.round(durata / 25))} circa in tutto` : 'almeno una ogni 12–15 s di video, 3–8 in tutto'}${copione ? '; parti dalle idee per le immagini del copione' : ''}) da mostrare a tutto schermo mentre Denis parla (foto storiche, mappe, documenti, luoghi, persone, opere) su quello che sta dicendo in quel momento. Mai sopra un titolo. "at" = quando inizia a parlarne, "dur" = 3–5 s. "cerca" = ricerca IN INGLESE per Wikimedia Commons, precisa (es. "Second Italo-Ethiopian War 1935 soldiers", "Haile Gerima director", "Addis Ababa 1936"). "didascalia" = 2–6 parole in italiano. SOLO soggetti reali e precisi (persone, luoghi, eventi, opere, documenti): quando Denis parla del video stesso, di sé o di cose generiche, niente immagine.
 ${durata > LUNGO ? `
 5. "date": la linea del tempo. Quando Denis dice un anno o una data importante (un evento), un cartello a tutto schermo con l'anno grande. 1 ogni 1–2 minuti al massimo, solo le date chiave. "at" = quando la dice; "anno" = "1935" (o "3 ottobre 1935"); "cosa" = l'evento in 2–6 parole.
 ` : ''}
@@ -123,7 +123,8 @@ export async function cercaArchivio(cerca) {
     const lic = testoSemplice(ii?.extmetadata?.LicenseShortName?.value);
     if (!ii?.thumburl || !LIBERA.test(lic) || (ii.width || 0) < 700) continue;
     const autore = testoSemplice(ii.extmetadata?.Artist?.value).replace(/^(.+?)\s*\1$/, '$1').slice(0, 60) || 'Wikimedia Commons';
-    return { url: ii.thumburl, pagina: ii.descriptionurl, credito: `${autore} · ${lic}` };
+    // foto verticali (ritratti): nel video si vedono intere su sfondo sfocato, non tagliate a metà viso
+    return { url: ii.thumburl, pagina: ii.descriptionurl, credito: `${autore} · ${lic}`, verticale: (ii.thumbheight || 0) > (ii.thumbwidth || 1) * 0.85 };
   }
   return null;
 }
@@ -144,7 +145,7 @@ export async function scaricaArchivio(lista, durata, titoli) {
       if (!r.ok) continue;
       const file = `arch_${i}.jpg`;
       fs.writeFileSync(path.join(PUB, file), Buffer.from(await r.arrayBuffer()));
-      fuori.push({ file: `doc169/${file}`, at: +at.toFixed(2), dur: +Math.min(dur, durata - at).toFixed(2), didascalia: String(im.didascalia || '').slice(0, 50), credito: trovata.credito, pagina: trovata.pagina });
+      fuori.push({ file: `doc169/${file}`, at: +at.toFixed(2), dur: +Math.min(dur, durata - at).toFixed(2), didascalia: String(im.didascalia || '').slice(0, 50), credito: trovata.credito, pagina: trovata.pagina, verticale: trovata.verticale });
     } catch (e) { log(`archivio «${im.cerca}»: ${e.message}`); }
   }
   return fuori;

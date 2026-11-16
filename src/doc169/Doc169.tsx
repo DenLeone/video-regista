@@ -7,7 +7,7 @@ import { loadFont as anton } from '@remotion/google-fonts/Anton';
 // bande cinema 2,39:1 e titoli come il riferimento: riga piccola sopra, riga grande sottile in maiuscolo con
 // le lettere larghe che entrano una alla volta; ogni tanto una parola forte in rosso, spessa (tipo Impact).
 
-const { fontFamily: SOTTILE } = rajdhani('normal', { weights: ['300', '500'], subsets: ['latin', 'latin-ext'] });
+const { fontFamily: SOTTILE } = rajdhani('normal', { weights: ['300', '500', '700'], subsets: ['latin', 'latin-ext'] });
 const { fontFamily: FORTE } = anton('normal', { weights: ['400'], subsets: ['latin', 'latin-ext'] });
 
 export const ROSSO = '#E50914';
@@ -16,7 +16,7 @@ export const BANDA = 138; // 1080 − 1920/2,39 ≈ 276 → 138 sopra e 138 sott
 export type Titolo = { at: number; dur: number; piccolo?: string; grande: string; rosso?: string | null; lato?: 'destra' | 'sinistra' };
 export type Parola = { at: number; dur: number; parola: string };
 export type Capitolo = { at: number; titolo: string };
-export type Immagine = { file: string; at: number; dur: number; didascalia?: string; credito?: string };
+export type Immagine = { file: string; at: number; dur: number; didascalia?: string; credito?: string; verticale?: boolean };
 export type Data = { at: number; dur: number; anno: string; cosa?: string };
 export type PropsDoc169 = { video: string; durata: number; fps: number; bande?: boolean; titoli: Titolo[]; parole?: Parola[]; capitoli?: Capitolo[]; immagini?: Immagine[]; date?: Data[] };
 
@@ -61,9 +61,19 @@ const Archivio: React.FC<{ im: Immagine; n: number }> = ({ im, n }) => {
   return (
     <AbsoluteFill style={{ backgroundColor: `rgba(0,0,0,${vis})` }}>
       <AbsoluteFill style={{ opacity: vis, overflow: 'hidden' }}>
-        <Img src={staticFile(im.file)} style={{ width: '100%', height: '100%', objectFit: 'cover',
-          transform: `scale(${1.06 + 0.08 * k}) translateX(${verso * (k - 0.5) * 2.5}%)`,
-          filter: 'saturate(0.72) contrast(1.06) brightness(0.92) sepia(0.08) hue-rotate(-6deg)' }} />
+        {im.verticale ? (
+          <>
+            {/* ritratto: intero al centro, la stessa foto sfocata e scura come sfondo */}
+            <Img src={staticFile(im.file)} style={{ position: 'absolute', width: '100%', height: '100%', objectFit: 'cover', transform: 'scale(1.15)',
+              filter: 'blur(40px) saturate(0.5) brightness(0.45)' }} />
+            <Img src={staticFile(im.file)} style={{ position: 'absolute', left: 0, right: 0, margin: '0 auto', top: BANDA, height: 1080 - 2 * BANDA, width: '100%', objectFit: 'contain',
+              transform: `scale(${1.0 + 0.06 * k})`, filter: 'saturate(0.72) contrast(1.06) brightness(0.92) sepia(0.08) hue-rotate(-6deg)', boxShadow: '0 0 60px rgba(0,0,0,0.6)' }} />
+          </>
+        ) : (
+          <Img src={staticFile(im.file)} style={{ width: '100%', height: '100%', objectFit: 'cover',
+            transform: `scale(${1.06 + 0.08 * k}) translateX(${verso * (k - 0.5) * 2.5}%)`,
+            filter: 'saturate(0.72) contrast(1.06) brightness(0.92) sepia(0.08) hue-rotate(-6deg)' }} />
+        )}
         <AbsoluteFill style={{ background: 'radial-gradient(ellipse at center, rgba(0,0,0,0) 55%, rgba(0,0,0,0.55) 100%)' }} />
         <AbsoluteFill style={{ background: 'linear-gradient(0deg, rgba(0,0,0,0.6) 0%, rgba(0,0,0,0) 32%)' }} />
       </AbsoluteFill>
@@ -92,7 +102,7 @@ const CartelloCapitolo: React.FC<{ c: Capitolo; n: number; dur: number }> = ({ c
     <AbsoluteFill style={{ justifyContent: 'flex-end', paddingLeft: 96, paddingBottom: BANDA + 70, opacity: esce }}>
       <div style={{ background: 'radial-gradient(ellipse 100% 100% at 0% 100%, rgba(0,0,0,0.6) 0%, rgba(0,0,0,0.35) 45%, rgba(0,0,0,0) 100%)', position: 'absolute', left: 0, bottom: BANDA, width: 1300, height: 420 }} />
       <div style={{ position: 'relative', opacity: entra, transform: `translateX(${(1 - entra) * -30}px)` }}>
-        <div style={{ fontFamily: SOTTILE, fontWeight: 500, fontSize: 30, letterSpacing: '0.35em', color: ROSSO }}>CAPITOLO {n}</div>
+        <div style={{ fontFamily: SOTTILE, fontWeight: 700, fontSize: 34, letterSpacing: '0.35em', color: '#ff2a35', textShadow: '0 2px 12px rgba(0,0,0,0.85), 0 0 2px rgba(0,0,0,0.9)' }}>CAPITOLO {n}</div>
         <div style={{ width: 340 * linea, height: 3, background: ROSSO, margin: '12px 0 14px' }} />
         <div style={{ fontFamily: SOTTILE, fontWeight: 500, fontSize: 64, letterSpacing: '0.22em', color: '#fff', textTransform: 'uppercase', whiteSpace: 'nowrap',
           textShadow: '0 2px 18px rgba(0,0,0,0.6)' }}>{c.titolo}</div>
