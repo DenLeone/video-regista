@@ -38,8 +38,9 @@ function preparaMediaPipe() {
   return { py, modello };
 }
 
-async function trascrivi(src) {
-  const mp3 = path.join(WORK, 'voce.mp3');
+export async function trascrivi(src, dir = WORK) {
+  fs.mkdirSync(dir, { recursive: true });
+  const mp3 = path.join(dir, 'voce.mp3');
   run('ffmpeg', ['-y', '-v', 'error', '-i', src, '-vn', '-ac', '1', '-ar', '16000', '-b:a', '48k', mp3]);
   const form = new FormData();
   form.append('file', new Blob([fs.readFileSync(mp3)]), 'voce.mp3');

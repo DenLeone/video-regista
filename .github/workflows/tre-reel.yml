@@ -1,0 +1,72 @@
+name: tre-reel
+
+# ✂️ Video lungo → 3 reel (scripts/tre-reel.mjs, 16/11): l'AI sceglie i momenti più forti di un video lungo,
+# li taglia dal girato originale in 01 · Da editare e lancia il Regista, un reel per stile. Su Drive, mai nel repo.
+run-name: ${{ format('✂️ 3 reel · {0}', inputs.sorgente) }}
+on:
+  workflow_dispatch:
+    inputs:
+      sorgente:
+        description: 'Video lungo su Drive, o la sua cartella (es. 00 · Preparazione/_redazione/<tema>)'
+        required: true
+      stili:
+        description: 'Uno stile per reel, separati da | '
+        required: false
+        default: 'Cinematico|Kal|Ultra'
+      quanti:
+        description: 'Quanti reel (1–5)'
+        required: false
+        default: '3'
+      brief:
+        description: 'Indicazioni facoltative (valgono per tutti i reel)'
+        required: false
+        default: ''
+
+concurrency:
+  group: tre-reel-${{ inputs.sorgente }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  actions: write # per lanciare il Regista sui reel tagliati
+
+jobs:
+  taglia:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Collego Drive
+        env:
+          RCLONE_CONF: ${{ secrets.RCLONE_CONF }}
+        run: |
+          curl -fsSL https://rclone.org/install.sh | sudo bash > /dev/null
+          mkdir -p ~/.config/rclone
+          printf '%s\n' "$RCLONE_CONF" | tr -d '\r' | sed -e '1s/^\xEF\xBB\xBF//' -e 's/^[[:space:]]*//' > ~/.config/rclone/rclone.conf
+
+      - name: Cache strumenti
+        uses: actions/cache@v5
+        with:
+          path: ~/opt/regista-strumenti
+          key: regista-strumenti-v2-${{ runner.os }}
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+
+      - name: Preparo gli strumenti
+        timeout-minutes: 16
+        run: bash scripts/programma-video.sh
+
+      - name: Scelgo i momenti e lancio il Regista
+        env:
+          SORGENTE: ${{ inputs.sorgente }}
+          STILI: ${{ inputs.stili }}
+          QUANTI: ${{ inputs.quanti }}
+          BRIEF: ${{ inputs.brief }}
+          GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          GEMINI_API_KEY_GRATIS: ${{ secrets.GEMINI_API_KEY_GRATIS }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: bash scripts/muto.sh node scripts/tre-reel.mjs

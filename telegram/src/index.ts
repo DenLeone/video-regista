@@ -1222,7 +1222,7 @@ async function onCallback(env: Env, cb: Callback) {
     await richiediElenco(env, chat, data === 'doc:aggiorna');
     return mostra(env, chat, await schermoDoc(env), msgId);
   }
-  const doc = /^doc:(c|s|v|n):(\d+)(?::(rotolo|tech))?(?::(1080|4k))?$/.exec(data);
+  const doc = /^doc:(c|s|v|n|y|r):(\d+)(?::(rotolo|tech))?(?::(1080|4k))?$/.exec(data);
   if (doc) {
     const elenco = (await leggi<Cartelle>(env, 'cartelle'))?.elenco || [];
     const nome = elenco[Number(doc[2])];
@@ -1230,17 +1230,28 @@ async function onCallback(env: Env, cb: Callback) {
     if (doc[1] === 'c') {
       await avviso();
       return mostra(env, chat, {
-        testo: `🎞 <b>Documentario</b> · ${esc(nome)}\n\nChe stile?\n📜 <b>Rotolo</b>: carta di riso, inchiostro, timbri rossi (storie, epoche)\n💻 <b>Tech</b>: canvas scuro, card di vetro, numeri enormi (prodotti, tecnologia)\n🎬 <b>Netflix 16:9</b>: il tuo video che parla, colore da documentario, titoli e parole rosse (se nella cartella c'è un brano, fa da musica)`,
-        tasti: [[tasto('📜 Rotolo', `doc:s:${doc[2]}:rotolo`), tasto('💻 Tech', `doc:s:${doc[2]}:tech`)], [tasto('🎬 Netflix 16:9', `doc:n:${doc[2]}`)], [tasto('◀ Cartelle', 'doc')]],
+        testo: `🎞 <b>Documentario</b> · ${esc(nome)}\n\nChe stile?\n📜 <b>Rotolo</b>: carta di riso, inchiostro, timbri rossi (storie, epoche)\n💻 <b>Tech</b>: canvas scuro, card di vetro, numeri enormi (prodotti, tecnologia)\n🎬 <b>Netflix 16:9</b>: il tuo video che parla, colore da documentario, titoli e parole rosse (se nella cartella c'è un brano, fa da musica)\n🎬 <b>YouTube</b>: come Netflix 16:9 più capitoli, immagini d'archivio libere e date (col copione del 📜 Redattore nella cartella, segue quello)\n✂️ <b>3 reel</b>: dal video lungo i 3 momenti più forti, montati come reel in 3 stili diversi (Cinematico, Kal, Ultra)`,
+        tasti: [[tasto('📜 Rotolo', `doc:s:${doc[2]}:rotolo`), tasto('💻 Tech', `doc:s:${doc[2]}:tech`)], [tasto('🎬 Netflix 16:9', `doc:n:${doc[2]}`), tasto('🎬 YouTube', `doc:y:${doc[2]}`)], [tasto('✂️ 3 reel', `doc:r:${doc[2]}`)], [tasto('◀ Cartelle', 'doc')]],
       }, msgId);
     }
-    if (doc[1] === 'n') {
-      // 🎬 Documentario 16:9 (workflow doc169, 16/11): il video più grande della cartella, la musica se c'è
-      const r = await gh(env, '/actions/workflows/doc169.yml/dispatches', { method: 'POST', body: JSON.stringify({ ref: 'main', inputs: { sorgente: `01 · Da editare/${nome}`, uscita: `02 · Fatti/${nome}` } }) });
+    if (doc[1] === 'r') {
+      // ✂️ Video lungo → 3 reel (workflow tre-reel, 16/11): un reel per stile, li monta il Regista
+      const r = await gh(env, '/actions/workflows/tre-reel.yml/dispatches', { method: 'POST', body: JSON.stringify({ ref: 'main', inputs: { sorgente: `01 · Da editare/${nome}` } }) });
       if (r.status !== 204) { await avviso(); return mostra(env, chat, { testo: `⚠️ Non parte: GitHub ${r.status}\n<code>${esc(tronca(await r.text(), 300))}</code>`, tasti: [[tasto('◀ Cartelle', 'doc'), MENU_TASTO]] }, msgId); }
       await avviso('Partito');
       return mostra(env, chat, {
-        testo: `🎬 <b>Netflix 16:9</b> · ${esc(nome)}\n\n🚀 Partito: colore → voce e titoli → video. Circa 15 minuti.\nLa scheda con la barra arriva sul bot della Squadra; il video va in <b>02 · Fatti/${esc(nome)}</b>.`,
+        testo: `✂️ <b>3 reel</b> · ${esc(nome)}\n\n🚀 Partito: trascrivo, scelgo i 3 momenti più forti e li taglio (5–10 minuti). Poi il Regista li monta, uno in Cinematico, uno in Kal e uno in Ultra: ti arrivano qui come ogni montaggio.`,
+        tasti: [[MENU_TASTO]],
+      }, msgId);
+    }
+    if (doc[1] === 'n' || doc[1] === 'y') {
+      // 🎬 Documentario 16:9 (workflow doc169, 16/11): il video più grande della cartella, la musica se c'è;
+      // 🎬 YouTube = in più capitoli, immagini d'archivio libere e date (archivio: sì)
+      const r = await gh(env, '/actions/workflows/doc169.yml/dispatches', { method: 'POST', body: JSON.stringify({ ref: 'main', inputs: { sorgente: `01 · Da editare/${nome}`, uscita: `02 · Fatti/${nome}`, ...(doc[1] === 'y' ? { archivio: 'sì' } : {}) } }) });
+      if (r.status !== 204) { await avviso(); return mostra(env, chat, { testo: `⚠️ Non parte: GitHub ${r.status}\n<code>${esc(tronca(await r.text(), 300))}</code>`, tasti: [[tasto('◀ Cartelle', 'doc'), MENU_TASTO]] }, msgId); }
+      await avviso('Partito');
+      return mostra(env, chat, {
+        testo: `🎬 <b>${doc[1] === 'y' ? 'YouTube' : 'Netflix 16:9'}</b> · ${esc(nome)}\n\n🚀 Partito: colore → voce e titoli → video. Circa 15 minuti, di più per i video lunghi.\nLa scheda con la barra arriva sul bot della Squadra; il video va in <b>02 · Fatti/${esc(nome)}</b>.`,
         tasti: [[link('📂 02 · Fatti', URL_98), MENU_TASTO]],
       }, msgId);
     }
