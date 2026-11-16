@@ -34,6 +34,10 @@ export const HDR = ['arib-std-b67', 'smpte2084'];
 // I-Log (Insta360): girato piatto, si riporta a colori normali con la LUT tecnica ufficiale
 // Insta360 (I-Log → Rec709 BT1886). Il "look" (caldo, contrasto) lo aggiunge poi lo stile.
 export const LUT_ILOG = path.join(ROOT, 'lut', 'Luna_I-Log_to_Rec709_BT1886_s33_v2.cube');
+// S-Log3 (Sony, 16/11: Denis gira in log anche con la Sony per i documentari): stessa idea, LUT tecnica
+// S-Log3 / S-Gamut3.Cine → Rec709 BT1886 calcolata dalle formule Sony (scripts/look/slog3_lut.py)
+export const LUT_SLOG3 = path.join(ROOT, 'lut', 'Sony_SLog3_SGamut3Cine_to_Rec709_s33.cube');
+export const nomeLog = (c) => (c?.log === 'slog3' ? 'S-Log3' : 'I-Log');
 export const perFiltro = (p) => p.replace(/\\/g, '/').replace(/:/g, '\\:');
 // I-Log con esposizione automatica: la Insta protegge il cielo e dopo la LUT i medi restano bassi
 // (Giacca autunnale, 18/10: luminosità media 0,22–0,30). `alza` = curva che porta la media
@@ -41,7 +45,7 @@ export const perFiltro = (p) => p.replace(/\\/g, '/').replace(/:/g, '\\:');
 export const ESPOSIZIONE_LOG = 0.4;
 
 export function filtroTecnico(c) {
-  if (c?.log) return `lut3d=file='${perFiltro(LUT_ILOG)}':interp=tetrahedral${c.alza ? `,curves=master='0/0 ${c.alza.da}/${c.alza.a} 1/1'` : ''},format=yuv420p`;
+  if (c?.log) return `lut3d=file='${perFiltro(c.log === 'slog3' ? LUT_SLOG3 : LUT_ILOG)}':interp=tetrahedral${c.alza ? `,curves=master='0/0 ${c.alza.da}/${c.alza.a} 1/1'` : ''},format=yuv420p`;
   if (!c || !HDR.includes(c.trc)) return 'format=yuv420p';
   return `zscale=tin=${c.trc}:pin=${c.primaries || 'bt2020'}:min=${c.matrix || 'bt2020nc'}:t=linear:npl=100,format=gbrpf32le,`
     + 'zscale=p=bt709,tonemap=tonemap=hable:desat=0,zscale=t=bt709:m=bt709:r=tv,format=yuv420p';
@@ -69,30 +73,36 @@ export function statisticheColore(file, durata, filtro = 'null', tmpDir = path.j
 
 // I-Log: la Insta360 non lo scrive nei metadati (test del 18/10: bt709, 10 bit e basta).
 // Si riconosce da 10 bit + colori spentissimi; "i-Log" nel brief lo forza, "senza i-Log" lo esclude.
-// Con I-Log imposta info.colore.log e, se dopo la LUT resta scuro, info.colore.alza.
-// Risultato: { iLog, riconosciuto (dai colori, non dal brief), scuro, luce (0–1 dopo la LUT) }
+// S-Log3 (Sony): lo stesso, con «s-log» nel brief (anche «slog3», «s-log3»); dai colori anche a 8 bit
+// (alcune Sony girano in S-Log3 a 8 bit).
+// Con il log imposta info.colore.log (true = I-Log, 'slog3' = S-Log3) e, se dopo la LUT resta scuro, info.colore.alza.
+// Risultato: { iLog, tipo ('I-Log' | 'S-Log3'), riconosciuto (dai colori, non dal brief), scuro, luce (0–1 dopo la LUT) }
 export function riconosciLog(src, info, disp, brief = '', tmpDir) {
-  const noLog = /\b(senza|no)\s+i-?log\b/i.test(brief);
-  let iLog = !noLog && (/\bi-?log\b/i.test(Object.values(info.tags).join(' ')) || (disp === 'insta' && /\bi-?log\b/i.test(brief)));
+  const sony = disp === 'sony';
+  const nome = sony ? 's-?log\\s?3?' : 'i-?log';
+  const noLog = new RegExp(`\\b(senza|no)\\s+${nome}\\b`, 'i').test(brief);
+  const parola = new RegExp(`\\b${nome}\\b`, 'i');
+  let iLog = !noLog && (parola.test(Object.values(info.tags).join(' ')) || ((disp === 'insta' || sony) && parola.test(brief)));
   let riconosciuto = false, sat = null;
-  if (!iLog && !noLog && disp === 'insta' && /10/.test(info.colore?.pix || '') && !HDR.includes(info.colore?.trc)) {
+  if (!iLog && !noLog && (sony || (disp === 'insta' && /10/.test(info.colore?.pix || ''))) && !HDR.includes(info.colore?.trc)) {
     const st = statisticheColore(src, info.durata, 'null', tmpDir);
     // l'I-Log è piatto ma chiaro (ombre alzate): un video normale girato al buio ha colori spenti
     // anche lui, ma è scuro. Anime (25/10): sera, saturazione 5.5, preso per I-Log → colori sballati
     if (st && st.sat < 6 && st.y >= 45) { iLog = true; riconosciuto = true; sat = st.sat; }
   }
   if (!iLog || !info.colore) return { iLog: false };
-  info.colore.log = true;
+  info.colore.log = sony ? 'slog3' : true;
+  const tipo = nomeLog(info.colore);
   const dopo = statisticheColore(src, info.durata, filtroTecnico(info.colore).replace(/,format=yuv420p$/, ''), tmpDir);
   let luce = null;
   if (dopo) {
     luce = Math.max(0.02, (dopo.y - 16) / 219); // luminosità media 0–1 dopo la LUT
     // riconosciuto dai colori ma dopo la LUT quasi nero: non era I-Log, si lascia com'è
-    if (riconosciuto && luce < 0.06) { delete info.colore.log; return { iLog: false, scartato: true, sat, luce }; }
+    if (riconosciuto && luce < 0.06) { delete info.colore.log; return { iLog: false, scartato: true, tipo, sat, luce }; }
     // al massimo ~1 stop in più: oltre si vede solo rumore
     if (luce < ESPOSIZIONE_LOG - 0.03) info.colore.alza = { da: +luce.toFixed(3), a: +Math.min(ESPOSIZIONE_LOG, luce * 2).toFixed(3) };
   }
-  return { iLog: true, riconosciuto, sat, luce, scuro: luce !== null && luce < 0.12 };
+  return { iLog: true, tipo, riconosciuto, sat, luce, scuro: luce !== null && luce < 0.12 };
 }
 
 // ---------- look chiari: esposizione del soggetto portata a "ben esposto" ----------

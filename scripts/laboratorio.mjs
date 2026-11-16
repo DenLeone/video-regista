@@ -54,7 +54,9 @@ const conPercorsi = (f) => f.replace(/file='?(?!\/)([^:,']+)'?/g, (_, p) => `fil
 // curva di esposizione della variante: 12K (true) o look chiaro ("chiaro" / { obiettivo, guadagno })
 const curvaVariante = (v, m) => (!v.adatta || !m ? null : v.adatta === true ? curvaEsposizione(m) : curvaChiara(m, typeof v.adatta === 'object' ? v.adatta : {}));
 
-// sorgente: scaricata + conversione tecnica come nel montaggio
+// sorgente: scaricata + conversione tecnica come nel montaggio. "brief" nella ricetta come nel montaggio
+// (es. "s-log3" per il girato Sony in log: forza la conversione anche se i colori non lo dicono)
+let briefLab = '';
 const sorgenti = new Map();
 function sorgente(file) {
   if (sorgenti.has(file)) return sorgenti.get(file);
@@ -68,11 +70,11 @@ function sorgente(file) {
   const disp = dispositivo(path.basename(file), info.tags);
   // misure del file com'è (per tarare il riconoscimento dell'I-Log): saturazione e luminosità medie
   const crudo = statisticheColore(u, info.durata, 'null', path.join(OUT, 'tmp'));
-  const lg = riconosciLog(u, info, disp, '', path.join(OUT, 'tmp'));
+  const lg = riconosciLog(u, info, disp, briefLab, path.join(OUT, 'tmp'));
   const s = { file, u, info, disp, iLog: lg.iLog, tecnico: filtroTecnico(info.colore) };
   const hdr = info.colore?.trc && /arib|2084/.test(info.colore.trc);
   s.riga = `${file} · ${disp} · ${info.w}x${info.h} · ${info.fps} fps · ${info.colore?.pix || '?'} ${info.colore?.trc || ''}`
-    + `${lg.iLog ? ` · I-Log${info.colore.alza ? ` (schiarita ${info.colore.alza.da}→${info.colore.alza.a})` : ''}` : hdr ? ' · HDR' : ''} · ${info.durata.toFixed(1)} s`
+    + `${lg.iLog ? ` · ${lg.tipo}${info.colore.alza ? ` (schiarita ${info.colore.alza.da}→${info.colore.alza.a})` : ''}` : hdr ? ' · HDR' : ''} · ${info.durata.toFixed(1)} s`
     + `${crudo ? ` · crudo: saturazione ${crudo.sat.toFixed(1)}, luminosità ${crudo.y.toFixed(0)}` : ''}`;
   sorgenti.set(file, s);
   return s;
@@ -156,6 +158,7 @@ function fotogrammiEVarianti(ric) {
       if (m) log(`  ${nome}: soggetto ${m.medio.toFixed(2)}, neri ${m.nero.toFixed(2)}, bianchi ${m.bianco.toFixed(2)}`);
       const nomi = [ric.nomeBase || 'base'];
       for (const v of varianti) {
+        if (v.pelle) continue; // la pelle protetta serve la maschera: solo nelle clip
         const o = path.join(OUT, `${nome}-${pulito(v.id)}.jpg`);
         try {
           const curva = curvaVariante(v, m);
@@ -273,9 +276,10 @@ async function trascrizioni(ric) {
     // anche i tempi parola per parola (salvati in JSON accanto al testo)
     form.append('timestamp_granularities[]', 'segment');
     form.append('timestamp_granularities[]', 'word');
+    // un errore di rete non ferma le altre prove (colore, voce) della stessa ricetta
     const res = await fetch('https://api.groq.com/openai/v1/audio/transcriptions', {
       method: 'POST', headers: { Authorization: `Bearer ${process.env.GROQ_API_KEY || ''}` }, body: form,
-    });
+    }).catch((e) => ({ ok: false, status: e.cause?.code || e.message }));
     if (!res.ok) { log(`trascrizione di ${file} non riuscita: Groq ${res.status}`); continue; }
     const j = await res.json();
     const mmss = (t) => `${Math.floor(t / 60)}:${String(Math.floor(t % 60)).padStart(2, '0')}`;
@@ -363,13 +367,15 @@ function ritmo(ric) {
 }
 
 // audio di prova da un video (es. il brano di un esempio dello stile Beat), copiato su Drive in `a`.
-// Solo per le prove: i file restano su Drive, mai nel repo.
+// Con "filtro" (catena -af di ffmpeg) è una prova di suono: es. la voce «da podcast» (16/11), più versioni
+// dello stesso pezzo da ascoltare una dopo l'altra. Solo per le prove: i file restano su Drive, mai nel repo.
 function audio(ric) {
   for (const a of ric.audio) {
     const u = path.join(SCARICO, `audio-${pulito(path.basename(a.file))}`);
-    run('rclone', ['copyto', `${REMOTE}:${a.file}`, u]);
+    if (!fs.existsSync(u)) run('rclone', ['copyto', `${REMOTE}:${a.file}`, u]);
     const o = path.join(OUT, 'tmp', path.basename(a.a));
-    run('ffmpeg', ['-y', '-v', 'error', ...(a.da ? ['-ss', String(a.da)] : []), '-i', u, ...(a.fino ? ['-t', String(a.fino - (a.da || 0))] : []), '-vn', '-ac', '2', '-ar', '48000', o]);
+    run('ffmpeg', ['-y', '-v', 'error', ...(a.da ? ['-ss', String(a.da)] : []), '-i', u, ...(a.fino ? ['-t', String(a.fino - (a.da || 0))] : []), '-vn',
+      ...(a.filtro ? ['-af', a.filtro] : []), '-ac', '2', '-ar', '48000', o]);
     run('rclone', ['copyto', o, `${REMOTE}:${a.a}`]);
     log(`audio ${a.file} → ${a.a}`);
   }
@@ -484,6 +490,7 @@ async function main() {
   fs.rmSync(GIT, { recursive: true, force: true });
   fs.mkdirSync(path.join(OUT, 'tmp'), { recursive: true });
   uscitaDrive = ric.uscita;
+  briefLab = String(ric.brief || '');
   fs.mkdirSync(SCARICO, { recursive: true });
   if (ric.trascrivi) await trascrizioni(ric);
   if (ric.sfx) trovaSfx(ric);

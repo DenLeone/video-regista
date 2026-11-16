@@ -219,7 +219,7 @@ const FASI = {
     const info = probe(src);
     const lg = riconosciLog(src, info, dispositivo(path.basename(sorgente), info.tags), process.env.BRIEF || '', WORK);
     const base = filtroTecnico(info.colore).replace(/,?format=yuv420p$/, '') || 'null';
-    log(`${sorgente}: ${info.w}x${info.h} · ${info.fps} fps · ${info.durata.toFixed(1)} s${lg.iLog ? ' · I-Log' : ''}`);
+    log(`${sorgente}: ${info.w}x${info.h} · ${info.fps} fps · ${info.durata.toFixed(1)} s${lg.iLog ? ` · ${lg.tipo}` : ''}`);
     // musica (facoltativa): il nome di un brano in Assets/Music, preparato a volume uniforme (solo l'audio:
     // gli mp3 di Suno hanno la copertina)
     let musica = null;

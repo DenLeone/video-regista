@@ -1,0 +1,30 @@
+{
+  "uscita": "05 · Archivio/ECC/_laboratorio",
+  "brief": "s-log3",
+  "trascrivi": ["05 · Archivio/ECC/VO 2026-11-16 23-06-59.wav"],
+  "audio": [
+    { "file": "05 · Archivio/ECC/VO 2026-11-16 23-06-59.wav", "da": 0, "fino": 25, "a": "05 · Archivio/ECC/_laboratorio/voce 1 naturale.wav",
+      "filtro": "highpass=f=70,loudnorm=I=-16:TP=-1.5:LRA=11" },
+    { "file": "05 · Archivio/ECC/VO 2026-11-16 23-06-59.wav", "da": 0, "fino": 25, "a": "05 · Archivio/ECC/_laboratorio/voce 2 podcast leggero.wav",
+      "filtro": "highpass=f=80,equalizer=f=160:t=q:w=1:g=2,equalizer=f=350:t=q:w=1.4:g=-2.5,equalizer=f=4500:t=q:w=1.2:g=2,deesser=i=0.3,acompressor=threshold=0.1:ratio=3:attack=8:release=160:makeup=2,loudnorm=I=-16:TP=-1.5:LRA=7" },
+    { "file": "05 · Archivio/ECC/VO 2026-11-16 23-06-59.wav", "da": 0, "fino": 25, "a": "05 · Archivio/ECC/_laboratorio/voce 3 podcast pieno.wav",
+      "filtro": "highpass=f=70,lowshelf=f=120:g=3,equalizer=f=300:t=q:w=1.5:g=-3,equalizer=f=3500:t=q:w=1.4:g=3,highshelf=f=10000:g=2,deesser=i=0.4,acompressor=threshold=0.063:ratio=4:attack=5:release=120:makeup=3,alimiter=limit=0.89,loudnorm=I=-14:TP=-1:LRA=5" },
+    { "file": "05 · Archivio/ECC/VO 2026-11-16 23-06-59.wav", "da": 0, "fino": 25, "a": "05 · Archivio/ECC/_laboratorio/voce 4 pieno senza fruscio.wav",
+      "filtro": "highpass=f=70,afftdn=nf=-25,lowshelf=f=120:g=3,equalizer=f=300:t=q:w=1.5:g=-3,equalizer=f=3500:t=q:w=1.4:g=3,highshelf=f=10000:g=2,deesser=i=0.4,acompressor=threshold=0.063:ratio=4:attack=5:release=120:makeup=3,alimiter=limit=0.89,loudnorm=I=-14:TP=-1:LRA=5" }
+  ],
+  "griglia": 2,
+  "nomeBase": "S-Log3 tecnica",
+  "fotogrammi": [
+    { "file": "05 · Archivio/ECC/C1293.MP4", "punti": [0.2, 0.5, 0.8] }
+  ],
+  "varianti": [
+    { "id": "Crudo S-Log3", "crudo": true, "filtro": "null" },
+    { "id": "B documentario come ieri", "filtro": "lut3d=file=lut/documentario.cube:interp=tetrahedral" },
+    { "id": "C documentario morbido", "filtro": "eq=saturation=0.9,lut3d=file=lut/documentario.cube:interp=tetrahedral,curves=all='0/0.03 1/0.97'" },
+    { "id": "D naturale caldo", "filtro": "colorbalance=rm=0.02:bm=-0.02:rh=0.01:bh=-0.01,eq=saturation=0.95" },
+    { "id": "B pelle", "filtro": "lut3d=file=lut/documentario.cube:interp=tetrahedral", "pelle": "curves=all='0/0.03 1/0.97'" }
+  ],
+  "clip": [
+    { "file": "05 · Archivio/ECC/C1293.MP4", "da": 8, "dur": 6, "variante": "B pelle" }
+  ]
+}

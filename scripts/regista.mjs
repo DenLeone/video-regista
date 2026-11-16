@@ -2306,16 +2306,16 @@ export async function analizza(nome, brief, cache) {
       const info = probe(src);
       if (!info.video) continue;
       const disp = dispositivo(f, info.tags);
-      // I-Log (Insta360) e HDR: conversione tecnica a Rec.709 (scripts/colore.mjs)
+      // I-Log (Insta360), S-Log3 (Sony) e HDR: conversione tecnica a Rec.709 (scripts/colore.mjs)
       const lg = riconosciLog(src, info, disp, brief || '', WORK);
       const iLog = lg.iLog;
-      if (lg.scartato) log(`  ${id}: colori spenti ma dopo la LUT quasi nero (${lg.luce.toFixed(2)}): non è I-Log, colori originali`);
+      if (lg.scartato) log(`  ${id}: colori spenti ma dopo la LUT quasi nero (${lg.luce.toFixed(2)}): non è ${lg.tipo}, colori originali`);
       if (lg.riconosciuto) {
-        logRiconosciuti.push(id);
-        log(`  ${id}: 10 bit e colori spenti (saturazione ${lg.sat.toFixed(1)}): la tratto come I-Log`);
+        logRiconosciuti.push(lg.tipo === 'S-Log3' ? `${id} (Sony)` : id);
+        log(`  ${id}: ${disp === 'sony' ? 'colori spenti' : '10 bit e colori spenti'} (saturazione ${lg.sat.toFixed(1)}): la tratto come ${lg.tipo}`);
       }
       const hdr = !iLog && HDR.includes(info.colore?.trc);
-      log(`video ${f} (${NOMI_DISPOSITIVO[disp]}, ${info.durata.toFixed(1)} s, ${info.w}x${info.h}, ${info.fps} fps${iLog ? ', I-Log → Rec709' : hdr ? ', HDR → SDR' : ''})`);
+      log(`video ${f} (${NOMI_DISPOSITIVO[disp]}, ${info.durata.toFixed(1)} s, ${info.w}x${info.h}, ${info.fps} fps${iLog ? `, ${lg.tipo} → Rec709` : hdr ? ', HDR → SDR' : ''})`);
       if (disp === 'insta') log(`  ${id}: colore ${JSON.stringify(info.colore)} · metadati ${JSON.stringify(info.tags).slice(0, 800)}`);
       if (iLog) {
         if (lg.scuro) logScuri.push(id);
@@ -2536,7 +2536,7 @@ export async function analizza(nome, brief, cache) {
   const avvisi = sorgenti.filter((s) => s.provataVisiva).map((s) => s.sync
     ? `${s.id} (${s.nomeDispositivo}) ha registrato solo fruscio (microfono collegato ma spento?): l'ho agganciata dalle immagini. Se il labiale non torna, dimmelo.`
     : `${s.id} (${s.nomeDispositivo}) ha registrato solo fruscio, senza voce (microfono collegato ma spento?) e non sono riuscito ad agganciarla nemmeno dalle immagini: l'ho usata solo come B-roll. Lascia acceso il microfono della camera, anche quello interno basta.`);
-  if (logRiconosciuti.length) avvisi.push(`${logRiconosciuti.join(', ')}: riconosciut${logRiconosciuti.length > 1 ? 'e' : 'a'} come I-Log (10 bit, colori spenti) e convertit${logRiconosciuti.length > 1 ? 'e' : 'a'} con la LUT Insta360. Se non era in I-Log scrivi "senza i-Log" nel brief.`);
+  if (logRiconosciuti.length) avvisi.push(`${logRiconosciuti.join(', ')}: riconosciut${logRiconosciuti.length > 1 ? 'e' : 'a'} come girato in log (colori spenti) e convertit${logRiconosciuti.length > 1 ? 'e' : 'a'} con la LUT tecnica (I-Log Insta360, S-Log3 Sony). Se non era in log scrivi "senza i-Log" (Insta360) o "senza s-log" (Sony) nel brief.`);
   if (logScuri.length) avvisi.push(`${logScuri.join(', ')}: molto scur${logScuri.length > 1 ? 'e' : 'a'} anche dopo la LUT, ho schiarito il possibile. In I-Log con poca luce meglio aggiungere luce o esporre +0,7 EV.`);
   if (/\bi-?log\b/i.test(brief || '') && !/\b(senza|no)\s+i-?log\b/i.test(brief || '') && !sorgenti.some((s) => s.colore?.log)) {
     avvisi.push('nel brief c\'è "i-Log" ma nessuna clip è riconosciuta come Insta360: colori lasciati come sono');
