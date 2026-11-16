@@ -60,7 +60,9 @@ test('un modello oltre il tetto non viene nemmeno chiamato', async () => {
   }
 });
 
-// MacBook, 29/10: con Gemini giù la descrizione deve arrivare lo stesso (Claude, poi le parole del video)
+// MacBook, 29/10: con Gemini giù la descrizione deve arrivare lo stesso (Claude, poi le parole del video).
+// 16/11: lavoro facile → al massimo quattro modelli sulla chiave GRATUITA; senza chiave gratuita, sulla chiave
+// a pagamento solo Flash-Lite (una chiamata)
 test('le didascalie provano al massimo quattro modelli e arrivano comunque', async () => {
   azzeraQuoteGiorno();
   const primaFetch = globalThis.fetch;
@@ -73,15 +75,25 @@ test('le didascalie provano al massimo quattro modelli e arrivano comunque', asy
     delete env.CLAUDE_CODE_OAUTH_TOKEN;
     env.GEMINI_MODELLI = 'gemini-a,gemini-b,gemini-c,gemini-d,gemini-e';
     env.GEMINI_API_KEY = 'prova';
-    globalThis.fetch = (async () => {
+    const chiavi: string[] = [];
+    globalThis.fetch = (async (_url: unknown, init?: RequestInit) => {
       chiamate += 1;
+      chiavi.push(String((init?.headers as Record<string, string> | undefined)?.['x-goog-api-key']));
       return new Response('no', { status: 404 });
     }) as typeof fetch;
-    const out = await scriviDidascalie({ titolo: 't', testo: 'detto nel video', brief: '', keywords: [] });
-    assert.equal(chiamate, 4);
+    // solo la chiave a pagamento: una chiamata, Flash-Lite
+    let out = await scriviDidascalie({ titolo: 't', testo: 'detto nel video', brief: '', keywords: [] });
+    assert.equal(chiamate, 1);
+    assert.ok(out?.descrizione.includes('detto nel video'));
+    // con la chiave gratuita: quattro modelli lì, poi Flash-Lite a pagamento
+    chiamate = 0; chiavi.length = 0;
+    env.GEMINI_API_KEY_GRATIS = 'gratis';
+    out = await scriviDidascalie({ titolo: 't', testo: 'detto nel video', brief: '', keywords: [] });
+    assert.deepEqual(chiavi, ['gratis', 'gratis', 'gratis', 'gratis', 'prova']);
     assert.ok(out?.descrizione.includes('detto nel video'));
   } finally {
     globalThis.fetch = primaFetch;
+    delete env.GEMINI_API_KEY_GRATIS;
     if (modelli === undefined) delete env.GEMINI_MODELLI; else env.GEMINI_MODELLI = modelli;
     if (chiave === undefined) delete env.GEMINI_API_KEY; else env.GEMINI_API_KEY = chiave;
     if (claude !== undefined) env.CLAUDE_CODE_OAUTH_TOKEN = claude;
