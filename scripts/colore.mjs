@@ -77,6 +77,8 @@ export function statisticheColore(file, durata, filtro = 'null', tmpDir = path.j
 // (alcune Sony girano in S-Log3 a 8 bit).
 // Con il log imposta info.colore.log (true = I-Log, 'slog3' = S-Log3) e, se dopo la LUT resta scuro, info.colore.alza.
 // Risultato: { iLog, tipo ('I-Log' | 'S-Log3'), riconosciuto (dai colori, non dal brief), scuro, luce (0–1 dopo la LUT) }
+export const senzaSchiarire = (brief = '') => /\bsenza\s+schiar/i.test(brief);
+
 export function riconosciLog(src, info, disp, brief = '', tmpDir) {
   const sony = disp === 'sony';
   const nome = sony ? 's-?log\\s?3?' : 'i-?log';
@@ -100,7 +102,9 @@ export function riconosciLog(src, info, disp, brief = '', tmpDir) {
     // riconosciuto dai colori ma dopo la LUT quasi nero: non era I-Log, si lascia com'è
     if (riconosciuto && luce < 0.06) { delete info.colore.log; return { iLog: false, scartato: true, tipo, sat, luce }; }
     // al massimo ~1 stop in più: oltre si vede solo rumore
-    if (luce < ESPOSIZIONE_LOG - 0.03) info.colore.alza = { da: +luce.toFixed(3), a: +Math.min(ESPOSIZIONE_LOG, luce * 2).toFixed(3) };
+    // «senza schiarire» nel brief (Denis, 16/11, ECC): solo la LUT tecnica, niente curve su volto o sfondo
+    if (senzaSchiarire(brief)) info.colore.puro = true;
+    else if (luce < ESPOSIZIONE_LOG - 0.03) info.colore.alza = { da: +luce.toFixed(3), a: +Math.min(ESPOSIZIONE_LOG, luce * 2).toFixed(3) };
   }
   return { iLog: true, tipo, riconosciuto, sat, luce, scuro: luce !== null && luce < 0.12 };
 }
