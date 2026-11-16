@@ -41,12 +41,29 @@ def info(src):
     return int(v['width']), int(v['height']), v['r_frame_rate'], any(s['codec_type'] == 'audio' for s in j['streams'])
 
 
+NATURALE = False
+
+
 def naturale(luce=0.78):
-    global SFONDO_LUCE, LUCI_SFONDO, SFONDO_TINTA, VIGNETTA, CURVA_SOGGETTO, CALDO, NITIDEZZA, VOLTO
-    SFONDO_LUCE, LUCI_SFONDO, SFONDO_TINTA, VIGNETTA = luce, 0.85, (0.006, 0.0, -0.006), 0.18
-    # il girato è già colorato in modo naturale: i medi salgono poco (nel 12K li riportava su dalla LUT scura)
-    CURVA_SOGGETTO = ([0, 0.03, 0.1, 0.25, 0.45, 0.7, 1], [0, 0.032, 0.11, 0.27, 0.48, 0.72, 1])
-    CALDO, NITIDEZZA, VOLTO = (1.02, 1.0, 0.98), 0.2, 0.48
+    # 16/11, Denis sulle prime clip: «vedo un alone strano». Cause: la persona veniva SCHIARITA (viso portato a
+    # 0,48, fino al doppio) mentre lo sfondo scendeva, quindi sul bordo la differenza era ben più del 20%; il
+    # bordo era quello grezzo di MediaPipe (256 px) ristretto di ~16 px (riga scura attorno a capelli e spalle);
+    # in più nitidezza e scia nei movimenti. Ora: la persona resta COM'È (solo un filo più calda), lo sfondo
+    # scende della sola luce chiesta, e il bordo segue i contorni veri dell'immagine (filtro guidato).
+    global NATURALE, SFONDO_LUCE, LUCI_SFONDO, SFONDO_TINTA, VIGNETTA, CURVA_SOGGETTO, CALDO, NITIDEZZA
+    NATURALE = True
+    SFONDO_LUCE, LUCI_SFONDO, SFONDO_TINTA, VIGNETTA = luce, 1.0, (0.0, 0.0, 0.0), 0.12
+    CURVA_SOGGETTO = ([0, 1], [0, 1])
+    CALDO, NITIDEZZA = (1.01, 1.0, 0.99), 0
+
+
+def guidata(guida, p, r, eps=1e-3):
+    # filtro guidato (He et al.): la maschera `p` prende i bordi dell'immagine `guida` (grigio 0–1)
+    k = (2 * r + 1, 2 * r + 1)
+    mg, mp_ = cv2.blur(guida, k), cv2.blur(p, k)
+    a = (cv2.blur(guida * p, k) - mg * mp_) / (cv2.blur(guida * guida, k) - mg * mg + eps)
+    b = mp_ - a * mg
+    return np.clip(cv2.blur(a, k) * guida + cv2.blur(b, k), 0, 1)
 
 
 def main():
@@ -83,6 +100,8 @@ def main():
     nucleo = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (9, 9))  # bordo ristretto: niente cielo chiaro attorno alle spalle
 
     yb = np.minimum(x * SFONDO_LUCE + np.clip(x - 0.75, 0, 1) * 1.2, LUCI_SFONDO * (1 - np.exp(-x * 2.2)))
+    if NATURALE:
+        yb = x * SFONDO_LUCE  # solo meno luce, uguale su tutti i toni: i colori dello sfondo non cambiano
     tab_sfondo = np.dstack([np.clip((yb + t) * 255, 0, 255).astype(np.uint8) for t in SFONDO_TINTA]).reshape(256, 1, 3)
 
     def componi(img, m):
@@ -98,6 +117,18 @@ def main():
             bg = cv2.resize((s * 255).astype(np.uint8), (w, h), interpolation=cv2.INTER_LINEAR)
         else:
             bg = cv2.LUT(img, tab_sfondo)
+        if NATURALE:
+            # bordo sui contorni veri (a metà risoluzione), senza restringere: niente riga scura né alone chiaro
+            mm = np.squeeze(m).astype(np.float32)
+            grigio = cv2.cvtColor(cv2.resize(img, (mm.shape[1], mm.shape[0]), interpolation=cv2.INTER_AREA), cv2.COLOR_RGB2GRAY).astype(np.float32) / 255
+            # due passate con una curva in mezzo: una maschera spostata di 6 px torna sul contorno vero (provato su
+            # maschere finte); dove persona e sfondo hanno la stessa luce resta una sfumatura morbida di ~20 px
+            r = max(4, mm.shape[1] // 45)
+            netta = lambda v: np.clip((v - 0.2) / 0.5, 0, 1)
+            mm = netta(guidata(grigio, netta(guidata(grigio, mm, r)), r))
+            mm = cv2.GaussianBlur(mm, (0, 0), 0.8)
+            m1 = cv2.resize(mm, (w, h), interpolation=cv2.INTER_LINEAR)
+            return cv2.multiply(cv2.blendLinear(sog, bg, m1, 1 - m1), vignetta, dtype=cv2.CV_8U)
         # maschera un filo ristretta (niente alone di sfondo chiaro attorno al corpo) e sfumata
         mp_ = cv2.erode(cv2.resize(m, piccolo, interpolation=cv2.INTER_AREA), nucleo)
         mp_ = cv2.GaussianBlur(mp_, (0, 0), 1.2)
@@ -106,7 +137,7 @@ def main():
         return cv2.multiply(out, vignetta, dtype=cv2.CV_8U)
 
     def imposta_volto(volti):
-        if not volti:
+        if not volti or NATURALE:  # naturale: la persona non si schiarisce
             return tab
         v = float(np.median(volti))
         print(f'volto {v:.2f} → {min(max(v, VOLTO), v * MAX_SCHIARITA):.2f}', file=sys.stderr)
@@ -123,7 +154,8 @@ def main():
             mezza = cv2.resize(img, (w // 2, h // 2), interpolation=cv2.INTER_AREA)
             r = seg.segment_for_video(mp.Image(image_format=mp.ImageFormat.SRGB, data=mezza), int(n * 1000 / eval(fps)))
             m = np.clip((1.0 - r.confidence_masks[0].numpy_view() - 0.35) / 0.3, 0, 1).astype(np.float32)
-            m = m if prima is None else 0.55 * m + 0.45 * prima  # niente sfarfallio del bordo
+            pm = 0.25 if NATURALE else 0.45  # naturale: meno memoria, niente scia quando gesticola
+            m = m if prima is None else (1 - pm) * m + pm * prima  # niente sfarfallio del bordo
             if scrivi is None:
                 viso = np.squeeze(r.confidence_masks[3].numpy_view()) > 0.5
                 if viso.sum() > 200:

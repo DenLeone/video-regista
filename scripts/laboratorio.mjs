@@ -400,6 +400,27 @@ function audio(ric) {
   }
 }
 
+// guarda: fotogrammi piccoli di un video su Drive (una clip di prova, un video finito), in fila in una sola
+// immagine leggera, più i ritagli a grandezza vera di una zona (es. il bordo della persona, per vedere un alone).
+// { "guarda": [{ "file": "<video su Drive>", "tempi": [1, 3, 5], "ritaglio": "640:640:220:420" }] }
+function guarda(ric) {
+  for (const g of ric.guarda) {
+    const u = path.join(SCARICO, `guarda-${pulito(path.basename(g.file))}`);
+    try { run('rclone', ['copyto', `${REMOTE}:${g.file}`, u]); } catch (e) { log(`guarda ${g.file}: non trovato (${e.message.split('\n')[0]})`); continue; }
+    const nome = pulito(`${path.basename(path.dirname(g.file))}-${path.parse(g.file).name}`);
+    const tempi = g.tempi || [1];
+    const ins = tempi.flatMap((t) => ['-ss', String(t), '-i', u]);
+    const fila = (filtro, larghezza, uscita) => run('ffmpeg', ['-y', '-v', 'error', ...ins, '-filter_complex',
+      `${tempi.map((_, k) => `[${k}:v]${filtro}scale=${larghezza}:-2[g${k}]`).join(';')};${tempi.map((_, k) => `[g${k}]`).join('')}${tempi.length > 1 ? `hstack=${tempi.length}` : 'null'}`,
+      '-frames:v', '1', '-q:v', '5', path.join(OUT, uscita)]);
+    try {
+      fila('', g.larghezza || 220, `guarda-${nome}.jpg`);
+      if (g.ritaglio) fila(`crop=${g.ritaglio},`, g.larghezzaRitaglio || 420, `guarda-${nome}-ritagli.jpg`);
+      log(`guarda ${g.file}: ${tempi.length} fotogrammi`);
+    } catch (e) { log(`guarda ${g.file}: ${e.message.split('\n')[0]}`); }
+  }
+}
+
 // fermi: fotogrammi di una composizione Remotion con un piano finto, per vedere la grafica senza girato
 // (16/11, schermate del documentario verticale). Il video sotto è una stanza finta fatta qui con ffmpeg
 // (public/media/zz_prova_doc.mp4): nel repo pubblico niente girato vero.
@@ -605,6 +626,7 @@ async function main() {
   if (ric.sequenze) { sequenze(ric); carica(); }
   if (ric.fotogrammi) { fotogrammiEVarianti(ric); carica(); }
   if (ric.clip) { clip(ric); carica(); }
+  if (ric.guarda) { guarda(ric); carica(); }
   if (ric.catalogo) await catalogo(ric);
   fs.rmSync(path.join(OUT, 'tmp'), { recursive: true, force: true });
   const elenco = [...sorgenti.values()].map((s) => s.riga).join('\n');

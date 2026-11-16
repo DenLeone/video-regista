@@ -1,0 +1,15 @@
+{
+  "uscita": "05 · Archivio/ECC/_laboratorio/alone",
+  "brief": "s-log3",
+  "varianti": [
+    { "id": "E sfondo -20 nuovo", "filtro": "colorbalance=rs=0.02:bs=-0.03:rm=0.03:gm=0.005:bm=-0.035:rh=0.02:bh=-0.025,eq=saturation=1.04", "risalto": "naturale:0.8" }
+  ],
+  "clip": [
+    { "file": "05 · Archivio/ECC/C1293.MP4", "da": 8, "dur": 6, "variante": "E sfondo -20 nuovo" }
+  ],
+  "guarda": [
+    { "file": "05 · Archivio/ECC/_laboratorio/caldo/clip-C1293-8s-E_sfondo_-20.mp4", "tempi": [1, 3, 5], "ritaglio": "700:700:190:380" },
+    { "file": "05 · Archivio/ECC/_laboratorio/alone/clip-C1293-8s-E_sfondo_-20_nuovo.mp4", "tempi": [1, 3, 5], "ritaglio": "700:700:190:380" },
+    { "file": "02 · Fatti/ECC/ECC - FINALE.mp4", "tempi": [1, 6, 12, 20, 30, 40], "larghezza": 200 }
+  ]
+}
