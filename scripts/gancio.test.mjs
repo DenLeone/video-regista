@@ -29,3 +29,14 @@ test('senza gancio, o con il gancio già in apertura, non cambia niente', () => 
   assert.deepEqual(spostaGancio(seq, { gancio: 'F001' }, frasi).seq, seq);
   assert.deepEqual(spostaGancio(seq, { gancio: 'F099' }, frasi).seq, seq);
 });
+
+test('nelle correzioni i pezzi appesi o fuori posto escono (FIFINE v2)', async () => {
+  const { controllaFilo } = await import('./regista.mjs');
+  const tutte = [...frasi, { id: 'F010', testo: 'questo qua è un ottimo prodotto anche perché ha l\'entrata anche XLR' }];
+  const v2 = ['F008', 'F009', 'F001', 'F002', 'F007', 'F010'].map((frase) => ({ frase }));
+  const { seq, tolti } = controllaFilo(v2, tutte);
+  assert.deepEqual(seq.map((x) => x.frase), ['F008', 'F001', 'F002', 'F010']);
+  assert.deepEqual(tolti.sort(), ['F007', 'F009']);
+  // l'ordine giusto non si tocca
+  assert.deepEqual(controllaFilo(tutte.map((f) => ({ frase: f.id })), tutte).tolti, []);
+});

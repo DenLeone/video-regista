@@ -318,6 +318,32 @@ export function spostaGancio(seq, r, frasi) {
   const via = prima && FINE_APPESA.test(String(prima.testo).trim().replace(/[,;:]$/, '')) ? k - 1 : -1;
   return { seq: [seq[k], ...resto.filter((_, i) => i !== via)], avviso: `gancio: ${id} in apertura${via >= 0 ? `, tolto ${resto[via].frase} che lo introduceva` : ''}` };
 }
+// 🧵 il filo del discorso, anche nelle CORREZIONI (lì l'AI riordina libera: 16/11, FIFINE v2 «A 50€… | Quindi se
+// volete aumentare il livello | Ho appena sbustato… | Il prezzo è ultra competitivo perché | questo qua…»):
+// - un pezzo che comincia con un rimando («quindi», «perché», «ma»…) senza il suo pezzo di prima subito prima esce
+//   (salvo un da_parola che lo fa partire da altro);
+// - un pezzo che finisce appeso («…perché») senza il suo pezzo dopo subito dopo esce;
+// - dove il montaggio torna indietro, il pezzo prima del salto esce se non chiude la frase (niente punto).
+// Il primo pezzo (il gancio) resta; mai sotto 3 pezzi.
+// solo le congiunzioni: «questo qua è un ottimo prodotto» si capisce anche dopo un salto
+const CONGIUNZIONE = /^(quindi|però|ma|perché|poi|infatti|cioè|invece|appunto|comunque|anche|e)(?![\p{L}\p{N}])/iu;
+export function controllaFilo(seq, frasi) {
+  const ordine = new Map(frasi.map((f, i) => [f.id, i]));
+  const testo = (it) => { const f = frasi.find((x) => x.id === normFrase(it.frase)); if (!f) return ''; const t = String(f.testo || ''); return it.da_parola ? t.slice(Math.max(0, t.toLowerCase().indexOf(String(it.da_parola).toLowerCase()))) : t; };
+  const vicini = (a, b) => a && b && ordine.has(normFrase(a.frase)) && ordine.get(normFrase(b.frase)) - ordine.get(normFrase(a.frase)) === 1;
+  let out = [...seq], tolti = [];
+  for (let giro = 0; giro < 6; giro++) {
+    const via = out.findIndex((it, i) => it.frase && i > 0 && out.length > 3 && (
+      (CONGIUNZIONE.test(testo(it).trim()) && !vicini(out[i - 1], it))
+      || (FINE_APPESA.test(testo(it).trim().replace(/[,;:]$/, '')) && !it.fino_a && !vicini(it, out[i + 1]))
+      // dove il montaggio torna indietro, il pezzo prima del salto deve chiudere la frase
+      || (out[i + 1] && ordine.get(normFrase(out[i + 1].frase)) < ordine.get(normFrase(it.frase)) && !/[.!?]["»”]?$/.test(testo(it).trim()))));
+    if (via < 0) break;
+    tolti.push(out[via].frase);
+    out = out.filter((_, i) => i !== via);
+  }
+  return { seq: out, tolti };
+}
 function conGancio(seq, r) {
   if (SENZA_TAGLI || modelloDebole() || !analisiCorrente) return seq;
   const g = spostaGancio(seq, r, analisiCorrente.frasi);
@@ -331,7 +357,14 @@ const conSequenza = (r) => (discorso ? { ...r, sequenza: sequenzaPulita(r).map((
   return { ...it, ...piu };
 }) } : r);
 // in più: i video e le immagini di Denis che l'AI non ha usato vanno messi lo stesso (usaTuttoIlMateriale)
-const perRegia = (r) => usaTuttoIlMateriale(DISCORSO ? { ...conSequenza(r), discorso: true, ...(SENZA_TAGLI ? { senzaTagli: true } : {}) } : r, analisiCorrente);
+const conFilo = (r) => {
+  // correzione di un discorso (niente sequenza nuova): il filo si controlla sulla sequenza dell'AI
+  if (discorso || SENZA_TAGLI || !analisiCorrente?.frasi?.length || !Array.isArray(r.sequenza)) return r;
+  const { seq, tolti } = controllaFilo(r.sequenza, analisiCorrente.frasi);
+  if (tolti.length) log(`filo del discorso: tolti ${tolti.join(', ')} (appesi o fuori posto)`);
+  return { ...r, sequenza: seq };
+};
+const perRegia = (r) => usaTuttoIlMateriale(DISCORSO ? { ...conFilo(conSequenza(r)), discorso: true, ...(SENZA_TAGLI ? { senzaTagli: true } : {}) } : r, analisiCorrente);
 
 // ---------- 1. trova la cartella da fare ----------
 // video da Telegram: la cartella non esiste ancora, scelgo un nome libero in 97 e 98
