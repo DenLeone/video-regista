@@ -257,6 +257,25 @@ export function modoDiscorso(nVideo, brief = '') {
 // «senza tagli» nel brief (Denis, 15/11): il girato resta intero, pause comprese; l'AI sceglie solo la grafica
 export const senzaTagli = (brief = '') => /\bsenza\s+tagli\b/i.test(brief);
 let SENZA_TAGLI = false;
+// ⏱️ durata chiesta nel brief, [min, max] in secondi (o null). 16/11, due recensioni (tastiera e microfono): il brief della squadra
+// porta le regole dell'Analista («tra 28 e 45 secondi»), l'AI ha accorciato il discorso a ~40 s e il
+// Regista, vedendo tolto il 75%, ha rimesso TUTTO il parlato (video di 2,5 e 5 minuti, con ogni inciampo).
+// Solo intervalli da almeno 15 s: «i primi 2 secondi» o «tagli ogni 2-3 s» non sono la durata del video.
+export function durataChiesta(testo = '') {
+  const t = String(testo);
+  for (const m of t.matchAll(/(\d{1,3})\s*(?:-|–|—|e|a)\s*(\d{1,3})\s*(?:secondi|sec|s)\b/giu)) {
+    const a = Number(m[1]), b = Number(m[2]);
+    if (a >= 15 && b >= a && b <= 600) return [a, b];
+  }
+  const m = t.match(/(\d{1,2})\s*(?:-|–|—|e|a)\s*(\d{1,2})\s*minut[oi]\b/iu);
+  if (m && Number(m[1]) >= 1 && Number(m[2]) >= Number(m[1]) && Number(m[2]) <= 10) return [Number(m[1]) * 60, Number(m[2]) * 60];
+  return null;
+}
+let DURATA_BRIEF = null;
+// quanto parlato deve restare perché il taglio dell'AI valga (sotto si torna al discorso intero): il 70%; se il
+// brief chiede un video più corto del discorso, basta 3/4 della durata minima chiesta (28–45 s → 21 s)
+export const daAccorciare = (totale, durata) => Boolean(durata && totale > durata[1] * 1.15);
+export const minimoDiscorso = (totale, durata) => (daAccorciare(totale, durata) ? Math.min(0.7 * totale, 0.75 * durata[0]) : 0.7 * totale);
 let DISCORSO = false;     // modalità discorso del giro in corso
 let analisiCorrente = null; // il materiale del giro in corso (per il prompt)
 let discorso = null;      // { sequenza, tolte, durata } della modalità discorso (per il prompt)
@@ -275,7 +294,7 @@ const AGGIUNTE_DISCORSO = ['bn', 'fumo', 'stock', 'inserto', 'inserto_da', 'brol
 const aggiunteDi = (x) => Object.fromEntries(AGGIUNTE_DISCORSO.filter((k) => (k === 'bn' || k === 'fumo' || k === 'lento' || k === 'zoom' || k === 'telefono' ? x[k] === true : x[k] != null && x[k] !== '')).map((k) => [k, x[k]]));
 // Dal 10/11 l'AI può anche TOGLIERE frasi dal discorso (ripetizioni, autocorrezioni, giri a vuoto: nel
 // mouse Ajazz «nel receiver, nel ricevitore» era rimasto tutto), mai riordinare o aggiungere. Se ne
-// toglie troppe (meno del 60% del parlato o meno di 3 frasi) non ci si fida: resta la sequenza intera.
+// toglie troppe (sotto minimoDiscorso, o meno di 3 frasi) non ci si fida: resta la sequenza intera.
 // Il modello di riserva (Gemini «lite») non sa farlo: nella prova del 10/11 ha lasciato gli inciampi e
 // tolto pezzi buoni («quindi questo per» → «me è un best buy»). Con lui il discorso resta intero.
 const modelloDebole = () => /lite/i.test(String(consumi.ai?.modello || ''));
@@ -296,8 +315,11 @@ function sequenzaPulita(r) {
     if (pos >= 0) tenute.splice(i, 0, discorso.sequenza[pos]);
   }
   const durata = (seq) => seq.reduce((t, it) => { const f = analisiCorrente?.frasi.find((x) => x.id === it.frase); return t + (f ? f.fine - f.inizio : 0); }, 0);
-  const buona = tenute.length >= 3 && durata(tenute) >= 0.7 * durata(discorso.sequenza);
+  const totale = durata(discorso.sequenza), tenuto = durata(tenute), minimo = minimoDiscorso(totale, DURATA_BRIEF);
+  const buona = tenute.length >= 3 && tenuto >= minimo;
   discorso.tenute = buona ? tenute.length : discorso.sequenza.length;
+  // il ritorno al discorso intero si vede nelle note (16/11: era muto, e i video uscivano lunghi senza un perché)
+  discorso.troppo = buona ? null : `l'AI teneva ${Math.round(tenuto)} s su ${Math.round(totale)} (${tenute.length} pezzi), sotto il minimo di ${Math.round(minimo)} s: è rimasto tutto il parlato`;
   return conGancio(buona ? tenute : discorso.sequenza, r);
 }
 // 🎣 il gancio (Denis, 16/11: «se c'è una frase che può fare da gancio, deve sempre essere quella, basta tenere
@@ -324,10 +346,12 @@ export function spostaGancio(seq, r, frasi) {
 // sotto 0,8 s):
 // - un pezzo che continua in un altro pezzo presente ma messo altrove va SUBITO PRIMA della sua continuazione;
 //   se la continuazione è il gancio in apertura, il pezzo esce;
-// - un pezzo che finisce appeso («…perché», «…e») e la cui continuazione non c'è, esce.
+// - un pezzo che finisce appeso («…perché», «…e») e la cui continuazione non c'è, esce (non l'ultimo).
 // Il primo pezzo (il gancio) non si tocca; mai sotto 3 pezzi. Le frasi complete (col punto, o con una pausa
 // dopo) non si toccano: spostamenti chiesti da Denis restano.
-export function controllaFilo(seq, frasi) {
+// `base` (discorso nuovo): gli id della sequenza di partenza, già senza false partenze e pause; un pezzo seguito
+// dal suo successivo lì dentro ha il filo, anche se in mezzo lo script aveva tolto un inciampo.
+export function controllaFilo(seq, frasi, base = null) {
   const per = new Map(frasi.map((f) => [f.id, f]));
   const id = (it) => (it?.frase ? normFrase(it.frase) : '');
   const parlati = (v) => v.filter((x) => x.frase).length;
@@ -339,15 +363,23 @@ export function controllaFilo(seq, frasi) {
       const it = out[i];
       const f = it.frase && !it.fino_a ? per.get(id(it)) : null;
       if (!f) continue;
+      const dopo = id(out.slice(i + 1).find((x) => x.frase));
       const s = successiva(frasi, f);
-      if (s && id(out[i + 1]) === s.id) continue; // la continuazione è al suo posto
+      if (s && dopo === s.id) continue; // la continuazione è al suo posto
+      // il pezzo dopo è quello che lo seguiva davvero, anche dopo una pausa lunga («…perché» [1 s] «costa 50 €»):
+      // la frase dopo nella sequenza di partenza, o la successiva della stessa voce. Il filo c'è
+      const k = frasi.indexOf(f), b = base ? base.indexOf(f.id) : -1;
+      const vera = base ? (b >= 0 ? base[b + 1] : null) : frasi[k + 1]?.principale === f.principale ? frasi[k + 1].id : null;
+      if (vera && dopo === vera) continue;
       const j = s ? out.findIndex((x) => id(x) === s.id) : -1;
+      // l'ultimo pezzo appeso non esce: la chiusura la completa o la pulisce risolviRegia (regia.mjs)
+      const ultimo = !dopo;
       if (j > 0) {
         out.splice(i, 1);
         out.splice(out.findIndex((x) => id(x) === s.id), 0, it);
         spostati.push(it.frase);
         cambiato = true;
-      } else if ((j === 0 || FINE_APPESA.test(String(f.testo).trim().replace(/[,;:]$/, ''))) && parlati(out) > 3) {
+      } else if ((j === 0 || (!ultimo && FINE_APPESA.test(String(f.testo).trim().replace(/[,;:]$/, '')))) && parlati(out) > 3) {
         out.splice(i, 1);
         tolti.push(it.frase);
         cambiato = true;
@@ -357,10 +389,14 @@ export function controllaFilo(seq, frasi) {
   }
   return { seq: out, tolti, spostati };
 }
+// la regia si risolve 4–5 volte per giro (controllo, prova di lettura, B-roll…): lo stesso avviso si scrive una volta
+const giaDetti = new Set();
+const logUnaVolta = (m) => { if (!giaDetti.has(m)) { giaDetti.add(m); log(m); } };
+let REGIA_NUOVA = true; // false in "Solo render" e nelle macchine dei pezzi: la regia salvata è già controllata
 function conGancio(seq, r) {
   if (SENZA_TAGLI || modelloDebole() || !analisiCorrente) return seq;
   const g = spostaGancio(seq, r, analisiCorrente.frasi);
-  if (g.avviso) log(g.avviso);
+  if (g.avviso) logUnaVolta(g.avviso);
   return g.seq;
 }
 const conSequenza = (r) => (discorso ? { ...r, sequenza: sequenzaPulita(r).map((it) => {
@@ -370,14 +406,26 @@ const conSequenza = (r) => (discorso ? { ...r, sequenza: sequenzaPulita(r).map((
   return { ...it, ...piu };
 }) } : r);
 // in più: i video e le immagini di Denis che l'AI non ha usato vanno messi lo stesso (usaTuttoIlMateriale)
+// Il filo del discorso si controlla sulla regia NUOVA: nel discorso nuovo (pezzi tolti dall'AI che lasciano appeso
+// quello prima, con la sequenza di partenza come riferimento) e nelle correzioni (sequenza dell'AI). La regia si
+// salva già controllata, così "Solo render" e le macchine dei pezzi montano lo stesso video (16/11: lo rifacevano
+// loro, con un criterio diverso, e il video finale non era quello riletto dalla prova di lettura).
 const conFilo = (r) => {
-  // correzione di un discorso (niente sequenza nuova): il filo si controlla sulla sequenza dell'AI
-  if (discorso || SENZA_TAGLI || !analisiCorrente?.frasi?.length || !Array.isArray(r.sequenza)) return r;
-  const { seq, tolti, spostati } = controllaFilo(r.sequenza, analisiCorrente.frasi);
-  if (tolti.length || spostati.length) log(`filo del discorso:${spostati.length ? ` spostati ${spostati.join(', ')} prima della loro continuazione;` : ''}${tolti.length ? ` tolti ${tolti.join(', ')} (appesi)` : ''}`);
+  if (!REGIA_NUOVA || SENZA_TAGLI || !analisiCorrente?.frasi?.length || !Array.isArray(r.sequenza)) return r;
+  const { seq, tolti, spostati } = controllaFilo(r.sequenza, analisiCorrente.frasi, discorso ? discorso.sequenza.map((it) => it.frase) : null);
+  if (tolti.length || spostati.length) logUnaVolta(`filo del discorso:${spostati.length ? ` spostati ${spostati.join(', ')} prima della loro continuazione;` : ''}${tolti.length ? ` tolti ${tolti.join(', ')} (appesi)` : ''}`);
   return { ...r, sequenza: seq };
 };
 const perRegia = (r) => usaTuttoIlMateriale(DISCORSO ? { ...conFilo(conSequenza(r)), discorso: true, ...(SENZA_TAGLI ? { senzaTagli: true } : {}) } : r, analisiCorrente);
+// per i test (scripts/discorso.test.mjs): un discorso risolto come nel giro vero, dalla sequenza di partenza alla regia
+export function _discorsoPerTest(analisi, regia, { brief = '', modello = 'gemini-3.8-flash', nuova = true, correzione = false } = {}) {
+  analisiCorrente = analisi; DISCORSO = true; SENZA_TAGLI = senzaTagli(brief); DURATA_BRIEF = durataChiesta(brief); REGIA_NUOVA = nuova;
+  consumi.ai = { chi: 'Gemini', modello };
+  // correzioni e "Solo render" non hanno la sequenza di partenza (come nel giro vero)
+  if (nuova && !correzione) preparaDiscorso(analisi); else discorso = null;
+  const r = perRegia(regia);
+  return { sequenza: r.sequenza, discorso, ...risolviRegia(r, analisi) };
+}
 
 // ---------- 1. trova la cartella da fare ----------
 // video da Telegram: la cartella non esiste ancora, scelgo un nome libero in 97 e 98
@@ -1212,7 +1260,7 @@ function promptRegia({ modo, testoMateriale, regiaPrecedente }) {
       ? `Il video dura circa ${Math.round(durata)} s: distribuisci ${cartelli ? 'al massimo' : 'circa'} ${quante} ${cartelli ? 'cartelli' : 'scritte grandi'} su tutta la durata (${cartelli ? 'uno ogni ~45 s' : 'una ogni ~20 s'}), sulle frasi più forti; questo vale più del numero indicato nella sezione Grafica.`
       : 'Questo stile non ha scritte grandi: `keywords` vuoto.';
     const { conBroll } = discorso;
-    p += `\n\n## MODALITÀ DISCORSO (regola di Denis: nella cartella c'è un solo video parlato)\nÈ un discorso di Denis: l'ORDINE resta il suo, ma il testo deve uscire sensato, conciso e lineare (Denis, 10/11: «non posso ripetere tre volte la stessa cosa»). ${SENZA_TAGLI ? '**SENZA TAGLI** (lo chiede Denis nel brief): il video resta INTERO, pause comprese. Copia la sequenza qui sotto IDENTICA, tutti gli elementi, senza togliere niente e senza `da_parola`/`fino_a`; le regole qui sotto su cosa togliere NON valgono. Il tuo lavoro è solo la grafica dello stile. ' : ''}Parti da questa sequenza (lo script ha già tolto pause e false partenze evidenti):\n\`\`\`json\n"sequenza": ${JSON.stringify(discorso.sequenza)}\n\`\`\`\nOgni elemento è un pezzo di frase tra due respiri, corto apposta: puoi togliere un pezzo in mezzo a una frase se quello che resta, letto di fila, sta in piedi. Copiala nella regia togliendo SOLO gli elementi che appesantiscono: lo stesso concetto detto due volte (tieni la versione più chiara, di solito l'ultima), le autocorrezioni («nel receiver, nel ricevitore»: resta solo la parola giusta), le frasi lasciate a metà e poi riprese, gli incisi e i giri di parole che non aggiungono niente. Non riordinare (unica eccezione: il GANCIO, qui sotto), non aggiungere frasi che non sono nell'elenco, non togliere informazioni (un dato, un pregio o un difetto detti una volta sola restano), non togliere l'aggancio né la chiusura; togli al massimo un terzo del discorso. Gli inciampi DENTRO un pezzo (stesso respiro, niente pausa) si tolgono con due campi sull'elemento: \`"da_parola": "<prime parole da tenere>"\` fa partire il pezzo da lì (toglie una falsa partenza: «anche se anche completely black non è male» → \`"da_parola": "anche completely"\`), \`"fino_a": "<ultime parole da tenere>"\` lo chiude lì (toglie una coda poi ridetta: «in carica nel receiver,» seguito da «nel ricevitore ed è qui» → \`"fino_a": "carica"\`). Scrivi le parole esattamente come nel testo del pezzo. Controlla una per una le coppie di pezzi vicini: se il secondo ridice o corregge il primo (stessa parola in italiano e in inglese, stesso soggetto ripreso, «cioè», «anzi»), uno dei due esce. **GANCIO (regola di Denis): i primi 2 secondi decidono tutto.** Se più avanti c'è un pezzo più forte dell'apertura (il prezzo, un dato che sorprende, il verdetto, una promessa: «a 50€ vi portate a casa un mic semi-professionale»), scrivi in cima alla regia \`"gancio": "<frase>"\`: lo script lo porta in apertura e non lo ripete dopo. Se il pezzo comincia con una parola che rimanda a prima («perché», «quindi», «e»…), sull'elemento metti \`"da_parola"\` sulla parte forte («a 50€»). Se il pezzo prima lo introduceva («il prezzo è ultra competitivo perché»), toglilo. Il resto del discorso deve continuare a filare. Se l'apertura di Denis è già la frase più forte, niente \`gancio\`. Scrivi \`testo_montato\` con le frasi rimaste (il gancio per primo) e rileggilo: nessun concetto due volte, nessuna frase monca, il filo si segue. In \`note\` elenca le frasi tolte e perché. Poi la grafica dello stile (sezione Grafica): \`titolo\`, \`soggetto\`, \`copertina\`, \`enfasi\` se lo stile ha l'apertura a lettere enormi (sulle prime parole del discorso), le \`keywords\` con le regole dello stile e, se lo stile ha il bianco e nero nei momenti, \`"bn": true\` su qualche elemento della sequenza${stileSuMisura?.grafica.fumo || stileSuMisura?.grafica.stock ? '; se la sezione Grafica li prevede, puoi aggiungere agli elementi anche `fumo`, `stock` e `inserto` (sempre con la stessa `frase`)' : ''}. ${scritte} ${stileSuMisura?.grafica.cornice === 'reazione' && analisiCorrente?.sorgenti?.some((s) => s.reazione) ? 'Nella cartella ci sono le clip dell\'altro creator a cui Denis risponde (vedi Sorgenti, con cosa dicono e quando): mettile come `"inserto": "<id>", "inserto_da": <secondi>` sulle frasi in cui Denis ne parla, le cita o le commenta, come dice la sezione Grafica; anche le immagini (screenshot, copertina) come `inserto`. Le clip "DA GUARDARE IN SILENZIO" invece vanno con `"guarda": "<id>"` (e `"guarda_da"`) sulla frase subito prima del silenzio in cui Denis la guarda (vedi i silenzi elencati in Sorgenti), una per silenzio. Usale TUTTE almeno una volta. Ignora le regole su durata, scaletta e scelta delle frasi.' : conBroll ? 'Nella cartella ci sono anche dei B-roll di Denis (vedi Sorgenti e fogli provino): mettili sopra la voce aggiungendo all\'elemento `"broll": "<id>", "da": <secondi>` (stessa `frase`), dove mostrano quello che dice in quel momento, ' + (stileCorrente === 'Cinematico' ? 'ALTERNANDO Denis alla scrivania e i B-roll del prodotto in modo coerente (stile Cinematico, 10/11): circa metà del video sui B-roll, pezzi da 2–4 s, sulle frasi che descrivono il prodotto, le sue parti e cosa fa; Denis in volto su aggancio, opinioni, confronti e verdetto; mai due B-roll uguali di fila, riusa la stessa clip solo da un momento diverso ("da")' : 'circa uno ogni 8–12 s') + ', mai sull\'aggancio né sulla chiusura: usali TUTTI almeno una volta (anche le registrazioni dello schermo e le immagini, come `inserto`). Le regole sui B-roll valgono (niente bocca che parla, non riusare lo stesso momento); ignora quelle su durata, scaletta e scelta delle frasi.' : 'Ignora le regole su durata, scaletta, inquadrature e B-roll.'} \`scaletta\` = i 3–6 temi del discorso.`;
+    p += `\n\n## MODALITÀ DISCORSO (regola di Denis: nella cartella c'è un solo video parlato)\nÈ un discorso di Denis: l'ORDINE resta il suo, ma il testo deve uscire sensato, conciso e lineare (Denis, 10/11: «non posso ripetere tre volte la stessa cosa»). ${SENZA_TAGLI ? '**SENZA TAGLI** (lo chiede Denis nel brief): il video resta INTERO, pause comprese. Copia la sequenza qui sotto IDENTICA, tutti gli elementi, senza togliere niente e senza `da_parola`/`fino_a`; le regole qui sotto su cosa togliere NON valgono. Il tuo lavoro è solo la grafica dello stile. ' : ''}Parti da questa sequenza (lo script ha già tolto pause e false partenze evidenti):\n\`\`\`json\n"sequenza": ${JSON.stringify(discorso.sequenza)}\n\`\`\`\nOgni elemento è un pezzo di frase tra due respiri, corto apposta: puoi togliere un pezzo in mezzo a una frase se quello che resta, letto di fila, sta in piedi. Copiala nella regia togliendo SOLO gli elementi che appesantiscono: lo stesso concetto detto due volte (tieni la versione più chiara, di solito l'ultima), le autocorrezioni («nel receiver, nel ricevitore»: resta solo la parola giusta), le frasi lasciate a metà e poi riprese, gli incisi e i giri di parole che non aggiungono niente. Non riordinare (unica eccezione: il GANCIO, qui sotto), non aggiungere frasi che non sono nell'elenco, ${daAccorciare(discorso.durata, DURATA_BRIEF) ? `non togliere l'aggancio né la chiusura. **DURATA (dal brief): ${DURATA_BRIEF[0]}–${DURATA_BRIEF[1]} s**, il discorso ne dura ${Math.round(discorso.durata)}: dopo ripetizioni e inciampi togli anche i pezzi meno importanti (dettagli secondari, incisi, esempi in più, divagazioni) finché ci stai, sempre in ordine. Restano cos'è, i dati che contano (prezzo, pregi e difetti principali) e il verdetto, e il filo si deve seguire: un pezzo che finisce appeso («…perché», «…quindi») esce insieme alla sua continuazione o resta con lei.` : 'non togliere informazioni (un dato, un pregio o un difetto detti una volta sola restano), non togliere l\'aggancio né la chiusura; togli al massimo un terzo del discorso.'} Gli inciampi DENTRO un pezzo (stesso respiro, niente pausa) si tolgono con due campi sull'elemento: \`"da_parola": "<prime parole da tenere>"\` fa partire il pezzo da lì (toglie una falsa partenza: «anche se anche completely black non è male» → \`"da_parola": "anche completely"\`), \`"fino_a": "<ultime parole da tenere>"\` lo chiude lì (toglie una coda poi ridetta: «in carica nel receiver,» seguito da «nel ricevitore ed è qui» → \`"fino_a": "carica"\`). Scrivi le parole esattamente come nel testo del pezzo. Controlla una per una le coppie di pezzi vicini: se il secondo ridice o corregge il primo (stessa parola in italiano e in inglese, stesso soggetto ripreso, «cioè», «anzi»), uno dei due esce. **GANCIO (regola di Denis): i primi 2 secondi decidono tutto.** Se più avanti c'è un pezzo più forte dell'apertura (il prezzo, un dato che sorprende, il verdetto, una promessa: «a 50€ vi portate a casa un mic semi-professionale»), scrivi in cima alla regia \`"gancio": "<frase>"\`: lo script lo porta in apertura e non lo ripete dopo. Se il pezzo comincia con una parola che rimanda a prima («perché», «quindi», «e»…), sull'elemento metti \`"da_parola"\` sulla parte forte («a 50€»). Se il pezzo prima lo introduceva («il prezzo è ultra competitivo perché»), toglilo. Il resto del discorso deve continuare a filare. Se l'apertura di Denis è già la frase più forte, niente \`gancio\`. Scrivi \`testo_montato\` con le frasi rimaste (il gancio per primo) e rileggilo: nessun concetto due volte, nessuna frase monca, il filo si segue. In \`note\` elenca le frasi tolte e perché. Poi la grafica dello stile (sezione Grafica): \`titolo\`, \`soggetto\`, \`copertina\`, \`enfasi\` se lo stile ha l'apertura a lettere enormi (sulle prime parole del discorso), le \`keywords\` con le regole dello stile e, se lo stile ha il bianco e nero nei momenti, \`"bn": true\` su qualche elemento della sequenza${stileSuMisura?.grafica.fumo || stileSuMisura?.grafica.stock ? '; se la sezione Grafica li prevede, puoi aggiungere agli elementi anche `fumo`, `stock` e `inserto` (sempre con la stessa `frase`)' : ''}. ${scritte} ${stileSuMisura?.grafica.cornice === 'reazione' && analisiCorrente?.sorgenti?.some((s) => s.reazione) ? 'Nella cartella ci sono le clip dell\'altro creator a cui Denis risponde (vedi Sorgenti, con cosa dicono e quando): mettile come `"inserto": "<id>", "inserto_da": <secondi>` sulle frasi in cui Denis ne parla, le cita o le commenta, come dice la sezione Grafica; anche le immagini (screenshot, copertina) come `inserto`. Le clip "DA GUARDARE IN SILENZIO" invece vanno con `"guarda": "<id>"` (e `"guarda_da"`) sulla frase subito prima del silenzio in cui Denis la guarda (vedi i silenzi elencati in Sorgenti), una per silenzio. Usale TUTTE almeno una volta. Ignora le regole su durata, scaletta e scelta delle frasi.' : conBroll ? 'Nella cartella ci sono anche dei B-roll di Denis (vedi Sorgenti e fogli provino): mettili sopra la voce aggiungendo all\'elemento `"broll": "<id>", "da": <secondi>` (stessa `frase`), dove mostrano quello che dice in quel momento, ' + (stileCorrente === 'Cinematico' ? 'ALTERNANDO Denis alla scrivania e i B-roll del prodotto in modo coerente (stile Cinematico, 10/11): circa metà del video sui B-roll, pezzi da 2–4 s, sulle frasi che descrivono il prodotto, le sue parti e cosa fa; Denis in volto su aggancio, opinioni, confronti e verdetto; mai due B-roll uguali di fila, riusa la stessa clip solo da un momento diverso ("da")' : 'circa uno ogni 8–12 s') + ', mai sull\'aggancio né sulla chiusura: usali TUTTI almeno una volta (anche le registrazioni dello schermo e le immagini, come `inserto`). Le regole sui B-roll valgono (niente bocca che parla, non riusare lo stesso momento); ignora quelle su durata, scaletta e scelta delle frasi.' : 'Ignora le regole su durata, scaletta, inquadrature e B-roll.'} \`scaletta\` = i 3–6 temi del discorso.`;
   }
   if (catalogoMusica && Object.keys(catalogoMusica).length) {
     p += `\n\n## Musica\nDenis vuole la musica sotto la voce (bassa, scende quando parla). Scegli il brano più adatto al tono e al ritmo di QUESTO video e scrivilo nel campo \`"musica"\` in cima alla regia (il nome esatto, tra virgolette): energico e veloce per prodotti, tech e ritmo serrato; morbido e lento per racconti, riflessioni e discorsi seri; mai un brano allegro su un argomento serio.\n${descriviCatalogo(catalogoMusica)}`;
@@ -2116,11 +2164,17 @@ Leggilo come lo sentirà chi guarda e trova SOLO errori veri:
 Rispondi SOLO con JSON: {"togli":["F009"],"parole":[{"sbagliata":"mutuo","giusta":"muto"}],"filo":"una frase: il discorso fila o no, e perché"}`;
 const normParola = (w) => String(w || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^\p{L}\p{N}]+/gu, '');
 // le parole corrette: nei sottotitoli (piano.parole, stessa punteggiatura e maiuscola) e nei testi
+const parolaIntera = (w) => new RegExp(`(?<![\\p{L}\\p{N}])${w.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(?![\\p{L}\\p{N}])`, 'giu');
+// una correzione si può riapplicare quante volte si vuole: la parola giusta non contiene quella sbagliata
+const correzioneValida = (c) => {
+  const da = String(c?.sbagliata || '').trim(), a = String(c?.giusta || '').trim();
+  return Boolean(da && a && !/\s/.test(da) && normParola(da) !== normParola(a) && a.length <= 30 && !parolaIntera(da).test(a));
+};
 export function applicaParole(piano, regia, correzioni) {
   const fatte = [];
   for (const c of correzioni || []) {
-    const da = String(c?.sbagliata || '').trim(), a = String(c?.giusta || '').trim();
-    if (!da || !a || /\s/.test(da) || normParola(da) === normParola(a) || a.length > 30) continue;
+    if (!correzioneValida(c)) continue;
+    const da = String(c.sbagliata).trim(), a = String(c.giusta).trim();
     let n = 0;
     for (const p of piano.parole || []) {
       if (normParola(p.w) !== normParola(da)) continue;
@@ -2129,11 +2183,21 @@ export function applicaParole(piano, regia, correzioni) {
       p.w = `${fuori?.[1] || ''}${maiuscola ? a[0].toUpperCase() + a.slice(1) : a}${fuori?.[2] || ''}`;
       n++;
     }
-    const re = new RegExp(`(?<![\\p{L}\\p{N}])${da.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(?![\\p{L}\\p{N}])`, 'giu');
+    const re = parolaIntera(da);
     for (const o of [piano, regia]) for (const k of ['testo', 'testo_montato']) if (typeof o?.[k] === 'string') o[k] = o[k].replace(re, (m) => (/^\p{Lu}/u.test(m) ? a[0].toUpperCase() + a.slice(1) : a));
     if (n) fatte.push(`«${da}» → «${a}» (${n})`);
   }
   return fatte;
+}
+// le correzioni salvate nella regia, di nuovo su un piano rifatto dalla regia
+export function riapplicaParole(piano, regia) {
+  if (piano && regia?.parole_corrette?.length) applicaParole(piano, regia, regia.parole_corrette);
+}
+// unione delle correzioni (l'ultima vince sulla stessa parola sbagliata)
+export function unisciParole(prima = [], nuove = []) {
+  const per = new Map();
+  for (const c of [...(prima || []), ...(nuove || [])].filter(correzioneValida)) per.set(normParola(c.sbagliata), { sbagliata: String(c.sbagliata).trim(), giusta: String(c.giusta).trim() });
+  return [...per.values()].slice(0, 30);
 }
 // il testo di un pezzo come si sente (da_parola / fino_a)
 function testoPezzo(it, frasi) {
@@ -2184,11 +2248,15 @@ async function provaDiLetturaInterna(regia, piano, avvisi, analisi, brief) {
     if (dopo.length < pezzi.length && !togli.some((x) => dopo.includes(x))) {
       regia = nuova;
       ({ piano, avvisi } = risolviRegia(perRegia(regia), analisi));
+      riapplicaParole(piano, regia);
       note.push(`tolti ${togli.join(', ')} (appesi o fuori filo)`);
     } else log(`prova di lettura: non tolgo ${togli.join(', ')} (il discorso tornerebbe intero)`);
   }
   const parole = applicaParole(piano, regia, esito.parole);
-  if (parole.length) note.push(`parole corrette: ${parole.join(', ')}`);
+  if (parole.length) {
+    note.push(`parole corrette: ${parole.join(', ')}`);
+    regia = { ...regia, parole_corrette: unisciParole(regia.parole_corrette, esito.parole) };
+  }
   if (note.length) { log(`prova di lettura: ${note.join(' · ')}`); piano.note = [`📖 Prova di lettura: ${note.join(' · ')}`, piano.note].filter(Boolean).join(' · '); }
   return { regia, piano, avvisi };
 }
@@ -2670,10 +2738,10 @@ async function rifinisciPiano(regia, risultato, analisi, avvisoStile) {
   let { piano, avvisi } = risultato;
   if (stileSuMisura?.grafica.stock && await scaricaStock(conSequenza(regia), analisi)) ({ piano, avvisi } = risolviRegia(perRegia(regia), analisi));
   if (!stileSuMisura?.grafica.beat) ({ regia, piano, avvisi } = await provaDiLettura(regia, piano, avvisi, analisi, process.env.BRIEF_EXTRA || ''));
-  if (DISCORSO) { Object.assign(regia, { sequenza: conSequenza(regia).sequenza, discorso: true }); fs.writeFileSync(path.join(WORK, 'regia.json'), JSON.stringify(regia, null, 1)); }
+  if (DISCORSO) { Object.assign(regia, { sequenza: conFilo(conSequenza(regia)).sequenza, discorso: true }); fs.writeFileSync(path.join(WORK, 'regia.json'), JSON.stringify(regia, null, 1)); }
   if (avvisi.length) log('avvisi regia:', avvisi.join(' | '));
   if (avvisoStile) piano.note = [`⚠️ ${avvisoStile}`, piano.note].filter(Boolean).join(' · ');
-  if (discorso) piano.note = [`🎙️ Discorso (un solo video): tenute ${discorso.tenute ?? discorso.sequenza.length} frasi su ${discorso.sequenza.length}, in ordine${discorso.riserva ? ' (testo NON ripulito: oggi ha risposto solo il modello di riserva di Gemini)' : ''}${discorso.tolte.length ? `, tolte ${discorso.tolte.length} tra false partenze e ripetizioni` : ''}`, piano.note].filter(Boolean).join(' · ');
+  if (discorso) { if (discorso.troppo) logUnaVolta(`discorso: ${discorso.troppo}`); piano.note = [`🎙️ Discorso (un solo video): tenute ${discorso.tenute ?? discorso.sequenza.length} frasi su ${discorso.sequenza.length}, in ordine${discorso.riserva ? ' (testo NON ripulito: oggi ha risposto solo il modello di riserva di Gemini)' : ''}${discorso.tolte.length ? `, tolte ${discorso.tolte.length} tra false partenze e ripetizioni` : ''}`, discorso.troppo ? `⚠️ Discorso: ${discorso.troppo}` : '', piano.note].filter(Boolean).join(' · '); }
   const livelloVoce = Math.max(-60, ...analisi.sorgenti.filter((s) => s.principale && s.livello != null).map((s) => s.livello));
   piano.sfx = process.env.REGISTA_SFX === '0' ? false
     : { volume: +Math.min(0.6, Math.max(0.1, livelloVoce > -60 ? 10 ** ((livelloVoce + 2) / 20) : 0.25)).toFixed(3) };
@@ -2947,6 +3015,8 @@ async function main() {
     log(`stima materiale per l'AI: ${stima.testo} token di testo + ${stima.immagini} di immagini (${fogli.length} fogli)`);
     // lo stile chiesto al bot (input brief) vale più di quello scritto in brief.txt o nel giro precedente
     let { stile, avviso: avvisoStile } = scegliStile([process.env.BRIEF_EXTRA || '', brief].join('\n'));
+    DURATA_BRIEF = durataChiesta(brief);
+    if (DURATA_BRIEF) log(`durata chiesta nel brief: ${DURATA_BRIEF.join('–')} s`);
     stileCorrente = stile;
     if (stile !== STILI[0]) log(`stile: ${stile}`);
     const pesoAI = ` · materiale ≈ ${kTok(stima.totale)} token`;
@@ -2961,10 +3031,11 @@ async function main() {
     // nel discorso l'AI vede solo i fogli dei B-roll (le inquadrature della voce non si scelgono)
     const fogliDiscorso = analisi.sorgenti.filter((s) => !s.principale).flatMap((s) => s.fogli || []);
     const nuovaRegia = !(RIRENDER && regiaPrecedente); // "Solo render" riusa la regia salvata
+    REGIA_NUOVA = nuovaRegia;
     if (DISCORSO && nuovaRegia && !CORREZIONE) {
       const d = preparaDiscorso(analisi), { durata } = d;
       log(`discorso: ${d.sequenza.length} frasi su ${analisi.frasi.length} (${durata.toFixed(0)} s)${d.tolte.length ? `, tolte ${d.tolte.map((x) => `${x.id} ${x.motivo}`).join(', ')}` : ''}`);
-      await fase(nome, `🎙️ Discorso: tengo tutto il parlato in ordine (${d.sequenza.length} frasi, ${Math.round(durata)} s), tolgo pause e ripetizioni; l'AI sceglie solo le scritte`, 'regia');
+      await fase(nome, `🎙️ Discorso: ${d.sequenza.length} frasi in ordine (${Math.round(durata)} s), tolgo pause e ripetizioni${daAccorciare(durata, DURATA_BRIEF) ? ` e lo accorcio a ${DURATA_BRIEF[0]}–${DURATA_BRIEF[1]} s come chiede il brief` : ''}`, 'regia');
     }
     const confronto = STILI_CONFRONTO.length >= 2 && nuovaRegia && !CORREZIONE && !RIRENDER;
     if (!confronto) {
@@ -3008,22 +3079,27 @@ async function main() {
           return { regia: r, risultato: risolviRegia(r, analisi) };
         });
       regia = fatto.regia;
+      if (CORREZIONE && regiaPrecedente?.parole_corrette?.length && !regia.parole_corrette) regia.parole_corrette = regiaPrecedente.parole_corrette;
       ({ piano, avvisi } = fatto.risultato);
       // B-roll di repertorio: si scaricano le ricerche dell'AI e si rifà il piano con quei video
       if (stileSuMisura?.grafica.stock && await scaricaStock(conSequenza(regia), analisi)) ({ piano, avvisi } = risolviRegia(perRegia(regia), analisi));
+      // le parole corrette dalla prova di lettura stanno nella regia: "Solo render" e le macchine dei pezzi rifanno
+      // il piano dalla regia e le riapplicano (16/11: «Ajax» era tornato nei sottotitoli al posto di «Ajazz»)
+      riapplicaParole(piano, regia);
       // 📖 prova di lettura del testo montato, prima di tagliare e renderizzare
       if (nuovaRegia && !stileSuMisura?.grafica.beat) {
         await fase(nome, '📖 Rileggo il testo montato come lo sentirà chi guarda', 'regia');
         ({ regia, piano, avvisi } = await provaDiLettura(regia, piano, avvisi, analisi, [process.env.BRIEF_EXTRA || '', CORREZIONE || ''].join(' ')));
       }
       // salvata con la sequenza vera: "Solo render" e "Correggi" ripartono da questa
-      if (DISCORSO && nuovaRegia) { Object.assign(regia, { sequenza: conSequenza(regia).sequenza, discorso: true }); fs.writeFileSync(path.join(WORK, 'regia.json'), JSON.stringify(regia, null, 1)); }
+      if (DISCORSO && nuovaRegia) Object.assign(regia, { sequenza: conFilo(conSequenza(regia)).sequenza, discorso: true });
+      if (nuovaRegia) fs.writeFileSync(path.join(WORK, 'regia.json'), JSON.stringify(regia, null, 1));
       if (avvisi.length) log('avvisi regia:', avvisi.join(' | '));
       if (regia.scaletta) log('scaletta:', [].concat(regia.scaletta).join(' → '));
       log('testo montato:', piano.testo);
       if (avvisoStile) analisi.avvisi = [...(analisi.avvisi || []), avvisoStile];
       if (analisi.avvisi?.length) piano.note = [...analisi.avvisi.map((a) => `⚠️ ${a}`), piano.note].filter(Boolean).join(' · ');
-      if (discorso) piano.note = [`🎙️ Discorso (un solo video): tenute ${discorso.tenute ?? discorso.sequenza.length} frasi su ${discorso.sequenza.length}, in ordine${discorso.riserva ? ' (testo NON ripulito: oggi ha risposto solo il modello di riserva di Gemini)' : ''}${discorso.tolte.length ? `, tolte ${discorso.tolte.length} tra false partenze e ripetizioni` : ''}`, piano.note].filter(Boolean).join(' · ');
+      if (discorso) { if (discorso.troppo) logUnaVolta(`discorso: ${discorso.troppo}`); piano.note = [`🎙️ Discorso (un solo video): tenute ${discorso.tenute ?? discorso.sequenza.length} frasi su ${discorso.sequenza.length}, in ordine${discorso.riserva ? ' (testo NON ripulito: oggi ha risposto solo il modello di riserva di Gemini)' : ''}${discorso.tolte.length ? `, tolte ${discorso.tolte.length} tra false partenze e ripetizioni` : ''}`, discorso.troppo ? `⚠️ Discorso: ${discorso.troppo}` : '', piano.note].filter(Boolean).join(' · '); }
       // effetti sonori sotto la voce: più bassa la voce registrata, più bassi gli effetti (~12–16 dB sotto)
       const livelloVoce = Math.max(-60, ...analisi.sorgenti.filter((s) => s.principale && s.livello != null).map((s) => s.livello));
       piano.sfx = process.env.REGISTA_SFX === '0' ? false
