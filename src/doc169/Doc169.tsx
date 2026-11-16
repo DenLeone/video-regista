@@ -17,7 +17,36 @@ export type Titolo = { at: number; dur: number; piccolo?: string; grande: string
 export type Parola = { at: number; dur: number; parola: string };
 export type Capitolo = { at: number; titolo: string };
 export type Immagine = { file: string; at: number; dur: number; didascalia?: string; credito?: string };
-export type PropsDoc169 = { video: string; durata: number; fps: number; bande?: boolean; titoli: Titolo[]; parole?: Parola[]; capitoli?: Capitolo[]; immagini?: Immagine[] };
+export type Data = { at: number; dur: number; anno: string; cosa?: string };
+export type PropsDoc169 = { video: string; durata: number; fps: number; bande?: boolean; titoli: Titolo[]; parole?: Parola[]; capitoli?: Capitolo[]; immagini?: Immagine[]; date?: Data[] };
+
+// 📅 linea del tempo (video lunghi, 16/11): il video si scurisce, l'anno grande e sottile entra lettera per
+// lettera come i titoli, una riga rossa si allunga e sotto l'evento in piccolo. Denis continua a parlare sotto.
+const DataStorica: React.FC<{ d: Data }> = ({ d }) => {
+  const frame = useCurrentFrame();
+  const { fps } = useVideoConfig();
+  const s = frame / fps;
+  const buio = interpolate(s, [0, 0.35, d.dur - 0.4, d.dur], [0, 0.8, 0.8, 0], { extrapolateLeft: 'clamp', extrapolateRight: 'clamp' });
+  const esce = interpolate(s, [d.dur - 0.4, d.dur], [1, 0], { extrapolateLeft: 'clamp', extrapolateRight: 'clamp' });
+  const cifre = [...d.anno.toUpperCase()];
+  const linea = interpolate(s, [0.5, 1.3], [0, 1], { extrapolateLeft: 'clamp', extrapolateRight: 'clamp' });
+  const sotto = interpolate(s, [0.9, 1.4], [0, 1], { extrapolateLeft: 'clamp', extrapolateRight: 'clamp' });
+  const grande = cifre.length <= 4 ? 230 : Math.max(90, Math.round(1500 / (cifre.length * 0.95)));
+  return (
+    <AbsoluteFill style={{ backgroundColor: `rgba(0,0,0,${buio})`, justifyContent: 'center', alignItems: 'center' }}>
+      <div style={{ opacity: esce, display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
+        <div style={{ fontFamily: SOTTILE, fontWeight: 300, fontSize: grande, lineHeight: 1, letterSpacing: '0.14em', color: '#fff', whiteSpace: 'nowrap', marginRight: '-0.14em' }}>
+          {cifre.map((c, i) => {
+            const a = interpolate(s, [0.15 + i * 0.07, 0.45 + i * 0.07], [0, 1], { extrapolateLeft: 'clamp', extrapolateRight: 'clamp' });
+            return <span key={i} style={{ opacity: a, filter: `blur(${(1 - a) * 8}px)` }}>{c}</span>;
+          })}
+        </div>
+        <div style={{ width: 520 * linea, height: 3, background: ROSSO, margin: '26px 0 22px' }} />
+        {d.cosa ? <div style={{ fontFamily: SOTTILE, fontWeight: 500, fontSize: 40, letterSpacing: '0.22em', color: '#ddd', textTransform: 'uppercase', opacity: sotto }}>{d.cosa}</div> : null}
+      </div>
+    </AbsoluteFill>
+  );
+};
 
 // 🏛️ immagine d'archivio a tutto schermo (prototipo Redazione, 16/11): entra con un lampo nero, si muove piano
 // (Ken Burns), un po' fredda come il look D2; didascalia in basso a sinistra e credito piccolo (licenza libera)
@@ -122,7 +151,7 @@ const TitoloDoc: React.FC<{ t: Titolo }> = ({ t }) => {
   );
 };
 
-export const Doc169: React.FC<PropsDoc169> = ({ video, bande = true, titoli, parole = [], capitoli = [], immagini = [] }) => {
+export const Doc169: React.FC<PropsDoc169> = ({ video, bande = true, titoli, parole = [], capitoli = [], immagini = [], date = [] }) => {
   const { fps } = useVideoConfig();
   return (
     <AbsoluteFill style={{ backgroundColor: 'black' }}>
@@ -142,6 +171,11 @@ export const Doc169: React.FC<PropsDoc169> = ({ video, bande = true, titoli, par
       {capitoli.map((c, i) => (
         <Sequence key={`c${c.at}`} from={Math.round(c.at * fps)} durationInFrames={Math.round(3.2 * fps)}>
           <CartelloCapitolo c={c} n={i + 1} dur={3.2} />
+        </Sequence>
+      ))}
+      {date.map((d) => (
+        <Sequence key={`d${d.at}`} from={Math.round(d.at * fps)} durationInFrames={Math.max(1, Math.round(d.dur * fps))}>
+          <DataStorica d={d} />
         </Sequence>
       ))}
       {immagini.map((im, i) => (

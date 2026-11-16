@@ -24,6 +24,10 @@ on:
         description: 'Titoli scritti a mano in JSON (facoltativo: sostituisce la scelta dell AI)'
         required: false
         default: ''
+      redazione:
+        description: 'Cartella del Redattore su Drive (00 · Preparazione/_redazione/<tema>), facoltativa: il copione guida capitoli e immagini'
+        required: false
+        default: ''
       archivio:
         description: 'Capitoli e immagini d archivio libere da Wikimedia (prototipo YouTube): sì / no'
         required: false
@@ -39,7 +43,7 @@ permissions:
 jobs:
   monta:
     runs-on: ubuntu-24.04
-    timeout-minutes: 90
+    timeout-minutes: 300 # i video YouTube della Redazione durano 10–15 minuti
     steps:
       - uses: actions/checkout@v5
 
@@ -78,6 +82,7 @@ jobs:
           MUSICA: ${{ inputs.musica }}
           DOC_TITOLI: ${{ inputs.titoli }}
           DOC_ARCHIVIO: ${{ inputs.archivio }}
+          REDAZIONE: ${{ inputs.redazione }}
           DOC_SCARICO: /mnt/doc
           GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
@@ -93,6 +98,7 @@ jobs:
           MUSICA: ${{ inputs.musica }}
           DOC_TITOLI: ${{ inputs.titoli }}
           DOC_ARCHIVIO: ${{ inputs.archivio }}
+          REDAZIONE: ${{ inputs.redazione }}
           DOC_SCARICO: /mnt/doc
           GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
@@ -108,6 +114,7 @@ jobs:
           MUSICA: ${{ inputs.musica }}
           DOC_TITOLI: ${{ inputs.titoli }}
           DOC_ARCHIVIO: ${{ inputs.archivio }}
+          REDAZIONE: ${{ inputs.redazione }}
           DOC_SCARICO: /mnt/doc
           GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
@@ -123,6 +130,7 @@ jobs:
           MUSICA: ${{ inputs.musica }}
           DOC_TITOLI: ${{ inputs.titoli }}
           DOC_ARCHIVIO: ${{ inputs.archivio }}
+          REDAZIONE: ${{ inputs.redazione }}
           DOC_SCARICO: /mnt/doc
           GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
@@ -138,6 +146,7 @@ jobs:
           MUSICA: ${{ inputs.musica }}
           DOC_TITOLI: ${{ inputs.titoli }}
           DOC_ARCHIVIO: ${{ inputs.archivio }}
+          REDAZIONE: ${{ inputs.redazione }}
           DOC_SCARICO: /mnt/doc
           GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}

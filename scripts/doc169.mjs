@@ -20,7 +20,9 @@ const REMOTE = process.env.REGISTA_REMOTE || 'gdrive';
 const WORK = path.join(ROOT, 'work', 'doc169');
 const SCARICO = process.env.DOC_SCARICO || path.join(WORK, 'in');
 const PUB = path.join(ROOT, 'public', 'doc169');
-const ARCHIVIO = /^(1|true|s[iì])$/i.test(String(process.env.DOC_ARCHIVIO || '').trim());
+const ARCHIVIO_CHIESTO = /^(1|true|s[iì])$/i.test(String(process.env.DOC_ARCHIVIO || '').trim());
+let ARCHIVIO = ARCHIVIO_CHIESTO; // diventa vero anche col copione del Redattore (fase titoli)
+const LUNGO = 180; // oltre 3 minuti è un video YouTube: meno parole rosse, più immagini, le date
 const log = (...a) => console.log('[doc169]', ...a);
 const run = (cmd, args, opts = {}) => String(execFileSync(cmd, args, { stdio: ['ignore', 'pipe', 'inherit'], maxBuffer: 1 << 28, timeout: 40 * 60 * 1000, ...opts }) ?? '');
 
@@ -53,9 +55,9 @@ async function trascrivi(src) {
     parole: (j.words || []).map((w) => ({ w: String(w.word).trim(), a: +w.start.toFixed(2), b: +w.end.toFixed(2) })) };
 }
 
-const PROMPT = (frasi, durata, brief) => `Sei il regista di un breve documentario in stile Netflix. Questa è la trascrizione di Denis che parla in camera (${durata.toFixed(0)} s), con i tempi in secondi:
+const PROMPT = (frasi, durata, brief, copione) => `Sei il regista di un ${durata > LUNGO ? 'documentario YouTube' : 'breve documentario'} in stile Netflix. Questa è la trascrizione di Denis che parla in camera (${durata.toFixed(0)} s), con i tempi in secondi:
 ${frasi.map((f) => `[${f.a}–${f.b}] ${f.t}`).join('\n')}
-${brief ? `\nIndicazioni di Denis: ${brief}\n` : ''}
+${brief ? `\nIndicazioni di Denis: ${brief}\n` : ''}${copione ? `\nDenis ha letto (a parole sue) questo copione, preparato dal suo redattore: capitoli con le idee per le immagini.\n${copione}\n` : ''}
 Scegli le SCRITTE che compaiono sopra il video.
 
 1. "titoli": da 2 a 3 titoli, distanziati (almeno 15 s tra uno e l'altro); il primo entro i primi 3 s, come apertura.
@@ -64,19 +66,21 @@ Scegli le SCRITTE che compaiono sopra il video.
 - "grande": 2–4 parole che riassumono quel momento, in italiano, al massimo 18 caratteri. Niente punto finale.
 - "rosso": UNA parola forte detta da Denis in quel momento, diversa da quelle del "grande".
 
-2. "parole": le parole da far esplodere in rosso, grandi, da sole. Denis vuole UNA PAROLA OGNI 4–5 SECONDI per tutto il video, tranne mentre c'è un titolo.
+2. "parole": le parole da far esplodere in rosso, grandi, da sole. ${durata > LUNGO ? 'Video lungo: UNA PAROLA OGNI 12–15 SECONDI, solo le più forti' : 'Denis vuole UNA PAROLA OGNI 4–5 SECONDI per tutto il video'}, tranne mentre c'è un titolo.
 - Ognuna è una parola che Denis DICE davvero in quel punto (scritta esattamente come nella trascrizione): il concetto chiave della frase, un numero, un nome, un'emozione. Mai articoli, congiunzioni, verbi generici ("è", "fare", "ho").
 - "at": il secondo in cui Denis la pronuncia (dentro l'intervallo della sua frase).
 - Niente due parole uguali di fila.
 
-${ARCHIVIO ? `3. "capitoli": il video diviso in capitoli, come un documentario YouTube: uno a ogni cambio di argomento (2–4 per un minuto di video; il primo non prima di 8 s). "at" = inizio della frase che apre il capitolo; "titolo" = 2–4 parole.
+${ARCHIVIO ? `3. "capitoli": il video diviso in capitoli, come un documentario YouTube: ${copione ? 'USA I CAPITOLI DEL COPIONE, con i loro titoli accorciati a 2–4 parole: "at" = la frase in cui Denis inizia quel capitolo (il primo non prima di 8 s; se non lo trovi, saltalo).' : `uno a ogni cambio di argomento (${durata > LUNGO ? 'ogni 1–3 minuti' : '2–4 per un minuto di video'}; il primo non prima di 8 s). "at" = inizio della frase che apre il capitolo; "titolo" = 2–4 parole.`}
 
-4. "immagini": immagini d'archivio (almeno una ogni 12–15 s di video, 3–8 in tutto) da mostrare a tutto schermo mentre Denis parla (foto storiche, mappe, documenti, luoghi, persone, opere) su quello che sta dicendo in quel momento. Mai sopra un titolo. "at" = quando inizia a parlarne, "dur" = 3–5 s. "cerca" = ricerca IN INGLESE per Wikimedia Commons, precisa (es. "Second Italo-Ethiopian War 1935 soldiers", "Haile Gerima director", "Addis Ababa 1936"). "didascalia" = 2–6 parole in italiano.
-
+4. "immagini": immagini d'archivio (${durata > LUNGO ? `una ogni 20–30 s, ${Math.min(30, Math.round(durata / 25))} circa in tutto` : 'almeno una ogni 12–15 s di video, 3–8 in tutto'}${copione ? '; parti dalle idee per le immagini del copione' : ''}) da mostrare a tutto schermo mentre Denis parla (foto storiche, mappe, documenti, luoghi, persone, opere) su quello che sta dicendo in quel momento. Mai sopra un titolo. "at" = quando inizia a parlarne, "dur" = 3–5 s. "cerca" = ricerca IN INGLESE per Wikimedia Commons, precisa (es. "Second Italo-Ethiopian War 1935 soldiers", "Haile Gerima director", "Addis Ababa 1936"). "didascalia" = 2–6 parole in italiano.
+${durata > LUNGO ? `
+5. "date": la linea del tempo. Quando Denis dice un anno o una data importante (un evento), un cartello a tutto schermo con l'anno grande. 1 ogni 1–2 minuti al massimo, solo le date chiave. "at" = quando la dice; "anno" = "1935" (o "3 ottobre 1935"); "cosa" = l'evento in 2–6 parole.
+` : ''}
 ` : ''}Non inventare fatti che Denis non dice.
-Rispondi SOLO con JSON: {"titoli":[{"at":0.5,"dur":5,"piccolo":"…","grande":"…","rosso":"…"}],"parole":[{"at":7.2,"parola":"…"}]${ARCHIVIO ? ',"capitoli":[{"at":12.3,"titolo":"…"}],"immagini":[{"at":20.1,"dur":4,"cerca":"…","didascalia":"…"}]' : ''}}`;
+Rispondi SOLO con JSON: {"titoli":[{"at":0.5,"dur":5,"piccolo":"…","grande":"…","rosso":"…"}],"parole":[{"at":7.2,"parola":"…"}]${ARCHIVIO ? ',"capitoli":[{"at":12.3,"titolo":"…"}],"immagini":[{"at":20.1,"dur":4,"cerca":"…","didascalia":"…"}]' : ''}${ARCHIVIO && durata > LUNGO ? ',"date":[{"at":40.2,"anno":"…","cosa":"…"}]' : ''}}`;
 
-async function titoli(frasi, durata, brief) {
+async function titoli(frasi, durata, brief, copione = '') {
   // lavoro facile (solo testo): chiave gratuita con Flash e Flash-Lite, poi quella a pagamento solo con Flash-Lite
   const giri = [
     ...(process.env.GEMINI_API_KEY_GRATIS ? (process.env.DOC_MODELLI || 'gemini-flash-latest,gemini-flash-lite-latest').split(',').map((m) => [process.env.GEMINI_API_KEY_GRATIS, m]) : []),
@@ -87,18 +91,22 @@ async function titoli(frasi, durata, brief) {
     try {
       const r = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${modello}:generateContent`, {
         method: 'POST', headers: { 'content-type': 'application/json', 'x-goog-api-key': chiave }, signal: AbortSignal.timeout(120_000),
-        body: JSON.stringify({ contents: [{ role: 'user', parts: [{ text: PROMPT(frasi, durata, brief) }] }], generationConfig: { temperature: 0.5, responseMimeType: 'application/json' } }),
+        body: JSON.stringify({ contents: [{ role: 'user', parts: [{ text: PROMPT(frasi, durata, brief, copione) }] }], generationConfig: { temperature: 0.5, responseMimeType: 'application/json' } }),
       });
       const j = await r.json();
       if (!r.ok) { log(`${modello}: ${r.status}`); continue; }
       const testo = (j.candidates?.[0]?.content?.parts || []).map((x) => x.text || '').join('');
       const j2 = JSON.parse(testo);
-      return { titoli: pulisciTitoli(j2.titoli || [], durata), parole: j2.parole || [], capitoli: j2.capitoli || [], immagini: j2.immagini || [] };
+      return { titoli: pulisciTitoli(j2.titoli || [], durata), parole: j2.parole || [], capitoli: j2.capitoli || [], immagini: j2.immagini || [], date: j2.date || [] };
     } catch (e) { log(`${modello}: ${e.message}`); }
   }
   return { titoli: [], parole: [] };
 }
 
+// 📜 il copione del Redattore, compatto per il prompt: titoli dei capitoli, inizio del testo, idee per le immagini
+export function copioneBreve(r) {
+  return (r?.capitoli || []).map((c, i) => `CAPITOLO ${i + 1}: ${c.titolo}\n  inizia: «${String(c.testo || '').split(/\s+/).slice(0, 18).join(' ')}…»${(c.immagini || []).length ? `\n  immagini: ${c.immagini.join(' · ')}` : ''}`).join('\n');
+}
 // 🏛️ immagini d'archivio (prototipo Redazione, 16/11): ricerca su Wikimedia Commons, SOLO licenze libere
 // (pubblico dominio, CC0, CC BY, CC BY-SA) con il credito scritto sull'immagine e in crediti.txt
 const LIBERA = /public domain|^pd\b|pd-|cc0|cc[- ]by(?:-sa)?(?:[- ]\d|$)/i;
@@ -141,8 +149,11 @@ export async function scaricaArchivio(lista, durata, titoli) {
   }
   return fuori;
 }
+// 📅 linea del tempo: anni/date chiave a tutto schermo (solo video lunghi), distanti almeno 45 s
+export const pulisciDate = (lista, durata) => [...lista].map((d) => ({ at: +Math.max(0, Number(d.at) || 0).toFixed(2), dur: 3.2, anno: String(d.anno || '').slice(0, 24), cosa: String(d.cosa || '').slice(0, 50) }))
+  .filter((d) => d.anno && d.at >= 5 && d.at < durata - 4).sort((a, b) => a.at - b.at).filter((d, i, v) => !i || d.at - v[i - 1].at >= 45).slice(0, 20);
 export const pulisciCapitoli = (lista, durata) => [...lista].map((c) => ({ at: +Math.max(0, Number(c.at) || 0).toFixed(2), titolo: String(c.titolo || '').slice(0, 40) }))
-  .filter((c) => c.titolo && c.at >= 5 && c.at < durata - 4).sort((a, b) => a.at - b.at).filter((c, i, v) => !i || c.at - v[i - 1].at >= 8).slice(0, 6);
+  .filter((c) => c.titolo && c.at >= 5 && c.at < durata - 4).sort((a, b) => a.at - b.at).filter((c, i, v) => !i || c.at - v[i - 1].at >= 8).slice(0, 12);
 
 // numeri nei limiti, niente sovrapposizioni, niente titoli oltre la fine
 export function pulisciTitoli(lista, durata) {
@@ -173,13 +184,16 @@ const FASI = {
     fs.mkdirSync(PUB, { recursive: true });
     // una cartella (tasto 🎬 Netflix 16:9 del bot, 16/11): il video più grande è il girato; un brano audio
     // nella cartella fa da musica, se non è già indicata
-    let musicaCartella = null, nomeCartella = null;
+    let musicaCartella = null, nomeCartella = null, redazioneDa = null;
+    if (process.env.REDAZIONE) redazioneDa = /\.json$/i.test(process.env.REDAZIONE) ? process.env.REDAZIONE : `${process.env.REDAZIONE.replace(/\/+$/, '')}/redazione.json`;
     if (!/\.(mp4|mov|m4v|mkv)$/i.test(sorgente)) {
-      const files = JSON.parse(run('rclone', ['lsjson', `${REMOTE}:${sorgente}`, '--files-only'])).filter((f) => !f.Name.startsWith('_') && !/FINALE|DOCUMENTARIO/i.test(f.Name));
+      const files = JSON.parse(run('rclone', ['lsjson', `${REMOTE}:${sorgente}`, '--files-only'])).filter((f) => !f.Name.startsWith('_') && !/FINALE|DOCUMENTARIO|YOUTUBE/i.test(f.Name));
       const video = files.filter((f) => /\.(mp4|mov|m4v|mkv)$/i.test(f.Name)).sort((a, b) => b.Size - a.Size)[0];
       if (!video) throw new Error(`nella cartella ${sorgente} non c'è un video`);
       const brano = files.find((f) => /\.(mp3|m4a|wav|aac|flac)$/i.test(f.Name));
       if (brano) musicaCartella = `${sorgente}/${brano.Name}`;
+      // 📜 il girato letto al gobbo nella cartella del Redattore: il copione guida capitoli e immagini
+      if (!process.env.REDAZIONE && files.some((f) => f.Name === 'redazione.json')) redazioneDa = `${sorgente}/redazione.json`;
       nomeCartella = path.basename(sorgente);
       sorgente = `${sorgente}/${video.Name}`;
       log(`cartella: girato ${video.Name}${brano ? `, musica ${brano.Name}` : ''}`);
@@ -211,7 +225,12 @@ const FASI = {
         log(`musica: ${nome}`);
       }
     }
-    fs.writeFileSync(STATO, JSON.stringify({ sorgente, uscita, src, base, musica, nome: nomeCartella, durata: info.durata, fps: Math.round(Number(info.fps) || 24) || 24 }));
+    let redazione = false;
+    if (redazioneDa) {
+      try { run('rclone', ['copyto', `${REMOTE}:${redazioneDa}`, path.join(WORK, 'redazione.json')]); redazione = true; log('copione del Redattore: sì'); }
+      catch { log(`copione del Redattore non trovato (${redazioneDa})`); }
+    }
+    fs.writeFileSync(STATO, JSON.stringify({ sorgente, uscita, src, base, musica, nome: nomeCartella, redazione, durata: info.durata, fps: Math.round(Number(info.fps) || 24) || 24 }));
   },
   colore() {
     const st = leggiStato();
@@ -227,23 +246,29 @@ const FASI = {
     log(`trascrizione: ${frasi.length} frasi`);
     // DOC_TITOLI: titoli scritti a mano (JSON), per correggere quelli dell'AI senza rifare la scelta
     const mano = process.env.DOC_TITOLI ? JSON.parse(process.env.DOC_TITOLI) : null;
-    const ai = mano ? { titoli: pulisciTitoli(Array.isArray(mano) ? mano : mano.titoli || [], st.durata), parole: mano.parole || [] } : await titoli(frasi, st.durata, process.env.BRIEF || '');
+    let copione = '';
+    if (st.redazione) {
+      try { copione = copioneBreve(JSON.parse(fs.readFileSync(path.join(WORK, 'redazione.json'), 'utf8'))); ARCHIVIO = true; } catch (e) { log(`copione illeggibile: ${e.message}`); }
+    }
+    const ai = mano ? { titoli: pulisciTitoli(Array.isArray(mano) ? mano : mano.titoli || [], st.durata), parole: mano.parole || [] } : await titoli(frasi, st.durata, process.env.BRIEF || '', copione);
     const scelti = ai.titoli;
-    const parole = pulisciParole(ai.parole || [], detti, scelti, st.durata);
+    const parole = pulisciParole(ai.parole || [], detti, scelti, st.durata, st.durata > LUNGO);
     log(`titoli: ${scelti.map((t) => `${t.at}s ${t.piccolo || ''} | ${t.grande}${t.rosso ? ` | ${t.rosso}` : ''}`).join(' · ') || 'nessuno'}`);
     log(`parole rosse: ${parole.length} · ${parole.map((p) => `${p.at}s ${p.parola}`).join(' · ')}`);
     const capitoli = ARCHIVIO ? pulisciCapitoli(ai.capitoli || [], st.durata) : [];
     const immagini = ARCHIVIO ? await scaricaArchivio(ai.immagini || [], st.durata, scelti) : [];
     const sopra = (a, d) => immagini.some((im) => a < im.at + im.dur && a + d > im.at);
     const capitoliLiberi = capitoli.filter((c) => !sopra(c.at, 3.2) && !scelti.some((t) => c.at < t.at + t.dur && c.at + 3.2 > t.at));
-    const paroleLibere = parole.filter((p) => !sopra(p.at, p.dur) && !capitoliLiberi.some((c) => p.at < c.at + 3.2 && p.at + p.dur > c.at));
-    if (ARCHIVIO) log(`capitoli: ${capitoliLiberi.length} · immagini d'archivio: ${immagini.length} su ${(ai.immagini || []).length} · parole rosse rimaste: ${paroleLibere.length}`);
-    fs.writeFileSync(STATO, JSON.stringify({ ...st, titoli: scelti, parole: paroleLibere, capitoli: capitoliLiberi, immagini }));
+    const occupato = (a, d) => sopra(a, d) || scelti.some((t) => a < t.at + t.dur && a + d > t.at) || capitoliLiberi.some((c) => a < c.at + 3.2 && a + d > c.at);
+    const date = ARCHIVIO && st.durata > LUNGO ? pulisciDate(ai.date || [], st.durata).filter((d) => !occupato(d.at, d.dur)) : [];
+    const paroleLibere = parole.filter((p) => !sopra(p.at, p.dur) && !capitoliLiberi.some((c) => p.at < c.at + 3.2 && p.at + p.dur > c.at) && !date.some((d) => p.at < d.at + d.dur && p.at + p.dur > d.at));
+    if (ARCHIVIO) log(`capitoli: ${capitoliLiberi.length} · immagini d'archivio: ${immagini.length} su ${(ai.immagini || []).length} · date: ${date.length} · parole rosse rimaste: ${paroleLibere.length}${copione ? ' · dal copione del Redattore' : ''}`);
+    fs.writeFileSync(STATO, JSON.stringify({ ...st, titoli: scelti, parole: paroleLibere, capitoli: capitoliLiberi, immagini, date }));
     if (immagini.length) fs.writeFileSync(path.join(WORK, 'crediti.txt'), `Immagini d'archivio (Wikimedia Commons):\n${immagini.map((im) => `- ${im.didascalia || im.file}: ${im.credito} · ${im.pagina}`).join('\n')}\n`);
   },
   video() {
     const st = leggiStato();
-    const props = { video: 'doc169/girato.mp4', durata: +probe(path.join(PUB, 'girato.mp4')).durata.toFixed(2), fps: st.fps, bande: true, titoli: st.titoli || [], parole: st.parole || [], capitoli: st.capitoli || [], immagini: st.immagini || [] };
+    const props = { video: 'doc169/girato.mp4', durata: +probe(path.join(PUB, 'girato.mp4')).durata.toFixed(2), fps: st.fps, bande: true, titoli: st.titoli || [], parole: st.parole || [], capitoli: st.capitoli || [], immagini: st.immagini || [], date: st.date || [] };
     const pj = path.join(WORK, 'props.json');
     fs.writeFileSync(pj, JSON.stringify(props, null, 1));
     run('npx', ['remotion', 'render', 'src/index.ts', 'Doc169', path.join(WORK, nomeFinale(st)), `--props=${pj}`, '--codec=h264', '--video-bitrate=14M', '--audio-bitrate=320k',
@@ -296,7 +321,9 @@ const VUOTE = new Set(['talmente', 'veramente', 'davvero', 'proprio', 'sempre', 
   'essere', 'avere', 'fare', 'fatto', 'stato', 'stata', 'sono', 'siamo', 'hanno', 'abbiamo', 'avevo', 'faccio', 'dire', 'detto', 'diciamo',
   'adesso', 'oggi', 'voglio', 'volevo', 'posso', 'devo', 'facciamo', 'abbiamo', 'perche', 'praticamente', 'insomma', 'magari', 'tipo', 'ovviamente', 'sicuramente', 'nella', 'nello', 'sulla', 'dalla', 'degli',
   'delle', 'della', 'dello', 'dove', 'come', 'quando', 'mentre', 'ogni', 'altro', 'altra', 'altri', 'stesso', 'stessa', 'vedere', 'andare', 'volta']);
-export function pulisciParole(lista, detti, titoli, durata) {
+export function pulisciParole(lista, detti, titoli, durata, lungo = false) {
+  // video lungo (YouTube): una parola ogni 12–15 s invece di 4–5
+  const [distanza, buco] = lungo ? [8, 15] : [3.5, 5.5];
   const fuori = [];
   for (const p of [...lista].sort((a, b) => a.at - b.at)) {
     const n = norm(p.parola);
@@ -305,20 +332,20 @@ export function pulisciParole(lista, detti, titoli, durata) {
     const at = vicine.length && Math.abs(vicine[0].a - p.at) < 4 ? vicine[0].a : Number(p.at);
     if (!Number.isFinite(at) || at < 0 || at > durata - 1) continue;
     if (titoli.some((t) => at > t.at - 0.5 && at < t.at + t.dur + 0.3)) continue;
-    if (fuori.length && at - fuori.at(-1).at < 3.5) continue;
+    if (fuori.length && at - fuori.at(-1).at < distanza) continue;
     fuori.push({ at: +at.toFixed(2), dur: 1.8, parola: String(vicine[0]?.w || p.parola).replace(/[^\p{L}\p{N}'’-]/gu, '').slice(0, 16) });
   }
   // Denis vuole una parola ogni 4–5 s: i buchi più lunghi di 5,5 s (fuori dai titoli) si riempiono con la parola
   // più "forte" detta lì (la più lunga che non sia una parola vuota)
   const libero = (a) => !titoli.some((t) => a > t.at - 0.5 && a < t.at + t.dur + 0.3);
-  for (let giro = 0; giro < 40; giro++) {
+  for (let giro = 0; giro < (lungo ? 200 : 40); giro++) {
     const punti = [0, ...fuori.map((p) => p.at), ...titoli.flatMap((t) => [t.at, t.at + t.dur]), durata - 1].sort((a, b) => a - b);
     let messo = false;
     for (let i = 0; i < punti.length - 1 && !messo; i++) {
       const [a, b] = [punti[i], punti[i + 1]];
       // dentro il buco, tolti i titoli: tratti liberi lunghi più di 5,5 s
       const cand = detti.filter((w) => w.a > a + 2.5 && w.a < b - 2.5 && libero(w.a) && norm(w.w).length >= 4 && !VUOTE.has(norm(w.w)));
-      if (b - a <= 5.5 || !libero((a + b) / 2) || !cand.length) continue;
+      if (b - a <= buco || !libero((a + b) / 2) || !cand.length) continue;
       const mezzo = (a + b) / 2;
       const w = cand.sort((x, y) => (norm(y.w).length - Math.abs(y.a - mezzo) * 0.8) - (norm(x.w).length - Math.abs(x.a - mezzo) * 0.8))[0];
       fuori.push({ at: w.a, dur: 1.8, parola: String(w.w).replace(/[^\p{L}\p{N}'’-]/gu, '').slice(0, 16) });
