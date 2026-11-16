@@ -159,7 +159,7 @@ function fotogrammiEVarianti(ric) {
       if (m) log(`  ${nome}: soggetto ${m.medio.toFixed(2)}, neri ${m.nero.toFixed(2)}, bianchi ${m.bianco.toFixed(2)}`);
       const nomi = [ric.nomeBase || 'base'];
       for (const v of varianti) {
-        if (v.pelle) continue; // la pelle protetta serve la maschera: solo nelle clip
+        if (v.pelle || v.risalto) continue; // pelle protetta e risalto servono la maschera: solo nelle clip
         const o = path.join(OUT, `${nome}-${pulito(v.id)}.jpg`);
         try {
           const curva = curvaVariante(v, m);
@@ -175,6 +175,12 @@ function fotogrammiEVarianti(ric) {
         `${fatti.map((_, k) => `[${k}]scale=540:-2,drawtext=fontfile=${FONT}:text='${testo(nomi[k])}':x=12:y=12:fontsize=28:fontcolor=white:box=1:boxcolor=black@0.5[v${k}]`).join(';')};`
         + `${fatti.map((_, k) => `[v${k}]`).join('')}${fatti.length > 1 ? `hstack=${fatti.length}` : 'null'}`,
         '-q:v', '3', path.join(OUT, `${nome}-confronto.jpg`)]);
+      // miniatura leggera (~30 KB) di tutto il confronto: si guarda anche da dove non si scaricano immagini grandi
+      if (ric.miniatura && fatti.length > 1) {
+        run('ffmpeg', ['-y', '-v', 'error', ...fatti.flatMap((o) => ['-i', o]), '-filter_complex',
+          `${fatti.map((_, k) => `[${k}]scale=170:-2,drawtext=fontfile=${FONT}:text='${testo(nomi[k]).slice(0, 18)}':x=4:y=4:fontsize=12:fontcolor=white:box=1:boxcolor=black@0.6[m${k}]`).join(';')};`
+          + `${fatti.map((_, k) => `[m${k}]`).join('')}hstack=${fatti.length}`, '-q:v', '7', path.join(OUT, `${nome}-mini.jpg`)]);
+      }
       // a griglia (comoda dal telefono): riquadri 360×640 numerati, `griglia` colonne
       if (ric.griglia && fatti.length > 1) {
         const col = ric.griglia, righe = Math.ceil(fatti.length / col), w = 360, h = 640;
@@ -260,6 +266,18 @@ function clip(ric) {
       '-vf', `scale='if(gt(iw,ih),1920,1080)':-2:flags=lanczos,${s.tecnico.replace(/,?format=yuv420p$/, '') || 'null'}${v ? `,${conPercorsi(v.filtro)}` : ''},format=yuv420p`,
       '-c:v', 'libx264', '-preset', 'slow', '-crf', '16', '-an', '-movflags', '+faststart',
       '-colorspace', 'bt709', '-color_primaries', 'bt709', '-color_trc', 'bt709', '-color_range', 'tv', out]);
+    // "risalto": la persona in risalto sul pezzo già colorato (scripts/look/risalto.py), es. "naturale:0.78"
+    // (16/11, documentario verticale: colore naturale e caldo, sfondo solo un po' più scuro)
+    if (v?.risalto) {
+      const { py, modello } = preparaMediaPipe();
+      const prima = out.replace(/\.mp4$/, '-prima.mp4');
+      fs.renameSync(out, prima);
+      try {
+        const esito = run(py, [path.join(ROOT, 'scripts', 'look', 'risalto.py'), prima, out, modello, ...String(v.risalto).split(/\s+/)]);
+        log(`clip ${path.basename(out)}: ${esito.trim().split('\n').pop()}`);
+      } catch (e) { log(`clip ${path.basename(out)}: risalto non riuscito (${e.message.split('\n')[0]})`); }
+      if (fs.existsSync(out)) fs.rmSync(prima, { force: true }); else fs.renameSync(prima, out);
+    }
   }
 }
 

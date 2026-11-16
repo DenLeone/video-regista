@@ -5,7 +5,9 @@
 # come per le scritte dietro (ritaglio.py). Se nei primi fotogrammi non c'è una persona chiara
 # (dettaglio di prodotto, primo piano strettissimo) il pezzo resta com'è.
 #
-# Uso: python3 risalto.py <pezzo.mp4> <uscita.mp4> <modello.tflite> [sfoca]   → stampa "risalto" o "saltato"
+# Uso: python3 risalto.py <pezzo.mp4> <uscita.mp4> <modello.tflite> [sfoca] [naturale[:luce]]   → stampa "risalto" o "saltato"
+# «naturale» (documentario verticale, 16/11: «colore naturale, il back separato, non stile Netflix»): persona un filo
+# più calda, sfondo solo un po' più scuro (luce, predefinita 0,78) e senza tinta petrolio, vignettatura leggera.
 
 import json
 import subprocess
@@ -39,9 +41,20 @@ def info(src):
     return int(v['width']), int(v['height']), v['r_frame_rate'], any(s['codec_type'] == 'audio' for s in j['streams'])
 
 
+def naturale(luce=0.78):
+    global SFONDO_LUCE, LUCI_SFONDO, SFONDO_TINTA, VIGNETTA, CURVA_SOGGETTO, CALDO, NITIDEZZA, VOLTO
+    SFONDO_LUCE, LUCI_SFONDO, SFONDO_TINTA, VIGNETTA = luce, 0.85, (0.006, 0.0, -0.006), 0.18
+    # il girato è già colorato in modo naturale: i medi salgono poco (nel 12K li riportava su dalla LUT scura)
+    CURVA_SOGGETTO = ([0, 0.03, 0.1, 0.25, 0.45, 0.7, 1], [0, 0.032, 0.11, 0.27, 0.48, 0.72, 1])
+    CALDO, NITIDEZZA, VOLTO = (1.02, 1.0, 0.98), 0.2, 0.48
+
+
 def main():
     src, out, modello = sys.argv[1], sys.argv[2], sys.argv[3]
-    sfoca = len(sys.argv) > 4 and sys.argv[4] == 'sfoca'
+    sfoca = 'sfoca' in sys.argv[4:]
+    for a in sys.argv[4:]:
+        if a.startswith('naturale'):
+            naturale(float(a.split(':')[1]) if ':' in a else 0.78)
     w, h, fps, audio = info(src)
     leggi = subprocess.Popen(['ffmpeg', '-v', 'error', '-i', src, '-f', 'rawvideo', '-pix_fmt', 'rgb24', '-'], stdout=subprocess.PIPE)
     opzioni = vision.ImageSegmenterOptions(base_options=BaseOptions(model_asset_path=modello),

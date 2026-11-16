@@ -1,0 +1,21 @@
+{
+  "uscita": "05 · Archivio/ECC/_laboratorio/caldo",
+  "brief": "s-log3",
+  "miniatura": true,
+  "griglia": 2,
+  "nomeBase": "Tecnica (schiarita)",
+  "fotogrammi": [
+    { "file": "05 · Archivio/ECC/C1293.MP4", "punti": [0.2, 0.5, 0.8] }
+  ],
+  "varianti": [
+    { "id": "E caldo", "filtro": "colorbalance=rs=0.02:bs=-0.03:rm=0.03:gm=0.005:bm=-0.035:rh=0.02:bh=-0.025,eq=saturation=1.04" },
+    { "id": "F piu caldo", "filtro": "colorbalance=rs=0.035:bs=-0.05:rm=0.05:gm=0.01:bm=-0.055:rh=0.03:bh=-0.04,eq=saturation=1.06" },
+    { "id": "G caldo senza schiarita", "crudo": true, "filtro": "lut3d=file=lut/Sony_SLog3_SGamut3Cine_to_Rec709_s33.cube:interp=tetrahedral,colorbalance=rs=0.02:bs=-0.03:rm=0.03:gm=0.005:bm=-0.035:rh=0.02:bh=-0.025,eq=saturation=1.04" },
+    { "id": "E sfondo -20", "filtro": "colorbalance=rs=0.02:bs=-0.03:rm=0.03:gm=0.005:bm=-0.035:rh=0.02:bh=-0.025,eq=saturation=1.04", "risalto": "naturale:0.8" },
+    { "id": "F sfondo -30", "filtro": "colorbalance=rs=0.035:bs=-0.05:rm=0.05:gm=0.01:bm=-0.055:rh=0.03:bh=-0.04,eq=saturation=1.06", "risalto": "naturale:0.7" }
+  ],
+  "clip": [
+    { "file": "05 · Archivio/ECC/C1293.MP4", "da": 8, "dur": 6, "variante": "E sfondo -20" },
+    { "file": "05 · Archivio/ECC/C1293.MP4", "da": 8, "dur": 6, "variante": "F sfondo -30" }
+  ]
+}
