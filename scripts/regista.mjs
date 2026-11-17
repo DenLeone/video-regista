@@ -298,6 +298,31 @@ const aggiunteDi = (x) => Object.fromEntries(AGGIUNTE_DISCORSO.filter((k) => (k 
 // Il modello di riserva (Gemini «lite») non sa farlo: nella prova del 10/11 ha lasciato gli inciampi e
 // tolto pezzi buoni («quindi questo per» → «me è un best buy»). Con lui il discorso resta intero.
 const modelloDebole = () => /lite/i.test(String(consumi.ai?.modello || ''));
+// ⚠️ la regia di questo giro l'ha fatta il modello leggero (17/11): Denis lo deve sapere, perché la qualità
+// scende (clip scelte peggio, testo meno pulito). Nel discorso c'è già la nota sul testo non ripulito
+export const notaModello = (modello = consumi.ai?.modello, giaDetto = false) => (/lite/i.test(String(modello || '')) && !giaDetto
+  ? `⚠️ Regia fatta col modello leggero di Gemini (${String(modello).replace(/^gemini-/, '')}): i modelli pieni erano esauriti o sovraccarichi. Se il montaggio non convince, rifallo più tardi`
+  : '');
+
+// ⚠️ sincronizzazione (17/11, dall'analisi dei due repo): i casi in cui il labiale rischia di non tornare,
+// detti a Denis in chiaro. La camera muta ha già il suo avviso (provataVisiva)
+export function avvisiSync(sorgenti) {
+  const out = [];
+  const voci = sorgenti.filter((s) => s.principale && s.parole?.length);
+  const video = sorgenti.filter((s) => s.tipo === 'video' && !s.soloImmagini);
+  // voce dal microfono esterno (file solo audio) e nessun video agganciato: la voce va su immagini scollegate
+  for (const v of voci.filter((x) => x.tipo === 'audio')) {
+    if (video.length && !video.some((x) => x.sync?.con === v.id)) {
+      out.push(`la voce del microfono (${v.id}) non si aggancia a nessun video: il labiale non tornerà. Controlla che sia della stessa registrazione, o lascia acceso il microfono della camera (serve per sincronizzare)`);
+    }
+  }
+  // due voci che parlano entrambe e non si agganciano tra loro: montate come due discorsi separati
+  const parlanti = voci.filter((x) => x.tipo === 'video');
+  if (parlanti.length && voci.some((x) => x.tipo === 'audio') && parlanti.some((x) => !x.sync)) {
+    out.push(`${parlanti.filter((x) => !x.sync).map((x) => x.id).join(', ')} ha${parlanti.filter((x) => !x.sync).length > 1 ? 'nno' : ''} una voce sua che non si aggancia al microfono: l'ho usata come discorso separato`);
+  }
+  return out;
+}
 function sequenzaPulita(r) {
   if (SENZA_TAGLI) { discorso.tenute = discorso.sequenza.length; return discorso.sequenza; }
   if (modelloDebole()) { discorso.tenute = discorso.sequenza.length; discorso.riserva = true; return discorso.sequenza; }
@@ -2589,6 +2614,7 @@ export async function analizza(nome, brief, cache) {
   const avvisi = sorgenti.filter((s) => s.provataVisiva).map((s) => s.sync
     ? `${s.id} (${s.nomeDispositivo}) ha registrato solo fruscio (microfono collegato ma spento?): l'ho agganciata dalle immagini. Se il labiale non torna, dimmelo.`
     : `${s.id} (${s.nomeDispositivo}) ha registrato solo fruscio, senza voce (microfono collegato ma spento?) e non sono riuscito ad agganciarla nemmeno dalle immagini: l'ho usata solo come B-roll. Lascia acceso il microfono della camera, anche quello interno basta.`);
+  avvisi.push(...avvisiSync(sorgenti));
   if (logRiconosciuti.length) avvisi.push(`${logRiconosciuti.join(', ')}: riconosciut${logRiconosciuti.length > 1 ? 'e' : 'a'} come girato in log (colori spenti) e convertit${logRiconosciuti.length > 1 ? 'e' : 'a'} con la LUT tecnica (I-Log Insta360, S-Log3 Sony). Se non era in log scrivi "senza i-Log" (Insta360) o "senza s-log" (Sony) nel brief.`);
   if (logScuri.length) avvisi.push(`${logScuri.join(', ')}: molto scur${logScuri.length > 1 ? 'e' : 'a'} anche dopo la LUT, ho schiarito il possibile. In I-Log con poca luce meglio aggiungere luce o esporre +0,7 EV.`);
   if (/\bi-?log\b/i.test(brief || '') && !/\b(senza|no)\s+i-?log\b/i.test(brief || '') && !sorgenti.some((s) => s.colore?.log)) {
@@ -2795,6 +2821,7 @@ async function rifinisciPiano(regia, risultato, analisi, avvisoStile) {
   if (avvisi.length) log('avvisi regia:', avvisi.join(' | '));
   if (avvisoStile) piano.note = [`⚠️ ${avvisoStile}`, piano.note].filter(Boolean).join(' · ');
   if (discorso) { if (discorso.troppo) logUnaVolta(`discorso: ${discorso.troppo}`); piano.note = [`🎙️ Discorso (un solo video): tenute ${discorso.tenute ?? discorso.sequenza.length} frasi su ${discorso.sequenza.length}, in ordine${discorso.riserva ? ' (testo NON ripulito: oggi ha risposto solo il modello di riserva di Gemini)' : ''}${discorso.tolte.length ? `, tolte ${discorso.tolte.length} tra false partenze e ripetizioni` : ''}`, discorso.troppo ? `⚠️ Discorso: ${discorso.troppo}` : '', piano.note].filter(Boolean).join(' · '); }
+  { const nm = notaModello(consumi.ai?.modello, Boolean(discorso?.riserva)); if (nm) piano.note = [nm, piano.note].filter(Boolean).join(' · '); }
   const livelloVoce = Math.max(-60, ...analisi.sorgenti.filter((s) => s.principale && s.livello != null).map((s) => s.livello));
   piano.sfx = process.env.REGISTA_SFX === '0' ? false
     : { volume: +Math.min(0.6, Math.max(0.1, livelloVoce > -60 ? 10 ** ((livelloVoce + 2) / 20) : 0.25)).toFixed(3) };
@@ -3048,6 +3075,9 @@ async function main() {
     discorso = null;
     if (DISCORSO) log(`modalità discorso: ${videoInCartella.length === 1 ? 'un solo video in cartella' : 'chiesta nel brief'} (niente regia, solo pulizia e stile)`);
     const analisi = await analizza(nome, brief, cache);
+    // ⚠️ sync a rischio (camera muta, voce del microfono non agganciata): detto subito, durante il montaggio,
+    // così Denis può fermarlo prima di aspettare un video col labiale sbagliato (17/11)
+    { const sync = (analisi.avvisi || []).filter((a) => /aggancia|fruscio/.test(a)); if (sync.length && !RIRENDER) await fase(nome, `⚠️ ${sync[0].slice(0, 300)}`, 'prepara'); }
     // «senza tagli»: le frasi coprono tutto il girato, pause comprese (solo le prime volte: in correzione e
     // "Solo render" il materiale salvato è già così)
     if (SENZA_TAGLI) { senzaBuchi(analisi); log('senza tagli: il girato resta intero, l\'AI sceglie solo la grafica'); }
@@ -3153,6 +3183,7 @@ async function main() {
       if (avvisoStile) analisi.avvisi = [...(analisi.avvisi || []), avvisoStile];
       if (analisi.avvisi?.length) piano.note = [...analisi.avvisi.map((a) => `⚠️ ${a}`), piano.note].filter(Boolean).join(' · ');
       if (discorso) { if (discorso.troppo) logUnaVolta(`discorso: ${discorso.troppo}`); piano.note = [`🎙️ Discorso (un solo video): tenute ${discorso.tenute ?? discorso.sequenza.length} frasi su ${discorso.sequenza.length}, in ordine${discorso.riserva ? ' (testo NON ripulito: oggi ha risposto solo il modello di riserva di Gemini)' : ''}${discorso.tolte.length ? `, tolte ${discorso.tolte.length} tra false partenze e ripetizioni` : ''}`, discorso.troppo ? `⚠️ Discorso: ${discorso.troppo}` : '', piano.note].filter(Boolean).join(' · '); }
+      if (nuovaRegia) { const nm = notaModello(consumi.ai?.modello, Boolean(discorso?.riserva)); if (nm) piano.note = [nm, piano.note].filter(Boolean).join(' · '); }
       // effetti sonori sotto la voce: più bassa la voce registrata, più bassi gli effetti (~12–16 dB sotto)
       const livelloVoce = Math.max(-60, ...analisi.sorgenti.filter((s) => s.principale && s.livello != null).map((s) => s.livello));
       piano.sfx = process.env.REGISTA_SFX === '0' ? false
