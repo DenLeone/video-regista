@@ -1,0 +1,104 @@
+name: motion
+
+# ✨ Motion graphic da Telegram (17/11): logo che si accende, intro, «dal codice al logo», titolo animato.
+# Modelli già pronti in motion/*.html, testi dal bot: niente AI, niente crediti. Video su Drive (02 · Fatti/Motion)
+# e in chat. Repo pubblico: nel log solo modello, formato e tempi.
+run-name: ${{ format('✨ Motion · {0} · {1} · {2}', inputs.modello, inputs.formato, inputs.qualita) }}
+on:
+  workflow_dispatch:
+    inputs:
+      modello:
+        description: 'luce | intro | codice | titolo'
+        required: true
+      testi:
+        description: 'JSON: {"testo":"…","sotto":"…","invito":"…"}'
+        required: true
+      formato:
+        description: 'verticale | orizzontale'
+        required: false
+        default: 'verticale'
+      qualita:
+        description: '1080 | 4k'
+        required: false
+        default: '1080'
+
+permissions:
+  contents: read
+
+env:
+  DIR_MOTION: '02 · Fatti/Motion'
+
+jobs:
+  render:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+
+      - name: Collego Drive
+        env:
+          RCLONE_CONF: ${{ secrets.RCLONE_CONF }}
+        run: |
+          curl -fsSL https://rclone.org/install.sh | sudo bash > /dev/null
+          mkdir -p ~/.config/rclone
+          printf '%s\n' "$RCLONE_CONF" | tr -d '\r' | sed -e '1s/^\xEF\xBB\xBF//' -e 's/^[[:space:]]*//' > ~/.config/rclone/rclone.conf
+          command -v ffmpeg > /dev/null || { sudo apt-get update -qq && sudo apt-get install -y -qq ffmpeg > /dev/null; }
+          command -v google-chrome || command -v chromium
+
+      - name: Render
+        id: render
+        env:
+          MODELLO: ${{ inputs.modello }}
+          TESTI: ${{ inputs.testi }}
+          FORMATO: ${{ inputs.formato }}
+          QUALITA: ${{ inputs.qualita }}
+          USCITA: out/motion/motion.mp4
+        run: node scripts/motion.mjs
+
+      - name: Su Drive e in chat
+        env:
+          MODELLO: ${{ inputs.modello }}
+          TESTI: ${{ inputs.testi }}
+          FORMATO: ${{ inputs.formato }}
+          QUALITA: ${{ inputs.qualita }}
+          DURATA: ${{ steps.render.outputs.durata }}
+          MINUTI: ${{ steps.render.outputs.minuti }}
+          NOTIFY_URL: ${{ secrets.NOTIFY_URL }}
+          NOTIFY_TOKEN: ${{ secrets.NOTIFY_TOKEN }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          testo=$(printf '%s' "$TESTI" | jq -r '.testo // "motion"' 2>/dev/null | tr -d '/\\:*?"<>|' | cut -c1-40)
+          finale="${testo:-motion} - ${MODELLO} ${FORMATO} ${QUALITA} $(date -u +%m%d-%H%M).mp4"
+          rclone copyto out/motion/motion.mp4 "gdrive:$DIR_MOTION/$finale"
+          id=$(rclone lsjson "gdrive:$DIR_MOTION/$finale" | jq -r '.[0].ID // empty')
+          echo "su Drive: $(du -h out/motion/motion.mp4 | cut -f1)"
+          [ -n "$NOTIFY_URL" ] || exit 0
+          video=out/motion/motion.mp4
+          # in chat va un'anteprima leggera se il file è grande (il 4K intero resta su Drive)
+          if [ "$(stat -c %s "$video")" -gt 40000000 ] || [ "$QUALITA" = "4k" ]; then
+            ffmpeg -v error -y -i "$video" -vf "scale='if(gt(iw,ih),1920,1080)':-2" -c:v libx264 -preset veryfast -crf 20 -movflags +faststart out/motion/chat.mp4 && video=out/motion/chat.mp4
+          fi
+          nomi='{"luce":"✨ Logo che si accende","intro":"⚡ Intro in una lama di luce","codice":"💻 Dal codice al logo","titolo":"🔤 Titolo animato"}'
+          stile=$(jq -rn --argjson n "$nomi" --arg m "$MODELLO" '$n[$m] // $m')
+          info=$(jq -n --arg f "$finale" --argjson d "${DURATA:-0}" --argjson m "${MINUTI:-0}" --arg s "Motion · $stile · $FORMATO $QUALITA" --arg id "$id" \
+            '{file:$f, durata:$d, minuti:($m|ceil), stile:$s, documentario:true, motion:true} + (if $id != "" then {link:("https://drive.google.com/file/d/"+$id+"/view")} else {} end)')
+          curl -s -X POST "${NOTIFY_URL%/notify}/video" -H "x-regista-token: $NOTIFY_TOKEN" \
+            -F "nome=$testo" -F "testo=Motion pronto" -F "durata=$DURATA" -F "run_url=$RUN_URL" \
+            -F "info=$info" -F "video=@$video;type=video/mp4" -o /dev/null -w "bot: %{http_code}\n"
+
+      - name: Avvisa il bot se si è fermato
+        if: failure()
+        env:
+          MODELLO: ${{ inputs.modello }}
+          NOTIFY_URL: ${{ secrets.NOTIFY_URL }}
+          NOTIFY_TOKEN: ${{ secrets.NOTIFY_TOKEN }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          [ -n "$NOTIFY_URL" ] || exit 0
+          jq -n --arg n "Motion · $MODELLO" --arg u "$RUN_URL" \
+            '{tipo:"esito", esito:"⚠️ motion non finito", nome:$n, ok:false, run_url:$u, testo:"Il render si è fermato: apri il log.", info:{documentario:true}}' \
+            | curl -s -X POST "$NOTIFY_URL" -H 'content-type: application/json' -H "x-regista-token: $NOTIFY_TOKEN" -d @- > /dev/null || true

@@ -429,7 +429,7 @@ async function pannello(env: Env): Promise<Schermo> {
     tasti: [
       [tasto('🆕 Nuovo montaggio', 'nuovo'), tasto('📦 Più video', 'lotto')],
       [tasto('📼 Ultimi video', 'video'), tasto('🎨 Stili', 'stili')],
-      [tasto('🎞 Documentario', 'doc')],
+      [tasto('🎞 Documentario', 'doc'), tasto('✨ Motion', 'mo')],
       [tasto('📊 Stato', 'stato'), tasto('⚙️ Impostazioni', 'imp')],
       [link('📂 01 · Da editare', URL_97), link('✅ 02 · Fatti', URL_98)],
       [tasto('❓ Guida', 'guida')],
@@ -677,6 +677,7 @@ type Brief = {
 };
 type Passo = 'cartella' | 'stile' | 'sponsor' | 'sponsor_testo' | 'durata' | 'tono' | 'giudizio' | 'tavola' | 'note' | 'riepilogo' | 'confronta';
 type Attesa =
+  | AttesaMotion
   | { tipo: 'nuovo'; passo: Passo; dati: Brief; msg?: number; modifica?: boolean }
   | { tipo: 'lotto'; scelte: string[]; stile?: string; msg?: number }
   | { tipo: 'nome_raccolta'; poi: 'subito' | 'domande' | 'scheda'; msg?: number }
@@ -688,7 +689,61 @@ type Attesa =
   | { tipo: 'commento'; id: string; msg?: number }
   // schermata da ridisegnare quando arriva l'elenco aggiornato dal workflow (stili, secret YouTube)
   | { tipo: 'schermo'; quale: 'stili' | 'collegamenti'; runId?: string; msg?: number };
+// ✨ Motion: aspetto i testi per il modello scelto (righe: testo, sotto, invito)
+type AttesaMotion = { tipo: 'motion'; modello: ModelloMotion; msg?: number };
 const kAttesa = (chat: string) => `attesa:${chat}`;
+
+// ---------- ✨ Motion (motion.yml + scripts/motion.mjs) ----------
+type ModelloMotion = 'luce' | 'intro' | 'codice' | 'titolo';
+type TestiMotion = { testo: string; sotto?: string; invito?: string };
+type SceltaMotion = { modello: ModelloMotion; testi: TestiMotion };
+const kMotion = (chat: string) => `motion:${chat}`;
+const MODELLI_MOTION: Record<ModelloMotion, { nome: string; cosa: string; righe: string[]; esempio: string }> = {
+  luce: { nome: '✨ Logo che si accende', cosa: 'chiusura di 4–5 s: la scritta si accende d\'argento, poi linea, firma e invito', righe: ['nome o logo', 'firma (es. @itsblackden)', 'invito (es. Seguimi per altri prodotti.)'], esempio: 'BlackDen\n@itsblackden\nSeguimi per altri prodotti.' },
+  intro: { nome: '⚡ Intro in una lama di luce', cosa: 'apertura di 2 s: la scritta emerge e una lama di luce riempie lo schermo (il video parte dal bianco)', righe: ['nome o titolo'], esempio: 'BlackDen' },
+  codice: { nome: '💻 Dal codice al logo', cosa: '5,5 s: il codice si scrive, la parola vola al centro e diventa il logo', righe: ['nome o logo', 'firma (facoltativa)'], esempio: 'BlackDen\n@itsblackden' },
+  titolo: { nome: '🔤 Titolo animato', cosa: '4 s: titolo grande parola per parola (fino a 3 righe) e una riga sotto', righe: ['titolo', 'riga sotto (facoltativa)'], esempio: 'Ho testato il caricabatterie più piccolo del mondo\nSpoiler: non è quello che pensi' },
+};
+const MOTION_BLACKDEN = 'BlackDen\n@itsblackden\nSeguimi per altri prodotti.';
+// una riga per campo, nell'ordine del modello
+function testiMotion(modello: ModelloMotion, testo: string): TestiMotion {
+  const r = testo.split(/\n+/).map((x) => x.trim()).filter(Boolean);
+  const t: TestiMotion = { testo: (r[0] || 'BlackDen').slice(0, modello === 'titolo' ? 60 : 28) };
+  if (modello !== 'intro' && r[1]) t.sotto = r[1].slice(0, 40);
+  if (modello === 'luce' && r[2]) t.invito = r[2].slice(0, 48);
+  return t;
+}
+const SCHERMO_MOTION: Schermo = {
+  testo: ['✨ <b>Motion</b> · loghi e titoli animati, senza AI e senza crediti', LINEA,
+    ...Object.values(MODELLI_MOTION).map((m) => `${m.nome}\n<i>${m.cosa}</i>`),
+    LINEA, '<i>Scegli il modello, poi scrivi i testi. ⚡ = con i testi di BlackDen già pronti.</i>'].join('\n\n'),
+  tasti: [
+    [tasto('✨ Logo luce', 'mo:m:luce'), tasto('⚡ subito', 'mo:q:luce')],
+    [tasto('⚡ Intro', 'mo:m:intro'), tasto('⚡ subito', 'mo:q:intro')],
+    [tasto('💻 Dal codice', 'mo:m:codice'), tasto('⚡ subito', 'mo:q:codice')],
+    [tasto('🔤 Titolo animato', 'mo:m:titolo')],
+    [MENU_TASTO],
+  ],
+};
+function schermoTestiMotion(modello: ModelloMotion): Schermo {
+  const m = MODELLI_MOTION[modello];
+  return {
+    testo: `${m.nome}\n<i>${m.cosa}</i>\n\n✏️ Scrivimi i testi, <b>una riga per cosa</b>:\n${m.righe.map((r, i) => `${i + 1}. ${r}`).join('\n')}\n\nEsempio:\n<code>${esc(m.esempio)}</code>`,
+    tasti: [[tasto('◀ Motion', 'mo'), tasto('✖️ Annulla', 'annulla')]],
+  };
+}
+function schermoFormatoMotion(modello: ModelloMotion, t: TestiMotion): Schermo {
+  const righe = [`${MODELLI_MOTION[modello].nome}`, '', `🔤 <b>${esc(t.testo)}</b>`, ...(t.sotto ? [`✍️ ${esc(t.sotto)}`] : []), ...(t.invito ? [`👉 ${esc(t.invito)}`] : []), '',
+    'Che formato?', '<i>1080 basta per Reels e TikTok (3–6 min). 4K per YouTube (10–25 min).</i>'];
+  return {
+    testo: righe.join('\n'),
+    tasti: [
+      [tasto('📱 Verticale', `mo:f:${modello}:v:1080`), tasto('🖥 Orizzontale', `mo:f:${modello}:o:1080`)],
+      [tasto('📱 Verticale 4K', `mo:f:${modello}:v:4k`), tasto('🖥 Orizzontale 4K', `mo:f:${modello}:o:4k`)],
+      [tasto('✏️ Cambia testi', `mo:m:${modello}`), tasto('◀ Motion', 'mo')],
+    ],
+  };
+}
 const ORDINE: Passo[] = ['cartella', 'stile', 'riepilogo'];
 // primo passo dei video mandati in chat (la cartella è già il nome dato al bot)
 const PRIMO_TELEGRAM: Passo = 'stile';
@@ -1155,6 +1210,13 @@ async function onMessage(env: Env, msg: Msg): Promise<unknown> {
     const memo = attesa.runId ? await leggi<RunMemo | string>(env, `run:${attesa.runId}`) : undefined;
     return lancia(env, chat, { cartella: attesa.nome, origine: '98', correzione: text, brief: typeof memo === 'object' ? memo?.brief : undefined });
   }
+  if (attesa?.tipo === 'motion' && text) {
+    await togliTasti(env, chat, attesa.msg);
+    await mem(env).cancella(kAttesa(chat));
+    const testi = testiMotion(attesa.modello, text);
+    await mem(env).scrivi(kMotion(chat), { modello: attesa.modello, testi } satisfies SceltaMotion);
+    return invia(env, chat, schermoFormatoMotion(attesa.modello, testi));
+  }
   if (attesa?.tipo === 'nuovo' && A_TESTO.includes(attesa.passo) && text) return rispondiPasso(env, chat, attesa, text, undefined, true);
   if (await proponiCartella(env, chat, text)) return;
   return invia(env, chat, await pannello(env));
@@ -1170,7 +1232,7 @@ async function onVocale(env: Env, chat: string, msg: Msg, f: FileTg): Promise<un
   const testo = await trascriviVocale(fetch, env.GROQ_API_KEY!, env.TELEGRAM_BOT_TOKEN, msg.voice!.file_id!).catch(() => undefined);
   if (!testo) return onFile(env, chat, msg, f);
   const attesa = await leggi<Attesa>(env, kAttesa(chat));
-  if (attesa && (['commento', 'didascalia', 'correzione', 'nome_raccolta'].includes(attesa.tipo) || (attesa.tipo === 'nuovo' && A_TESTO.includes(attesa.passo)))) {
+  if (attesa && (['commento', 'didascalia', 'correzione', 'nome_raccolta', 'motion'].includes(attesa.tipo) || (attesa.tipo === 'nuovo' && A_TESTO.includes(attesa.passo)))) {
     return onMessage(env, { message_id: msg.message_id, chat: msg.chat, text: testo });
   }
   const imp = await impostazioni(env);
@@ -1321,6 +1383,34 @@ async function onCallback(env: Env, cb: Callback) {
 🚀 Partito. Trascrizione → regia → suoni → render.
 Ti mando il video qui quando è pronto; il file intero va in <b>02 · Fatti/${esc(nome)}</b>.`,
       tasti: [[link('📂 02 · Fatti', URL_98), MENU_TASTO]],
+    }, msgId);
+  }
+  // ✨ Motion (workflow motion.yml, 17/11): modello → testi scritti → formato → video in chat e su Drive
+  if (data === 'mo') { await avviso(); return mostra(env, chat, SCHERMO_MOTION, msgId); }
+  const mo = /^mo:(m|q|f):([a-z]+)(?::(v|o):(1080|4k))?$/.exec(data);
+  if (mo) {
+    if (mo[1] === 'm' || mo[1] === 'q') {
+      const modello = mo[2] as ModelloMotion;
+      if (!MODELLI_MOTION[modello]) { await avviso('Modello sconosciuto'); return mostra(env, chat, SCHERMO_MOTION, msgId); }
+      if (mo[1] === 'q') {   // ⚡ testi di BlackDen già pronti
+        const testi = testiMotion(modello, MOTION_BLACKDEN);
+        await mem(env).scrivi(kMotion(chat), { modello, testi } satisfies SceltaMotion);
+        await avviso();
+        return mostra(env, chat, schermoFormatoMotion(modello, testi), msgId);
+      }
+      await mem(env).scrivi(kAttesa(chat), { tipo: 'motion', modello, msg: msgId } satisfies Attesa);
+      await avviso();
+      return mostra(env, chat, schermoTestiMotion(modello), msgId);
+    }
+    const scelta = await leggi<SceltaMotion>(env, kMotion(chat));
+    if (!scelta) { await avviso('Riparti da ✨ Motion'); return mostra(env, chat, SCHERMO_MOTION, msgId); }
+    const formato = mo[3] === 'o' ? 'orizzontale' : 'verticale', qualita = mo[4] || '1080';
+    const r = await gh(env, '/actions/workflows/motion.yml/dispatches', { method: 'POST', body: JSON.stringify({ ref: 'main', inputs: { modello: scelta.modello, testi: JSON.stringify(scelta.testi), formato, qualita } }) });
+    if (r.status !== 204) { await avviso(); return mostra(env, chat, { testo: `⚠️ Non parte: GitHub ${r.status}\n<code>${esc(tronca(await r.text(), 300))}</code>`, tasti: [[tasto('◀ Motion', 'mo'), MENU_TASTO]] }, msgId); }
+    await avviso('Partito');
+    return mostra(env, chat, {
+      testo: `${MODELLI_MOTION[scelta.modello].nome} · ${formato} · ${qualita === '4k' ? '4K' : '1080'}\n\n🚀 Partito: ${qualita === '4k' ? '10–25' : '3–6'} minuti. Il video arriva qui; il file intero va in <b>02 · Fatti/Motion</b>.`,
+      tasti: [[tasto('✨ Un altro', 'mo'), link('📂 02 · Fatti', URL_98)], [MENU_TASTO]],
     }, msgId);
   }
   if (data === 'stili') { await avviso(); return mostra(env, chat, await schermoStili(env), msgId); }
@@ -1723,6 +1813,7 @@ type Info = {
   ai?: { chi: string; modello: string; input: number; output: number; usd?: number } | null; minuti?: number; correzione?: string; errore?: string;
   pubblica?: Pubblica; prova?: number; link?: string; esempi?: number; confronta?: boolean;
   documentario?: boolean; // giro di documentario.yml (motore Rotolo): sotto il video solo Drive e log
+  motion?: boolean; // ✨ Motion (motion.yml): didascalia corta, niente tagli né sorgenti
   scaletta?: string[]; avvisi?: string[];
 };
 type SceltaStile = { nome: string; stili: string[]; scelta?: string };
@@ -1737,6 +1828,7 @@ type Notify = {
 
 function didascalia(nome: string, info?: Info, testo = ''): string {
   if (!info || info.durata == null) return `✅ <b>${esc(nome)}</b>\n\n${esc(tronca(testo, 900))}`;
+  if (info.motion) return `✨ <b>${esc(nome)}</b>\n${esc(info.stile || 'Motion')}\n⏱ ${durataTesto(info.durata)}  ·  ⌛ ${info.minuti ?? '?'} min`;
   const versione = info.file ? info.file.replace(/\.mp4$/i, '').replace(`${nome} - `, '') : 'FINALE';
   const ai = info.ai ? `🧠 ${esc(info.ai.chi)} ${esc(info.ai.modello.replace(/^claude-/, '').replace(/-\d{8}$/, ''))} · ${kTok(info.ai.input + info.ai.output)} token${info.ai.usd != null ? ` (≈ $${info.ai.usd.toFixed(2)} API)` : ''}` : '';
   const righe = [

@@ -1,0 +1,47 @@
+<!doctype html><html lang="it"><head><meta charset="utf-8"><title>Motion · titolo</title>
+<style>@font-face{font-family:Inter;src:url("fonts/Inter-var.woff2");font-weight:100 900}
+html,body{margin:0;background:#000;height:100%}body{display:flex;align-items:center;justify-content:center}canvas{max-width:100vw;max-height:100vh;display:block}</style></head>
+<body><canvas id="c"></canvas><script src="params.js"></script><script src="motore.js"></script><script src="base.js"></script><script>
+// 🔤 Titolo animato: una linea di luce apre lo spazio, il titolo entra parola per parola (fino a 2 righe),
+// un riflesso lo attraversa, poi la riga sotto. Per copertine di capitolo, inizio video, frasi d'effetto.
+const M = MOTORE, B = BASE, P = B.P;
+const { cv, ctx, W, H, S } = M.tela(B.W, B.H), CX = B.CX, CY = B.CY;
+// ---- TEMPI ----
+const T = { linea: [0, 0.5], titolo: 0.35, passo: 0.09, durParola: 0.55, riflesso: [1.5, 2.1], sotto: 2.0, FINE: 4.0 };
+let RIGHE, FS, TXT, TG;
+function prepara() {
+  // il titolo va su 1, 2 o 3 righe: la divisione che permette il testo più grande (a parità quasi, meno righe)
+  const parole = P.testo.trim().split(/\s+/), max = B.oriz ? 150 : 132;
+  const prova = (righe) => { let fs = max; for (; fs > 44; fs -= 4) { ctx.font = `800 ${fs}px Inter`; if (righe.every((r) => ctx.measureText(r).width <= W * 0.86)) break; } return fs; };
+  const dividi = (n) => { const meta = parole.join(' ').length / n, righe = []; let cur = [];
+    for (const w of parole) {
+      if (cur.length && righe.length < n - 1 && [...cur, w].join(' ').length > meta * 1.1) { righe.push(cur.join(' ')); cur = []; }
+      cur.push(w);
+    }
+    if (cur.length) righe.push(cur.join(' ')); return righe; };
+  let migliore = null;
+  for (let n = 1; n <= Math.min(B.oriz ? 2 : 3, parole.length); n++) { const r = dividi(n), fs = prova(r); if (!migliore || fs > migliore[1] * 1.15) migliore = [r, fs]; }
+  [RIGHE, FS] = migliore;
+  TXT = B.livello(cv); TG = TXT.getContext('2d');
+}
+window.EVENTS = [{ name: 'linea', t: 0 }, { name: 'titolo', t: T.titolo }, { name: 'riflesso', t: T.riflesso[0] }, { name: 'sotto', t: T.sotto }];
+function render(t) {
+  if (!RIGHE) prepara();
+  ctx.filter = 'none'; ctx.globalAlpha = 1;
+  M.fondo(ctx, cv, { y: 0.42 });
+  M.spinta(ctx, cv, S, t, T.FINE, 0.05, CY / H);
+  const lh = FS * 1.08, top = CY - (RIGHE.length - 1) * lh / 2;
+  M.linea(ctx, S, CX, top - FS * 0.95, Math.min(W * 0.6, 520) * M.outExpo(M.prog(t, ...T.linea)), 0.9, 18);
+  TG.setTransform(1, 0, 0, 1, 0, 0); TG.clearRect(0, 0, TXT.width, TXT.height); TG.setTransform(ctx.getTransform());
+  let indice = 0;
+  RIGHE.forEach((r, i) => { const n = r.split(' ').length;
+    M.parole(TG, S, r, { font: `800 ${FS}px Inter`, colore: '#f2f2f4', x: CX, y: top + i * lh, t, da: T.titolo + indice * T.passo, passo: T.passo, durata: T.durParola, sale: 30, sfoca: 14 });
+    indice += n; });
+  const sk = M.inOut(M.prog(t, ...T.riflesso));
+  if (sk > 0 && sk < 1) { const x = M.lerp(-200, W + 200, sk); RIGHE.forEach((_, i) => B.riflesso(TG, x, top + i * lh, FS)); }
+  ctx.save(); ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.drawImage(TXT, 0, 0); ctx.restore();
+  if (P.sotto) M.parole(ctx, S, P.sotto, { font: `400 ${B.oriz ? 40 : 46}px Inter`, colore: '#a6a6ae', x: CX, y: top + (RIGHE.length - 1) * lh + FS * 0.45 + (B.oriz ? 60 : 72), t, da: T.sotto, passo: 0.07, durata: 0.5 });
+  M.grana(ctx, cv, t);
+}
+M.avvia(render, T.FINE, [document.fonts.load('800 100px Inter'), document.fonts.load('400 40px Inter')]);
+</script></body></html>

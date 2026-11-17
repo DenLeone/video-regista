@@ -1,0 +1,83 @@
+<!doctype html><html lang="it"><head><meta charset="utf-8"><title>Motion · codice</title>
+<style>@font-face{font-family:Corm;src:url("fonts/CormorantGaramond-600.woff2");font-weight:600}@font-face{font-family:Mono;src:url("fonts/JetBrainsMono-400.woff2")}@font-face{font-family:Inter;src:url("fonts/Inter-var.woff2");font-weight:100 900}
+html,body{margin:0;background:#000;height:100%}body{display:flex;align-items:center;justify-content:center}canvas{max-width:100vw;max-height:100vh;display:block}</style></head>
+<body><canvas id="c"></canvas><script src="params.js"></script><script src="motore.js"></script><script src="base.js"></script><script>
+// 💻 Dal codice al logo: il codice si scrive, la parola si stacca, vola al centro cambiando font e diventa il logo
+const M = MOTORE, B = BASE, P = B.P;
+const { cv, ctx, W, H, S } = M.tela(B.W, B.H), CX = B.CX, CY = B.CY;
+// ---- TEMPI ----
+const T = { scrivi: [0.1, 1.2], accendi: [1.2, 1.8], polvere: 1.8, volo: 1.8, passoVolo: 0.03, durVolo: 1.05,
+  argento: [2.9, 3.2], riflesso: [3.05, 3.6], bagliore: 3.6, linea: [3.7, 4.2], firma: [4.05, 4.6], FINE: 5.5 };
+window.EVENTS = [{ name: 'scrittura', t: 0.1 }, { name: 'accende', t: 1.2 }, { name: 'volo', t: 1.8 }, { name: 'atterra', t: 2.95 }, { name: 'riflesso', t: 3.05 }, { name: 'firma', t: 3.7 }];
+const K = '#c678dd', V = '#98c379', N = '#d19a66', F = '#61afef', G = '#7f848e', D = '#abb2bf';
+const pulito = (s) => s.replace(/['\\]/g, '');
+const CODICE = [
+  [[`// ${pulito(P.testo)} · logo animato`, G]],
+  [['const ', K], ['W', D], [' = ', D], [String(B.W), N], [', ', D], ['H', D], [' = ', D], [String(B.H), N], [';', D]],
+  [['const ', K], ['WORD', D], [' = ', D], ["'", V], [P.testo, V, 'W'], ["'", V], [';', D]],
+  [['const ', K], ['FS', D], [' = ', D], ['180', N], [';', D]],
+  [['', D]],
+  [['function ', K], ['render', F], ['(t) {', D]],
+  [['  sfondo', F], ['(t);', D]],
+  [['  linea', F], ['(CX, CY, ', D], ['560', N], [' * ', D], ['outExpo', F], ['(t));', D]],
+  [['  lettere', F], ['(WORD, t);', D]],
+  [['  riflesso', F], ['(t);', D]],
+  ...(P.sotto ? [[['  firma', F], [`('${pulito(P.sotto)}');`, V]]] : []),
+  [['}', D]],
+];
+let CH, LET, FS, SERIF, MS, LH, TXT, TG;
+function prepara() {
+  const lunga = Math.max(...CODICE.map((r) => r.reduce((a, [x]) => a + [...x].length, 0)));
+  ctx.font = '400 100px Mono'; const rapporto = ctx.measureText('M').width / 100;
+  MS = Math.min(B.oriz ? 34 : 42, Math.floor((W * (B.oriz ? 0.6 : 0.9)) / (lunga * rapporto))); LH = MS * 1.75;
+  ctx.font = `400 ${MS}px Mono`; const cw = ctx.measureText('M').width;
+  const x0 = Math.round((W - lunga * cw) / 2), y0 = Math.round(CY - (CODICE.length - 1) * LH / 2), fr = (v) => ((v % 1) + 1) % 1;
+  CH = []; const parola = [];
+  CODICE.forEach((riga, r) => { let col = 0; riga.forEach(([s, c, tag]) => { for (const ch of s) {
+    const o = { ch, c, tag, x: x0 + col * cw, y: y0 + r * LH, i: CH.length }; o.rx = fr(Math.sin(o.i * 12.9898) * 43758.5453); o.ry = fr(Math.sin(o.i * 78.233) * 12543.21) * 2 - 1;
+    if (tag) parola.push(o); CH.push(o); col++; } }); });
+  FS = B.adatta(ctx, P.testo, 'Corm'); SERIF = `600 ${FS}px Corm`; ctx.font = SERIF;
+  const tot = ctx.measureText(P.testo).width, xs = CX - tot / 2, lettere = [...P.testo];
+  LET = parola.map((o, i) => ({ ...o, tx: xs + ctx.measureText(lettere.slice(0, i).join('')).width })); LET.x0 = xs; LET.tot = tot;
+  T.passoVolo = Math.min(0.03, 0.3 / Math.max(1, LET.length));
+  TXT = B.livello(cv); TG = TXT.getContext('2d');
+}
+function render(t) {
+  if (!CH) prepara();
+  ctx.filter = 'none'; ctx.globalAlpha = 1;
+  const c = Math.round(22 + 6 * M.sine(M.prog(t, 1.8, 3.2)));
+  M.fondo(ctx, cv, { y: 0.42, centro: `rgb(${c},${c},27)` });
+  M.spinta(ctx, cv, S, t, T.FINE, 0.07, CY / H);
+  const n = Math.floor(CH.length * M.prog(t, ...T.scrivi)), spento = M.prog(t, ...T.accendi);
+  ctx.font = `400 ${MS}px Mono`; ctx.textBaseline = 'alphabetic';
+  for (const o of CH) {
+    if (o.i >= n || o.tag) continue;
+    const pk = M.prog(t, T.polvere + o.rx * 0.35, T.polvere + o.rx * 0.35 + 0.55); if (pk >= 1) continue;
+    const e = M.outCubic(pk);
+    ctx.save(); ctx.globalAlpha = (1 - 0.6 * spento) * (1 - pk); if (pk > 0) ctx.filter = `blur(${pk * 9 * S}px)`;
+    ctx.fillStyle = o.c; ctx.fillText(o.ch, o.x + (o.x - CX) * 0.25 * e + o.ry * 40 * e, o.y - 60 * e + (o.y - CY) * 0.15 * e); ctx.restore();
+  }
+  if (t < T.scrivi[1] + 0.35) { const u = CH[Math.min(n, CH.length - 1)]; if (t < T.scrivi[1] || Math.floor(t * 3.2) % 2 === 0) {
+    ctx.fillStyle = 'rgba(230,230,235,0.85)'; ctx.fillRect(u.x + (n >= CH.length ? MS * 0.6 : 0), u.y - MS * 0.8, 3, MS * 0.95); } }
+  TG.setTransform(1, 0, 0, 1, 0, 0); TG.clearRect(0, 0, TXT.width, TXT.height); TG.setTransform(ctx.getTransform()); TG.textBaseline = 'alphabetic';
+  const acc = M.sine(spento), arg = M.prog(t, ...T.argento), sx = M.lerp(LET.x0 - 260, LET.x0 + LET.tot + 260, M.inOut(M.prog(t, ...T.riflesso)));
+  LET.forEach((L, i) => {
+    if (L.i >= n) return;
+    const k = M.inOut(M.prog(t, T.volo + i * T.passoVolo, T.volo + i * T.passoVolo + T.durVolo));
+    const x = M.lerp(L.x, L.tx, k), y = M.lerp(L.y, CY, k) - 70 * Math.sin(Math.PI * k), s = M.lerp(MS, FS, k), m = M.sine(M.prog(k, 0.3, 0.7));
+    const lit = t < T.riflesso[0] ? 1 : 0.62 + 0.38 * M.clamp((sx - L.tx) / 160);
+    TG.save(); TG.filter = `blur(${Math.sin(Math.PI * k) * 2.5 * S}px)`; TG.shadowColor = 'rgba(255,255,255,0.9)'; TG.shadowBlur = acc * (1 - k) * 16 * S;
+    if (m < 1) { TG.globalAlpha = 1 - m; TG.font = `400 ${s}px Mono`; TG.fillStyle = acc > 0.5 ? '#fff' : V; TG.fillText(L.ch, x, y); }
+    if (m > 0) { TG.globalAlpha = m * (arg > 0 ? M.lerp(1, lit, arg) : 1); TG.font = `600 ${s}px Corm`; TG.fillStyle = arg > 0.5 ? B.argento(TG, y, s) : '#fff'; TG.fillText(L.ch, x, y); }
+    TG.restore();
+  });
+  const sk = M.prog(t, ...T.riflesso); if (sk > 0 && sk < 1) B.riflesso(TG, sx, CY, FS);
+  ctx.save(); ctx.setTransform(1, 0, 0, 1, 0, 0);
+  const gk = Math.exp(-Math.pow((t - T.bagliore) / 0.18, 2)); if (gk > 0.01) { ctx.save(); ctx.globalAlpha = 0.55 * gk; ctx.filter = `blur(${18 * S}px)`; ctx.drawImage(TXT, 0, 0); ctx.restore(); }
+  ctx.drawImage(TXT, 0, 0); ctx.restore();
+  M.linea(ctx, S, CX, CY + B.sottoY(FS), Math.min(380, LET.tot * 0.55) * M.outCubic(M.prog(t, ...T.linea)), 0.85, 8);
+  if (P.sotto) M.parole(ctx, S, P.sotto, { font: `400 ${B.oriz ? 30 : 34}px Inter`, colore: '#8d8d94', x: CX, y: CY + B.sottoY(FS) + 66, t, da: T.firma[0], durata: 0.55, spazio: P.sotto.length < 22 ? 10 : 2 });
+  M.grana(ctx, cv, t);
+}
+M.avvia(render, T.FINE, [document.fonts.load('600 100px Corm'), document.fonts.load('400 40px Mono'), document.fonts.load('400 34px Inter')]);
+</script></body></html>

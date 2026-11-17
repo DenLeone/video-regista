@@ -1,0 +1,60 @@
+<!doctype html><html lang="it"><head><meta charset="utf-8"><title>Motion · luce</title>
+<style>@font-face{font-family:Corm;src:url("fonts/CormorantGaramond-600.woff2");font-weight:600}@font-face{font-family:Inter;src:url("fonts/Inter-var.woff2");font-weight:100 900}
+html,body{margin:0;background:#000;height:100%}body{display:flex;align-items:center;justify-content:center}canvas{max-width:100vw;max-height:100vh;display:block}</style></head>
+<body><canvas id="c"></canvas><script src="params.js"></script><script src="motore.js"></script><script src="base.js"></script><script>
+// ✨ Logo che si accende (chiusura con firma e invito) · ⚡ intro che si apre in una lama di luce
+const M = MOTORE, B = BASE, P = B.P, INTRO = P.modello === 'intro';
+const { cv, ctx, W, H, S } = M.tela(B.W, B.H), CX = B.CX, CY = B.CY;
+// ---- TEMPI ----
+const T = { linea: [0, 0.6], sale: [0.6, 1.25], lettere: 0.6, passo: 0.07, durLettera: 0.55, riflesso: [1.55, 2.1], bagliore: 2.05,
+  sotto: [2.1, 2.7], firma: [2.7, 3.25], invito: 3.3, lama: [1.45, 2.0] };
+const FINE = INTRO ? 2.0 : (P.invito ? 5.0 : 4.2);
+let FS, SERIF, LET, TXT, TG;
+function prepara() {
+  FS = B.adatta(ctx, P.testo, 'Corm'); SERIF = `600 ${FS}px Corm`; ctx.font = SERIF;
+  const tot = ctx.measureText(P.testo).width, x0 = CX - tot / 2;
+  LET = [...P.testo].map((ch, i, a) => ({ ch, x: x0 + ctx.measureText(a.slice(0, i).join('')).width }));
+  LET.x0 = x0; LET.tot = tot; TXT = B.livello(cv); TG = TXT.getContext('2d');
+  T.passo = Math.min(0.07, 0.56 / Math.max(1, LET.length));   // nomi lunghi: le lettere entrano più fitte
+}
+window.EVENTS = [{ name: 'linea', t: 0 }, { name: 'lettere', t: T.lettere }, INTRO ? { name: 'lama', t: T.lama[0] } : { name: 'riflesso', t: T.riflesso[0] }];
+const lamaX = (k) => M.lerp(LET.x0 - 220, CX + 60, M.sine(k));
+function render(t) {
+  if (!LET) prepara();
+  ctx.filter = 'none'; ctx.globalAlpha = 1;
+  const su = 0.6 + 0.4 * M.sine(M.prog(t, 0, 1.6));
+  M.fondo(ctx, cv, { y: 0.40, centro: `rgb(${Math.round(26 * su)},${Math.round(26 * su)},${Math.round(31 * su)})` });
+  M.spinta(ctx, cv, S, t, FINE, 0.06, CY / H);
+  // linea di luce che nasce al centro, poi sale attraverso la scritta e si spegne
+  const up = M.sine(M.prog(t, ...T.sale));
+  M.linea(ctx, S, CX, M.lerp(CY - FS * 0.28, CY - FS * 0.95, up), 560 * (B.oriz ? 1.4 : 1) * M.outExpo(M.prog(t, ...T.linea)), 1 - up * up, 26);
+  // lettere: da sfocate a nitide, salendo; prima un po' spente, poi le accende il riflesso
+  TG.setTransform(1, 0, 0, 1, 0, 0); TG.clearRect(0, 0, TXT.width, TXT.height); TG.setTransform(ctx.getTransform()); TG.font = SERIF; TG.textBaseline = 'alphabetic';
+  const sk = M.inOut(M.prog(t, ...T.riflesso)), bx = INTRO ? lamaX(M.prog(t, ...T.lama)) : M.lerp(LET.x0 - 260, LET.x0 + LET.tot + 260, sk);
+  LET.forEach((L, i) => {
+    const k = M.outCubic(M.prog(t, T.lettere + i * T.passo, T.lettere + i * T.passo + T.durLettera)); if (k <= 0) return;
+    const lit = INTRO ? 1 : 0.62 + 0.38 * M.clamp((bx - L.x) / 160);
+    TG.save(); TG.globalAlpha = k * lit; TG.filter = `blur(${(1 - k) * 14 * S}px)`; TG.fillStyle = B.argento(TG, CY, FS); TG.fillText(L.ch, L.x, CY + (1 - k) * 26); TG.restore();
+  });
+  const passa = INTRO ? M.prog(t, ...T.lama) > 0 : sk > 0 && sk < 1; if (passa) B.riflesso(TG, bx, CY, FS);
+  ctx.save(); ctx.setTransform(1, 0, 0, 1, 0, 0);
+  const gk = INTRO ? 0 : Math.exp(-Math.pow((t - T.bagliore) / 0.18, 2));
+  if (gk > 0.01) { ctx.save(); ctx.globalAlpha = 0.55 * gk; ctx.filter = `blur(${18 * S}px)`; ctx.drawImage(TXT, 0, 0); ctx.restore(); }
+  ctx.drawImage(TXT, 0, 0); ctx.restore();
+  if (!INTRO) {
+    M.linea(ctx, S, CX, CY + B.sottoY(FS), Math.min(380, LET.tot * 0.55) * M.outCubic(M.prog(t, ...T.sotto)), 0.85, 8);
+    if (P.sotto) M.parole(ctx, S, P.sotto, { font: `400 ${B.oriz ? 30 : 34}px Inter`, colore: '#8d8d94', x: CX, y: CY + B.sottoY(FS) + 66, t, da: T.firma[0], passo: 0.06, durata: 0.5, spazio: P.sotto.length < 22 ? 10 : 2 });
+    if (P.invito) M.parole(ctx, S, P.invito, { font: `400 ${B.oriz ? 38 : 44}px Inter`, colore: '#d2d2d8', x: CX, y: B.oriz ? CY + B.sottoY(FS) + 200 : H * 0.70, t, da: T.invito, passo: 0.09, durata: 0.5 });
+  } else {
+    // la lama di luce si allarga fino a riempire lo schermo di bianco (il video parte da lì)
+    const k = M.prog(t, ...T.lama);
+    if (k > 0) { const e = Math.pow(M.prog(k, 0.35, 1), 2.4), x = lamaX(k), w = 300 + W * 3.4 * e, a = 0.12 + 0.88 * e;
+      ctx.save(); ctx.globalCompositeOperation = 'screen'; const gr = ctx.createLinearGradient(x - w / 2, 0, x + w / 2, 0);
+      [[0, 0], [0.2, 0.25], [0.35, 0.75], [0.5, 1], [0.65, 0.75], [0.8, 0.25], [1, 0]].forEach(([o, v]) => gr.addColorStop(o, `rgba(255,255,255,${v * a})`));
+      ctx.fillStyle = gr; ctx.fillRect(-W, -H, W * 3, H * 3); ctx.globalCompositeOperation = 'source-over';
+      ctx.globalAlpha = M.clamp((k - 0.8) / 0.2); ctx.fillStyle = '#fff'; ctx.fillRect(-W, -H, W * 3, H * 3); ctx.restore(); }
+  }
+  M.grana(ctx, cv, t);
+}
+M.avvia(render, FINE, [document.fonts.load('600 100px Corm'), document.fonts.load('400 34px Inter')]);
+</script></body></html>
