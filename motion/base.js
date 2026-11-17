@@ -5,7 +5,8 @@
   const oriz = P.formato === 'orizzontale';
   const W = oriz ? 1920 : 1080, H = oriz ? 1080 : 1920;
   const B = {
-    P, oriz, W, H, CX: W / 2, CY: H * (oriz ? 0.45 : 0.47),
+    // sopra un video (✨ Ultron) la grafica sta in alto, lontana dal viso e dai sottotitoli
+    P, oriz, W, H, CX: W / 2, CY: P.trasparente ? H * (oriz ? 0.24 : 0.2) : H * (oriz ? 0.45 : 0.47),
     // grandezza del testo: la più grande che entra nell'82% della larghezza (max 180/200)
     adatta(ctx, testo, famiglia, peso = 600, max = oriz ? 200 : 180, min = 56, quota = 0.82) {
       let fs = max;

@@ -8,7 +8,22 @@ import { spawn } from 'node:child_process';
 
 const CANDIDATI = ['/usr/bin/google-chrome', '/usr/bin/google-chrome-stable', '/usr/bin/chromium', '/usr/bin/chromium-browser',
   '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome', 'C:/Program Files/Google/Chrome/Application/chrome.exe'];
-const trovaChrome = () => [process.env.CHROME, ...CANDIDATI].find((p) => p && fs.existsSync(p));
+// anche il Chrome «senza finestra» che Remotion scarica per sé (nel contenitore del Regista c'è solo quello)
+function chromeDiRemotion() {
+  for (const base of [path.join(process.cwd(), 'node_modules', '.remotion'), '/opt/regista-npm/node_modules/.remotion']) {
+    if (!fs.existsSync(base)) continue;
+    const pila = [base];
+    while (pila.length) {
+      const d = pila.pop();
+      for (const e of fs.readdirSync(d, { withFileTypes: true })) {
+        const f = path.join(d, e.name);
+        if (e.isDirectory()) pila.push(f); else if (e.name === 'chrome-headless-shell') return f;
+      }
+    }
+  }
+  return null;
+}
+const trovaChrome = () => [process.env.CHROME, ...CANDIDATI].find((p) => p && fs.existsSync(p)) || chromeDiRemotion();
 const aspetta = (ms) => new Promise((r) => setTimeout(r, ms));
 
 // una pagina servita in locale (font e script si caricano come su un sito), una scheda di Chrome pilotata via DevTools

@@ -19,7 +19,15 @@
     return { cv, ctx: cv.getContext('2d'), W, H, S, q };
   };
   // fondo scuro con una sola luce morbida (posizione in frazioni dello schermo)
+  // sovrapposizione a un video (✨ Ultron): niente fondo né grana, solo un velo scuro morbido dietro la grafica
+  M.trasparente = () => Boolean(window.PARAMS && window.PARAMS.trasparente);
   M.fondo = (g, cv, { x = 0.5, y = 0.4, centro = '#1a1a1f', bordo = '#030304', forza = 1 } = {}) => {
+    if (M.trasparente()) {
+      g.setTransform(1, 0, 0, 1, 0, 0); g.clearRect(0, 0, cv.width, cv.height);
+      const cy = cv.height * (window.BASE ? window.BASE.CY / window.BASE.H : 0.2), r = g.createRadialGradient(cv.width / 2, cy, 0, cv.width / 2, cy, cv.width * 0.62);
+      r.addColorStop(0, 'rgba(0,0,0,0.42)'); r.addColorStop(0.6, 'rgba(0,0,0,0.18)'); r.addColorStop(1, 'rgba(0,0,0,0)');
+      g.fillStyle = r; g.fillRect(0, 0, cv.width, cv.height); return;
+    }
     const r = g.createRadialGradient(cv.width * x, cv.height * y, 0, cv.width * x, cv.height * y, cv.height * 0.62);
     r.addColorStop(0, centro); r.addColorStop(0.55 * forza, '#08080a'); r.addColorStop(1, bordo);
     g.setTransform(1, 0, 0, 1, 0, 0); g.fillStyle = r; g.fillRect(0, 0, cv.width, cv.height);
@@ -39,6 +47,7 @@
       const k = M.outCubic(M.prog(t, da + i * passo, da + i * passo + durata));
       if (k > 0) {
         g.save(); g.globalAlpha = k; g.filter = `blur(${(1 - k) * sfoca * S}px)`; g.fillStyle = colore;
+        if (M.trasparente()) { g.shadowColor = 'rgba(0,0,0,0.6)'; g.shadowBlur = 18 * S; }
         if (spazio) { let xx = cx; for (const ch of w) { g.fillText(ch, xx, y + (1 - k) * sale); xx += g.measureText(ch).width + spazio; } }
         else g.fillText(w, cx, y + (1 - k) * sale);
         g.restore();
@@ -56,6 +65,7 @@
   // grana leggera: toglie gli "scalini" sui fondi scuri dopo la compressione dei social
   let rumore = null;
   M.grana = (g, cv, t, forza = 0.035) => {
+    if (M.trasparente()) return;
     if (!rumore) { rumore = document.createElement('canvas'); rumore.width = rumore.height = 512; const n = rumore.getContext('2d'), d = n.createImageData(512, 512);
       for (let i = 0; i < d.data.length; i += 4) { const v = Math.random() * 255; d.data[i] = d.data[i + 1] = d.data[i + 2] = v; d.data[i + 3] = 255; } n.putImageData(d, 0, 0); }
     g.save(); g.setTransform(1, 0, 0, 1, 0, 0); g.globalAlpha = forza; g.globalCompositeOperation = 'overlay';

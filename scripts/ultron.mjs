@@ -1,0 +1,131 @@
+// ✨ Ultron (17/11): motion graphic automatiche sul parlato, sopra il video già montato dal Regista.
+// 1) trascrive il video montato (Groq, parola per parola);
+// 2) Gemini (chiave gratuita prima) sceglie 3–5 momenti dove una grafica alza il livello: il gancio, i numeri
+//    detti a voce, le frasi chiave, al massimo un momento «speciale» descritto a parole;
+// 3) le grafiche si fanno con i modelli di motion/ (affidabili) e, per lo speciale, con motion-ai (Gemini), tutte
+//    con lo sfondo TRASPARENTE e in alto (lontane dal viso e dai sottotitoli);
+// 4) ffmpeg le sovrappone sulle parole giuste, con una dissolvenza in uscita. Audio intatto.
+// Se qualcosa non va (niente chiavi, AI giù), il video resta com'era: Ultron non deve mai rompere un montaggio.
+// Repo pubblico: nel log solo conteggi e tempi, mai testi.
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+import { spawnSync } from 'node:child_process';
+import { renderMotion } from './motion.mjs';
+import { creaIdea, gemini } from './motion-ai.mjs';
+
+const log = (...a) => console.log('ultron:', ...a);
+const DURATE = { numero: 3.2, titolo: 3.8, idea: 3.6 };
+
+function esegui(cmd, args) {
+  const r = spawnSync(cmd, args, { encoding: 'utf8', maxBuffer: 1 << 26 });
+  if (r.status !== 0) throw new Error(`${cmd}: ${(r.stderr || '').slice(-400)}`);
+  return r.stdout;
+}
+const durataDi = (f) => Number(esegui('ffprobe', ['-v', 'error', '-show_entries', 'format=duration', '-of', 'csv=p=0', f]).trim()) || 0;
+const dimensioni = (f) => esegui('ffprobe', ['-v', 'error', '-select_streams', 'v:0', '-show_entries', 'stream=width,height', '-of', 'csv=p=0', f]).trim().split(',').map(Number);
+
+async function trascrivi(video, dir) {
+  const mp3 = path.join(dir, 'voce.mp3');
+  esegui('ffmpeg', ['-y', '-v', 'error', '-i', video, '-vn', '-ac', '1', '-ar', '16000', '-b:a', '48k', mp3]);
+  const form = new FormData();
+  form.append('file', new Blob([fs.readFileSync(mp3)]), 'voce.mp3');
+  form.append('model', 'whisper-large-v3');
+  form.append('language', 'it');
+  form.append('response_format', 'verbose_json');
+  form.append('timestamp_granularities[]', 'segment');
+  form.append('timestamp_granularities[]', 'word');
+  const r = await fetch(process.env.GROQ_URL || 'https://api.groq.com/openai/v1/audio/transcriptions', { method: 'POST', headers: { Authorization: `Bearer ${process.env.GROQ_API_KEY || ''}` }, body: form, signal: AbortSignal.timeout(180_000) });
+  if (!r.ok) throw new Error(`trascrizione: Groq ${r.status}`);
+  const j = await r.json();
+  return { frasi: (j.segments || []).map((g) => ({ a: +g.start.toFixed(2), b: +g.end.toFixed(2), t: String(g.text).trim() })),
+    parole: (j.words || []).map((w) => ({ w: String(w.word).trim(), a: +w.start.toFixed(2), b: +w.end.toFixed(2) })) };
+}
+
+export const PROMPT = (frasi, durata, brief) => `Sei il motion designer di un creator tech italiano (@itsblackden). Questo è il suo video verticale già montato
+(${durata.toFixed(1)} s), con i tempi delle frasi:
+${frasi.map((f) => `[${f.a}–${f.b}] ${f.t}`).join('\n')}
+${brief ? `\nIndicazioni: ${brief}\n` : ''}
+Scegli da 3 a 5 MOMENTI in cui una motion graphic sopra il video (in alto, sopra la testa) alza il livello dell'edit.
+Tipi:
+- "titolo": il GANCIO all'inizio (entro i primi 1,5 s) e le frasi chiave. "testo" = 2–6 parole forti prese da quello che dice (non riassunti inventati),
+  "sotto" = facoltativo, 2–5 parole.
+- "numero": SOLO quando dice un numero o un dato (prezzo, ore, percentuale, quantità). "testo" = il numero con l'unità come lo dice («40 ore», «29 €», «3 trucchi»),
+  "sotto" = cosa misura in 1–4 parole («di autonomia»).
+- "idea": AL MASSIMO UNA, sul momento più visivo: una piccola animazione che illustra quello di cui parla (un'icona che si trasforma, un processo, un confronto).
+  "prompt" = descrizione in italiano dell'animazione (oggetti, movimenti, colori), niente testo lungo dentro. Niente loghi di marchi.
+Regole: "at" = il secondo in cui inizia la parola giusta (dentro la sua frase). Almeno 5 s tra un momento e l'altro. Mai negli ultimi 2 s.
+Non inventare dati che non dice. Testi in italiano, maiuscola solo all'inizio.
+Rispondi SOLO con JSON: {"momenti":[{"at":0.4,"tipo":"titolo","testo":"…","sotto":"…"},{"at":7.2,"tipo":"numero","testo":"…","sotto":"…"},{"at":15.1,"tipo":"idea","prompt":"…"}]}`;
+
+// tiene i momenti sensati: tempi dentro il video, distanza minima, un solo «idea», testi corti
+export function pulisciMomenti(momenti, durata) {
+  const ok = [];
+  let idee = 0;
+  for (const m of [...(momenti || [])].filter((x) => x && Number.isFinite(+x.at)).sort((a, b) => a.at - b.at)) {
+    const tipo = ['titolo', 'numero', 'idea'].includes(m.tipo) ? m.tipo : null;
+    if (!tipo) continue;
+    const at = Math.max(0.2, +(+m.at).toFixed(2)), dur = DURATE[tipo];
+    if (at + dur > durata - 0.3) continue;
+    if (ok.length && at < ok[ok.length - 1].at + ok[ok.length - 1].dur + 0.3) continue;
+    if (tipo === 'idea') { if (idee++ || !String(m.prompt || '').trim()) continue; ok.push({ tipo, at, dur, prompt: String(m.prompt).slice(0, 600) }); continue; }
+    const testo = String(m.testo || '').replace(/\s+/g, ' ').trim();
+    if (!testo || (tipo === 'numero' && !/\d/.test(testo))) continue;
+    ok.push({ tipo, at, dur, testo: testo.slice(0, tipo === 'titolo' ? 50 : 20), sotto: String(m.sotto || '').replace(/\s+/g, ' ').trim().slice(0, 36) });
+  }
+  return ok.slice(0, 5);
+}
+
+// sovrappone le clip trasparenti: ognuna parte al suo «at» e sfuma negli ultimi 0,35 s
+export function filtroSovrapposizioni(momenti, w, h) {
+  const parti = [];
+  let prima = '0:v';
+  momenti.forEach((m, i) => {
+    const fine = +(m.at + m.dur).toFixed(2);
+    parti.push(`[${i + 1}:v]scale=${w}:${h},setpts=PTS-STARTPTS+${m.at}/TB,fade=t=in:st=${m.at}:d=0.12:alpha=1,fade=t=out:st=${(fine - 0.35).toFixed(2)}:d=0.35:alpha=1[o${i}]`);
+    parti.push(`[${prima}][o${i}]overlay=eof_action=pass:enable='between(t,${m.at},${fine})'[v${i}]`);
+    prima = `v${i}`;
+  });
+  return { filtro: parti.join(';'), uscita: `[${prima}]` };
+}
+
+export async function ultron({ video, uscita, brief = '' }) {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'ultron-'));
+  const t0 = Date.now();
+  try {
+    const durata = durataDi(video), [w, h] = dimensioni(video);
+    const formato = w > h ? 'orizzontale' : 'verticale';
+    const { frasi } = await trascrivi(video, dir);
+    if (!frasi.length) { log('nessun parlato: niente grafiche'); return null; }
+    const { testo } = await gemini([{ text: PROMPT(frasi, durata, brief) }], 'Rispondi solo con JSON valido.', true);
+    const momenti = pulisciMomenti(JSON.parse(testo.replace(/^```(?:json)?|```$/g, '')).momenti, durata);
+    log(`${momenti.length} momenti (${momenti.map((m) => m.tipo).join(', ')})`);
+    if (!momenti.length) return null;
+    const fatti = [];
+    for (const [i, m] of momenti.entries()) {
+      const clip = path.join(dir, `m${i}.mov`);
+      try {
+        if (m.tipo === 'idea') {
+          const idea = await creaIdea({ prompt: `${m.prompt} (durata ${m.dur} secondi)`, formato, trasparente: true, tentativi: 2, revisione: false });
+          await renderMotion({ modello: 'idea', formato, uscita: clip, html: idea.html, alfa: true });
+        } else {
+          await renderMotion({ modello: m.tipo, testi: { testo: m.testo, sotto: m.sotto }, formato, uscita: clip, alfa: true });
+        }
+        fatti.push({ ...m, clip });
+      } catch (e) { log(`momento ${i + 1} (${m.tipo}) saltato: ${e.message.slice(0, 120)}`); }
+    }
+    if (!fatti.length) return null;
+    const { filtro, uscita: v } = filtroSovrapposizioni(fatti, w, h);
+    const tmp = path.join(dir, 'ultron.mp4');
+    esegui('ffmpeg', ['-y', '-v', 'error', '-i', video, ...fatti.flatMap((m) => ['-i', m.clip]), '-filter_complex', filtro, '-map', v, '-map', '0:a?',
+      '-c:v', 'libx264', '-preset', 'medium', '-crf', '17', '-pix_fmt', 'yuv420p', '-c:a', 'copy', '-movflags', '+faststart', tmp]);
+    fs.copyFileSync(tmp, uscita || video);
+    log(`fatto: ${fatti.length} grafiche in ${Math.round((Date.now() - t0) / 1000)} s`);
+    return fatti.map(({ clip, ...m }) => m);
+  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+}
+
+if (import.meta.url === `file://${process.argv[1]}`) {
+  const [video, uscita] = process.argv.slice(2);
+  try { console.log(JSON.stringify(await ultron({ video, uscita, brief: process.env.BRIEF || '' }))); } catch (e) { console.error(`ultron: ${e.message}`); process.exit(1); }
+}

@@ -14,7 +14,7 @@ import { apri } from './motion-chrome.mjs';
 const MOTION = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'motion');
 const log = (...a) => console.log('motion-ai:', ...a);
 
-export const GUIDA = (formato) => {
+export const GUIDA = (formato, trasparente = false) => {
   const oriz = formato === 'orizzontale', W = oriz ? 1920 : 1080, H = oriz ? 1080 : 1920;
   return `You are a senior motion designer who animates in code. Write ONE JavaScript program that draws a short, premium
 motion graphic on an HTML canvas, frame by frame, as a pure function of time t (seconds).
@@ -47,7 +47,11 @@ RULES (they make it look expensive):
 - A cursor click: an arrow cursor moves in on a curve, small press (scale .9) with a ripple ring, then the reaction.
 - Keep the code under 260 lines, readable, comments in Italian.
 
-OUTPUT: only the JavaScript program inside one \`\`\`js code block. No HTML, no explanations.`;
+${trasparente ? `OVERLAY MODE (important): this graphic goes ON TOP of a video of a person talking. Keep the background fully transparent: never fill the
+whole canvas and never call M.fondo; start render(t) with ctx.setTransform(1,0,0,1,0,0); ctx.clearRect(0,0,cv.width,cv.height); then M.spinta(...).
+Keep every element inside the TOP 38% of the frame (y < H*0.38), horizontally centred, away from the face. Duration 3–4 s.
+Text and shapes need soft dark shadows (ctx.shadowColor='rgba(0,0,0,.6)') to read on any video. No M.grana.
+` : ''}OUTPUT: only the JavaScript program inside one \`\`\`js code block. No HTML, no explanations.`;
 };
 
 // la pagina intera: noi mettiamo font, canvas e attrezzi; il modello scrive solo lo script
@@ -79,13 +83,13 @@ function giri() {
   if (process.env.GEMINI_API_KEY) g.push([process.env.GEMINI_API_KEY, 'gemini-flash-lite-latest']);
   return g;
 }
-async function gemini(parti, sistema) {
+export async function gemini(parti, sistema, json = false) {
   const base = process.env.GEMINI_URL || 'https://generativelanguage.googleapis.com/v1beta';
   for (const [chiave, modello] of giri()) {
     try {
       const r = await fetch(`${base}/models/${modello}:generateContent`, {
         method: 'POST', headers: { 'content-type': 'application/json', 'x-goog-api-key': chiave }, signal: AbortSignal.timeout(240_000),
-        body: JSON.stringify({ systemInstruction: { parts: [{ text: sistema }] }, contents: [{ role: 'user', parts: parti }], generationConfig: { temperature: 0.6 } }),
+        body: JSON.stringify({ systemInstruction: { parts: [{ text: sistema }] }, contents: [{ role: 'user', parts: parti }], generationConfig: { temperature: 0.6, ...(json ? { responseMimeType: 'application/json' } : {}) } }),
       });
       const j = await r.json().catch(() => ({}));
       if (!r.ok) { log(`${modello}: HTTP ${r.status}`); continue; }
@@ -107,10 +111,10 @@ export function giudica(stat, durata) {
   if (mov < 0.6) return 'i fotogrammi sono tutti uguali: l\'animazione non si muove nel tempo';
   return null;
 }
-export async function prova(codice, formato) {
+export async function prova(codice, formato, trasparente = false) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'motion-idea-'));
   fs.cpSync(MOTION, dir, { recursive: true });
-  fs.writeFileSync(path.join(dir, 'params.js'), `window.PARAMS = ${JSON.stringify({ modello: 'idea', formato })};\n`);
+  fs.writeFileSync(path.join(dir, 'params.js'), `window.PARAMS = ${JSON.stringify({ modello: 'idea', formato, ...(trasparente ? { trasparente: true } : {}) })};\n`);
   fs.writeFileSync(path.join(dir, 'idea.html'), pagina(codice));
   let aperta;
   try {
@@ -140,8 +144,8 @@ function griglia(fotogrammi) {
   return b;
 }
 
-export async function creaIdea({ prompt, correzione = '', base = '', formato = 'verticale', tentativi = 3 }) {
-  const sistema = GUIDA(formato);
+export async function creaIdea({ prompt, correzione = '', base = '', formato = 'verticale', tentativi = 3, trasparente = false, revisione = true }) {
+  const sistema = GUIDA(formato, trasparente);
   const richiesta = base
     ? `Here is the current animation program:\n\`\`\`js\n${base}\n\`\`\`\nOriginal request (Italian): ${prompt}\nChange requested now (Italian): ${correzione}\nApply the change, keep everything else. Return the full program.`
     : `Request (Italian): ${prompt}`;
@@ -151,14 +155,14 @@ export async function creaIdea({ prompt, correzione = '', base = '', formato = '
     const { testo, modello } = await gemini(parti, sistema);
     let c;
     try { c = estraiCodice(testo); } catch (e) { log(`tentativo ${n + 1} (${modello}): ${e.message}`); parti = [{ text: `${richiesta}\n\nYour previous answer was not usable: ${e.message}. Answer again with only the js code block.` }]; continue; }
-    const p = await prova(c, formato);
+    const p = await prova(c, formato, trasparente);
     if (!p.errore) { codice = c; ultimo = p; log(`tentativo ${n + 1} (${modello}): ok, ${p.durata}s`); break; }
     log(`tentativo ${n + 1} (${modello}): da correggere`);
     parti = [{ text: `${richiesta}\n\nYour program:\n\`\`\`js\n${c}\n\`\`\`\nIt fails when tested in Chrome: ${p.errore}\nFix it and return the full program.` }];
   }
   if (!codice) throw new Error('l\'AI non è riuscita a scrivere un\'animazione che funzioni: prova a descriverla in modo più semplice');
   // revisione: Gemini guarda i fotogrammi e corregge (tengo la versione nuova solo se passa le prove)
-  const img = griglia(ultimo.fotogrammi);
+  const img = revisione ? griglia(ultimo.fotogrammi) : null;
   if (img) {
     try {
       const { testo } = await gemini([
@@ -166,7 +170,7 @@ export async function creaIdea({ prompt, correzione = '', base = '', formato = '
         { inline_data: { mime_type: 'image/jpeg', data: img } },
       ], sistema);
       if (!/^\s*OK\b/i.test(testo)) {
-        const c2 = estraiCodice(testo), p2 = await prova(c2, formato);
+        const c2 = estraiCodice(testo), p2 = await prova(c2, formato, trasparente);
         if (!p2.errore) { codice = c2; log('revisione: migliorata'); } else log('revisione scartata (non passa le prove)');
       } else log('revisione: ok');
     } catch (e) { log(`revisione saltata: ${e.message}`); }

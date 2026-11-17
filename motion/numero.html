@@ -1,0 +1,34 @@
+<!doctype html><html lang="it"><head><meta charset="utf-8"><title>Motion · numero</title>
+<style>@font-face{font-family:Inter;src:url("fonts/Inter-var.woff2");font-weight:100 900}
+html,body{margin:0;background:transparent;height:100%}body{display:flex;align-items:center;justify-content:center}canvas{max-width:100vw;max-height:100vh;display:block}</style></head>
+<body><canvas id="c"></canvas><script src="params.js"></script><script src="motore.js"></script><script src="base.js"></script><script>
+// 🔢 Numero: un dato detto a voce («40 ore», «3 trucchi», «2x più veloce») che sale contando, con una barra di luce
+// che si riempie e l'etichetta sotto. testo = il numero con l'unità («40 ore»), sotto = l'etichetta («di autonomia»)
+const M = MOTORE, B = BASE, P = B.P;
+const { cv, ctx, W, H, S } = M.tela(B.W, B.H), CX = B.CX, CY = B.CY;
+// ---- TEMPI ----
+const T = { entra: [0.05, 0.45], conta: [0.15, 1.15], barra: [0.3, 1.25], etichetta: 0.55, FINE: 3.2 };
+// «40 ore» → prefisso «», numero 40, suffisso « ore» (anche «2,5x», «-30%», «x2»)
+const m = /^(\D*?)(\d+(?:[.,]\d+)?)(.*)$/.exec(P.testo.trim()) || ['', '', '', P.testo];
+const PRE = m[1] || '', NUM = m[2] ? parseFloat(m[2].replace(',', '.')) : null, DEC = m[2] && /[.,]/.test(m[2]) ? m[2].split(/[.,]/)[1].length : 0, SUF = m[3] || '';
+let FS, LARG;
+function testoAl(k) { if (NUM == null) return P.testo; const v = (NUM * k).toFixed(DEC); return `${PRE}${DEC ? v.replace('.', ',') : v}${SUF}`; }
+function render(t) {
+  ctx.filter = 'none'; ctx.globalAlpha = 1;
+  if (!FS) { FS = B.adatta(ctx, P.testo + '0', 'Inter', 800, B.oriz ? 210 : 190, 60, 0.8); ctx.font = `800 ${FS}px Inter`; LARG = ctx.measureText(P.testo + '0').width; }
+  M.fondo(ctx, cv, { y: CY / H });
+  M.spinta(ctx, cv, S, t, T.FINE, 0.04, CY / H);
+  const e = M.outCubic(M.prog(t, ...T.entra)), k = M.outExpo(M.prog(t, ...T.conta));
+  ctx.save(); ctx.globalAlpha = e; ctx.font = `800 ${FS}px Inter`; ctx.textAlign = 'center'; ctx.textBaseline = 'alphabetic';
+  ctx.shadowColor = 'rgba(0,0,0,0.55)'; ctx.shadowBlur = 24 * S;
+  const y = CY + FS * 0.32 + (1 - e) * 30;
+  const gr = ctx.createLinearGradient(0, y - FS * 0.8, 0, y); gr.addColorStop(0, '#ffffff'); gr.addColorStop(1, '#c9c9d1');
+  ctx.fillStyle = gr; ctx.fillText(testoAl(k), CX, y); ctx.restore();
+  // barra di luce che si riempie sotto il numero
+  const bw = Math.min(LARG, W * 0.7), by = y + FS * 0.22, b = M.outCubic(M.prog(t, ...T.barra));
+  ctx.save(); ctx.globalAlpha = e * 0.35; ctx.fillStyle = '#ffffff'; ctx.fillRect(CX - bw / 2, by, bw, 6); ctx.restore();
+  M.linea(ctx, S, CX - bw / 2 + (bw * b) / 2, by + 3, bw * b, e, 16);
+  if (P.sotto) M.parole(ctx, S, P.sotto, { font: `600 ${B.oriz ? 46 : 52}px Inter`, colore: '#f2f2f4', x: CX, y: by + 90, t, da: T.etichetta, passo: 0.07, durata: 0.45 });
+}
+M.avvia(render, T.FINE, [document.fonts.load('800 100px Inter'), document.fonts.load('600 50px Inter')]);
+</script></body></html>

@@ -1688,6 +1688,9 @@ function validaPiano(p, solo = null) {
 const STILI = JSON.parse(fs.readFileSync(new URL('./stili-base.json', import.meta.url), 'utf8')).map((s) => s.nome);
 let stileCorrente = STILI[0];
 let stileSuMisura = null; // { nome, grafica, testoAI, avvisi }
+// ✨ Ultron: «Motion graphic: sì» nello stile o nel brief; motionFatte = quelle messe (per le note)
+export const vuoleMotion = (t) => /motion\s*graphics?\s*:\s*s[iì](?!\p{L})/iu.test(String(t || ''));
+let motionFatte = null;
 let LUT_STILE = null;     // LUT creativa dello stile su misura
 // look 12K (Look: teal e arancio): esposizione misurata pezzo per pezzo + lut/12k.cube + nitidezza
 let LOOK_12K = false;
@@ -3372,6 +3375,16 @@ async function main() {
       await pacchettoPronto;
       renderizza(outFile, stile);
     }
+    // ✨ Ultron (17/11): con «Motion graphic: sì» nello stile (o nel brief) le motion graphic si creano sul parlato
+    // del video montato e si sovrappongono sulle parole giuste. Se non riesce, il video resta com'era
+    if (!PROVA_SECONDI && vuoleMotion(`${stileSuMisura?.testoAI || ''}\n${brief || ''}`)) {
+      await fase(nome, '✨ Motion graphic sul parlato', 'render');
+      try {
+        const { ultron } = await import('./ultron.mjs');
+        const fatte = await ultron({ video: outFile, brief: briefPerAI(brief || '') });
+        if (fatte?.length) { motionFatte = fatte; log(`Ultron: ${fatte.length} motion graphic (${fatte.map((m) => m.tipo).join(', ')})`); }
+      } catch (e) { log('Ultron saltato, il video resta senza motion graphic:', e.message.slice(0, 200)); }
+    }
     await fase(nome, '📤 Carico su Drive', 'carico');
 
     const durataN = probe(outFile).durata;
@@ -3380,6 +3393,7 @@ async function main() {
       `${CORREZIONE ? `Correzione (“${CORREZIONE}”)` : 'Montato automaticamente'} il ${new Date().toLocaleString('it-IT', { timeZone: 'Europe/Rome' })} in ${trascorso()}`,
       `Durata: ${durata} s · ${stile === 'Blueprint' ? piano.tavola : `stile ${nomeStile}`} · ${piano.clips.length} tagli da ${camereUsate} sorgenti · voce: ${voci || 'audio delle clip'}`,
       `Parole chiave: ${piano.keywords.map((k) => `${k.word} @${k.at.toFixed(1)}s`).join(', ') || '—'}`,
+      motionFatte ? `Motion graphic (Ultron): ${motionFatte.map((m) => `${m.tipo} @${m.at.toFixed(1)}s`).join(', ')}` : '',
       piano.testo ? `Testo: ${piano.testo}` : '',
       piano.note ? `Note: ${piano.note}` : '',
       analisi.sorgenti.some((s) => s.stock && piano.clips.some((c) => c.sorgente === s.id)) ? `Repertorio: ${analisi.sorgenti.filter((s) => s.stock && piano.clips.some((c) => c.sorgente === s.id)).map((s) => s.crediti).filter(Boolean).join(', ') || 'libreria di Denis'}` : '',

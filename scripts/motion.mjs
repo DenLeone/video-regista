@@ -21,6 +21,7 @@ export const MODELLI = {
   intro: { pagina: 'luce.html', nome: '⚡ Intro in una lama di luce' },
   codice: { pagina: 'codice.html', nome: '💻 Dal codice al logo' },
   titolo: { pagina: 'titolo.html', nome: '🔤 Titolo animato' },
+  numero: { pagina: 'numero.html', nome: '🔢 Numero che sale' },
   idea: { pagina: 'idea.html', nome: '✍️ Idea tua (scritta dall\'AI)' },
 };
 
@@ -37,11 +38,12 @@ export function parametri({ modello, testi, formato }) {
   }
   const testo = riga(t?.testo, modello === 'titolo' ? 60 : 28);
   if (!testo) throw new Error('manca il testo');
-  return { modello, testo, sotto: riga(t?.sotto, 40), invito: modello === 'luce' ? riga(t?.invito, 48) : '', formato: formato === 'orizzontale' ? 'orizzontale' : 'verticale' };
+  return { modello, testo, sotto: riga(t?.sotto, 40), invito: modello === 'luce' ? riga(t?.invito, 48) : '', formato: formato === 'orizzontale' ? 'orizzontale' : 'verticale',
+    ...(t?.trasparente ? { trasparente: true } : {}) };
 }
 
-export async function renderMotion({ modello, testi, formato, qualita = '1080', uscita, fps = 30, html = null }) {
-  const p = html ? { modello, formato: formato === 'orizzontale' ? 'orizzontale' : 'verticale' } : parametri({ modello, testi, formato });
+export async function renderMotion({ modello, testi, formato, qualita = '1080', uscita, fps = 30, html = null, alfa = false }) {
+  const p = html ? { modello, formato: formato === 'orizzontale' ? 'orizzontale' : 'verticale', ...(alfa ? { trasparente: true } : {}) } : parametri({ modello, testi: alfa ? { ...(typeof testi === 'string' ? JSON.parse(testi) : testi), trasparente: true } : testi, formato });
   const scala = qualita === '4k' ? 2 : 1;
   // copia di lavoro dei modelli + i parametri di questo giro
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'motion-'));
@@ -53,11 +55,13 @@ export async function renderMotion({ modello, testi, formato, qualita = '1080', 
   try {
     const durata = await valuta('window.TOTAL'), n = Math.round(durata * fps);
     fs.mkdirSync(path.dirname(path.resolve(uscita)), { recursive: true });
-    const ff = spawn('ffmpeg', ['-y', '-loglevel', 'error', '-f', 'image2pipe', '-framerate', String(fps), '-c:v', 'mjpeg', '-i', '-',
-      '-c:v', 'libx264', '-preset', 'medium', '-crf', scala === 2 ? '16' : '17', '-pix_fmt', 'yuv420p', '-movflags', '+faststart', path.resolve(uscita)], { stdio: ['pipe', 'ignore', 'inherit'] });
+    const codifica = alfa ? ['-c:v', 'qtrle', '-pix_fmt', 'argb'] : ['-c:v', 'libx264', '-preset', 'medium', '-crf', scala === 2 ? '16' : '17', '-pix_fmt', 'yuv420p', '-movflags', '+faststart'];
+    const ff = spawn('ffmpeg', ['-y', '-loglevel', 'error', '-f', 'image2pipe', '-framerate', String(fps), '-c:v', alfa ? 'png' : 'mjpeg', '-i', '-',
+      ...codifica, path.resolve(uscita)], { stdio: ['pipe', 'ignore', 'inherit'] });
+    const tipo = alfa ? "'image/png'" : "'image/jpeg', 0.95";
     const fine = new Promise((ok, ko) => ff.on('close', (c) => (c === 0 ? ok() : ko(new Error('ffmpeg non ha creato il video')))));
     for (let f = 0; f < n; f++) {
-      const b64 = await valuta(`(async () => { await renderAt(${f / fps}); return document.getElementById('c').toDataURL('image/jpeg', 0.95).split(',')[1]; })()`);
+      const b64 = await valuta(`(async () => { await renderAt(${f / fps}); return document.getElementById('c').toDataURL(${tipo}).split(',')[1]; })()`);
       if (!ff.stdin.write(Buffer.from(b64, 'base64'))) await new Promise((ok) => ff.stdin.once('drain', ok));
       if (f % (fps * 2) === 0) console.log(`motion: ${f}/${n} fotogrammi`);
     }
