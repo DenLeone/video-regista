@@ -24,7 +24,7 @@
 
 ## 1. Chi è Denis e cosa vuole
 
-- Creator italiano: account Instagram **_black_den** / TikTok **.blackden** / pagina Facebook **BlackDen**. Contenuti: tech (recensioni), vlog di viaggio, politica, commenti ("Blackden").
+- Creator italiano: account Instagram e TikTok **@itsblackden** (dal 17/11; prima _black_den / .blackden) / pagina Facebook **BlackDen**. Contenuti: tech (recensioni), vlog di viaggio, politica, commenti ("Blackden").
 - Attrezzatura: Sony in studio, Insta360 ("la Ultra") in giro, iPhone. PC di casa Windows con **RTX 5070 Ti 16 GB** (Windows mostra 32 GB ma è memoria condivisa: la VRAM vera è 16).
 - Obiettivo: **montaggio automatico** dei suoi video. Due rami:
   - **A. Video corti 9:16** (Reels/TikTok/Shorts) → nel cloud: bot Telegram + GitHub Actions + Remotion. Funziona da mesi.

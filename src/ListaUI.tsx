@@ -131,7 +131,7 @@ const Griglia: React.FC<{ s: Schermata }> = ({ s }) => {
           <span>9:41</span><span>●●● ▮</span>
         </div>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 34px 20px' }}>
-          <span style={{ fontSize: 36, fontWeight: 800 }}>{s.titolo || '@_black_den'}</span>
+          <span style={{ fontSize: 36, fontWeight: 800 }}>{s.titolo || '@itsblackden'}</span>
           <span style={{ background: BLU, color: '#fff', fontSize: 26, fontWeight: 700, padding: '8px 22px', borderRadius: 10 }}>Segui</span>
         </div>
         <div style={{ transform: `translateY(${scroll}px)`, display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 4 }}>

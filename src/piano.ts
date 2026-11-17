@@ -119,7 +119,7 @@ export type GraficaStile = {
   pellicola?: { file: string; durata: number };  // 🛠️ bruciatura di pellicola sui tagli (video su fondo nero, fusione «scolora»)
   cornicePellicola?: { file: string; durata: number }; // 🛠️ cornice Super 8 sopra tutto il video (video su fondo bianco, fusione «moltiplica»)
   palette?: string[];                        // colori a giro delle parole grandi (sottotitoli a strati)
-  firma?: string;                            // logo Instagram e nome (es. @_black_den) fissi in basso a sinistra
+  firma?: string;                            // logo Instagram e nome (es. @itsblackden) fissi in basso a sinistra
   cornice?: 'scheda' | 'tv' | 'reazione' | 'laterale'; // inserti: scheda arrotondata, televisore anni '70, scheda in prospettiva dietro a Denis o piccola inclinata di lato (Ultra)
   suoni?: Record<string, string>;            // effetti sonori dello stile (asset/suoni): nome → file in public
   titoloProdotto?: boolean;                  // «Titolo prodotto: marca e modello» (src/Mattoni.tsx)
@@ -141,7 +141,7 @@ export type GraficaStile = {
   sfoca?: boolean;                           // con il risalto, anche lo sfondo sfocato
   rivela?: boolean;                          // inizio "prima e dopo": l'immagine piatta che si colora
   stacchi?: boolean;                         // ritmo veloce: la regia può cambiare inquadratura a metà frase
-  chiusura?: string;                         // chiusura con logo Instagram e questo nome (es. @_black_den)
+  chiusura?: string;                         // chiusura con logo Instagram e questo nome (es. @itsblackden)
   biancoNero: 'no' | 'uno' | 'momenti' | 'sempre'; // uno = un solo momento breve (Ultra)
   vignetta: number;                          // 0–1
   sfx: boolean;

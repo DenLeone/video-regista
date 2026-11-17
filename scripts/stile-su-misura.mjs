@@ -50,7 +50,7 @@ Vignettatura: 0               # sempre 0 (colori naturali)
 Inizio: normale               # sempre normale ("prima e dopo" disattivato: colori naturali)
 Tagli dentro le frasi: no     # sì = ritmo veloce: l'inquadratura può cambiare a metà frase, sulla parola che nomina la cosa
 Invito a commentare: no       # sì = finale «COMMENTA: PAROLA» + «CHE TI MANDO IL LINK» (la parola la sceglie l'AI)
-Chiusura: no                  # no | il tuo nome Instagram (es. @_black_den): finale scurito con logo e nome
+Chiusura: no                  # no | il tuo nome Instagram (es. @itsblackden): finale scurito con logo e nome
 Firma: no                     # no | il tuo nome Instagram: logo e nome fissi in basso a sinistra per tutto il video
 Transizioni: no               # no | fumo (nuvola che copre il taglio nei cambi di scena scelti dall'AI) | sfocata (scia sfocata veloce sul taglio) | pellicola (bruciatura di pellicola, lampo caldo arancione sul taglio: film burn / light leak)
 Cornice pellicola: no         # no | super 8 (bordo nero da pellicola Super 8 con i fori, fisso per tutto il video: look vintage/analogico)

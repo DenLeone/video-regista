@@ -73,7 +73,7 @@ export async function commentiNuovi(d: DepsSocial, ora = Date.now()): Promise<Co
 export async function proposte(d: DepsSocial, commenti: Commento[]): Promise<Record<string, { risposta: string; spam: boolean }>> {
   if (!commenti.length) return {};
   const prompt = [
-    'Sei Denis (.blackden), creator tech italiano: recensioni di gadget, affiliazione TikTok Shop/Amazon, debunking (DENbunking).',
+    'Sei Denis (@itsblackden), creator tech italiano: recensioni di gadget, affiliazione TikTok Shop/Amazon, debunking (DENbunking).',
     'Per ogni commento ai suoi Reel scrivi la risposta che darebbe lui: italiano parlato, breve (max 140 caratteri), cordiale e diretta, al massimo un emoji, mai servile. Se chiedono il link o il prezzo, rispondi che è in bio. Se non sai un dato tecnico non inventarlo: rispondi che lo verifichi o rimanda al video.',
     'spam = true per pubblicità, bot, truffe, insulti senza contenuto.',
     'Rispondi SOLO con JSON: {"<id>": {"risposta": "...", "spam": false}, ...}',
@@ -257,7 +257,7 @@ export async function reportSettimana(d: DepsSocial, ora = Date.now()): Promise<
     orari: fasce, concorrenti: rad.dati, commenti_settimana: commenti.slice(-120).map((c) => c.t),
   };
   const ai = await chiediAI(d, [
-    'Sei il social media manager di Denis (.blackden), creator tech italiano (recensioni hardware, affiliazione TikTok Shop/Amazon, debunking DENbunking).',
+    'Sei il social media manager di Denis (@itsblackden), creator tech italiano (recensioni hardware, affiliazione TikTok Shop/Amazon, debunking DENbunking).',
     'Scrivi il report della settimana per Telegram: italiano, diretto, niente preamboli, max 2000 caratteri, solo tag <b> e <i>. Sezioni:',
     '<b>La settimana</b> 2-3 punti con numeri veri (follower, video che hanno tirato, cosa si è fermato).',
     '<b>Instagram o TikTok</b> dove va meglio lo stesso video e un\'ipotesi concreta sul perché (gancio, durata, didascalia), se ci sono coppie.',

@@ -2181,7 +2181,7 @@ async function schermoTikTok(env: Env): Promise<Schermo> {
   return {
     testo: s.collegato
       ? `🎵 <b>TikTok collegato</b>\nIl bot rinnova l’accesso da solo fino al ${esc(scade)}. Ricollega solo se /social dà errore.`
-      : '🎵 <b>TikTok non collegato</b>\nApri il link, accedi con .blackden e autorizza (statistiche e caricamento delle bozze). Il link vale 15 minuti.',
+      : '🎵 <b>TikTok non collegato</b>\nApri il link, accedi con @itsblackden e autorizza (statistiche e caricamento delle bozze). Il link vale 15 minuti.',
     tasti: [[link(s.collegato ? '🔗 Ricollega' : '🔗 Collega TikTok', await linkLoginTikTok(d, origineBot()))], [MENU_TASTO]],
   };
 }

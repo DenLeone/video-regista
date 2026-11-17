@@ -156,7 +156,7 @@ const CONTENITORI = {
   Griglia: [
     [riquadro('Telefono', 110, 180, 860, 1560, 60, NERO), riquadro('Schermo', 124, 194, 832, 1532, 48, BIANCO),
       testo('Ora', '9:41', 190, 250, 30, { stile: 'Bold', allinea: 'sinistra' }),
-      testo('Utente', '@_black_den', 160, 330, 40, { stile: 'Bold', allinea: 'sinistra' }),
+      testo('Utente', '@itsblackden', 160, 330, 40, { stile: 'Bold', allinea: 'sinistra' }),
       riquadro('Segui', 770, 298, 150, 52, 10, BLU), testo('TestoSegui', 'Segui', 845, 333, 28, { colore: BIANCO, stile: 'Bold' }),
       ...griglia(124, 380, 3, 4, 274, 330, 5)],
     [['Utente', 'StyledText', 'Nome utente'], ['TestoSegui', 'StyledText', 'Pulsante'], ['Ora', 'StyledText', 'Ora']],

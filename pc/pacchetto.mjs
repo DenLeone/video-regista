@@ -29,7 +29,7 @@ const capitoliTesto = righe.length >= 3 ? righe.map((r) => `${mmss(r.t)} ${r.tes
 const riassunto = fs.existsSync(path.join(LAVORO, 'materiale.md')) ? fs.readFileSync(path.join(LAVORO, 'materiale.md'), 'utf8').slice(0, 40000) : '';
 const parlato = piano.sequenza.filter((e) => e.v).map((e) => `${e.da} … ${e.a}`).join('\n');
 log('chiedo all\'AI titoli, descrizione e tag…');
-const risposta = await chiediAI(`Sei il social media manager di Denis (.blackden), creator italiano su YouTube (tech, viaggi, politica).
+const risposta = await chiediAI(`Sei il social media manager di Denis (@itsblackden), creator italiano su YouTube (tech, viaggi, politica).
 Per il suo video "${nome}" (${mmss(info.totale)}) scrivi in italiano, tono suo (diretto, ironico, niente frasi da agenzia):
 - "titoli": 3 titoli YouTube diversi (max 70 caratteri, che facciano cliccare senza mentire)
 - "descrizione": 3-5 righe che raccontano il video e invogliano a guardarlo fino alla fine (niente capitoli: li aggiungo io)
