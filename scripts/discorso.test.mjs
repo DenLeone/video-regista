@@ -21,6 +21,17 @@ test('la durata chiesta nel brief si legge, i «primi 2 secondi» no', () => {
   assert.equal(durataChiesta(''), null);
 });
 
+// ⏱️ 17/11: «Mantieni i video sotto i 40 secondi» (Analista) non era una durata: video da 3–4 minuti
+test('il solo tetto («sotto i 40 secondi», «massimo 45 s») diventa una durata', () => {
+  assert.deepEqual(durataChiesta('- Mantieni i video sotto i 40 secondi per evitare cali drastici di attenzione.'), [28, 40]);
+  assert.deepEqual(durataChiesta('massimo 45 s'), [31, 45]);
+  assert.deepEqual(durataChiesta('non più di 60 secondi'), [42, 60]);
+  assert.equal(durataChiesta('mostra il gadget nei primi 2 secondi'), null);
+  assert.equal(durataChiesta('Taglia i respiri sotto i 2 secondi'), null);
+  // il taglio dell'AI a 42 s di un discorso da 233 s ora vale (prima: minimo 163 s, tornava tutto)
+  assert.ok(minimoDiscorso(233, [28, 40]) <= 42);
+});
+
 test('il minimo da tenere: 70% del discorso, o 3/4 della durata chiesta se il brief vuole un video più corto', () => {
   assert.equal(minimoDiscorso(156, [28, 45]), 21);
   assert.ok(Math.abs(minimoDiscorso(156, null) - 109.2) < 1e-9);

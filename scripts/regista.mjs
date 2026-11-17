@@ -269,6 +269,11 @@ export function durataChiesta(testo = '') {
   }
   const m = t.match(/(\d{1,2})\s*(?:-|–|—|e|a)\s*(\d{1,2})\s*minut[oi]\b/iu);
   if (m && Number(m[1]) >= 1 && Number(m[2]) >= Number(m[1]) && Number(m[2]) <= 10) return [Number(m[1]) * 60, Number(m[2]) * 60];
+  // solo il tetto (17/11, regola dell'Analista «Mantieni i video sotto i 40 secondi»): senza questa lettura il
+  // Regista non sapeva di dover accorciare, il taglio dell'AI a ~40 s finiva sotto la sicura del 70% e tornava
+  // tutto il parlato (Nano charger 239 s, Fantic 215 s, Smartwatch 184 s). Tetto N → da 70% di N a N
+  const max = t.match(/(?:sotto\s+(?:i|ai)|massimo|max|entro|non\s+più\s+di|meno\s+di|al\s+massimo)\s+(\d{2,3})\s*(?:secondi|sec|s)\b/iu);
+  if (max && Number(max[1]) >= 15 && Number(max[1]) <= 600) return [Math.max(15, Math.round(Number(max[1]) * 0.7)), Number(max[1])];
   return null;
 }
 let DURATA_BRIEF = null;
