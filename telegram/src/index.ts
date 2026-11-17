@@ -429,7 +429,7 @@ async function pannello(env: Env): Promise<Schermo> {
     tasti: [
       [tasto('🆕 Nuovo montaggio', 'nuovo'), tasto('📦 Più video', 'lotto')],
       [tasto('📼 Ultimi video', 'video'), tasto('🎨 Stili', 'stili')],
-      [tasto('🎞 Documentario', 'doc'), tasto('✨ Motion', 'mo')],
+      [tasto('🎞 Documentario', 'doc')],
       [tasto('📊 Stato', 'stato'), tasto('⚙️ Impostazioni', 'imp')],
       [link('📂 01 · Da editare', URL_97), link('✅ 02 · Fatti', URL_98)],
       [tasto('❓ Guida', 'guida')],

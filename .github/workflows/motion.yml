@@ -21,9 +21,14 @@ on:
         description: '1080 | 4k'
         required: false
         default: '1080'
+      risposta:
+        description: 'indirizzo del bot della Squadra (testi «sq:<codice>»): testi e video passano da lì, con il tesserino OIDC di GitHub'
+        required: false
+        default: ''
 
 permissions:
   contents: read
+  id-token: write # tesserino OIDC: il bot della Squadra verifica che il giro arriva da qui, senza segreti condivisi
 
 env:
   DIR_MOTION: '02 · Fatti/Motion'
@@ -53,12 +58,16 @@ jobs:
       - name: Testi
         env:
           INGRESSO: ${{ inputs.testi }}
+          RISPOSTA: ${{ inputs.risposta }}
           NOTIFY_URL: ${{ secrets.NOTIFY_URL }}
           NOTIFY_TOKEN: ${{ secrets.NOTIFY_TOKEN }}
         run: |
           f="$RUNNER_TEMP/testi.json"
           case "$INGRESSO" in
             id:*) curl -fsS "${NOTIFY_URL%/notify}/motion-testi?id=${INGRESSO#id:}" -H "x-regista-token: $NOTIFY_TOKEN" -o "$f" ;;
+            sq:*) tess=$(curl -fsS -H "Authorization: bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" "$ACTIONS_ID_TOKEN_REQUEST_URL&audience=den-squadra" | jq -r .value)
+                  echo "::add-mask::$tess"
+                  curl -fsS "$RISPOSTA/motion-testi?id=${INGRESSO#sq:}" -H "Authorization: Bearer $tess" -o "$f" ;;
             *) printf '%s' "$INGRESSO" > "$f" ;;
           esac
           jq -r '.testo, .sotto, .invito, .correzione | strings' "$f" | while IFS= read -r v; do [ -n "$v" ] && echo "::add-mask::$v"; done
@@ -79,6 +88,7 @@ jobs:
         env:
           MODELLO: ${{ inputs.modello }}
           INGRESSO: ${{ inputs.testi }}
+          RISPOSTA: ${{ inputs.risposta }}
           FORMATO: ${{ inputs.formato }}
           QUALITA: ${{ inputs.qualita }}
           DURATA: ${{ steps.render.outputs.durata }}
@@ -94,8 +104,22 @@ jobs:
           [ -f out/motion/motion.html ] && rclone copyto out/motion/motion.html "gdrive:$DIR_MOTION/${finale%.mp4}.html"
           id=$(rclone lsjson "gdrive:$DIR_MOTION/$finale" | jq -r '.[0].ID // empty')
           echo "su Drive: $(du -h out/motion/motion.mp4 | cut -f1)"
-          [ -n "$NOTIFY_URL" ] || exit 0
           video=out/motion/motion.mp4
+          # 👥 lanciato dalla Squadra: video e codice tornano al suo bot (con il tesserino OIDC)
+          case "$INGRESSO" in sq:*)
+            tess=$(curl -fsS -H "Authorization: bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" "$ACTIONS_ID_TOKEN_REQUEST_URL&audience=den-squadra" | jq -r .value)
+            echo "::add-mask::$tess"
+            q="id=${INGRESSO#sq:}"
+            [ -f out/motion/motion.js ] && curl -s -X POST "$RISPOSTA/motion-pagina?$q" -H "Authorization: Bearer $tess" --data-binary @out/motion/motion.js -o /dev/null -w "codice alla Squadra: %{http_code}\n"
+            if [ "$(stat -c %s "$video")" -gt 45000000 ]; then
+              ffmpeg -v error -y -i "$video" -vf "scale='if(gt(iw,ih),1920,1080)':-2" -c:v libx264 -preset veryfast -crf 21 -movflags +faststart out/motion/chat.mp4 && video=out/motion/chat.mp4
+            fi
+            link=""; [ -n "$id" ] && link="https://drive.google.com/file/d/$id/view"
+            curl -s -X POST "$RISPOSTA/motion-video?$q" -H "Authorization: Bearer $tess" -F "durata=${DURATA:-0}" -F "minuti=${MINUTI:-0}" \
+              -F "link=$link" -F "log=$RUN_URL" -F "video=@$video;type=video/mp4" -o /dev/null -w "video alla Squadra: %{http_code}\n"
+            exit 0 ;;
+          esac
+          [ -n "$NOTIFY_URL" ] || exit 0
           # in chat va un'anteprima leggera se il file è grande (il 4K intero resta su Drive)
           if [ "$(stat -c %s "$video")" -gt 40000000 ] || [ "$QUALITA" = "4k" ]; then
             ffmpeg -v error -y -i "$video" -vf "scale='if(gt(iw,ih),1920,1080)':-2" -c:v libx264 -preset veryfast -crf 20 -movflags +faststart out/motion/chat.mp4 && video=out/motion/chat.mp4
@@ -117,10 +141,19 @@ jobs:
         if: failure()
         env:
           MODELLO: ${{ inputs.modello }}
+          INGRESSO: ${{ inputs.testi }}
+          RISPOSTA: ${{ inputs.risposta }}
           NOTIFY_URL: ${{ secrets.NOTIFY_URL }}
           NOTIFY_TOKEN: ${{ secrets.NOTIFY_TOKEN }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: |
+          case "$INGRESSO" in sq:*)
+            tess=$(curl -fsS -H "Authorization: bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" "$ACTIONS_ID_TOKEN_REQUEST_URL&audience=den-squadra" | jq -r .value)
+            echo "::add-mask::$tess"
+            curl -s -X POST "$RISPOSTA/motion-video?id=${INGRESSO#sq:}" -H "Authorization: Bearer $tess" -F "log=$RUN_URL" \
+              -F "errore=Si è fermato. Con ✍️ Descrivi tu succede se l'AI non riesce a scrivere un'animazione che funzioni: riprova descrivendola più semplice." -o /dev/null || true
+            exit 0 ;;
+          esac
           [ -n "$NOTIFY_URL" ] || exit 0
           jq -n --arg n "Motion · $MODELLO" --arg u "$RUN_URL" \
             '{tipo:"esito", esito:"⚠️ motion non finito", nome:$n, ok:false, run_url:$u, testo:"Si è fermato. Con ✍️ Descrivi tu succede se l\u0027AI non riesce a scrivere un\u0027animazione che funzioni: riprova descrivendola più semplice.", info:{documentario:true}}' \
