@@ -690,23 +690,28 @@ type Attesa =
   // schermata da ridisegnare quando arriva l'elenco aggiornato dal workflow (stili, secret YouTube)
   | { tipo: 'schermo'; quale: 'stili' | 'collegamenti'; runId?: string; msg?: number };
 // ✨ Motion: aspetto i testi per il modello scelto (righe: testo, sotto, invito)
-type AttesaMotion = { tipo: 'motion'; modello: ModelloMotion; msg?: number };
+type AttesaMotion = { tipo: 'motion'; modello: ModelloMotion; msg?: number; correggi?: boolean };
 const kAttesa = (chat: string) => `attesa:${chat}`;
 
 // ---------- ✨ Motion (motion.yml + scripts/motion.mjs) ----------
-type ModelloMotion = 'luce' | 'intro' | 'codice' | 'titolo';
-type TestiMotion = { testo: string; sotto?: string; invito?: string };
+type ModelloMotion = 'luce' | 'intro' | 'codice' | 'titolo' | 'idea';
+type TestiMotion = { testo: string; sotto?: string; invito?: string; correzione?: string; base?: string };
+// ✍️ ultima animazione scritta dall'AI per questa chat: serve a ✏️ Correggi
+type UltimaIdea = { prompt: string; codice?: string; formato?: string };
+const kUltimaIdea = (chat: string) => `motion-ultima:${chat}`;
 type SceltaMotion = { modello: ModelloMotion; testi: TestiMotion };
 const kMotion = (chat: string) => `motion:${chat}`;
 const MODELLI_MOTION: Record<ModelloMotion, { nome: string; cosa: string; righe: string[]; esempio: string }> = {
   luce: { nome: '✨ Logo che si accende', cosa: 'chiusura di 4–5 s: la scritta si accende d\'argento, poi linea, firma e invito', righe: ['nome o logo', 'firma (es. @itsblackden)', 'invito (es. Seguimi per altri prodotti.)'], esempio: 'BlackDen\n@itsblackden\nSeguimi per altri prodotti.' },
   intro: { nome: '⚡ Intro in una lama di luce', cosa: 'apertura di 2 s: la scritta emerge e una lama di luce riempie lo schermo (il video parte dal bianco)', righe: ['nome o titolo'], esempio: 'BlackDen' },
   codice: { nome: '💻 Dal codice al logo', cosa: '5,5 s: il codice si scrive, la parola vola al centro e diventa il logo', righe: ['nome o logo', 'firma (facoltativa)'], esempio: 'BlackDen\n@itsblackden' },
+  idea: { nome: '✍️ Descrivi tu', cosa: 'scrivi (o detta) l\'animazione che vuoi: l\'AI gratis la scrive in codice, la prova, controlla i fotogrammi e la renderizza (5–10 min)', righe: ['la tua idea, con tutti i dettagli: sfondo, oggetti, movimenti, testi, atmosfera'], esempio: 'Sfondo verde fluo con linee bianche tenui e sfocate. Al centro una cartella in vetro liquido con inciso un logo musicale. Un cursore ci clicca sopra e ne escono tre album che si mettono in fila, con un alone di luce, e continuano a ondeggiare piano.' },
   titolo: { nome: '🔤 Titolo animato', cosa: '4 s: titolo grande parola per parola (fino a 3 righe) e una riga sotto', righe: ['titolo', 'riga sotto (facoltativa)'], esempio: 'Ho testato il caricabatterie più piccolo del mondo\nSpoiler: non è quello che pensi' },
 };
 const MOTION_BLACKDEN = 'BlackDen\n@itsblackden\nSeguimi per altri prodotti.';
 // una riga per campo, nell'ordine del modello
 function testiMotion(modello: ModelloMotion, testo: string): TestiMotion {
+  if (modello === 'idea') return { testo: testo.trim().slice(0, 1500) || 'Logo BlackDen che si accende' };
   const r = testo.split(/\n+/).map((x) => x.trim()).filter(Boolean);
   const t: TestiMotion = { testo: (r[0] || 'BlackDen').slice(0, modello === 'titolo' ? 60 : 28) };
   if (modello !== 'intro' && r[1]) t.sotto = r[1].slice(0, 40);
@@ -716,12 +721,13 @@ function testiMotion(modello: ModelloMotion, testo: string): TestiMotion {
 const SCHERMO_MOTION: Schermo = {
   testo: ['✨ <b>Motion</b> · loghi e titoli animati, senza AI e senza crediti', LINEA,
     ...Object.values(MODELLI_MOTION).map((m) => `${m.nome}\n<i>${m.cosa}</i>`),
-    LINEA, '<i>Scegli il modello, poi scrivi i testi. ⚡ = con i testi di BlackDen già pronti.</i>'].join('\n\n'),
+    LINEA, '<i>Scegli il modello, poi scrivi i testi. ⚡ = con i testi di BlackDen già pronti. ✍️ = un\'animazione nuova dalla tua descrizione.</i>'].join('\n\n'),
   tasti: [
     [tasto('✨ Logo luce', 'mo:m:luce'), tasto('⚡ subito', 'mo:q:luce')],
     [tasto('⚡ Intro', 'mo:m:intro'), tasto('⚡ subito', 'mo:q:intro')],
     [tasto('💻 Dal codice', 'mo:m:codice'), tasto('⚡ subito', 'mo:q:codice')],
     [tasto('🔤 Titolo animato', 'mo:m:titolo')],
+    [tasto('✍️ Descrivi tu (AI gratis)', 'mo:m:idea')],
     [MENU_TASTO],
   ],
 };
@@ -733,6 +739,11 @@ function schermoTestiMotion(modello: ModelloMotion): Schermo {
   };
 }
 function schermoFormatoMotion(modello: ModelloMotion, t: TestiMotion): Schermo {
+  if (modello === 'idea') return {
+    testo: [`${MODELLI_MOTION.idea.nome}`, '', `💡 <i>${esc(tronca(t.testo, 600))}</i>`, ...(t.correzione ? [`✏️ <b>${esc(t.correzione)}</b>`] : []), '',
+      'Che formato?', '<i>L\'AI la scrive, la prova e la controlla da sola: 5–10 minuti. Poi puoi ✏️ correggerla.</i>'].join('\n'),
+    tasti: [[tasto('📱 Verticale', `mo:f:idea:v:1080`), tasto('🖥 Orizzontale', `mo:f:idea:o:1080`)], [tasto('◀ Motion', 'mo')]],
+  };
   const righe = [`${MODELLI_MOTION[modello].nome}`, '', `🔤 <b>${esc(t.testo)}</b>`, ...(t.sotto ? [`✍️ ${esc(t.sotto)}`] : []), ...(t.invito ? [`👉 ${esc(t.invito)}`] : []), '',
     'Che formato?', '<i>1080 basta per Reels e TikTok (3–6 min). 4K per YouTube (10–25 min).</i>'];
   return {
@@ -1213,7 +1224,11 @@ async function onMessage(env: Env, msg: Msg): Promise<unknown> {
   if (attesa?.tipo === 'motion' && text) {
     await togliTasti(env, chat, attesa.msg);
     await mem(env).cancella(kAttesa(chat));
-    const testi = testiMotion(attesa.modello, text);
+    let testi = testiMotion(attesa.modello, text);
+    if (attesa.correggi) {
+      const u = await leggi<UltimaIdea>(env, kUltimaIdea(chat));
+      if (u) testi = { testo: u.prompt, correzione: text.trim().slice(0, 600), base: u.codice };
+    }
     await mem(env).scrivi(kMotion(chat), { modello: attesa.modello, testi } satisfies SceltaMotion);
     return invia(env, chat, schermoFormatoMotion(attesa.modello, testi));
   }
@@ -1387,8 +1402,15 @@ Ti mando il video qui quando è pronto; il file intero va in <b>02 · Fatti/${es
   }
   // ✨ Motion (workflow motion.yml, 17/11): modello → testi scritti → formato → video in chat e su Drive
   if (data === 'mo') { await avviso(); return mostra(env, chat, SCHERMO_MOTION, msgId); }
-  const mo = /^mo:(m|q|f):([a-z]+)(?::(v|o):(1080|4k))?$/.exec(data);
+  const mo = /^mo:(m|q|f|c):([a-z]+)(?::(v|o):(1080|4k))?$/.exec(data);
   if (mo) {
+    if (mo[1] === 'c') {   // ✏️ correggi l'ultima animazione scritta dall'AI
+      const u = await leggi<UltimaIdea>(env, kUltimaIdea(chat));
+      if (!u?.codice) { await avviso('Non trovo l\'ultima animazione'); return mostra(env, chat, SCHERMO_MOTION, msgId); }
+      await mem(env).scrivi(kAttesa(chat), { tipo: 'motion', modello: 'idea', msg: msgId, correggi: true } satisfies Attesa);
+      await avviso();
+      return invia(env, chat, { testo: `✏️ <b>Cosa cambio?</b>\n<i>${esc(tronca(u.prompt, 300))}</i>\n\nScrivi o detta la correzione (es. «più lento», «album più grandi», «sfondo più scuro»).`, tasti: [[tasto('✖️ Annulla', 'annulla')]] });
+    }
     if (mo[1] === 'm' || mo[1] === 'q') {
       const modello = mo[2] as ModelloMotion;
       if (!MODELLI_MOTION[modello]) { await avviso('Modello sconosciuto'); return mostra(env, chat, SCHERMO_MOTION, msgId); }
@@ -1408,11 +1430,12 @@ Ti mando il video qui quando è pronto; il file intero va in <b>02 · Fatti/${es
     // i testi restano nel bot: il workflow (repo pubblico) riceve solo un codice e li chiede a /motion-testi, nascosti dal log
     const codice = crypto.randomUUID().slice(0, 12);
     await mem(env).scrivi(`motion-testi:${codice}`, { testi: scelta.testi, quando: Date.now() });
+    if (scelta.modello === 'idea') await mem(env).scrivi(`motion-lavoro:${codice}`, { chat, prompt: scelta.testi.testo, formato, quando: Date.now() });
     const r = await gh(env, '/actions/workflows/motion.yml/dispatches', { method: 'POST', body: JSON.stringify({ ref: 'main', inputs: { modello: scelta.modello, testi: `id:${codice}`, formato, qualita } }) });
     if (r.status !== 204) { await avviso(); return mostra(env, chat, { testo: `⚠️ Non parte: GitHub ${r.status}\n<code>${esc(tronca(await r.text(), 300))}</code>`, tasti: [[tasto('◀ Motion', 'mo'), MENU_TASTO]] }, msgId); }
     await avviso('Partito');
     return mostra(env, chat, {
-      testo: `${MODELLI_MOTION[scelta.modello].nome} · ${formato} · ${qualita === '4k' ? '4K' : '1080'}\n\n🚀 Partito: ${qualita === '4k' ? '10–25' : '3–6'} minuti. Il video arriva qui; il file intero va in <b>02 · Fatti/Motion</b>.`,
+      testo: `${MODELLI_MOTION[scelta.modello].nome} · ${formato} · ${qualita === '4k' ? '4K' : '1080'}\n\n🚀 Partito: ${scelta.modello === 'idea' ? '5–10 minuti (l\'AI scrive, prova, controlla e renderizza)' : `${qualita === '4k' ? '10–25' : '3–6'} minuti`}. Il video arriva qui; il file intero va in <b>02 · Fatti/Motion</b>.`,
       tasti: [[tasto('✨ Un altro', 'mo'), link('📂 02 · Fatti', URL_98)], [MENU_TASTO]],
     }, msgId);
   }
@@ -1817,6 +1840,7 @@ type Info = {
   pubblica?: Pubblica; prova?: number; link?: string; esempi?: number; confronta?: boolean;
   documentario?: boolean; // giro di documentario.yml (motore Rotolo): sotto il video solo Drive e log
   motion?: boolean; // ✨ Motion (motion.yml): didascalia corta, niente tagli né sorgenti
+  idea?: boolean; // ✍️ animazione scritta dall'AI: sotto il video ✏️ Correggi
   scaletta?: string[]; avvisi?: string[];
 };
 type SceltaStile = { nome: string; stili: string[]; scelta?: string };
@@ -1850,8 +1874,9 @@ function didascalia(nome: string, info?: Info, testo = ''): string {
 }
 
 // tasti sotto il video: render di prova → video intero o altro stile; video vero → tutto il resto
-function tastiRisultato(runId?: string, runUrl?: string, info?: Pick<Info, 'prova' | 'stile' | 'link' | 'documentario'>): Kb {
+function tastiRisultato(runId?: string, runUrl?: string, info?: Pick<Info, 'prova' | 'stile' | 'link' | 'documentario' | 'idea'>): Kb {
   const fondo = [link('📂 Drive', info?.link || URL_98), ...(runUrl ? [link('🔧 Log', runUrl)] : [])];
+  if (info?.idea) return [fondo, [tasto('✏️ Correggi', 'mo:c:idea'), tasto('✨ Un altro', 'mo')]];
   if (!runId || info?.documentario) return [fondo];
   if (info?.prova) {
     return [
@@ -2496,6 +2521,17 @@ export default {
       if (!v) return new Response('non trovati', { status: 404 });
       await mem(env).cancella(k);
       return Response.json(v.testi);
+    }
+    // ✍️ Motion: il codice scritto dall'AI torna al bot, così ✏️ Correggi riparte da lì
+    if (req.method === 'POST' && url.pathname === '/motion-pagina') {
+      if (req.headers.get('x-regista-token') !== env.NOTIFY_TOKEN) return new Response('no', { status: 401 });
+      const id = (url.searchParams.get('id') || '').replace(/[^a-z0-9-]/gi, '');
+      const lavoro = await leggi<{ chat: string; prompt: string; formato?: string }>(env, `motion-lavoro:${id}`);
+      if (!lavoro) return new Response('non trovato', { status: 404 });
+      const codice = (await req.text()).slice(0, 60000);
+      await mem(env).scrivi(kUltimaIdea(lavoro.chat), { prompt: lavoro.prompt, codice, formato: lavoro.formato } satisfies UltimaIdea);
+      await mem(env).cancella(`motion-lavoro:${id}`);
+      return new Response('ok');
     }
     if (req.method === 'GET' && url.pathname === '/tt-token') {
       if (req.headers.get('x-regista-token') !== env.NOTIFY_TOKEN) return new Response('no', { status: 401 });

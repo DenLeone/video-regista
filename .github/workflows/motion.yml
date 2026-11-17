@@ -8,7 +8,7 @@ on:
   workflow_dispatch:
     inputs:
       modello:
-        description: 'luce | intro | codice | titolo'
+        description: 'luce | intro | codice | titolo | idea (descrizione libera: la scrive Gemini)'
         required: true
       testi:
         description: 'id:<codice> dal bot (i testi restano nel bot), oppure JSON {"testo":"…","sotto":"…","invito":"…"}'
@@ -61,7 +61,7 @@ jobs:
             id:*) curl -fsS "${NOTIFY_URL%/notify}/motion-testi?id=${INGRESSO#id:}" -H "x-regista-token: $NOTIFY_TOKEN" -o "$f" ;;
             *) printf '%s' "$INGRESSO" > "$f" ;;
           esac
-          jq -r '.[] | strings' "$f" | while IFS= read -r v; do [ -n "$v" ] && echo "::add-mask::$v"; done
+          jq -r '.testo, .sotto, .invito, .correzione | strings' "$f" | while IFS= read -r v; do [ -n "$v" ] && echo "::add-mask::$v"; done
           echo "testi: $(jq 'length' "$f") campi"
 
       - name: Render
@@ -71,11 +71,14 @@ jobs:
           FORMATO: ${{ inputs.formato }}
           QUALITA: ${{ inputs.qualita }}
           USCITA: out/motion/motion.mp4
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          GEMINI_API_KEY_GRATIS: ${{ secrets.GEMINI_API_KEY_GRATIS }}
         run: TESTI="$(cat "$RUNNER_TEMP/testi.json")" node scripts/motion.mjs
 
       - name: Su Drive e in chat
         env:
           MODELLO: ${{ inputs.modello }}
+          INGRESSO: ${{ inputs.testi }}
           FORMATO: ${{ inputs.formato }}
           QUALITA: ${{ inputs.qualita }}
           DURATA: ${{ steps.render.outputs.durata }}
@@ -84,9 +87,11 @@ jobs:
           NOTIFY_TOKEN: ${{ secrets.NOTIFY_TOKEN }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: |
-          testo=$(jq -r '.testo // "motion"' "$RUNNER_TEMP/testi.json" 2>/dev/null | tr -d '/\\:*?"<>|' | cut -c1-40)
+          testo=$(jq -r '.testo // "motion"' "$RUNNER_TEMP/testi.json" 2>/dev/null | head -n1 | tr -d '/\\:*?"<>|' | cut -c1-40)
           finale="${testo:-motion} - ${MODELLO} ${FORMATO} ${QUALITA} $(date -u +%m%d-%H%M).mp4"
           rclone copyto out/motion/motion.mp4 "gdrive:$DIR_MOTION/$finale"
+          # ✍️ idea: anche il codice dell'animazione (per rifarla o trasformarla in un modello fisso)
+          [ -f out/motion/motion.html ] && rclone copyto out/motion/motion.html "gdrive:$DIR_MOTION/${finale%.mp4}.html"
           id=$(rclone lsjson "gdrive:$DIR_MOTION/$finale" | jq -r '.[0].ID // empty')
           echo "su Drive: $(du -h out/motion/motion.mp4 | cut -f1)"
           [ -n "$NOTIFY_URL" ] || exit 0
@@ -95,13 +100,18 @@ jobs:
           if [ "$(stat -c %s "$video")" -gt 40000000 ] || [ "$QUALITA" = "4k" ]; then
             ffmpeg -v error -y -i "$video" -vf "scale='if(gt(iw,ih),1920,1080)':-2" -c:v libx264 -preset veryfast -crf 20 -movflags +faststart out/motion/chat.mp4 && video=out/motion/chat.mp4
           fi
-          nomi='{"luce":"✨ Logo che si accende","intro":"⚡ Intro in una lama di luce","codice":"💻 Dal codice al logo","titolo":"🔤 Titolo animato"}'
+          nomi='{"luce":"✨ Logo che si accende","intro":"⚡ Intro in una lama di luce","codice":"💻 Dal codice al logo","titolo":"🔤 Titolo animato","idea":"✍️ Idea tua"}'
           stile=$(jq -rn --argjson n "$nomi" --arg m "$MODELLO" '$n[$m] // $m')
           info=$(jq -n --arg f "$finale" --argjson d "${DURATA:-0}" --argjson m "${MINUTI:-0}" --arg s "Motion · $stile · $FORMATO $QUALITA" --arg id "$id" \
-            '{file:$f, durata:$d, minuti:($m|ceil), stile:$s, documentario:true, motion:true} + (if $id != "" then {link:("https://drive.google.com/file/d/"+$id+"/view")} else {} end)')
+            '{file:$f, durata:$d, minuti:($m|ceil), stile:$s, documentario:true, motion:true, idea:(env.MODELLO == "idea")} + (if $id != "" then {link:("https://drive.google.com/file/d/"+$id+"/view")} else {} end)')
           curl -s -X POST "${NOTIFY_URL%/notify}/video" -H "x-regista-token: $NOTIFY_TOKEN" \
             -F "nome=$testo" -F "testo=Motion pronto" -F "durata=$DURATA" -F "run_url=$RUN_URL" \
             -F "info=$info" -F "video=@$video;type=video/mp4" -o /dev/null -w "bot: %{http_code}\n"
+          # il codice torna al bot: ✏️ Correggi riparte da questa versione
+          if [ "$MODELLO" = idea ] && [ -f out/motion/motion.js ]; then
+            case "$INGRESSO" in id:*) curl -s -X POST "${NOTIFY_URL%/notify}/motion-pagina?id=${INGRESSO#id:}" -H "x-regista-token: $NOTIFY_TOKEN" \
+              --data-binary @out/motion/motion.js -o /dev/null -w "codice al bot: %{http_code}\n" ;; esac
+          fi
 
       - name: Avvisa il bot se si è fermato
         if: failure()
@@ -113,5 +123,5 @@ jobs:
         run: |
           [ -n "$NOTIFY_URL" ] || exit 0
           jq -n --arg n "Motion · $MODELLO" --arg u "$RUN_URL" \
-            '{tipo:"esito", esito:"⚠️ motion non finito", nome:$n, ok:false, run_url:$u, testo:"Il render si è fermato: apri il log.", info:{documentario:true}}' \
+            '{tipo:"esito", esito:"⚠️ motion non finito", nome:$n, ok:false, run_url:$u, testo:"Si è fermato. Con ✍️ Descrivi tu succede se l\u0027AI non riesce a scrivere un\u0027animazione che funzioni: riprova descrivendola più semplice.", info:{documentario:true}}' \
             | curl -s -X POST "$NOTIFY_URL" -H 'content-type: application/json' -H "x-regista-token: $NOTIFY_TOKEN" -d @- > /dev/null || true

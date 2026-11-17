@@ -10,8 +10,8 @@
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import http from 'node:http';
 import { spawn } from 'node:child_process';
+import { apri } from './motion-chrome.mjs';
 import { fileURLToPath } from 'node:url';
 
 const QUI = path.dirname(fileURLToPath(import.meta.url));
@@ -21,6 +21,7 @@ export const MODELLI = {
   intro: { pagina: 'luce.html', nome: '⚡ Intro in una lama di luce' },
   codice: { pagina: 'codice.html', nome: '💻 Dal codice al logo' },
   titolo: { pagina: 'titolo.html', nome: '🔤 Titolo animato' },
+  idea: { pagina: 'idea.html', nome: '✍️ Idea tua (scritta dall\'AI)' },
 };
 
 // testi puliti e corti: entrano nello schermo e non rompono il codice delle pagine
@@ -29,63 +30,24 @@ export function parametri({ modello, testi, formato }) {
   if (!MODELLI[modello]) throw new Error(`modello sconosciuto: ${modello}`);
   let t = testi;
   if (typeof t === 'string') { try { t = JSON.parse(t || '{}'); } catch { t = { testo: t }; } }
+  if (modello === 'idea') {
+    const prompt = String(t?.testo ?? '').replace(/[\u0000-\u0008\u000b-\u001f]/g, ' ').trim().slice(0, 1500);
+    if (!prompt) throw new Error('manca la descrizione');
+    return { modello, testo: prompt, correzione: riga(t?.correzione, 600), base: String(t?.base || '').slice(0, 60000), formato: formato === 'orizzontale' ? 'orizzontale' : 'verticale' };
+  }
   const testo = riga(t?.testo, modello === 'titolo' ? 60 : 28);
   if (!testo) throw new Error('manca il testo');
   return { modello, testo, sotto: riga(t?.sotto, 40), invito: modello === 'luce' ? riga(t?.invito, 48) : '', formato: formato === 'orizzontale' ? 'orizzontale' : 'verticale' };
 }
 
-const CANDIDATI = ['/usr/bin/google-chrome', '/usr/bin/google-chrome-stable', '/usr/bin/chromium', '/usr/bin/chromium-browser',
-  '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome', 'C:/Program Files/Google/Chrome/Application/chrome.exe'];
-const trovaChrome = () => [process.env.CHROME, ...CANDIDATI].find((p) => p && fs.existsSync(p));
-const aspetta = (ms) => new Promise((r) => setTimeout(r, ms));
-
-// una pagina servita in locale (font e script si caricano come su un sito), una scheda di Chrome pilotata via DevTools
-async function apri(dir, pagina, query) {
-  const TIPI = { '.html': 'text/html', '.js': 'text/javascript', '.woff2': 'font/woff2' };
-  const server = http.createServer((req, res) => {
-    const f = path.join(dir, decodeURIComponent(req.url.split('?')[0]));
-    if (!f.startsWith(dir) || !fs.existsSync(f) || fs.statSync(f).isDirectory()) { res.writeHead(404); return res.end(); }
-    res.writeHead(200, { 'content-type': TIPI[path.extname(f)] || 'application/octet-stream' }); res.end(fs.readFileSync(f));
-  });
-  await new Promise((ok) => server.listen(0, '127.0.0.1', ok));
-  const chrome = trovaChrome();
-  if (!chrome) throw new Error('Chrome non trovato (variabile CHROME)');
-  const profilo = fs.mkdtempSync(path.join(os.tmpdir(), 'motion-chrome-'));
-  const proc = spawn(chrome, ['--headless=new', '--no-sandbox', '--disable-gpu', '--hide-scrollbars', '--mute-audio', '--no-first-run', '--no-default-browser-check',
-    '--disable-background-networking', '--disable-component-update', '--disable-sync', '--remote-debugging-port=0',
-    `--user-data-dir=${profilo}`, 'about:blank'], { stdio: 'ignore' });
-  let porta;
-  for (let i = 0; i < 150 && !porta; i++) { await aspetta(100); try { porta = fs.readFileSync(path.join(profilo, 'DevToolsActivePort'), 'utf8').split('\n')[0]; } catch { /* non ancora */ } }
-  if (!porta) throw new Error('Chrome non è partito');
-  const schede = await (await fetch(`http://127.0.0.1:${porta}/json`)).json();
-  const ws = new WebSocket(schede.find((s) => s.type === 'page').webSocketDebuggerUrl);
-  await new Promise((ok, ko) => { ws.onopen = ok; ws.onerror = () => ko(new Error('DevTools non risponde')); });
-  let id = 0; const attese = new Map();
-  ws.onmessage = (e) => { const m = JSON.parse(e.data); if (attese.has(m.id)) { attese.get(m.id)(m); attese.delete(m.id); } };
-  const manda = (method, params = {}) => new Promise((ok) => { const n = ++id; attese.set(n, ok); ws.send(JSON.stringify({ id: n, method, params })); });
-  const valuta = async (codice) => {
-    const m = await manda('Runtime.evaluate', { expression: codice, awaitPromise: true, returnByValue: true });
-    if (m.result?.exceptionDetails) throw new Error(`errore nella pagina: ${JSON.stringify(m.result.exceptionDetails).slice(0, 300)}`);
-    return m.result?.result?.value;
-  };
-  await manda('Page.navigate', { url: `http://127.0.0.1:${server.address().port}/${pagina}?${query}` });
-  for (let i = 0; i < 100; i++) { await aspetta(200); if (await valuta('typeof window.renderAt === "function" && window.ready !== undefined').catch(() => false)) break; }
-  await valuta('Promise.resolve(window.ready).then(() => true)');
-  const chiudi = async () => {
-    try { ws.close(); } catch { /* già chiuso */ }
-    const uscito = new Promise((ok) => proc.once('exit', ok)); proc.kill(); await Promise.race([uscito, aspetta(3000)]); server.close();
-    try { fs.rmSync(profilo, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 }); } catch { /* resta nella cartella temporanea */ }
-  };
-  return { valuta, chiudi };
-}
-
-export async function renderMotion({ modello, testi, formato, qualita = '1080', uscita, fps = 30 }) {
-  const p = parametri({ modello, testi, formato });
+export async function renderMotion({ modello, testi, formato, qualita = '1080', uscita, fps = 30, html = null }) {
+  const p = html ? { modello, formato: formato === 'orizzontale' ? 'orizzontale' : 'verticale' } : parametri({ modello, testi, formato });
   const scala = qualita === '4k' ? 2 : 1;
   // copia di lavoro dei modelli + i parametri di questo giro
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'motion-'));
   fs.cpSync(MOTION, dir, { recursive: true });
   fs.writeFileSync(path.join(dir, 'params.js'), `window.PARAMS = ${JSON.stringify(p)};\n`);
+  if (html) fs.writeFileSync(path.join(dir, MODELLI[modello].pagina), html);
   const t0 = Date.now();
   const { valuta, chiudi } = await apri(dir, MODELLI[modello].pagina, `t=0&scala=${scala}`);
   try {
@@ -102,7 +64,7 @@ export async function renderMotion({ modello, testi, formato, qualita = '1080', 
     ff.stdin.end(); await fine;
     const minuti = Math.round((Date.now() - t0) / 6000) / 10;
     console.log(`motion: ${modello} · ${p.formato} · ${qualita} · ${durata}s · ${minuti} min`);
-    return { durata, minuti, parametri: p };
+    return { durata, minuti, parametri: { modello: p.modello, formato: p.formato } };
   } finally { await chiudi(); fs.rmSync(dir, { recursive: true, force: true }); }
 }
 
@@ -126,7 +88,16 @@ if (import.meta.url === `file://${process.argv[1]}`) {
   const e = process.env;
   try {
     if (e.PROVE) await proveMotion({ modello: e.MODELLO, testi: e.TESTI, formato: e.FORMATO, tempi: e.PROVE.split(',').map(Number), cartella: e.USCITA });
-    else {
+    else if (e.MODELLO === 'idea') {
+      const { creaIdea } = await import('./motion-ai.mjs');
+      const p = parametri({ modello: 'idea', testi: e.TESTI, formato: e.FORMATO });
+      const idea = await creaIdea({ prompt: p.testo, correzione: p.correzione, base: p.base, formato: p.formato });
+      fs.mkdirSync(path.dirname(path.resolve(e.USCITA)), { recursive: true });
+      fs.writeFileSync(e.USCITA.replace(/\.mp4$/i, '.html'), idea.html);
+      fs.writeFileSync(e.USCITA.replace(/\.mp4$/i, '.js'), idea.codice);
+      const r = await renderMotion({ modello: 'idea', formato: p.formato, qualita: e.QUALITA, uscita: e.USCITA, html: idea.html });
+      if (e.GITHUB_OUTPUT) fs.appendFileSync(e.GITHUB_OUTPUT, `durata=${r.durata}\nminuti=${r.minuti}\ntentativi=${idea.tentativi}\n`);
+    } else {
       const r = await renderMotion({ modello: e.MODELLO, testi: e.TESTI, formato: e.FORMATO, qualita: e.QUALITA, uscita: e.USCITA });
       if (e.GITHUB_OUTPUT) fs.appendFileSync(e.GITHUB_OUTPUT, `durata=${r.durata}\nminuti=${r.minuti}\n`);
     }
