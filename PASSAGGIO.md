@@ -322,3 +322,15 @@ Denis incolla i comandi e ti rimanda l'output. Quindi:
 - **Banco di prova** (`scripts/banco.mjs`, workflow `banco`): a ogni modifica di `src/**`, del regolatore o di `stile-su-misura.mjs`, fotogrammi di Cinematico, Kal e Ultra su un montaggio finto (sagoma al posto della persona, scene generate con ffmpeg: si può pubblicare). Foglio negli artefatti del giro (`banco`). Rosso se uno stile non parte o se il regolatore di Ultra non toglie 1 scheda e 1 b/n. In locale: `node scripts/banco.mjs [Kal Ultra …]` → `out/banco/banco.jpg`. La scheda di Ultra usata è `scripts/banco/Ultra.txt` (copia di quella su Drive).
 - Trovati e sistemati dal banco: in Kal la parola grande finiva sopra il riquadro del B-roll (ora il riquadro sta da y 700, 720×1000) e i sottotitoli sparivano per un gruppo intero dopo ogni parola grande; in Ultra la scheda di lato toccava la faccia (ora 360×480).
 - **Anteprima su Telegram**: la carica il runner direttamente (`caricaSuTelegram`, messaggio silenzioso poi cancellato) appena è codificata; al bot (`/video`) passa solo il `file_id`. Prima i 36 MB passavano dal bot e la chiusura durava 2:45 (anteprima 2:15). Se non riesce, si torna al giro di prima. Il bot dà la chat con `GET /chat-anteprima`.
+
+## ✨ Motion da Telegram (17/11)
+- Bot del Regista → **✨ Motion**: modello → testi (una riga per campo) → formato (verticale/orizzontale, 1080 o 4K).
+  ⚡ «subito» usa i testi di BlackDen già pronti.
+- Modelli in `motion/*.html` (canvas 2D, `motore.js` + `base.js`, font OFL in `motion/fonts`): `luce` (logo che si
+  accende, chiusura con firma e invito), `intro` (2 s, lama di luce che porta al bianco), `codice` (dal codice al logo),
+  `titolo` (fino a 3 righe). Per aggiungerne uno: nuova pagina con `window.renderAt/TOTAL/ready`, voce in
+  `MODELLI` di `scripts/motion.mjs` e in `MODELLI_MOTION` del bot.
+- `scripts/motion.mjs` pilota Chrome via DevTools (nessun pacchetto) e fa l'MP4 con ffmpeg. Prove locali:
+  `MODELLO=luce TESTI='{"testo":"BlackDen"}' PROVE=1,2.5 USCITA=cartella node scripts/motion.mjs`.
+- Workflow `motion.yml`: i testi restano nel bot (input `id:<codice>`, letti da `/motion-testi` e mascherati nel log).
+  Video su Drive in `02 · Fatti/Motion` e in chat. Tempi: 1080 da 15 s (titolo) a 2,5 min (codice); 4K circa 4 volte tanto.
