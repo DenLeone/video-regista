@@ -334,3 +334,12 @@ Denis incolla i comandi e ti rimanda l'output. Quindi:
   `MODELLO=luce TESTI='{"testo":"BlackDen"}' PROVE=1,2.5 USCITA=cartella node scripts/motion.mjs`.
 - Workflow `motion.yml`: i testi restano nel bot (input `id:<codice>`, letti da `/motion-testi` e mascherati nel log).
   Video su Drive in `02 · Fatti/Motion` e in chat. Tempi: 1080 da 15 s (titolo) a 2,5 min (codice); 4K circa 4 volte tanto.
+
+## ✨ Ultron (17/11): motion graphic automatiche sul parlato
+- Si accende con «Motion graphic: sì» nello stile (stile **Ultron** su Drive: look naturale, schermate no, parte alta
+  libera) o nel brief. Dopo il render `scripts/ultron.mjs` trascrive il video montato (Groq), Gemini sceglie 3–5 momenti
+  (titolo = gancio e frasi chiave, numero = dati detti a voce, al massimo un'«idea» scritta da motion-ai), le grafiche
+  escono dai modelli di `motion/` con `trasparente: true` (in alto, velo scuro e ombre) come .mov con alfa e ffmpeg le
+  sovrappone sulle parole. Se fallisce, il video resta com'era. In NOTE.txt la riga «Motion graphic (Ultron)».
+- Primo giro vero: «02 · Fatti/ECC Ultron» (32,6 s, 4 grafiche: titolo, numero, idea, numero). Gemini Pro gratis ha dato
+  429 (quota): si passa da solo a Flash.
