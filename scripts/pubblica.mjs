@@ -279,12 +279,15 @@ async function main() {
   } catch (e) {
     esito.errore = String(e.message || e).slice(0, 300);
   }
-  if (d.squadra) {
+  // anche dal bot Regista (17/11): l'📊 Analista della squadra abbina i numeri ai montaggi dai link qui dentro
+  if (d.squadra || chiesteOk(esito)) {
     try { execFileSync('rclone', ['rcat', remote(OUT_DIR, d.nome, '_squadra', 'pubblicato.json')], { input: JSON.stringify({ ...esito, quando: new Date().toISOString() }) }); } catch (e) { log('esito per la Squadra non scritto', e.message); }
   }
   await avvisaBot(esito);
   if (esito.errore || [esito.instagram, esito.youtube, esito.tiktok].some((x) => x && !x.ok && !x.saltato)) process.exitCode = 1;
 }
+
+const chiesteOk = (e) => [e.instagram, e.youtube, e.tiktok].some((x) => x?.ok);
 
 if (process.argv[1] && path.resolve(process.argv[1]) === path.resolve(ROOT, 'scripts', 'pubblica.mjs')) main();
 export { main };

@@ -34,4 +34,15 @@ jobs:
           base="${NOTIFY_URL%/notify}"
           curl -fsS --max-time 120 -H "x-regista-token: $NOTIFY_TOKEN" "$base/statistiche" > /tmp/s.json
           echo "video: $(jq '.video | length' /tmp/s.json) · errori: $(jq '.errori | length' /tmp/s.json)"
-          jq --arg n "$NONCE" '. + {nonce: $n}' /tmp/s.json | rclone rcat "gdrive:00 · Preparazione/_analista/statistiche.json"
+      # YouTube (17/11): numeri e curva di retention degli Shorts, con le chiavi della pubblicazione
+      - uses: actions/checkout@v5
+      - name: Numeri di YouTube
+        env:
+          YT_CLIENT_ID: ${{ secrets.YT_CLIENT_ID }}
+          YT_CLIENT_SECRET: ${{ secrets.YT_CLIENT_SECRET }}
+          YT_REFRESH_TOKEN: ${{ secrets.YT_REFRESH_TOKEN }}
+        run: node scripts/statistiche-youtube.mjs /tmp/s.json || echo "youtube: non letto"
+      - name: Su Drive
+        env:
+          NONCE: ${{ inputs.nonce }}
+        run: jq --arg n "$NONCE" '. + {nonce: $n}' /tmp/s.json | rclone rcat "gdrive:00 · Preparazione/_analista/statistiche.json"

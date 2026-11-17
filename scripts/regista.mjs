@@ -1255,6 +1255,38 @@ function dnaGusto() {
   if (DNA_LETTO) log('gusto di Denis (DNA): sì');
   return DNA_LETTO;
 }
+// 📊 Imparare dai numeri (17/11, Denis: «il regista nei prossimi edit impara dai miei video precedenti»).
+// L'📊 Analista della squadra (Den, scripts/analista.mjs) legge retention, curve di YouTube e numeri di
+// Instagram/TikTok e scrive su Drive (privato):
+//   00 · Preparazione/_analista-regista.md   regole di montaggio per tutti (durata, primi 2 s, ritmo, finale)
+//   12 · Risorse/Stili/<stile>/_formula.md   la formula dello stile dai suoi video migliori (stili su misura)
+//   12 · Risorse/Stili/_formule/<stile>.md   la stessa cosa per Kal, Ultra e Cinematico
+const DIR_PREPARAZIONE = process.env.DIR_PREPARAZIONE || '00 · Preparazione';
+const leggiDrive = (dove, max = 2500) => {
+  try { return String(execFileSync('rclone', ['cat', `${REMOTE}:${dove}`], { stdio: ['ignore', 'pipe', 'ignore'], timeout: 30_000 })).trim().slice(0, max); }
+  catch { return ''; }
+};
+let REGOLE_NUMERI;
+export const regoleNumeri = () => (REGOLE_NUMERI ??= leggiDrive(`${DIR_PREPARAZIONE}/_analista-regista.md`, 800));
+// le regole dell'Analista nel brief (così valgono anche la durata chiesta e il resto), una volta sola: i
+// montaggi della squadra le portano già (regista-squadra.mjs); quelli dal bot no
+export function conRegoleNumeri(brief = '', regole = '') {
+  if (!String(regole).trim() || /Dai numeri dei social/i.test(brief)) return brief;
+  return `${brief}\n\nDai numeri dei social di Denis (📊 Analista), tienine conto:\n${String(regole).trim()}`.trim();
+}
+const formule = new Map();
+function formulaStile() {
+  const chiave = stileSuMisura?.nome || stileCorrente || '';
+  if (!chiave) return '';
+  if (!formule.has(chiave)) {
+    const locale = path.join(WORK, 'stile', '_formula.md');
+    formule.set(chiave, stileSuMisura && fs.existsSync(locale) ? fs.readFileSync(locale, 'utf8').trim().slice(0, 2500)
+      : stileSuMisura ? '' : leggiDrive(`${DIR_STILI}/_formule/${chiave}.md`));
+    if (formule.get(chiave)) log(`formula dello stile dai numeri (${chiave}): sì`);
+  }
+  return formule.get(chiave);
+}
+
 function promptRegia({ modo, testoMateriale, regiaPrecedente }) {
   let p = fs.readFileSync(path.join(ROOT, 'scripts', 'prompt-regista.md'), 'utf8')
     .replace('{{GRAFICA}}', stileSuMisura ? promptSuMisura(stileSuMisura.grafica, stileSuMisura.testoAI, { stock: fontiStock().length > 0 && !(analisiCorrente && materialeProprio(analisiCorrente)),
@@ -1288,6 +1320,8 @@ function promptRegia({ modo, testoMateriale, regiaPrecedente }) {
   // lette da Drive (privato): valgono per tutti gli stili, ma lo stile scelto e il brief vincono
   const dna = dnaGusto();
   if (dna && !regiaPrecedente) p += `\n\n## Gusto di Denis (DNA)\nImparato dai video che ha votato. Vale per TUTTI gli stili: usalo per le scelte che lo stile e il brief lasciano libere (inquadrature, ritmo, quali frasi tenere, scritte, musica). Se va contro lo stile o il brief, vincono stile e brief.\n${dna}`;
+  const formula = regiaPrecedente ? '' : formulaStile();
+  if (formula) p += `\n\n## Formula di questo stile (dai numeri dei video di Denis)\nL'📊 Analista l'ha ricavata da retention, punti di abbandono e numeri dei suoi video migliori in questo stile: seguila per gancio, struttura, ritmo, durata e schermate, dentro le regole dello stile. Se va contro il brief, vince il brief.\n${formula}`;
   // discorso: fogli provino solo dei B-roll, se ci sono
   const fogliDaLeggere = !discorso || discorso.conBroll;
   p += modo === 'claude'
@@ -3007,7 +3041,7 @@ async function main() {
     await fase(nome, '🎞️ Analizzo il girato (audio, sincronizzazione, trascrizione, fogli provino)', 'prepara');
 
     const briefFile = fs.existsSync(path.join(SCARICO, 'brief.txt')) ? fs.readFileSync(path.join(SCARICO, 'brief.txt'), 'utf8') : '';
-    const brief = unisciBrief(briefFile, process.env.BRIEF_EXTRA, CORREZIONE || RIRENDER ? cache?.brief : '');
+    const brief = conRegoleNumeri(unisciBrief(briefFile, process.env.BRIEF_EXTRA, CORREZIONE || RIRENDER ? cache?.brief : ''), CORREZIONE || RIRENDER ? '' : regoleNumeri());
     const videoInCartella = fs.readdirSync(SCARICO).filter((f) => VIDEO_EXT.includes(path.extname(f).toLowerCase()) && !isNostro(f));
     DISCORSO = modoDiscorso(videoInCartella.length, brief);
     SENZA_TAGLI = senzaTagli(brief);
