@@ -135,3 +135,24 @@ test('le parole corrette dalla prova di lettura tornano anche su un piano rifatt
   assert.match(piano.testo, /Ecco la Ajazz K1/);
   assert.ok(piano.parole.some((p) => /^Ajazz/.test(p.w)) && !piano.parole.some((p) => /^Ajax/.test(p.w)));
 });
+
+// ⏱️ 17/11 (Denis): «video prodotti su quelle tempistiche, video approfondimento anche molto di più»
+test('la durata per tipo di video: brief > stile > formula dello stile > numeri generali', async () => {
+  const { sceltaDurata, briefPerAI } = await import('./regista.mjs');
+  const brief = 'Stile: Ultra\n\nDai numeri dei social di Denis (📊 Analista), tienine conto:\n- Mantieni i video sotto i 40 secondi.\n- Taglia i respiri.';
+  // recensione senza formula: vale la regola generale
+  assert.deepEqual(sceltaDurata(brief).durata, [28, 40]);
+  // la formula dello stile vince sulla regola generale
+  assert.deepEqual(sceltaDurata(brief, { formula: '- Struttura: 30-35 secondi massimi' }).durata, [30, 35]);
+  // approfondimento (Impact): «Durata: libera» ignora la regola generale e la formula non serve
+  const libera = sceltaDurata(brief, { stile: 'Durata: libera\nRitmo dei tagli: jump cut' });
+  assert.equal(libera.durata, null);
+  assert.match(libera.da, /libera/);
+  // una durata scritta nello stile vale
+  assert.deepEqual(sceltaDurata(brief, { stile: 'Durata: 60–90 secondi' }).durata, [60, 90]);
+  // quella scritta da Denis nel brief vince su tutto
+  assert.deepEqual(sceltaDurata(`Stile: Impact, 45-60 secondi\n${brief.slice(13)}`, { stile: 'Durata: libera' }).durata, [45, 60]);
+  // all'AI le regole dei numeri arrivano senza la durata (la durata arriva solo come numero)
+  assert.doesNotMatch(briefPerAI(brief), /40 secondi/);
+  assert.match(briefPerAI(brief), /Taglia i respiri/);
+});

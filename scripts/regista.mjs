@@ -277,6 +277,7 @@ export function durataChiesta(testo = '') {
   return null;
 }
 let DURATA_BRIEF = null;
+let BRIEF_PIENO = ''; // il brief con le durate (le regole dei numeri all'AI arrivano senza: vedi sceltaDurata)
 // quanto parlato deve restare perché il taglio dell'AI valga (sotto si torna al discorso intero): il 70%; se il
 // brief chiede un video più corto del discorso, basta 3/4 della durata minima chiesta (28–45 s → 21 s)
 export const daAccorciare = (totale, durata) => Boolean(durata && totale > durata[1] * 1.15);
@@ -1304,6 +1305,26 @@ export function conRegoleNumeri(brief = '', regole = '') {
   if (!String(regole).trim() || /Dai numeri dei social/i.test(brief)) return brief;
   return `${brief}\n\nDai numeri dei social di Denis (📊 Analista), tienine conto:\n${String(regole).trim()}`.trim();
 }
+// ⏱️ la durata giusta per il TIPO di video (17/11, Denis: «video prodotti su quelle tempistiche, video
+// approfondimento anche molto di più»). Vince, in ordine: la durata scritta da Denis nel brief; quella dello stile
+// («Durata: 30–45 secondi», o «Durata: libera» per gli approfondimenti come Impact); quella della formula dello
+// stile scritta dall'Analista; per ultima la regola generale dei numeri, che non vale per gli stili «liberi».
+// Dal testo dei numeri che va all'AI si tolgono le durate: la durata arriva solo da qui, come numero.
+export function separaNumeri(brief = '') {
+  const i = String(brief).search(/Dai numeri dei social/i);
+  return i < 0 ? { proprio: String(brief), numeri: '' } : { proprio: String(brief).slice(0, i), numeri: String(brief).slice(i) };
+}
+export const senzaDurate = (testo = '') => String(testo).split('\n').filter((r) => !durataChiesta(r)).join('\n');
+export const durataLibera = (testoStile = '') => /^\s*durata\s*:\s*(libera|lunga|nessun)/im.test(String(testoStile));
+export function sceltaDurata(brief = '', { stile = '', formula = '' } = {}) {
+  const { proprio, numeri } = separaNumeri(brief);
+  const fonti = [['brief', proprio], ['stile', durataLibera(stile) ? '' : String(stile).split('\n').filter((r) => /^\s*durata\s*:/i.test(r)).join('\n')],
+    ['formula dello stile', formula], ...(durataLibera(stile) ? [] : [['numeri dell\'Analista', numeri]])];
+  for (const [da, t] of fonti) { const d = durataChiesta(t); if (d) return { durata: d, da }; }
+  return { durata: null, da: durataLibera(stile) ? 'stile (durata libera)' : '' };
+}
+export const briefPerAI = (brief = '') => { const { proprio, numeri } = separaNumeri(brief); return numeri ? `${proprio}${senzaDurate(numeri)}` : String(brief); };
+
 const formule = new Map();
 function formulaStile() {
   const chiave = stileSuMisura?.nome || stileCorrente || '';
@@ -2679,7 +2700,7 @@ async function provaRegia() {
     return;
   }
   const analisi = JSON.parse(fs.readFileSync(path.join(WORK, 'cache', 'materiale.json'), 'utf8'));
-  if (process.env.BRIEF_EXTRA) analisi.brief = `Dal telegram: ${process.env.BRIEF_EXTRA}`;
+  if (process.env.BRIEF_EXTRA) analisi.brief = `Dal telegram: ${briefPerAI(process.env.BRIEF_EXTRA)}`;
   stileCorrente = scegliStile(analisi.brief).stile;
   for (const s of analisi.sorgenti) s.fogli = []; // i fogli provino non sono salvati: prova solo sul testo
   // un solo video (discorso): come nel montaggio vero, sequenza fissa e l'AI sceglie solo le scritte
@@ -2821,7 +2842,7 @@ async function preparaSolo() {
 async function rifinisciPiano(regia, risultato, analisi, avvisoStile) {
   let { piano, avvisi } = risultato;
   if (stileSuMisura?.grafica.stock && await scaricaStock(conSequenza(regia), analisi)) ({ piano, avvisi } = risolviRegia(perRegia(regia), analisi));
-  if (!stileSuMisura?.grafica.beat) ({ regia, piano, avvisi } = await provaDiLettura(regia, piano, avvisi, analisi, process.env.BRIEF_EXTRA || ''));
+  if (!stileSuMisura?.grafica.beat) ({ regia, piano, avvisi } = await provaDiLettura(regia, piano, avvisi, analisi, briefPerAI(process.env.BRIEF_EXTRA || '')));
   if (DISCORSO) { Object.assign(regia, { sequenza: conFilo(conSequenza(regia)).sequenza, discorso: true }); fs.writeFileSync(path.join(WORK, 'regia.json'), JSON.stringify(regia, null, 1)); }
   if (avvisi.length) log('avvisi regia:', avvisi.join(' | '));
   if (avvisoStile) piano.note = [`⚠️ ${avvisoStile}`, piano.note].filter(Boolean).join(' · ');
@@ -3073,7 +3094,8 @@ async function main() {
     await fase(nome, '🎞️ Analizzo il girato (audio, sincronizzazione, trascrizione, fogli provino)', 'prepara');
 
     const briefFile = fs.existsSync(path.join(SCARICO, 'brief.txt')) ? fs.readFileSync(path.join(SCARICO, 'brief.txt'), 'utf8') : '';
-    const brief = conRegoleNumeri(unisciBrief(briefFile, process.env.BRIEF_EXTRA, CORREZIONE || RIRENDER ? cache?.brief : ''), CORREZIONE || RIRENDER ? '' : regoleNumeri());
+    BRIEF_PIENO = conRegoleNumeri(unisciBrief(briefFile, process.env.BRIEF_EXTRA, CORREZIONE || RIRENDER ? cache?.brief : ''), CORREZIONE || RIRENDER ? '' : regoleNumeri());
+    const brief = briefPerAI(BRIEF_PIENO);
     const videoInCartella = fs.readdirSync(SCARICO).filter((f) => VIDEO_EXT.includes(path.extname(f).toLowerCase()) && !isNostro(f));
     DISCORSO = modoDiscorso(videoInCartella.length, brief);
     SENZA_TAGLI = senzaTagli(brief);
@@ -3103,9 +3125,10 @@ async function main() {
     log(`stima materiale per l'AI: ${stima.testo} token di testo + ${stima.immagini} di immagini (${fogli.length} fogli)`);
     // lo stile chiesto al bot (input brief) vale più di quello scritto in brief.txt o nel giro precedente
     let { stile, avviso: avvisoStile } = scegliStile([process.env.BRIEF_EXTRA || '', brief].join('\n'));
-    DURATA_BRIEF = durataChiesta(brief);
-    if (DURATA_BRIEF) log(`durata chiesta nel brief: ${DURATA_BRIEF.join('–')} s`);
     stileCorrente = stile;
+    { const sd = sceltaDurata(BRIEF_PIENO || brief, { stile: stileSuMisura?.testoAI || '', formula: formulaStile() });
+      DURATA_BRIEF = sd.durata;
+      if (sd.da) log(`durata: ${DURATA_BRIEF ? `${DURATA_BRIEF.join('–')} s` : 'libera'} (da ${sd.da})`); }
     if (stile !== STILI[0]) log(`stile: ${stile}`);
     const pesoAI = ` · materiale ≈ ${kTok(stima.totale)} token`;
     // modalità discorso: la sequenza la decide lo script (tutte le frasi in ordine, tolte solo false
@@ -3177,7 +3200,7 @@ async function main() {
       // 📖 prova di lettura del testo montato, prima di tagliare e renderizzare
       if (nuovaRegia && !stileSuMisura?.grafica.beat) {
         await fase(nome, '📖 Rileggo il testo montato come lo sentirà chi guarda', 'regia');
-        ({ regia, piano, avvisi } = await provaDiLettura(regia, piano, avvisi, analisi, [process.env.BRIEF_EXTRA || '', CORREZIONE || ''].join(' ')));
+        ({ regia, piano, avvisi } = await provaDiLettura(regia, piano, avvisi, analisi, [briefPerAI(process.env.BRIEF_EXTRA || ''), CORREZIONE || ''].join(' ')));
       }
       // salvata con la sequenza vera: "Solo render" e "Correggi" ripartono da questa
       if (DISCORSO && nuovaRegia) Object.assign(regia, { sequenza: conFilo(conSequenza(regia)).sequenza, discorso: true });
