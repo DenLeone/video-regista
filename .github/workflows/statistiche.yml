@@ -41,8 +41,10 @@ jobs:
           YT_CLIENT_ID: ${{ secrets.YT_CLIENT_ID }}
           YT_CLIENT_SECRET: ${{ secrets.YT_CLIENT_SECRET }}
           YT_REFRESH_TOKEN: ${{ secrets.YT_REFRESH_TOKEN }}
-        run: node scripts/statistiche-youtube.mjs /tmp/s.json || echo "youtube: non letto"
+        run: |
+          node scripts/statistiche-youtube.mjs /tmp/s.json || echo "youtube non letto"
       - name: Su Drive
         env:
           NONCE: ${{ inputs.nonce }}
-        run: jq --arg n "$NONCE" '. + {nonce: $n}' /tmp/s.json | rclone rcat "gdrive:00 · Preparazione/_analista/statistiche.json"
+        run: |
+          jq --arg n "$NONCE" '. + {nonce: $n}' /tmp/s.json | rclone rcat "gdrive:00 · Preparazione/_analista/statistiche.json"
