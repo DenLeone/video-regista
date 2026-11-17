@@ -262,9 +262,16 @@ function clip(ric) {
       log(`clip ${path.basename(out)}: ${esito.trim().split('\n').pop()}`);
       continue;
     }
-    run('ffmpeg', ['-y', '-v', 'error', '-ss', String(c.da), '-i', s.u, '-t', String(c.dur || 4),
+    // "voce": l'audio da un altro file (es. il microfono esterno), dal secondo "voceDa" (17/11: base pulita da
+    // provare in altri editor, girato S-Log convertito + voce del FIFINE sincronizzata, senza montaggio)
+    let voce = null;
+    if (c.voce) {
+      voce = path.join(SCARICO, `voce-${pulito(path.basename(c.voce))}`);
+      if (!fs.existsSync(voce)) run('rclone', ['copyto', `${REMOTE}:${c.voce}`, voce]);
+    }
+    run('ffmpeg', ['-y', '-v', 'error', '-ss', String(c.da), '-i', s.u, ...(voce ? ['-ss', String(c.voceDa || 0), '-i', voce] : []), '-t', String(c.dur || 4),
       '-vf', `scale='if(gt(iw,ih),1920,1080)':-2:flags=lanczos,${s.tecnico.replace(/,?format=yuv420p$/, '') || 'null'}${v ? `,${conPercorsi(v.filtro)}` : ''},format=yuv420p`,
-      '-c:v', 'libx264', '-preset', 'slow', '-crf', '16', '-an', '-movflags', '+faststart',
+      '-c:v', 'libx264', '-preset', 'slow', '-crf', String(c.crf || 16), ...(voce ? ['-map', '0:v', '-map', '1:a', '-c:a', 'aac', '-b:a', '192k', '-shortest'] : ['-an']), '-movflags', '+faststart',
       '-colorspace', 'bt709', '-color_primaries', 'bt709', '-color_trc', 'bt709', '-color_range', 'tv', out]);
     // "risalto": la persona in risalto sul pezzo già colorato (scripts/look/risalto.py), es. "naturale:0.78"
     // (16/11, documentario verticale: colore naturale e caldo, sfondo solo un po' più scuro)
