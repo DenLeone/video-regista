@@ -11,7 +11,7 @@ on:
         description: 'luce | intro | codice | titolo'
         required: true
       testi:
-        description: 'JSON: {"testo":"…","sotto":"…","invito":"…"}'
+        description: 'id:<codice> dal bot (i testi restano nel bot), oppure JSON {"testo":"…","sotto":"…","invito":"…"}'
         required: true
       formato:
         description: 'verticale | orizzontale'
@@ -49,20 +49,33 @@ jobs:
           command -v ffmpeg > /dev/null || { sudo apt-get update -qq && sudo apt-get install -y -qq ffmpeg > /dev/null; }
           command -v google-chrome || command -v chromium
 
+      # i testi li tiene il bot: qui arriva solo un codice. Li chiedo e li nascondo dal log (repo pubblico)
+      - name: Testi
+        env:
+          INGRESSO: ${{ inputs.testi }}
+          NOTIFY_URL: ${{ secrets.NOTIFY_URL }}
+          NOTIFY_TOKEN: ${{ secrets.NOTIFY_TOKEN }}
+        run: |
+          f="$RUNNER_TEMP/testi.json"
+          case "$INGRESSO" in
+            id:*) curl -fsS "${NOTIFY_URL%/notify}/motion-testi?id=${INGRESSO#id:}" -H "x-regista-token: $NOTIFY_TOKEN" -o "$f" ;;
+            *) printf '%s' "$INGRESSO" > "$f" ;;
+          esac
+          jq -r '.[] | strings' "$f" | while IFS= read -r v; do [ -n "$v" ] && echo "::add-mask::$v"; done
+          echo "testi: $(jq 'length' "$f") campi"
+
       - name: Render
         id: render
         env:
           MODELLO: ${{ inputs.modello }}
-          TESTI: ${{ inputs.testi }}
           FORMATO: ${{ inputs.formato }}
           QUALITA: ${{ inputs.qualita }}
           USCITA: out/motion/motion.mp4
-        run: node scripts/motion.mjs
+        run: TESTI="$(cat "$RUNNER_TEMP/testi.json")" node scripts/motion.mjs
 
       - name: Su Drive e in chat
         env:
           MODELLO: ${{ inputs.modello }}
-          TESTI: ${{ inputs.testi }}
           FORMATO: ${{ inputs.formato }}
           QUALITA: ${{ inputs.qualita }}
           DURATA: ${{ steps.render.outputs.durata }}
@@ -71,7 +84,7 @@ jobs:
           NOTIFY_TOKEN: ${{ secrets.NOTIFY_TOKEN }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: |
-          testo=$(printf '%s' "$TESTI" | jq -r '.testo // "motion"' 2>/dev/null | tr -d '/\\:*?"<>|' | cut -c1-40)
+          testo=$(jq -r '.testo // "motion"' "$RUNNER_TEMP/testi.json" 2>/dev/null | tr -d '/\\:*?"<>|' | cut -c1-40)
           finale="${testo:-motion} - ${MODELLO} ${FORMATO} ${QUALITA} $(date -u +%m%d-%H%M).mp4"
           rclone copyto out/motion/motion.mp4 "gdrive:$DIR_MOTION/$finale"
           id=$(rclone lsjson "gdrive:$DIR_MOTION/$finale" | jq -r '.[0].ID // empty')

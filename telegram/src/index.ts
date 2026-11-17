@@ -1405,7 +1405,10 @@ Ti mando il video qui quando è pronto; il file intero va in <b>02 · Fatti/${es
     const scelta = await leggi<SceltaMotion>(env, kMotion(chat));
     if (!scelta) { await avviso('Riparti da ✨ Motion'); return mostra(env, chat, SCHERMO_MOTION, msgId); }
     const formato = mo[3] === 'o' ? 'orizzontale' : 'verticale', qualita = mo[4] || '1080';
-    const r = await gh(env, '/actions/workflows/motion.yml/dispatches', { method: 'POST', body: JSON.stringify({ ref: 'main', inputs: { modello: scelta.modello, testi: JSON.stringify(scelta.testi), formato, qualita } }) });
+    // i testi restano nel bot: il workflow (repo pubblico) riceve solo un codice e li chiede a /motion-testi, nascosti dal log
+    const codice = crypto.randomUUID().slice(0, 12);
+    await mem(env).scrivi(`motion-testi:${codice}`, { testi: scelta.testi, quando: Date.now() });
+    const r = await gh(env, '/actions/workflows/motion.yml/dispatches', { method: 'POST', body: JSON.stringify({ ref: 'main', inputs: { modello: scelta.modello, testi: `id:${codice}`, formato, qualita } }) });
     if (r.status !== 204) { await avviso(); return mostra(env, chat, { testo: `⚠️ Non parte: GitHub ${r.status}\n<code>${esc(tronca(await r.text(), 300))}</code>`, tasti: [[tasto('◀ Motion', 'mo'), MENU_TASTO]] }, msgId); }
     await avviso('Partito');
     return mostra(env, chat, {
@@ -2485,6 +2488,15 @@ export default {
       try { return Response.json(await fotografa(await depsSocial(env))); } catch (e) { return Response.json({ video: [], errori: [(e as Error).message] }); }
     }
     // chiave TikTok per caricare il video come bozza (workflow "pubblica", 📤 Pubblicatore della Squadra)
+    // ✨ Motion: i testi scelti in chat, per il workflow (con la chiave del bot), letti una volta sola
+    if (req.method === 'GET' && url.pathname === '/motion-testi') {
+      if (req.headers.get('x-regista-token') !== env.NOTIFY_TOKEN) return new Response('no', { status: 401 });
+      const k = `motion-testi:${(url.searchParams.get('id') || '').replace(/[^a-z0-9-]/gi, '')}`;
+      const v = await leggi<{ testi: TestiMotion }>(env, k);
+      if (!v) return new Response('non trovati', { status: 404 });
+      await mem(env).cancella(k);
+      return Response.json(v.testi);
+    }
     if (req.method === 'GET' && url.pathname === '/tt-token') {
       if (req.headers.get('x-regista-token') !== env.NOTIFY_TOKEN) return new Response('no', { status: 401 });
       try { return Response.json(await chiaveCaricamentoTikTok(await depsSocial(env))); } catch (e) { return Response.json({ token: null, motivo: (e as Error).message }); }
