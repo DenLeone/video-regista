@@ -21,6 +21,9 @@ export function dispositivo(nomeFile, tags = {}) {
   const valori = Object.values(tags).join(' ');
   const chiavi = Object.keys(tags).join(' ');
   if (/insta360/i.test(valori) || /^(VID|PRO|LRV)_\d{8}_\d{6}/i.test(base)) return 'insta';
+  // Sony dal nome PRIMA dei metadati Apple (18/11): il comando rapido «Comprimi per regista» ricomprime sull'iPhone
+  // (C1293.MP4 → C1293.mov) e il file può prendere i metadati dell'iPhone; il nome resta quello della Sony
+  if (/^C\d{4}\./i.test(base)) return 'sony';
   if (/apple/i.test(tags['com.apple.quicktime.make'] || tags.make || '') || /com\.apple\.quicktime/i.test(chiavi) || /^IMG_\d+/i.test(base)) return 'iphone';
   if (/xavc/i.test(tags.major_brand || '') || /sony/i.test(valori) || /^C\d{4}/i.test(base)) return 'sony';
   return 'altro';
