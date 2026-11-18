@@ -3384,7 +3384,9 @@ async function main() {
       await fase(nome, '✨ Motion graphic sul parlato', 'render');
       try {
         const { ultron } = await import('./ultron.mjs');
-        const fatte = await ultron({ video: outFile, brief: briefPerAI(brief || '') });
+        // Ultron 2: con le schermate sopra la testa le motion graphic sono già nel render; restano gli spazi «animazione»
+        const spazi = stileSuMisura?.grafica?.schermate === 'sopra' ? (piano.schermate || []).filter((x) => x.tipo === 'animazione') : null;
+        const fatte = await ultron({ video: outFile, brief: briefPerAI(brief || ''), spazi });
         if (fatte?.length) { motionFatte = fatte; log(`Ultron: ${fatte.length} motion graphic (${fatte.map((m) => m.tipo).join(', ')})`); }
       } catch (e) { log('Ultron saltato, il video resta senza motion graphic:', e.message.slice(0, 200)); }
     }

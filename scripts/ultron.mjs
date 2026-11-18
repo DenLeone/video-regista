@@ -89,12 +89,49 @@ export function filtroSovrapposizioni(momenti, w, h) {
   return { filtro: parti.join(';'), uscita: `[${prima}]` };
 }
 
-export async function ultron({ video, uscita, brief = '' }) {
+// ✨ Ultron 2 (18/11): con le schermate sopra la testa la regia mette già le motion graphic nel render e lascia
+// degli spazi «animazione» ({at, dur, prompt, testo}): qui Claude scrive l'animazione e la si sovrappone lì.
+// Se non riesce, al suo posto va la scritta di riserva (modello «titolo»): lo spazio non resta mai vuoto.
+export function spaziValidi(spazi, durata) {
+  return (spazi || []).filter((x) => x && Number.isFinite(+x.at) && +x.at >= 0 && +x.at < durata - 1 && (x.prompt || x.testo))
+    .map((x) => ({ at: +(+x.at).toFixed(2), dur: +Math.min(4.5, Math.max(1.5, +x.dur || 3.5), durata - 0.2 - x.at).toFixed(2), prompt: String(x.prompt || '').slice(0, 600), testo: String(x.testo || '').slice(0, 40) }))
+    .slice(0, 3);
+}
+async function riempiSpazi({ video, uscita, spazi, dir, durata, w, h, formato, t0 }) {
+  const fatti = [];
+  for (const [i, m] of spaziValidi(spazi, durata).entries()) {
+    const clip = path.join(dir, `a${i}.mov`);
+    try {
+      if (!m.prompt) throw new Error('senza descrizione');
+      const idea = await creaIdea({ prompt: `${m.prompt} (durata ${m.dur} secondi, nella fascia alta sopra la testa)`, formato, trasparente: true, tentativi: 3, revisione: false, ai: 'claude' });
+      await renderMotion({ modello: 'idea', formato, uscita: clip, html: idea.html, alfa: true });
+      fatti.push({ tipo: 'animazione', at: m.at, dur: m.dur, clip });
+    } catch (e) {
+      log(`animazione ${i + 1} non riuscita (${e.message.slice(0, 100)}): metto la scritta di riserva`);
+      if (!m.testo) continue;
+      try {
+        await renderMotion({ modello: 'titolo', testi: { testo: m.testo }, formato, uscita: clip, alfa: true });
+        fatti.push({ tipo: 'titolo', at: m.at, dur: Math.min(m.dur, DURATE.titolo), clip });
+      } catch (e2) { log(`anche la riserva è saltata: ${e2.message.slice(0, 100)}`); }
+    }
+  }
+  if (!fatti.length) return null;
+  const { filtro, uscita: v } = filtroSovrapposizioni(fatti, w, h);
+  const tmp = path.join(dir, 'ultron.mp4');
+  esegui('ffmpeg', ['-y', '-v', 'error', '-i', video, ...fatti.flatMap((m) => ['-i', m.clip]), '-filter_complex', filtro, '-map', v, '-map', '0:a?',
+    '-c:v', 'libx264', '-preset', 'medium', '-crf', '17', '-pix_fmt', 'yuv420p', '-c:a', 'copy', '-movflags', '+faststart', tmp]);
+  fs.copyFileSync(tmp, uscita || video);
+  log(`fatto: ${fatti.length} animazioni negli spazi in ${Math.round((Date.now() - t0) / 1000)} s`);
+  return fatti.map(({ clip, ...m }) => m);
+}
+
+export async function ultron({ video, uscita, brief = '', spazi = null }) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'ultron-'));
   const t0 = Date.now();
   try {
     const durata = durataDi(video), [w, h] = dimensioni(video);
     const formato = w > h ? 'orizzontale' : 'verticale';
+    if (Array.isArray(spazi)) return await riempiSpazi({ video, uscita, spazi, dir, durata, w, h, formato, t0 });
     const { frasi } = await trascrivi(video, dir);
     if (!frasi.length) { log('nessun parlato: niente grafiche'); return null; }
     const { testo } = await gemini([{ text: PROMPT(frasi, durata, brief) }], 'Rispondi solo con JSON valido.', true);

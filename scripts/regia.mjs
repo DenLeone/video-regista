@@ -480,7 +480,8 @@ export function risolviRegia(regia, analisi) {
   // griglia del profilo, scheda di un'app, pillola sopra il volto. Ancorate a una frase come le schede;
   // media = immagini della cartella (id o nome del file), si mostrano come miniature
   // + documentario verticale (16/11, src/SchermateSopra.tsx): terminale, numeri, titolo, repo, immagine; la chat con `risposta`
-  const TIPI_SCHERMATA = new Set(['capitolo', 'chat', 'finestra', 'griglia', 'app', 'pillola', 'terminale', 'numeri', 'titolo', 'repo', 'immagine']);
+  // ✨ Ultron 2 (18/11): lista, primadopo, logo, parola (src/SchermateSopra.tsx) e «animazione» (spazio per Ultron, scripts/ultron.mjs)
+  const TIPI_SCHERMATA = new Set(['capitolo', 'chat', 'finestra', 'griglia', 'app', 'pillola', 'terminale', 'numeri', 'titolo', 'repo', 'immagine', 'lista', 'primadopo', 'logo', 'parola', 'animazione']);
   const schermate = [];
   for (const k of Array.isArray(regia.schermate) ? regia.schermate : []) {
     const tipo = String(k?.tipo || '').toLowerCase();
@@ -491,6 +492,7 @@ export function risolviRegia(regia, analisi) {
     schermate.push({ at: q(Math.min(totale - 0.5, at + Math.max(0, Number(k.ritardo) || 0))), dur: q(Math.min(6, Math.max(1, Number(k.dur) || 2.5))), tipo,
       ...(k.titolo ? { titolo: String(k.titolo).slice(0, 40) } : {}), ...(k.testo ? { testo: String(k.testo).slice(0, 220) } : {}),
       ...(k.risposta ? { risposta: String(k.risposta).slice(0, 260) } : {}),
+      ...(tipo === 'animazione' && k.prompt ? { prompt: String(k.prompt).slice(0, 600) } : {}),
       ...(Number.isInteger(Number(k.numero)) && k.numero != null ? { numero: Number(k.numero) } : {}),
       // i comandi del terminale sono più lunghi delle voci di una finestra
       ...(Array.isArray(k.voci) ? { voci: k.voci.slice(0, 8).map((v) => String(v).slice(0, tipo === 'terminale' ? 72 : 28)) } : {}), ...(media.length ? { media } : {}) });

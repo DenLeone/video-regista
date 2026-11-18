@@ -69,8 +69,9 @@ export type Piano = {
   schede?: { at: number; dur: number; titolo: string; colore: string; sezioni: { titolo: string; testo: string }[]; sintesi?: string }[];
   // schermate animate dello stile ListaUI (vedi scripts/stili/ListaUI.md); media = file in public/media
   // + quelle del documentario verticale (src/SchermateSopra.tsx): chat con `risposta`, terminale, numeri, titolo, repo, immagine
-  schermate?: { at: number; dur: number; tipo: 'capitolo' | 'chat' | 'finestra' | 'griglia' | 'app' | 'pillola' | 'terminale' | 'numeri' | 'titolo' | 'repo' | 'immagine';
-    titolo?: string; testo?: string; risposta?: string; numero?: number; voci?: string[]; media?: string[] }[];
+  schermate?: { at: number; dur: number; tipo: 'capitolo' | 'chat' | 'finestra' | 'griglia' | 'app' | 'pillola' | 'terminale' | 'numeri' | 'titolo' | 'repo' | 'immagine'
+      | 'lista' | 'primadopo' | 'logo' | 'parola' | 'animazione';
+    titolo?: string; testo?: string; risposta?: string; numero?: number; voci?: string[]; media?: string[]; prompt?: string }[];
   sponsor?: { material: string; test: string } | null;
   sponsorAt?: number;       // da quando mostrare il cartiglio
   note?: string;            // dubbi/scelte di Claude, finiscono in NOTE.txt

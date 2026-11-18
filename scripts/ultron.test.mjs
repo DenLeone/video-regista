@@ -32,3 +32,19 @@ test('ultron: si accende con «Motion graphic: sì» nello stile o nel brief', (
   assert.equal(vuoleMotion(''), false);
   assert.match(PROMPT([{ a: 0, b: 2, t: 'ciao' }], 10, ''), /\[0–2\] ciao/);
 });
+
+// ✨ Ultron 2 (18/11): gli spazi «animazione» lasciati dalla regia
+test('spazi animazione: tenuti dentro il video, durata 1,5–4,5 s, al massimo 3', async () => {
+  const { spaziValidi } = await import('./ultron.mjs');
+  const s = spaziValidi([
+    { at: 3, dur: 3.5, prompt: 'una cartella che si apre', testo: 'Dentro ECC' },
+    { at: 34.5, dur: 4, prompt: 'troppo tardi' },
+    { at: 10, dur: 9, testo: 'solo riserva' },
+    { at: 20, dur: 1 },
+    { at: 22, dur: 0.2, prompt: 'corta' }, { at: 25, prompt: 'quarta' }, { at: 28, prompt: 'quinta' },
+  ], 35);
+  assert.deepEqual(s.map((x) => x.at), [3, 10, 22]);
+  assert.equal(s[1].dur, 4.5);
+  assert.equal(s[2].dur, 1.5);
+  assert.equal(s[1].prompt, '');
+});

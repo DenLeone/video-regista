@@ -101,6 +101,26 @@ export async function gemini(parti, sistema, json = false) {
   throw new Error('nessun modello Gemini ha risposto');
 }
 
+// ✨ Ultron 2 (18/11): l'animazione speciale la scrive Claude (abbonamento di Denis, CLAUDE_CODE_OAUTH_TOKEN, comando
+// `claude` come la regia). Senza token o se Claude non risponde, si torna a Gemini.
+export function claudePronto() {
+  if (!process.env.CLAUDE_CODE_OAUTH_TOKEN) return false;
+  const c = spawnSync('claude', ['--version'], { encoding: 'utf8' });
+  if (!c.error && c.status === 0) return true;
+  const i = spawnSync('npm', ['install', '-g', '@anthropic-ai/claude-code'], { encoding: 'utf8', timeout: 180_000 });
+  return i.status === 0;
+}
+export async function claude(parti, sistema) {
+  const modello = process.env.MOTION_CLAUDE || 'sonnet';
+  const testo = `${sistema}\n\n---\n\n${parti.map((x) => x.text || '').join('\n')}`;
+  const r = spawnSync('claude', ['-p', 'Follow the instructions received in input. Answer with the program only, do not use tools.', '--model', modello, '--output-format', 'json'],
+    { encoding: 'utf8', input: testo, timeout: 8 * 60_000, maxBuffer: 1 << 26 });
+  let j = {};
+  try { j = JSON.parse(r.stdout || '{}'); } catch { /* non JSON */ }
+  if (r.status !== 0 || j.is_error || !j.result) throw new Error(`Claude non ha risposto (${r.status})`);
+  return { testo: String(j.result), modello: `claude-${modello}` };
+}
+
 // prova la pagina in Chrome: errori, durata, schermo vuoto, animazione ferma; 6 fotogrammi per la revisione
 const TEMPI = [0.15, 0.3, 0.5, 0.65, 0.8, 0.97];
 export function giudica(stat, durata) {
@@ -144,7 +164,12 @@ function griglia(fotogrammi) {
   return b;
 }
 
-export async function creaIdea({ prompt, correzione = '', base = '', formato = 'verticale', tentativi = 3, trasparente = false, revisione = true }) {
+export async function creaIdea({ prompt, correzione = '', base = '', formato = 'verticale', tentativi = 3, trasparente = false, revisione = true, ai = 'gemini' }) {
+  const conClaude = ai === 'claude' && claudePronto();
+  const scrivi = async (parti, sistema) => {
+    if (conClaude) { try { return await claude(parti, sistema); } catch (e) { log(`${e.message}: provo con Gemini`); } }
+    return gemini(parti, sistema);
+  };
   const sistema = GUIDA(formato, trasparente);
   const richiesta = base
     ? `Here is the current animation program:\n\`\`\`js\n${base}\n\`\`\`\nOriginal request (Italian): ${prompt}\nChange requested now (Italian): ${correzione}\nApply the change, keep everything else. Return the full program.`
@@ -152,7 +177,7 @@ export async function creaIdea({ prompt, correzione = '', base = '', formato = '
   let codice = null, ultimo = null, n = 0;
   let parti = [{ text: richiesta }];
   for (; n < tentativi; n++) {
-    const { testo, modello } = await gemini(parti, sistema);
+    const { testo, modello } = await scrivi(parti, sistema);
     let c;
     try { c = estraiCodice(testo); } catch (e) { log(`tentativo ${n + 1} (${modello}): ${e.message}`); parti = [{ text: `${richiesta}\n\nYour previous answer was not usable: ${e.message}. Answer again with only the js code block.` }]; continue; }
     const p = await prova(c, formato, trasparente);
