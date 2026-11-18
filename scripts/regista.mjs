@@ -2795,7 +2795,9 @@ async function analizzaEsempi() {
 
 // Originali arrivati dopo, da Wi-Fi: finiscono nella cartella già usata, senza un nuovo render.
 // Un montaggio già partito non li vede: per usarli serve 🔁 Rifai.
-async function archiviaDaR2() {
+// 👥 dest = 05 · Archivio quando il girato va alla Squadra (azione «squadra»): da lì il 🧭 Capo squadra del bot Squadra
+async function archiviaDaR2(squadra = false) {
+  const dest = squadra ? (process.env.DIR_ARCHIVIO || '05 · Archivio') : IN_DIR;
   const nome = String(process.env.CARTELLA || '').trim();
   if (!nome) throw new Error('archivio: manca il nome della cartella');
   if (!DA_R2) throw new Error('archivio: manca il caricamento R2');
@@ -2805,9 +2807,10 @@ async function archiviaDaR2() {
   scaricaDaR2(R2_ID, SCARICO);
   const n = fs.readdirSync(SCARICO).filter((f) => f !== 'manifest.json');
   if (!n.length) throw new Error('su R2 non ci sono file');
-  rclone(...comandiCopiaDrive(SCARICO, remote(IN_DIR, nome)));
+  rclone(...comandiCopiaDrive(SCARICO, remote(dest, nome)));
   cancellaR2(R2_ID);
-  await notifica('📥 originali su Drive', nome, `${n.length} file in ${IN_DIR}/${nome}. Il montaggio già partito non li vede: per usarli, 🔁 Rifai da zero.`, { ok: true });
+  if (squadra) return notifica('👥 alla Squadra', nome, `${n.length} file in ${dest}/${nome}. Tra un minuto il bot Squadra ti chiede lo stile e fa partire la catena.`, { ok: true });
+  await notifica('📥 originali su Drive', nome, `${n.length} file in ${dest}/${nome}. Il montaggio già partito non li vede: per usarli, 🔁 Rifai da zero.`, { ok: true });
 }
 
 // Parte da sola quando l'app ha finito di caricare su R2, prima del tap «Monta».
@@ -2968,8 +2971,8 @@ async function main() {
       process.exitCode = 1;
     });
   }
-  if (process.env.AZIONE === 'archivio') {
-    return archiviaDaR2().catch(async (e) => {
+  if (process.env.AZIONE === 'archivio' || process.env.AZIONE === 'squadra') {
+    return archiviaDaR2(process.env.AZIONE === 'squadra').catch(async (e) => {
       log(e.stack || e.message);
       await notifica('⚠️ copia su Drive', process.env.CARTELLA || '—', `Errore: ${e.message}`);
       process.exitCode = 1;

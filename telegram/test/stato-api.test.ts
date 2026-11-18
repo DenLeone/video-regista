@@ -48,6 +48,7 @@ test('lo stato dell’app mostra fase e tempo, e Riprova rilancia gli stessi dat
     provaRegia: async () => null,
     archivia: async () => null,
     anticipa: async () => null,
+    allaSquadra: async () => null,
     studiaStile: async () => null,
     giri: async () => giri,
     video: async () => [],

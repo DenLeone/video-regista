@@ -26,6 +26,7 @@ function memoria(): { ops: Ops; db: Map<string, unknown>; telegram: string[] } {
     provaRegia: async () => null,
     archivia: async () => null,
     anticipa: async () => null,
+    allaSquadra: async () => null,
     studiaStile: async () => null,
     giri: async () => [],
     video: async () => [],
@@ -180,6 +181,17 @@ test('auth, blocco del secondo iPhone e caricamento che non rimanda i pezzi fatt
     const dopo = await chiama(ops, e, '/api/home', 'GET', undefined, cookie);
     const homeJson = await dopo.json() as { upload: { id: string } | null };
     assert.equal(homeJson.upload?.id, id);
+    // 👥 Alla Squadra: solo a caricamento finito, una volta sola, con nome e id del caricamento
+    const squadra: string[][] = [];
+    ops.allaSquadra = async (_e, c, r) => { squadra.push([c, r]); return null; };
+    const nessuno = await chiama(ops, e, '/api/squadra', 'POST', { r2: 'inesistente123' }, cookie);
+    assert.equal(nessuno.status, 400);
+    const via = await chiama(ops, e, '/api/squadra', 'POST', { r2: id }, cookie);
+    assert.equal(via.status, 200);
+    assert.deepEqual(squadra, [['Benchy', id]]);
+    const doppio = await chiama(ops, e, '/api/squadra', 'POST', { r2: id }, cookie);
+    assert.equal(doppio.status, 409);
+    assert.equal(squadra.length, 1);
     assert.equal(chiamate.some((c) => /[?&]cors=/.test(c) || c.includes('lifecycle')), false);
     assert.ok(chiamate.some((c) => c.startsWith('POST ') && c.includes('/inbox/') && c.includes('uploads=')));
     assert.ok(chiamate.some((c) => c.startsWith('POST ') && c.includes('/inbox/') && c.includes('uploadId=')));

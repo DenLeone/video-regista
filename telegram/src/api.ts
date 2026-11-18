@@ -463,6 +463,17 @@ export async function gestisciApp(
     return err ? errore(502, err) : json({ ok: true });
   }
 
+  // 👥 il girato caricato va alla Squadra (05 · Archivio + 🧭 Capo squadra), non al montaggio diretto
+  if (req.method === 'POST' && path === '/api/squadra') {
+    const body = await req.json().catch(() => ({})) as { r2?: string };
+    const sess = body.r2 ? await uploadPerId(env, ops, body.r2) : undefined;
+    if (!sess?.pronto) return errore(400, 'Prima finisci il caricamento.');
+    if (sess.avviato) return errore(409, 'Questo girato è già partito.');
+    const err = await ops.allaSquadra(env, sess.nome, sess.id);
+    if (!err) { sess.avviato = true; await ops.scrivi(env, `app:upload:${sess.id}`, sess); await ops.cancella(env, 'app:upload_aperto'); }
+    return err ? errore(502, err) : json({ ok: true });
+  }
+
   if (req.method === 'POST' && path === '/api/lotto') {
     const body = await req.json().catch(() => ({})) as { cartelle?: string[]; stile?: string };
     const nomi = (body.cartelle || []).map((n) => String(n)).filter(Boolean).slice(0, 20);

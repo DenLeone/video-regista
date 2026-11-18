@@ -67,6 +67,7 @@ function memoria() {
     provaRegia: async () => null,
     archivia: async () => null,
     anticipa: async () => null,
+    allaSquadra: async () => null,
     studiaStile: async () => null,
     giri: async () => [],
     video: async () => [],

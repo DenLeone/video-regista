@@ -552,7 +552,7 @@ function htmlUploadCompatta() {
   return `<button type="button" class="card" data-azione="apri-carica"><p class="meta">${etichetta}</p><p class="progresso-num" data-bind="pct">${pct}%</p><div class="barra" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${pct}" aria-label="Caricamento"><i data-barra style="width:${pct}%"></i></div><p class="meta numeri" data-bind="byte">${byteTxt(c.byteFatti)} di ${byteTxt(c.byteTotali)}</p></button>`;
 }
 function htmlProntoBox() {
-  return `<article class="card" style="text-align:center"><div class="check-pop">${ICO.check}</div><h2 class="fase-nome">Girato al sicuro</h2><p class="meta">Il montaggio non parte finché non lo chiedi.</p><div class="coppia"><button type="button" class="btn" data-azione="monta-ora">Monta ora</button><button type="button" class="btn vetro" data-azione="piu-tardi">Più tardi</button></div></article>`;
+  return `<article class="card" style="text-align:center"><div class="check-pop">${ICO.check}</div><h2 class="fase-nome">Girato al sicuro</h2><p class="meta">Il montaggio non parte finché non lo chiedi.</p><div class="coppia"><button type="button" class="btn" data-azione="monta-ora">Monta ora</button><button type="button" class="btn vetro" data-azione="alla-squadra">👥 Alla Squadra</button></div><button type="button" class="btn quiet" data-azione="piu-tardi">Più tardi</button></article>`;
 }
 function htmlRisultato(v) {
   return `<article class="card"><p class="meta">Pronto</p><h2 class="fase-nome">${esc(v.nome)}</h2><p class="meta">${esc(v.stile || '')}${v.durata ? ` · ${durataTxt(v.durata)}` : ''}</p><div class="coppia"><button type="button" class="btn" data-azione="apri-video" data-verso="${esc(v.runId)}">Guarda</button><button type="button" class="btn vetro" data-azione="correggi-vai" data-verso="${esc(v.runId)}">Correggi</button></div></article>`;
@@ -786,7 +786,7 @@ function htmlFoglioCarica() {
       <p class="nota">Se cambi app, iOS può fermare l’invio. Riapri: riparte dai pezzi già fatti. La sveglia dello schermo resta accesa solo mentre la pagina è visibile.</p>`;
   }
   let bar = '';
-  if (c.fase === 'pronto' && !c.archivio) bar = `<div class="sheet__bar"><button type="button" class="btn" data-azione="monta-ora">Monta ora</button><button type="button" class="btn quiet" data-azione="piu-tardi">Più tardi</button></div>`;
+  if (c.fase === 'pronto' && !c.archivio) bar = `<div class="sheet__bar"><button type="button" class="btn" data-azione="monta-ora">Monta ora</button><button type="button" class="btn vetro" data-azione="alla-squadra">👥 Alla Squadra</button><button type="button" class="btn quiet" data-azione="piu-tardi">Più tardi</button></div>`;
   else if (c.fase === 'pronto' && c.archivio) bar = `<div class="sheet__bar"><button type="button" class="btn" data-azione="copia-drive">Copiali su Drive</button></div>`;
   else if (c.fase === 'invio' || c.fase === 'pausa') bar = `<div class="sheet__bar"><div class="coppia"><button type="button" class="btn vetro" data-azione="${c.pausa ? 'riprendi-upload' : 'pausa-upload'}">${c.pausa ? 'Riprendi' : 'Pausa'}</button><button type="button" class="btn pericolo" data-azione="annulla-upload">Annulla</button></div><p class="meta-3">${c.pausa ? 'I pezzi già arrivati restano. Riprendi da dove era.' : 'Pausa tiene i pezzi. Annulla butta questo caricamento.'}</p></div>`;
   else if (!vivo) bar = `<div class="sheet__bar"><button type="button" class="btn" data-azione="avvia-upload">${c.archivio ? 'Manda il resto' : `Carica${tot ? ` ${byteTxt(tot)}` : ''}`}</button>${dati && tot ? `<p class="meta-3">Userà circa ${byteTxt(tot)} di dati.</p>` : ''}</div>`;
@@ -1377,6 +1377,11 @@ document.addEventListener('click', async (e) => {
     else if (azione === 'registra') await registra();
     else if (azione === 'monta-ora') { preparaNuovo({ forza: true }); apriFoglio('monta'); }
     else if (azione === 'piu-tardi') { chiudiFoglio(); vai('oggi'); }
+    else if (azione === 'alla-squadra') {
+      if (stato._avvio) return;
+      stato._avvio = true;
+      try { await allaSquadra(); } finally { stato._avvio = false; }
+    }
     else if (azione === 'avvia-montaggio') {
       if (stato._avvio) return;
       stato._avvio = true;
@@ -1642,6 +1647,19 @@ async function avviaMontaggio() {
   await api('/api/montaggi', { method: 'POST', body: { ...d, ...(up?.pronto ? { r2: up.id } : {}) } });
   toast(up?.pronto ? 'Montaggio avviato dal girato caricato.' : 'Montaggio avviato.');
   stato.nuovo = null;
+  await caricaHome();
+  vai('oggi');
+}
+
+// 👥 Alla Squadra (18/11): il girato va in 05 · Archivio e il 🧭 Capo squadra del bot Squadra fa tutta la catena
+// (Archivista → Fotografo → montaggio → Scrittore → Revisore → riepilogo). Lo stile lo chiede lui su Telegram.
+async function allaSquadra() {
+  const up = stato.home?.upload;
+  const id = up?.pronto ? up.id : stato.carica?.id;
+  if (!id) { toast('Prima finisci il caricamento.'); return; }
+  await api('/api/squadra', { method: 'POST', body: { r2: id } });
+  toast('Alla Squadra: il girato va in 05 · Archivio. Lo stile te lo chiede il bot Squadra su Telegram.');
+  chiudiFoglio();
   await caricaHome();
   vai('oggi');
 }

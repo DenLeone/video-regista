@@ -1937,6 +1937,18 @@ async function onNotify(env: Env, n: Notify) {
     return;
   }
   // analisi degli esempi, prova della sola regia, copia degli originali, analisi prima del tap: niente scheda di montaggio
+  // 👥 girato dell'app arrivato in 05 · Archivio: da qui continua il bot Squadra
+  if (n.azione === 'squadra') {
+    if (n.tipo === 'fase') return;
+    const s: Schermo = n.ok
+      ? { testo: `👥 <b>Girato alla Squadra</b> · ${esc(n.nome)}
+${esc(tronca(n.testo, 500))}`, tasti: [[MENU_TASTO]] }
+      : { testo: `⚠️ <b>Girato non arrivato alla Squadra</b> — ${esc(n.nome)}
+<blockquote>${esc(tronca(n.testo, 500))}</blockquote>`, tasti: [[MENU_TASTO]] };
+    for (const chat of chats) await invia(env, chat, s, true);
+    await avvisaApp(env, { tipo: 'archivio', titolo: n.ok ? 'Girato alla Squadra' : 'Copia non riuscita', corpo: n.nome, url: '/' });
+    return;
+  }
   if (n.azione === 'esempi' || n.azione === 'regia' || n.azione === 'archivio' || n.azione === 'prepara') {
     if (n.azione === 'prepara') {
       if (n.tipo === 'fase') return;
@@ -2350,6 +2362,11 @@ async function provaRegiaApp(env: Env, cartella: string, brief: string): Promise
 async function archiviaApp(env: Env, cartella: string, r2: string): Promise<string | null> {
   return dispatchSemplice(env, { azione: 'archivio', cartella, r2, origine: '97' });
 }
+// 👥 «regista · <nome> · Squadra» nel nome del giro: il bot Squadra (Den) guarda i giri finiti ogni minuto e,
+// visto questo, fa partire il 🧭 Capo squadra sulla cartella di 05 · Archivio. Nessuna chiave in comune tra i bot.
+async function allaSquadraApp(env: Env, cartella: string, r2: string): Promise<string | null> {
+  return dispatchSemplice(env, { azione: 'squadra', cartella, r2, origine: '97', chi: 'Squadra' });
+}
 async function anticipaApp(env: Env, cartella: string, r2: string): Promise<string | null> {
   return dispatchSemplice(env, { azione: 'prepara', cartella, r2, origine: '97' });
 }
@@ -2386,6 +2403,7 @@ function creaOps(): Ops {
     },
     archivia: (env, cartella, r2) => archiviaApp(e(env), cartella, r2),
     anticipa: (env, cartella, r2) => anticipaApp(e(env), cartella, r2),
+    allaSquadra: (env, cartella, r2) => allaSquadraApp(e(env), cartella, r2),
     giri: (env) => giri(e(env)),
     video: async (env) => (await leggi<VideoFatto[]>(e(env), 'video')) || [],
     memo: async (env, runId) => {
