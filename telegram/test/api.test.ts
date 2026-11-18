@@ -248,7 +248,7 @@ test('📲 Comandi: chiave, file interi su R2, poi Squadra / montaggio / solo ca
     assert.equal(squadra.length, 0);
 
     pesi.set(`inbox/${avvio.id}/C1293_2.mov`, 500);
-    const ok = await post('/api/comandi/fine', { id: avvio.id, dove: 'squadra' });
+    const ok = await post('/api/comandi/fine', { id: avvio.id, dove: 'Squadra ' });
     assert.equal(ok.status, 200);
     assert.match(((await ok.json()) as { messaggio: string }).messaggio, /2 clip/);
     assert.deepEqual(squadra, [['Ajazz AK820', avvio.id]]);

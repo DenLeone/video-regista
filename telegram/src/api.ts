@@ -189,7 +189,9 @@ async function gestisciComandi(req: Request, env: Segreti, ops: Ops, path: strin
     return json({ nome: nomeFile, url: await urlOggetto(c, key) });
   }
   if (path === '/api/comandi/fine') {
-    const dove = body.dove === 'squadra' || body.dove === 'monta' ? body.dove : 'carica';
+    // dall'elenco dei Comandi arriva «Squadra», «Monta», «Carica» (anche con spazi o emoji)
+    const scelta = String(body.dove || '').toLowerCase();
+    const dove = scelta.includes('squadra') ? 'squadra' : scelta.includes('monta') ? 'monta' : 'carica';
     if (!sess.file.length) return errore(400, 'Nessun file caricato.');
     if (sess.avviato) return errore(409, 'Questo girato è già partito.');
     // il PUT dei Comandi non dice niente al Worker: si controlla su R2 che ogni file ci sia, intero
