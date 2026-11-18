@@ -2,7 +2,7 @@
 // 1) Gemini scrive il codice dell'animazione (canvas 2D, attrezzi di motion/motore.js);
 // 2) la proviamo davvero in Chrome: errori, schermo vuoto, niente movimento → l'errore torna a Gemini (max 3 giri);
 // 3) Gemini GUARDA 6 fotogrammi e corregge quello che non rispetta la richiesta (1 giro di revisione);
-// 4) il render lo fa scripts/motion.mjs. Chiave gratuita prima (Pro, poi Flash); quella a pagamento solo con Flash-Lite.
+// 4) il render lo fa scripts/motion.mjs. Chiave gratuita prima (Pro, poi Flash); a pagamento Pro se configurato, altrimenti solo Flash-Lite.
 // Repo pubblico: nel log solo tentativi ed esiti, mai la descrizione né il codice.
 import fs from 'node:fs';
 import os from 'node:os';
@@ -76,11 +76,15 @@ export function estraiCodice(testo) {
   return c;
 }
 
-// giri di chiave e modello: gratis prima; a pagamento solo Flash-Lite (regola di Denis)
+// giri di chiave e modello: gratis prima; a pagamento Pro se MOTION_MODELLI_PAGAMENTO è impostata, altrimenti solo Flash-Lite
 function giri() {
   const g = [];
   if (process.env.GEMINI_API_KEY_GRATIS) for (const m of (process.env.MOTION_MODELLI || 'gemini-pro-latest,gemini-flash-latest').split(',')) g.push([process.env.GEMINI_API_KEY_GRATIS, m]);
-  if (process.env.GEMINI_API_KEY) g.push([process.env.GEMINI_API_KEY, 'gemini-flash-lite-latest']);
+  if (process.env.GEMINI_API_KEY) {
+    const pagati = (process.env.MOTION_MODELLI_PAGAMENTO || '').split(',').map((s) => s.trim()).filter(Boolean);
+    for (const m of pagati) g.push([process.env.GEMINI_API_KEY, m]);
+    g.push([process.env.GEMINI_API_KEY, 'gemini-flash-lite-latest']);
+  }
   return g;
 }
 export async function gemini(parti, sistema, json = false) {
