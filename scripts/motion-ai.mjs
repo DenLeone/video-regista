@@ -77,11 +77,15 @@ export function estraiCodice(testo) {
 }
 
 // giri di chiave e modello: gratis prima; a pagamento Pro se MOTION_MODELLI_PAGAMENTO è impostata, altrimenti solo Flash-Lite
+// Ultron / Squad: se MOTION_MODELLI_PAGAMENTO è settata, usala anche sulla chiave gratuita (Squad mette la paid key in GEMINI_API_KEY_GRATIS)
 function giri() {
   const g = [];
-  if (process.env.GEMINI_API_KEY_GRATIS) for (const m of (process.env.MOTION_MODELLI || 'gemini-pro-latest,gemini-flash-latest').split(',')) g.push([process.env.GEMINI_API_KEY_GRATIS, m]);
+  const pagati = (process.env.MOTION_MODELLI_PAGAMENTO || '').split(',').map((s) => s.trim()).filter(Boolean);
+  if (process.env.GEMINI_API_KEY_GRATIS) {
+    const modelliGratis = pagati.length ? pagati : (process.env.MOTION_MODELLI || 'gemini-pro-latest,gemini-flash-latest').split(',').map((s) => s.trim()).filter(Boolean);
+    for (const m of modelliGratis) g.push([process.env.GEMINI_API_KEY_GRATIS, m]);
+  }
   if (process.env.GEMINI_API_KEY) {
-    const pagati = (process.env.MOTION_MODELLI_PAGAMENTO || '').split(',').map((s) => s.trim()).filter(Boolean);
     for (const m of pagati) g.push([process.env.GEMINI_API_KEY, m]);
     g.push([process.env.GEMINI_API_KEY, 'gemini-flash-lite-latest']);
   }
