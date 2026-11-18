@@ -1,7 +1,7 @@
 // Route dell'app. Lo stato dei montaggi è quello del bot: stessa memoria, stessi workflow.
 import { sha256Hex, timingSafeEqual, b64urlToBytes, bytesToB64url } from './b64';
 import type { BriefApp, Imp, MemoApp, Ops, Segreti } from './ops';
-import { credenzialiOk, completaMultipart, creaMultipart, scriviOggetto, urlPezzo, annullaMultipart, type CredenzialiR2 } from './s3';
+import { credenzialiOk, completaMultipart, creaMultipart, scriviOggetto, urlPezzo, urlOggetto, pesoOggetto, annullaMultipart, type CredenzialiR2 } from './s3';
 import {
   PARTE, PARALLELO, MAX_FILE, byteFatti, dimensioneParte, etagValido, limiteFile, nomeSicuro,
   numeroParti, partiMancanti, registraEtag, type ModalitaUpload, type ParteFatta,
@@ -142,6 +142,81 @@ function riassuntoUpload(s: SessioneUpload) {
   const totale = file.reduce((t, f) => t + f.size, 0);
   const fatti = file.reduce((t, f) => t + f.byte, 0);
   return { id: s.id, nome: s.nome, modalita: s.modalita, parziale: s.parziale, archivio: Boolean(s.archivio), pronto: Boolean(s.pronto), avviato: Boolean(s.avviato), quando: s.quando, totale, fatti, file };
+}
+
+// ---------- 📲 Comandi dell'iPhone (18/11) ----------
+// «Nuovo video» comprime sul telefono e carica da solo, senza passare dall'app. I Comandi non hanno la passkey:
+// usano una chiave creata nell'app (Altro → Comandi dell'iPhone), che Denis incolla nel comando. Sul Worker resta
+// solo l'impronta (SHA-256). La chiave serve SOLO a caricare girato e farlo partire: niente pubblicazioni,
+// impostazioni, cancellazioni. Ogni file è un PUT unico su R2 (niente pezzi: i Comandi non sanno dividere un file).
+const CHIAVE_COMANDI = 'app:comandi';
+async function chiaveComandiValida(req: Request, env: Segreti, ops: Ops): Promise<boolean> {
+  const t = (req.headers.get('authorization') || '').replace(/^Bearer\s+/i, '').trim();
+  if (!/^[A-Za-z0-9_-]{30,}$/.test(t)) return false;
+  const k = await ops.leggi<{ impronta: string }>(env, CHIAVE_COMANDI);
+  return Boolean(k?.impronta) && timingSafeEqual(await sha256Hex(t), k!.impronta);
+}
+
+async function gestisciComandi(req: Request, env: Segreti, ops: Ops, path: string): Promise<Response> {
+  if (req.method !== 'POST') return errore(405, 'Solo POST.');
+  if (!(await chiaveComandiValida(req, env, ops))) return errore(401, 'Chiave dei Comandi non valida: creane una nell\'app (Altro → Comandi dell\'iPhone).');
+  const c = cred(env);
+  if (!c) return errore(503, 'R2 non è configurato sul Worker.');
+  const body = await req.json().catch(() => ({})) as { nome?: string; id?: string; file?: string; size?: number | string; dove?: string };
+  if (path === '/api/comandi/inizia') {
+    const nome = String(body.nome || '').replace(/[\\/:*?"<>|]+/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 80);
+    if (!nome) return errore(400, 'Manca il nome del video.');
+    const id = crypto.randomUUID().replace(/-/g, '');
+    const sess: SessioneUpload = { id, nome, modalita: 'originali', parziale: false, quando: Date.now(), file: [] };
+    await ops.scrivi(env, `app:upload:${id}`, sess);
+    return json({ id, nome });
+  }
+  const sess = body.id ? await uploadPerId(env, ops, String(body.id)) : undefined;
+  if (!sess) return errore(404, 'Caricamento non trovato.');
+  if (path === '/api/comandi/file') {
+    if (sess.pronto) return errore(409, 'Caricamento già chiuso.');
+    if (sess.file.length >= MAX_FILE) return errore(400, `Massimo ${MAX_FILE} file per volta.`);
+    const size = Number(body.size) || 0;
+    const err = limiteFile(size);
+    if (err) return errore(400, err);
+    const nomeFile = nomeSicuro(String(body.file || 'clip.mov'), new Set(sess.file.map((f) => f.nome.toLowerCase())));
+    const key = `inbox/${sess.id}/${nomeFile}`;
+    sess.file.push({ nome: nomeFile, size, tipo: '', key, uploadId: '', parte: size, parti: [] });
+    await ops.scrivi(env, `app:upload:${sess.id}`, sess);
+    return json({ nome: nomeFile, url: await urlOggetto(c, key) });
+  }
+  if (path === '/api/comandi/fine') {
+    const dove = body.dove === 'squadra' || body.dove === 'monta' ? body.dove : 'carica';
+    if (!sess.file.length) return errore(400, 'Nessun file caricato.');
+    if (sess.avviato) return errore(409, 'Questo girato è già partito.');
+    // il PUT dei Comandi non dice niente al Worker: si controlla su R2 che ogni file ci sia, intero
+    const mancano: string[] = [];
+    for (const f of sess.file) {
+      const peso = await pesoOggetto(c, f.key).catch(() => null);
+      if (peso == null || (f.size && peso !== f.size)) mancano.push(f.nome); else f.completo = true;
+    }
+    if (mancano.length) {
+      await ops.scrivi(env, `app:upload:${sess.id}`, sess);
+      return errore(409, `Non sono arrivati interi: ${mancano.join(', ')}. Rilancia il comando.`);
+    }
+    sess.pronto = true;
+    await scriviOggetto(c, `inbox/${sess.id}/manifest.json`, JSON.stringify({ id: sess.id, nome: sess.nome, modalita: sess.modalita, file: sess.file.map((f) => ({ nome: f.nome, size: f.size, key: f.key })) }), 'application/json').catch(() => undefined);
+    let err: string | null = null;
+    if (dove === 'squadra') err = await ops.allaSquadra(env, sess.nome, sess.id);
+    else if (dove === 'monta') err = await ops.lancia(env, { cartella: sess.nome, brief: ops.componiBrief({}, (await ops.impostazioni(env)).stile), r2: sess.id });
+    else {
+      // solo caricato: compare nell'app come «Girato al sicuro» (Monta ora / Alla Squadra) e l'analisi parte già
+      await ops.scrivi(env, 'app:upload_aperto', sess.id);
+      await ops.anticipa(env, sess.nome, sess.id).catch(() => undefined);
+    }
+    if (!err && dove !== 'carica') sess.avviato = true;
+    await ops.scrivi(env, `app:upload:${sess.id}`, sess);
+    if (err) return errore(502, err);
+    const mb = Math.round(sess.file.reduce((t, f) => t + f.size, 0) / 1e6);
+    const cosa = dove === 'squadra' ? 'alla Squadra: lo stile te lo chiede il bot Squadra' : dove === 'monta' ? 'montaggio partito' : 'nell\'app, pronto da montare';
+    return json({ ok: true, messaggio: `✅ ${sess.file.length} clip, ${mb} MB · ${cosa}` });
+  }
+  return errore(404, 'Route sconosciuta.');
 }
 
 async function inCorso(env: Segreti, ops: Ops) {
@@ -388,7 +463,24 @@ export async function gestisciApp(
     }
   }
 
+  // 📲 i Comandi hanno la loro chiave, non la sessione dell'app
+  if (path.startsWith('/api/comandi/') && path !== '/api/comandi/chiave') return gestisciComandi(req, env, ops, path);
+
   if (!(await sessioneAttiva(req, env, ops))) return errore(401, 'Sessione assente o scaduta.');
+
+  // la chiave dei Comandi si crea e si toglie solo dall'app (con la passkey). Si vede una volta sola.
+  if (path === '/api/comandi/chiave') {
+    if (req.method === 'GET') {
+      const k = await ops.leggi<{ creata: number }>(env, CHIAVE_COMANDI);
+      return json({ attiva: Boolean(k), creata: k?.creata || null });
+    }
+    if (req.method === 'POST') {
+      const chiave = bytesToB64url(crypto.getRandomValues(new Uint8Array(32)));
+      await ops.scrivi(env, CHIAVE_COMANDI, { impronta: await sha256Hex(chiave), creata: Date.now() });
+      return json({ chiave });
+    }
+    if (req.method === 'DELETE') { await ops.cancella(env, CHIAVE_COMANDI); return json({ ok: true }); }
+  }
 
   if (req.method === 'POST' && path === '/api/auth/esci') {
     const token = tokenDalRichiesta(req);

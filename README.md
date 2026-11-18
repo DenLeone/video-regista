@@ -73,6 +73,22 @@ Su 8 GB: il telefono passa da circa 3,7 ore a circa 53 minuti (poco più di 2,8 
 
 R2: circa 0,015 USD per GB al mese, niente egress, operazioni economiche. I file si cancellano dopo la copia su Drive.
 
+## Comandi dell’iPhone (18/11)
+
+Il comando rapido «Nuovo video» comprime sul telefono (HEVC 4K, 10 bit) e carica da solo, senza aprire l’app.
+I Comandi non hanno la passkey: usano una chiave creata in Altro → Comandi dell’iPhone. Si vede una volta sola,
+sul Worker resta solo l’impronta SHA-256, una nuova spegne la vecchia. Serve solo a caricare il girato e farlo partire.
+
+| Route (Bearer chiave) | Corpo | Risposta |
+| --- | --- | --- |
+| `POST /api/comandi/inizia` | `{nome}` | `{id}` |
+| `POST /api/comandi/file` | `{id, file, size}` | `{nome, url}`: PUT unico del file intero su R2 |
+| `POST /api/comandi/fine` | `{id, dove: squadra \| monta \| carica}` | `{messaggio}`: controlla su R2 che ogni file sia intero, poi parte |
+
+`squadra` = 05 · Archivio e il 🧭 Capo squadra del bot Squadra; `monta` = montaggio con lo stile predefinito;
+`carica` = resta nell’app come «Girato al sicuro» (Monta ora / 👥 Alla Squadra), con l’analisi anticipata.
+Niente ripresa a pezzi: se la rete cade, quella clip si rimanda intera (con l’HEVC del telefono sono ~100 MB).
+
 ## Cosa fa l’app, e cosa no
 
 Fatto, come nel bot: nuovo montaggio guidato (cartella, stile, sponsor, durata, tono, giudizio, note, tavola solo per Blueprint), più video, ultimi video, stato dal vivo mentre la pagina è aperta, approva, didascalia, titolo, Instagram, YouTube, pubblica, correggi, cambia stile, prova da 10 secondi, solo render, rifai, riprova, prova della regia, impostazioni. Caricamento R2 con ripresa. Notifiche se ci sono le chiavi VAPID (su iOS solo dall’icona in Home). Playback se ci sono le chiavi Drive.

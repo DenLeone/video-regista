@@ -126,6 +126,34 @@ export async function urlPezzo(c: CredenzialiR2, key: string, uploadId: string, 
   return `https://${headers.host}${uri}?${queryCanonica(query)}`;
 }
 
+/** URL per caricare un file intero con un solo PUT (i Comandi dell'iPhone non sanno fare i pezzi). */
+export async function urlOggetto(c: CredenzialiR2, key: string, scadenza = 6 * 3600): Promise<string> {
+  const region = 'auto';
+  const amzDate = dataAmz();
+  const scope = `${amzDate.slice(0, 8)}/${region}/s3/aws4_request`;
+  const uri = uriCanonico(c.bucket, key);
+  const query: Record<string, string> = {
+    'X-Amz-Algorithm': 'AWS4-HMAC-SHA256',
+    'X-Amz-Credential': `${c.accessKeyId}/${scope}`,
+    'X-Amz-Date': amzDate,
+    'X-Amz-Expires': String(scadenza),
+    'X-Amz-SignedHeaders': 'host',
+  };
+  const headers = { host: hostDi(c.accountId) };
+  const signature = await firmaIntestazioni({
+    method: 'PUT', uri, query, headers, payloadHash: 'UNSIGNED-PAYLOAD', secret: c.secretAccessKey, region, amzDate,
+  });
+  query['X-Amz-Signature'] = signature;
+  return `https://${headers.host}${uri}?${queryCanonica(query)}`;
+}
+
+/** Peso dell'oggetto su R2 (HEAD), null se non c'è. */
+export async function pesoOggetto(c: CredenzialiR2, key: string): Promise<number | null> {
+  const r = await chiamataR2(c, { method: 'HEAD', key });
+  if (!r.ok) return null;
+  return Number(r.headers.get('content-length') || 0);
+}
+
 export async function creaMultipart(c: CredenzialiR2, key: string, contentType: string): Promise<string> {
   const r = await chiamataR2(c, { method: 'POST', key, query: { uploads: '' }, contentType, body: '' });
   const t = await r.text();

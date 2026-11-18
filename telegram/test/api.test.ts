@@ -201,3 +201,74 @@ test('auth, blocco del secondo iPhone e caricamento che non rimanda i pezzi fatt
     globalThis.fetch = originale;
   }
 });
+
+test('📲 Comandi: chiave, file interi su R2, poi Squadra / montaggio / solo caricato', async () => {
+  const { ops, db } = memoria();
+  const e = env();
+  const chiave = 'C'.repeat(43);
+  const { sha256Hex } = await import('../src/b64');
+  db.set('app:comandi', { impronta: await sha256Hex(chiave), creata: 1 });
+  const pesi = new Map<string, number>();
+  const squadra: string[][] = [], lanci: unknown[] = [], anticipi: string[] = [];
+  ops.allaSquadra = async (_e, c, r) => { squadra.push([c, r]); return null; };
+  ops.lancia = async (_e, i) => { lanci.push(i); return null; };
+  ops.anticipa = async (_e, c) => { anticipi.push(c); return null; };
+  const originale = globalThis.fetch;
+  globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+    const u = new URL(String(input));
+    if ((init?.method || 'GET') === 'HEAD') {
+      const p = pesi.get(decodeURIComponent(u.pathname.split('/').slice(2).join('/')));
+      return p == null ? new Response(null, { status: 404 }) : new Response(null, { status: 200, headers: { 'content-length': String(p) } });
+    }
+    return new Response('', { status: 200 });
+  }) as typeof fetch;
+  const post = (path: string, body: unknown, k = chiave) => gestisciApp(new Request(ORIGIN + path, {
+    method: 'POST', headers: { 'content-type': 'application/json', authorization: `Bearer ${k}` }, body: JSON.stringify(body),
+  }), e, ops);
+  try {
+    assert.equal((await post('/api/comandi/inizia', { nome: 'X' }, 'sbagliata'.repeat(5))).status, 401);
+    assert.equal((await gestisciApp(new Request(ORIGIN + '/api/comandi/inizia', { method: 'POST', body: '{}' }), e, ops)).status, 401);
+
+    const avvio = await (await post('/api/comandi/inizia', { nome: 'Ajazz AK820' })).json() as { id: string };
+    const f1 = await (await post('/api/comandi/file', { id: avvio.id, file: 'C1293.mov', size: 1000 })).json() as { nome: string; url: string };
+    const f2 = await (await post('/api/comandi/file', { id: avvio.id, file: 'C1293.mov', size: 500 })).json() as { nome: string; url: string };
+    assert.equal(f1.nome, 'C1293.mov');
+    assert.equal(f2.nome, 'C1293_2.mov', 'stesso nome: non si sovrascrive');
+    const firmato = new URL(f1.url);
+    assert.equal(firmato.searchParams.has('partNumber'), false);
+    assert.equal(firmato.searchParams.get('X-Amz-SignedHeaders'), 'host');
+    assert.match(firmato.pathname, new RegExp(`/inbox/${avvio.id}/C1293\\.mov$`));
+
+    // un file arrivato a metà: niente partenza
+    pesi.set(`inbox/${avvio.id}/C1293.mov`, 1000);
+    pesi.set(`inbox/${avvio.id}/C1293_2.mov`, 200);
+    const meta = await post('/api/comandi/fine', { id: avvio.id, dove: 'squadra' });
+    assert.equal(meta.status, 409);
+    assert.match(((await meta.json()) as { errore: string }).errore, /C1293_2\.mov/);
+    assert.equal(squadra.length, 0);
+
+    pesi.set(`inbox/${avvio.id}/C1293_2.mov`, 500);
+    const ok = await post('/api/comandi/fine', { id: avvio.id, dove: 'squadra' });
+    assert.equal(ok.status, 200);
+    assert.match(((await ok.json()) as { messaggio: string }).messaggio, /2 clip/);
+    assert.deepEqual(squadra, [['Ajazz AK820', avvio.id]]);
+    assert.equal((await post('/api/comandi/fine', { id: avvio.id, dove: 'squadra' })).status, 409, 'una volta sola');
+    assert.equal((await post('/api/comandi/file', { id: avvio.id, file: 'altro.mov', size: 5 })).status, 409, 'chiuso');
+
+    // montaggio diretto e solo caricato
+    const m = await (await post('/api/comandi/inizia', { nome: 'Monta' })).json() as { id: string };
+    await post('/api/comandi/file', { id: m.id, file: 'a.mov', size: 10 });
+    pesi.set(`inbox/${m.id}/a.mov`, 10);
+    assert.equal((await post('/api/comandi/fine', { id: m.id, dove: 'monta' })).status, 200);
+    assert.deepEqual(lanci, [{ cartella: 'Monta', brief: 'Stile: Blueprint', r2: m.id }]);
+    const c = await (await post('/api/comandi/inizia', { nome: 'Dopo' })).json() as { id: string };
+    await post('/api/comandi/file', { id: c.id, file: 'b.mov', size: 10 });
+    pesi.set(`inbox/${c.id}/b.mov`, 10);
+    assert.equal((await post('/api/comandi/fine', { id: c.id })).status, 200);
+    assert.equal(db.get('app:upload_aperto'), c.id);
+    assert.deepEqual(anticipi, ['Dopo']);
+
+    // la chiave si crea solo con la sessione dell'app
+    assert.equal((await gestisciApp(new Request(ORIGIN + '/api/comandi/chiave', { method: 'POST', body: '{}' }), e, ops)).status, 401);
+  } finally { globalThis.fetch = originale; }
+});

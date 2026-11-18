@@ -632,6 +632,18 @@ function htmlDettaglio() {
     ${pub ? `<label class="etichetta" for="titolo-inline">Titolo YouTube</label><input class="titolo-edit" id="titolo-inline" maxlength="100" value="${esc(titolo)}">` : '<p class="nota">Didascalie non ancora pronte.</p>'}`;
 }
 
+// 📲 chiave per i Comandi dell'iPhone («Nuovo video» carica da solo): si vede una volta sola, poi resta solo l'impronta
+function htmlComandi() {
+  const k = stato.comandi || {};
+  const nuova = stato.chiaveNuova;
+  return `<section class="blocco"><h2>Comandi dell’iPhone</h2><div class="gruppo">
+      <div class="riga-set"><span>Chiave per «Nuovo video»<span class="sub">${k.attiva ? `Attiva dal ${esc(new Date(k.creata).toLocaleDateString('it-IT'))}` : 'Nessuna'}</span></span></div>
+      ${nuova ? `<div class="riga-set" style="flex-direction:column;align-items:stretch"><textarea class="campo" readonly rows="2" style="font-family:ui-monospace,monospace;font-size:13px">${esc(nuova)}</textarea><button type="button" class="btn" data-azione="comandi-copia" style="margin-top:8px">Copia la chiave</button></div>` : ''}
+      <button type="button" class="riga-set" data-azione="comandi-crea">${k.attiva ? 'Crea una chiave nuova' : 'Crea la chiave'}<span class="chev">${ICO.chev}</span></button>
+      ${k.attiva ? `<button type="button" class="riga-set" data-azione="comandi-togli">Togli la chiave<span class="chev">${ICO.chev}</span></button>` : ''}
+    </div><p class="nota">${nuova ? 'Incollala nel comando adesso: non la rivedrai più. ' : ''}Serve solo a caricare il girato e farlo partire (Squadra o montaggio): non pubblica e non cambia niente. Una chiave nuova spegne quella vecchia.</p></section>`;
+}
+
 function htmlAltro() {
   const imp = stato.home?.impostazioni || {};
   const stili = stato.stili || [];
@@ -667,6 +679,7 @@ function htmlAltro() {
       <button type="button" class="riga-set" data-azione="sblocco">Autorizza un altro iPhone<span class="chev">${ICO.chev}</span></button>
       <button type="button" class="riga-set" data-azione="esci">Esci<span class="chev">${ICO.chev}</span></button>
     </div><p class="nota">Cartelle Drive: 01 · Da editare, 02 · Fatti, 03 · Da pubblicare. Il secondo account Telegram non entra nell’app.</p></section>
+    ${htmlComandi()}
     <section class="blocco"><h2>Aspetto</h2><div class="gruppo">
       <div class="riga-set" style="flex-direction:column;align-items:stretch"><span>Vetro</span><div class="segmenti" style="margin-top:8px"><button type="button" data-azione="vetro" data-verso="auto" aria-pressed="${vetro === 'auto' ? 'true' : 'false'}">Auto</button><button type="button" data-azione="vetro" data-verso="solido" aria-pressed="${vetro === 'solido' ? 'true' : 'false'}">Solido</button></div></div>
       <div class="riga-set spazio-riga">
@@ -1458,6 +1471,22 @@ document.addEventListener('click', async (e) => {
     else if (azione === 'prova-regia') await provaRegia();
     else if (azione === 'push') await attivaPush();
     else if (azione === 'sblocco') { await api('/api/auth/sblocco', { method: 'POST', body: {} }); toast('Codice mandato su Telegram. Vale 10 minuti sul telefono nuovo.'); }
+    else if (azione === 'comandi-crea') {
+      if (stato.comandi?.attiva && !confirm('La chiave vecchia smette di funzionare: dovrai incollare la nuova nel comando. Continuo?')) return;
+      const r = await api('/api/comandi/chiave', { method: 'POST', body: {} });
+      stato.chiaveNuova = r.chiave;
+      stato.comandi = { attiva: true, creata: Date.now() };
+      disegna({ tieniScroll: true });
+    } else if (azione === 'comandi-copia') {
+      await navigator.clipboard.writeText(stato.chiaveNuova || '');
+      toast('Chiave copiata. Incollala nel comando «Nuovo video».');
+    } else if (azione === 'comandi-togli') {
+      if (!confirm('Tolgo la chiave? Il comando «Nuovo video» smette di caricare finché non ne crei una nuova.')) return;
+      await api('/api/comandi/chiave', { method: 'DELETE' });
+      stato.chiaveNuova = null;
+      stato.comandi = { attiva: false };
+      disegna({ tieniScroll: true });
+    }
     else if (azione === 'esci') { await api('/api/auth/esci', { method: 'POST', body: {} }); stato.schermo = 'accesso'; stato.foglio = null; disegna(); }
     else if (azione === 'badge-test') {
       if (!navigator.setAppBadge) throw new Error('Questo iPhone non mostra il badge. Serve l’app sulla Home, iOS 16.4 o successivo.');
@@ -1721,6 +1750,8 @@ async function caricaAltro() {
   stato.stili = stili.stili || [];
   stato.collegamenti = col;
   stato.regia = regia;
+  stato.chiaveNuova = null;
+  try { stato.comandi = await api('/api/comandi/chiave'); } catch { stato.comandi = null; }
 }
 
 async function attivaPush() {
