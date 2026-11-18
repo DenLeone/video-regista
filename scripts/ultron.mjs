@@ -13,6 +13,7 @@ import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { renderMotion } from './motion.mjs';
 import { creaIdea, gemini } from './motion-ai.mjs';
+import { creaScena, renderScena, FASCIA } from './bdm.mjs';
 
 const log = (...a) => console.log('ultron:', ...a);
 const DURATE = { numero: 3.2, titolo: 3.8, idea: 3.6 };
@@ -82,11 +83,21 @@ export function filtroSovrapposizioni(momenti, w, h) {
   let prima = '0:v';
   momenti.forEach((m, i) => {
     const fine = +(m.at + m.dur).toFixed(2);
-    parti.push(`[${i + 1}:v]scale=${w}:${h},setpts=PTS-STARTPTS+${m.at}/TB,fade=t=in:st=${m.at}:d=0.12:alpha=1,fade=t=out:st=${(fine - 0.35).toFixed(2)}:d=0.35:alpha=1[o${i}]`);
-    parti.push(`[${prima}][o${i}]overlay=eof_action=pass:enable='between(t,${m.at},${fine})'[v${i}]`);
+    // le scene Black Den Motion sono una fascia (es. 1080×700): larghezza del video, in alto; le altre a schermo intero
+    const f = m.fascia, sw = w, sh = f ? Math.round((w * f.h) / f.w / 2) * 2 : h, y = f ? Math.round((f.y * w) / f.w) : 0;
+    parti.push(`[${i + 1}:v]scale=${sw}:${sh},setpts=PTS-STARTPTS+${m.at}/TB,fade=t=in:st=${m.at}:d=0.12:alpha=1,fade=t=out:st=${(fine - 0.35).toFixed(2)}:d=0.35:alpha=1[o${i}]`);
+    parti.push(`[${prima}][o${i}]overlay=x=0:y=${y}:eof_action=pass:enable='between(t,${m.at},${fine})'[v${i}]`);
     prima = `v${i}`;
   });
   return { filtro: parti.join(';'), uscita: `[${prima}]` };
+}
+
+// i suoni delle scene (wav) sotto la voce: ognuno parte al suo «at», volume basso, la voce non si tocca
+export function filtroSuoni(suoni, primoIngresso, volume = 0.32) {
+  if (!suoni.length) return null;
+  const parti = suoni.map((s, i) => `[${primoIngresso + i}:a]aresample=48000,adelay=${Math.round(s.at * 1000)}:all=1,volume=${volume}[s${i}]`);
+  parti.push(`[0:a]aresample=48000[voce];[voce]${suoni.map((_, i) => `[s${i}]`).join('')}amix=inputs=${suoni.length + 1}:duration=first:normalize=0[a]`);
+  return parti.join(';');
 }
 
 // ✨ Ultron 2 (18/11): con le schermate sopra la testa la regia mette già le motion graphic nel render e lascia
@@ -97,12 +108,32 @@ export function spaziValidi(spazi, durata) {
     .map((x) => ({ at: +(+x.at).toFixed(2), dur: +Math.min(4.5, Math.max(1.5, +x.dur || 3.5), durata - 0.2 - x.at).toFixed(2), prompt: String(x.prompt || '').slice(0, 600), testo: String(x.testo || '').slice(0, 40) }))
     .slice(0, 3);
 }
-async function riempiSpazi({ video, uscita, spazi, dir, durata, w, h, formato, t0 }) {
+// fotogrammi del video montato nella fascia, ai tempi della prova: Claude giudica l'animazione sopra il video vero
+function sfondiFascia(video, m, dir, i, w) {
+  const f = FASCIA.verticale, y = Math.round((f.y * w) / f.w), hh = Math.round((w * f.h) / f.w);
+  return [0.12, 0.28, 0.45, 0.62, 0.8, 0.94].map((k, j) => {
+    const out = path.join(dir, `sf${i}-${j}.jpg`);
+    const r = spawnSync('ffmpeg', ['-y', '-v', 'error', '-ss', String(+(m.at + m.dur * k).toFixed(2)), '-i', video, '-frames:v', '1', '-vf', `crop=${w}:${hh}:0:${y},scale=${f.w}:${f.h}`, out]);
+    return r.status === 0 ? out : null;
+  });
+}
+
+async function riempiSpazi({ video, uscita, spazi, dir, durata, w, h, formato, t0, scrittore = gemini }) {
   const fatti = [];
   for (const [i, m] of spaziValidi(spazi, durata).entries()) {
     const clip = path.join(dir, `a${i}.mov`);
     try {
       if (!m.prompt) throw new Error('senza descrizione');
+      // 1) Black Den Motion: preset provati, 3D vero, effetti sonori, prova in Chrome e revisione di Claude
+      if (formato === 'verticale' && process.env.ULTRON_BDM !== '0') {
+        try {
+          const scena = await creaScena({ prompt: m.prompt, dur: m.dur, formato, sfondi: sfondiFascia(video, m, dir, i, w), gemini: scrittore });
+          const r = await renderScena({ ...scena, uscita: clip });
+          fatti.push({ tipo: 'animazione', at: m.at, dur: m.dur, clip, fascia: scena.opz, wav: r.wav, motore: 'bdm' });
+          continue;
+        } catch (e) { log(`animazione ${i + 1}: Black Den Motion non riuscito (${e.message.slice(0, 100)}), provo il motore di prima`); }
+      }
+      // 2) il motore di prima (HTML scritto da zero)
       const idea = await creaIdea({ prompt: `${m.prompt} (durata ${m.dur} secondi, nella fascia alta sopra la testa)`, formato, trasparente: true, tentativi: 3, revisione: false, ai: 'claude' });
       await renderMotion({ modello: 'idea', formato, uscita: clip, html: idea.html, alfa: true });
       fatti.push({ tipo: 'animazione', at: m.at, dur: m.dur, clip });
@@ -117,21 +148,25 @@ async function riempiSpazi({ video, uscita, spazi, dir, durata, w, h, formato, t
   }
   if (!fatti.length) return null;
   const { filtro, uscita: v } = filtroSovrapposizioni(fatti, w, h);
+  const conAudio = spawnSync('ffprobe', ['-v', 'error', '-select_streams', 'a', '-show_entries', 'stream=index', '-of', 'csv=p=0', video], { encoding: 'utf8' }).stdout.trim() !== '';
+  const suoni = conAudio ? fatti.filter((m) => m.wav) : [];
+  const fa = filtroSuoni(suoni, fatti.length + 1);
   const tmp = path.join(dir, 'ultron.mp4');
-  esegui('ffmpeg', ['-y', '-v', 'error', '-i', video, ...fatti.flatMap((m) => ['-i', m.clip]), '-filter_complex', filtro, '-map', v, '-map', '0:a?',
-    '-c:v', 'libx264', '-preset', 'medium', '-crf', '17', '-pix_fmt', 'yuv420p', '-c:a', 'copy', '-movflags', '+faststart', tmp]);
+  esegui('ffmpeg', ['-y', '-v', 'error', '-i', video, ...fatti.flatMap((m) => ['-i', m.clip]), ...suoni.flatMap((m) => ['-i', m.wav]),
+    '-filter_complex', fa ? `${filtro};${fa}` : filtro, '-map', v, '-map', fa ? '[a]' : '0:a?',
+    '-c:v', 'libx264', '-preset', 'medium', '-crf', '17', '-pix_fmt', 'yuv420p', ...(fa ? ['-c:a', 'aac', '-b:a', '256k'] : ['-c:a', 'copy']), '-movflags', '+faststart', tmp]);
   fs.copyFileSync(tmp, uscita || video);
-  log(`fatto: ${fatti.length} animazioni negli spazi in ${Math.round((Date.now() - t0) / 1000)} s`);
-  return fatti.map(({ clip, ...m }) => m);
+  log(`fatto: ${fatti.length} animazioni negli spazi (${fatti.filter((m) => m.motore === 'bdm').length} Black Den Motion, ${suoni.length} con suoni) in ${Math.round((Date.now() - t0) / 1000)} s`);
+  return fatti.map(({ clip, wav, fascia, ...m }) => m);
 }
 
-export async function ultron({ video, uscita, brief = '', spazi = null }) {
+export async function ultron({ video, uscita, brief = '', spazi = null, scrittore }) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'ultron-'));
   const t0 = Date.now();
   try {
     const durata = durataDi(video), [w, h] = dimensioni(video);
     const formato = w > h ? 'orizzontale' : 'verticale';
-    if (Array.isArray(spazi)) return await riempiSpazi({ video, uscita, spazi, dir, durata, w, h, formato, t0 });
+    if (Array.isArray(spazi)) return await riempiSpazi({ video, uscita, spazi, dir, durata, w, h, formato, t0, scrittore });
     const { frasi } = await trascrivi(video, dir);
     if (!frasi.length) { log('nessun parlato: niente grafiche'); return null; }
     const { testo } = await gemini([{ text: PROMPT(frasi, durata, brief) }], 'Rispondi solo con JSON valido.', true);

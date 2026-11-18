@@ -22,7 +22,7 @@ test('ultron: filtro ffmpeg con partenza, dissolvenza e catena delle sovrapposiz
   const { filtro, uscita } = filtroSovrapposizioni([{ at: 0.4, dur: 3.8 }, { at: 4.9, dur: 3.2 }], 1080, 1920);
   assert.equal(uscita, '[v1]');
   assert.match(filtro, /\[1:v\]scale=1080:1920,setpts=PTS-STARTPTS\+0\.4\/TB.*fade=t=out:st=3\.85:d=0\.35:alpha=1\[o0\]/);
-  assert.match(filtro, /\[v0\]\[o1\]overlay=eof_action=pass:enable='between\(t,4\.9,8\.1\)'\[v1\]/);
+  assert.match(filtro, /\[v0\]\[o1\]overlay=x=0:y=0:eof_action=pass:enable='between\(t,4\.9,8\.1\)'\[v1\]/);
 });
 
 test('ultron: si accende con «Motion graphic: sì» nello stile o nel brief', () => {
@@ -47,4 +47,19 @@ test('spazi animazione: tenuti dentro il video, durata 1,5–4,5 s, al massimo 3
   assert.equal(s[1].dur, 4.5);
   assert.equal(s[2].dur, 1.5);
   assert.equal(s[1].prompt, '');
+});
+
+// ✨ Ultron 2 + Black Den Motion (18/11): la scena è una fascia in alto, i suoni vanno sotto la voce
+test('scene Black Den Motion: fascia larga quanto il video, in alto; suoni ritardati e mixati senza toccare la voce', async () => {
+  const { filtroSuoni } = await import('./ultron.mjs');
+  const { filtro } = filtroSovrapposizioni([{ at: 2, dur: 3.5, fascia: { w: 1080, h: 700, y: 60 } }], 1080, 1920);
+  assert.match(filtro, /\[1:v\]scale=1080:700,/);
+  assert.match(filtro, /overlay=x=0:y=60:/);
+  const piccolo = filtroSovrapposizioni([{ at: 2, dur: 3.5, fascia: { w: 1080, h: 700, y: 60 } }], 720, 1280).filtro;
+  assert.match(piccolo, /scale=720:466,.*overlay=x=0:y=40:/);
+  assert.equal(filtroSuoni([], 2), null);
+  const a = filtroSuoni([{ at: 2 }, { at: 7.25 }], 3);
+  assert.match(a, /\[3:a\]aresample=48000,adelay=2000:all=1,volume=0\.32\[s0\]/);
+  assert.match(a, /\[4:a\].*adelay=7250:all=1/);
+  assert.match(a, /\[voce\]\[s0\]\[s1\]amix=inputs=3:duration=first:normalize=0\[a\]/);
 });
