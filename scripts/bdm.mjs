@@ -260,7 +260,11 @@ function claude(testo, { strumenti = '', cwd } = {}) {
   const r = spawnSync('claude', args, { encoding: 'utf8', input: testo, cwd, timeout: 8 * 60_000, maxBuffer: 1 << 26 });
   let j = {};
   try { j = JSON.parse(r.stdout || '{}'); } catch { /* non JSON */ }
-  if (r.status !== 0 || j.is_error || !j.result) throw new Error(`Claude non ha risposto (${r.status})`);
+  if (r.status !== 0 || j.is_error || !j.result) {
+    // token scaduti o limite dell'abbonamento: lo dico nel log (senza testi del video) e si passa a Gemini
+    const motivo = /limit|quota|usage|credit|expired|unauthori|401|login/i.test(`${j.result || ''} ${r.stderr || ''}`) ? 'limite o token scaduto' : `uscita ${r.status}`;
+    throw new Error(`Claude non ha risposto (${motivo})`);
+  }
   return String(j.result);
 }
 
@@ -279,13 +283,16 @@ function griglia(fotogrammi, sfondi, dir, { w, h }) {
   return r.status === 0 ? out : null;
 }
 
+// se Claude cade una volta (token scaduti, limite), per il resto del giro si usa direttamente Gemini
+let claudeGiu = false;
+
 // crea la scena: scrive (Claude, poi Gemini se Claude non c'è), prova e corregge (fino a 3 volte), poi una revisione visiva
 export async function creaScena({ prompt, dur, formato = 'verticale', media = [], sfondi = null, gemini = null }) {
   const opz = { ...FASCIA[formato], dur };
   const sistema = GUIDA({ ...opz, media: media.map((m) => m.nome) });
-  const conClaude = claudePronto();
+  const conClaude = () => !claudeGiu && claudePronto();
   const scrivi = async (testo) => {
-    if (conClaude) { try { return { testo: claude(`${sistema}\n\n---\n\n${testo}`), chi: 'claude' }; } catch (e) { log(`${e.message}: provo con Gemini`); } }
+    if (conClaude()) { try { return { testo: claude(`${sistema}\n\n---\n\n${testo}`), chi: 'claude' }; } catch (e) { claudeGiu = true; log(`${e.message}: da qui in avanti Gemini`); } }
     if (!gemini) throw new Error('né Claude né Gemini disponibili');
     const r = await gemini([{ text: testo }], sistema);
     return { testo: r.testo, chi: r.modello };
@@ -303,14 +310,24 @@ export async function creaScena({ prompt, dur, formato = 'verticale', media = []
     messaggio = `${richiesta}\n\nYour program:\n\`\`\`js\n${c}\n\`\`\`\nTesting it in Chrome found this problem: ${p.errore}\nFix it and return the full program.`;
   }
   if (!codice) throw new Error('nessuna scena valida dopo 3 tentativi');
-  // revisione visiva: Claude guarda la griglia sopra il video vero (solo Claude sa leggere un'immagine dal disco qui)
-  if (conClaude) {
-    const g = griglia(ultimo.fotogrammi, sfondi, ultimo.dir, opz);
-    if (g) {
+  // revisione visiva: Claude (o Gemini, se Claude è giù) guarda la griglia dei fotogrammi sopra il video vero
+  const g = (conClaude() || gemini) ? griglia(ultimo.fotogrammi, sfondi, ultimo.dir, opz) : null;
+  if (g) {
+    const giudizio = `Judge it as a demanding motion designer for a viral reel: readable on this background? anything cut, overlapping, too small, too empty, ugly, static, off-centre?
+If it is already excellent answer exactly OK. Otherwise return the full improved program in one js code block.`;
+    const rivedi = async () => {
+      const base = `${richiesta}\n\nThis is your program:\n\`\`\`js\n${codice}\n\`\`\`\n`;
+      if (conClaude()) {
+        try { return claude(`${sistema}\n\n---\n\n${base}Read the image ${g}: 6 frames of it (left→right, top→bottom, start→end) composited over the real video band.\n${giudizio}`, { strumenti: 'Read', cwd: ultimo.dir }); } catch (e) { claudeGiu = true; log(`revisione: ${e.message}, la fa Gemini`); }
+      }
+      if (!gemini) throw new Error('nessuno per la revisione');
+      const r = await gemini([{ text: `${base}The image shows 6 frames of it (left→right, top→bottom, start→end) composited over the real video band.\n${giudizio}` },
+        { inline_data: { mime_type: 'image/jpeg', data: fs.readFileSync(g).toString('base64') } }], sistema);
+      return r.testo;
+    };
+    {
       try {
-        const testo = claude(`${sistema}\n\n---\n\n${richiesta}\n\nThis is your program:\n\`\`\`js\n${codice}\n\`\`\`\nRead the image ${g}: 6 frames of it (left→right, top→bottom, start→end) composited over the real video band.
-Judge it as a demanding motion designer for a viral reel: readable on this background? anything cut, overlapping, too small, too empty, ugly, static, off-centre?
-If it is already excellent answer exactly OK. Otherwise return the full improved program in one js code block.`, { strumenti: 'Read', cwd: ultimo.dir });
+        const testo = await rivedi();
         if (!/^\s*OK\b/i.test(testo)) {
           const c2 = estraiCodice(testo), p2 = await prova(c2, opz, media);
           if (!p2.errore) { fs.rmSync(ultimo.dir, { recursive: true, force: true }); codice = c2; ultimo = p2; log('revisione: migliorata'); } else { fs.rmSync(p2.dir, { recursive: true, force: true }); log('revisione scartata (non passa le prove)'); }
