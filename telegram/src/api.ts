@@ -176,10 +176,13 @@ async function gestisciComandi(req: Request, env: Segreti, ops: Ops, path: strin
   if (path === '/api/comandi/file') {
     if (sess.pronto) return errore(409, 'Caricamento già chiuso.');
     if (sess.file.length >= MAX_FILE) return errore(400, `Massimo ${MAX_FILE} file per volta.`);
-    const size = Number(body.size) || 0;
-    const err = limiteFile(size);
+    // i Comandi a volte mandano la dimensione come testo («106 MB»): se non è un numero si controlla solo che il file ci sia
+    const size = /^\d+$/.test(String(body.size ?? '').trim()) ? Number(body.size) : 0;
+    const err = size ? limiteFile(size) : null;
     if (err) return errore(400, err);
-    const nomeFile = nomeSicuro(String(body.file || 'clip.mov'), new Set(sess.file.map((f) => f.nome.toLowerCase())));
+    // «Nome» nei Comandi è senza estensione: i video ricodificati dall'iPhone sono .mov (il nome C0000 della Sony resta)
+    const grezzo = String(body.file || 'clip').trim() || 'clip';
+    const nomeFile = nomeSicuro(/\.(mov|mp4|m4v)$/i.test(grezzo) ? grezzo : `${grezzo}.mov`, new Set(sess.file.map((f) => f.nome.toLowerCase())));
     const key = `inbox/${sess.id}/${nomeFile}`;
     sess.file.push({ nome: nomeFile, size, tipo: '', key, uploadId: '', parte: size, parti: [] });
     await ops.scrivi(env, `app:upload:${sess.id}`, sess);
@@ -193,7 +196,7 @@ async function gestisciComandi(req: Request, env: Segreti, ops: Ops, path: strin
     const mancano: string[] = [];
     for (const f of sess.file) {
       const peso = await pesoOggetto(c, f.key).catch(() => null);
-      if (peso == null || (f.size && peso !== f.size)) mancano.push(f.nome); else f.completo = true;
+      if (!peso || (f.size && peso !== f.size)) mancano.push(f.nome); else { f.completo = true; if (!f.size) f.size = peso; }
     }
     if (mancano.length) {
       await ops.scrivi(env, `app:upload:${sess.id}`, sess);

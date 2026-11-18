@@ -255,6 +255,14 @@ test('📲 Comandi: chiave, file interi su R2, poi Squadra / montaggio / solo ca
     assert.equal((await post('/api/comandi/fine', { id: avvio.id, dove: 'squadra' })).status, 409, 'una volta sola');
     assert.equal((await post('/api/comandi/file', { id: avvio.id, file: 'altro.mov', size: 5 })).status, 409, 'chiuso');
 
+    // nome senza estensione e dimensione scritta come testo (come li manda Comandi)
+    const t = await (await post('/api/comandi/inizia', { nome: 'Testo' })).json() as { id: string };
+    const ft = await (await post('/api/comandi/file', { id: t.id, file: 'C1294', size: '106 MB' })).json() as { nome: string };
+    assert.equal(ft.nome, 'C1294.mov');
+    assert.equal((await post('/api/comandi/fine', { id: t.id, dove: 'carica' })).status, 409, 'file non ancora su R2');
+    pesi.set(`inbox/${t.id}/C1294.mov`, 777);
+    assert.equal((await post('/api/comandi/fine', { id: t.id, dove: 'carica' })).status, 200);
+
     // montaggio diretto e solo caricato
     const m = await (await post('/api/comandi/inizia', { nome: 'Monta' })).json() as { id: string };
     await post('/api/comandi/file', { id: m.id, file: 'a.mov', size: 10 });
@@ -266,7 +274,7 @@ test('📲 Comandi: chiave, file interi su R2, poi Squadra / montaggio / solo ca
     pesi.set(`inbox/${c.id}/b.mov`, 10);
     assert.equal((await post('/api/comandi/fine', { id: c.id })).status, 200);
     assert.equal(db.get('app:upload_aperto'), c.id);
-    assert.deepEqual(anticipi, ['Dopo']);
+    assert.deepEqual(anticipi, ['Testo', 'Dopo']);
 
     // la chiave si crea solo con la sessione dell'app
     assert.equal((await gestisciApp(new Request(ORIGIN + '/api/comandi/chiave', { method: 'POST', body: '{}' }), e, ops)).status, 401);
