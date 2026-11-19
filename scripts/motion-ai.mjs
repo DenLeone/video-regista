@@ -90,9 +90,11 @@ function giri() {
 }
 export async function gemini(parti, sistema, json = false) {
   const base = process.env.GEMINI_URL || 'https://generativelanguage.googleapis.com/v1beta';
-  for (const [chiave, modello] of giri()) {
+  for (const [chiave, mod] of giri()) {
+    // nel log anche QUALE chiave (mai la chiave): «gemini-pro-latest · pagamento» o «· gratis»
+    const modello = `${mod} · ${chiave === process.env.GEMINI_API_KEY ? 'pagamento' : 'gratis'}`;
     try {
-      const r = await fetch(`${base}/models/${modello}:generateContent`, {
+      const r = await fetch(`${base}/models/${mod}:generateContent`, {
         method: 'POST', headers: { 'content-type': 'application/json', 'x-goog-api-key': chiave }, signal: AbortSignal.timeout(240_000),
         body: JSON.stringify({ systemInstruction: { parts: [{ text: sistema }] }, contents: [{ role: 'user', parts: parti }], generationConfig: { temperature: 0.6, ...(json ? { responseMimeType: 'application/json' } : {}) } }),
       });
