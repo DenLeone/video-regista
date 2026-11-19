@@ -2246,7 +2246,7 @@ function didascalieConClaude(testoPrompt) {
     const p = spawn('claude', ['-p', 'Rispondi solo con il JSON richiesto nel testo ricevuto.', '--model', process.env.REGISTA_MODEL || 'sonnet', '--output-format', 'json'],
       { cwd: ROOT, stdio: ['pipe', 'pipe', 'pipe'] });
     let out = '';
-    const timer = setTimeout(() => p.kill('SIGKILL'), 3 * 60 * 1000);
+    const timer = setTimeout(() => p.kill('SIGKILL'), 5 * 60 * 1000); // 5 min: c'è anche il tempo dei consulti con Opus
     p.on('error', () => { clearTimeout(timer); ok(null); });
     p.stdout.on('data', (x) => { out += x; });
     p.on('close', () => {
