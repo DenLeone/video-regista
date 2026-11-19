@@ -63,3 +63,10 @@ test('scene Black Den Motion: fascia larga quanto il video, in alto; suoni ritar
   assert.match(a, /\[4:a\].*adelay=7250:all=1/);
   assert.match(a, /\[voce\]\[s0\]\[s1\]amix=inputs=3:duration=first:normalize=0\[a\]/);
 });
+
+test('spazi: le scene fatte a mano restano tutte (classifica), le altre animazioni al massimo 3', async () => {
+  const { spaziValidi } = await import('./ultron.mjs');
+  const s = spaziValidi([...Array.from({ length: 5 }, (_, i) => ({ at: i * 4, dur: 3, scena: 'classifica' })), ...Array.from({ length: 5 }, (_, i) => ({ at: 30 + i * 4, dur: 3, prompt: 'x' }))], 60);
+  assert.equal(s.filter((x) => x.scena).length, 5);
+  assert.equal(s.filter((x) => !x.scena).length, 3);
+});

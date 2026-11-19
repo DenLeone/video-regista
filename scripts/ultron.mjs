@@ -107,7 +107,8 @@ export function spaziValidi(spazi, durata) {
   return (spazi || []).filter((x) => x && Number.isFinite(+x.at) && +x.at >= 0 && +x.at < durata - 1 && (x.prompt || x.testo || x.scena))
     .map((x) => ({ at: +(+x.at).toFixed(2), dur: +Math.min(x.scena ? 8 : 4.5, Math.max(1.5, +x.dur || 3.5), durata - 0.2 - x.at).toFixed(2), prompt: String(x.prompt || '').slice(0, 600), testo: String(x.testo || '').slice(0, 40),
       ...(x.scena ? { scena: String(x.scena), dati: x.dati || {} } : {}) }))
-    .slice(0, 3);
+    // le scene fatte a mano (anche le 10 voci di una classifica) restano tutte; le altre animazioni al massimo 3
+    .filter((x, i, a) => x.scena || a.slice(0, i).filter((y) => !y.scena).length < 3);
 }
 // i loghi veri e le foto del video (public/media/img_*): la scena usa quelli, mai loghi disegnati a memoria
 function loghiDelVideo() {
