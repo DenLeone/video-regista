@@ -1,0 +1,69 @@
+<!DOCTYPE html>
+<!--
+  Black Den Motion — scena di esempio
+  Skill creata da Den (Black Den) · IG @itsblackden · TikTok @itsblackden · YouTube @itsblackden
+  Apri nel browser per l'anteprima (Spazio = play/pausa, frecce = ±1 fotogramma).
+  Colori, font, logo e profili si cambiano in brand.js. Motore e preset sono in motion.js.
+-->
+<html lang="it">
+<head>
+<meta charset="utf-8">
+<title>Black Den Motion — scena</title>
+<style>
+  /* Stili specifici di questa scena (posizioni dei tuoi elementi). */
+  #tag { top: 1010px; }
+  #h-a { top: 250px; }
+  #h-b { top: 345px; }
+  #stat { top: 1335px; font-size: 110px; }
+  #stat-label { top: 1462px; }
+</style>
+</head>
+<body>
+<div id="stage">
+  <div id="camera">
+    <div id="bg"></div>
+    <div id="punch"><div id="content">
+      <div id="tag" class="abs row sub">TECH · REVIEW</div>
+      <div id="h-a" class="abs row h2">MOTION GRAPHICS</div>
+      <div id="h-b" class="abs row h2 accent">FATTE CON CLAUDE</div>
+      <div id="stat" class="abs row h1">0</div>
+      <div id="stat-label" class="abs row sub">CODICE · ZERO AI VIDEO</div>
+    </div></div>
+  </div>
+  <div id="fx"></div>
+</div>
+
+<script src="brand.js"></script>
+<script src="motion.js"></script>
+<script>
+  M.META = { width: 1080, height: 1920, fps: 30, duration: 12 };
+  const { P, add } = M;
+
+  // Atmosfera
+  add(P.drift({ to: 1.05 }), P.particles({ n: 30 }));
+
+  // 0.2–2.8  Logo / nome del brand
+  add(P.logoReveal({ t: 0.3, out: 2.6 }));
+  add(P.decode('#tag', { t: 1.1, dur: 0.9 }), P.enter('#tag', { t: 1.1, dur: 0.2, from: { o: 0 }, out: 2.55, outDur: 0.3 }));
+
+  // 2.9  Transizione
+  add(P.flash(2.95), P.punch(2.95));
+
+  // 3.0–7.0  Telefono 2.5D + titolo + contatore
+  add(P.phone({ t: 3.0, hold: 3.6, y: 465, w: 400 }));
+  add(P.wordsIn('#h-a', { t: 3.2, out: 6.7, sfx: false }), P.lettersIn('#h-b', { t: 3.5, step: 0.03, from: 'blur', out: 6.75, sfx: false }));
+  add(P.glitch('#h-b', { t: 4.6, dur: 0.35 }));
+  add(P.counter('#stat', { t: 4.2, dur: 1.4, to: 100, suffix: '%' }), P.enter('#stat', { t: 4.2, dur: 0.6, from: 'pop', out: 6.7 }));
+  add(P.enter('#stat-label', { t: 4.5, dur: 0.6, out: 6.7 }));
+
+  // 7.1–9.4  Lower third
+  add(P.punch(7.1, { amount: 0.04 }));
+  add(P.lowerThird({ title: 'Black Den Motion', sub: 'skill gratuita · by Den', t: 7.2, hold: 2.2, y: 900 }));
+
+  // 9.4–12  Call to action
+  add(P.cta({ t: 9.5, hold: 2.1, y: 840 }));
+
+  M.boot();
+</script>
+</body>
+</html>

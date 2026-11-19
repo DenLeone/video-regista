@@ -24,6 +24,11 @@ const aspetta = (ms) => new Promise((r) => setTimeout(r, ms));
 export const FASCIA = { verticale: { w: 1080, h: 700, y: 60 }, orizzontale: { w: 1920, h: 470, y: 40 } };
 
 /* ---------- la guida per Claude ---------- */
+// 19/11: la skill Black Den Motion sta nel repo (.claude/skills/blackden-motion): le sue regole di regia entrano nella
+// guida (per Claude e per Gemini), e Claude può leggere la skill intera e le scene fatte a mano migliori
+const SKILL = path.join(QUI, '..', '.claude', 'skills', 'blackden-motion');
+const REGIA = (() => { try { return fs.readFileSync(path.join(SKILL, 'references', 'regia.md'), 'utf8').slice(0, 4000); } catch { return ''; } })();
+const ESEMPI_CLAUDE = `\n\nYou may Read (only to learn, never to copy whole): .claude/skills/blackden-motion/SKILL.md, its references/ and esempi/, and the best hand-made scenes in this repo: motion/scene/skill-vinile.js (3D vinyl, one camera curve, transformations) and motion/scene/prodotto-3d.js (product card). In those files DATI, M3.R and THREE are available; here use only the API above.`;
 export const GUIDA = ({ w, h, dur, media = [] }) => `You are a senior motion designer. You write ONE short animation for a viral vertical video (TikTok/Reels)
 of an Italian tech creator, using the Black Den Motion engine (already loaded: globals M, P, add, M3).
 The animation plays on a TRANSPARENT band ${w}×${h} px placed above the creator's head: everything you draw must stay inside
@@ -66,7 +71,8 @@ Use real logos/screenshots from this list when the idea mentions them. Never dra
 - Text: big, bold, max 5 words per line, max 2 lines, Italian, inside the band with 40 px margins. Only facts given in the request.
   Width budget (.row is nowrap!): .h1 (128px) fits ~${Math.floor((w - 80) / 80)} characters per line, .h2 (84px) ~${Math.floor((w - 80) / 52)}, .h3 (56px) ~${Math.floor((w - 80) / 35)}. Longer → smaller class or set style.fontSize, or split in two rows.
 - Contrast on video: white text with the accent colour on the key word; add text-shadow 0 4px 18px rgba(0,0,0,.75) to text.
-- Never overlap two readable texts at the same time. Nothing outside the band. Nothing covers the whole band with a solid colour.`;
+- Never overlap two readable texts at the same time. Nothing outside the band. Nothing covers the whole band with a solid colour.
+${REGIA ? `\n## Black Den Motion direction rules (from the skill, Italian)\n${REGIA}` : ''}`;
 
 /* ---------- la pagina ---------- */
 export function pagina(codice, { w, h, dur, tre }) {
@@ -300,7 +306,7 @@ export async function creaScena({ prompt, dur, formato = 'verticale', media = []
   const sistema = GUIDA({ ...opz, media: media.map((m) => m.nome) });
   const conClaude = () => !claudeGiu && claudePronto();
   const scrivi = async (testo) => {
-    if (conClaude()) { try { return { testo: claude(`${sistema}\n\n---\n\n${testo}`), chi: 'claude' }; } catch (e) { claudeGiu = true; log(`${e.message}: da qui in avanti Gemini`); } }
+    if (conClaude()) { try { return { testo: claude(`${sistema}${ESEMPI_CLAUDE}\n\n---\n\n${testo}`, { strumenti: 'Read', cwd: path.join(QUI, '..') }), chi: 'claude' }; } catch (e) { claudeGiu = true; log(`${e.message}: da qui in avanti Gemini`); } }
     if (!gemini) throw new Error('né Claude né Gemini disponibili');
     const r = await gemini([{ text: testo }], sistema);
     return { testo: r.testo, chi: r.modello };

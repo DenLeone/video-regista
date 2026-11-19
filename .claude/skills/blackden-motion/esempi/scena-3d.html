@@ -1,0 +1,95 @@
+<!DOCTYPE html>
+<!--
+  Black Den Motion — scena 3D di esempio (v1.2)
+  Skill creata da Den (Black Den) · IG @itsblackden · TikTok @itsblackden · YouTube @itsblackden
+  Schede 3D (three.js) sotto, testi HTML nitidi sopra. Una sola camera continua, una sola luce, profondità di campo.
+  Storyboard: 1) 0–2.2 la camera si apre su un campo di schede  2) 2.2–4.6 vola verso la scheda centrale, che si gira
+  verso di noi e riempie lo schermo (+300%)  3) 4.6–6.4 la stessa scheda si rimpicciolisce e sale: diventa il badge
+  del brand, il nome compare sotto  4) 6.4–8.5 chiamata all'azione «Segui».
+  Le schede usano interfacce di esempio (ui: 'grafico'…): sostituiscile con i tuoi screenshot (src: 'assets/…png').
+-->
+<html lang="it">
+<head>
+<meta charset="utf-8">
+<title>Black Den Motion — scena 3D</title>
+<script type="importmap">
+  { "imports": { "three": "./vendor/three.module.min.js", "three/addons/": "./vendor/addons/" } }
+</script>
+<style>
+  #stage { background: none !important; }
+  #h-a { top: 210px; }
+  #h-b { top: 300px; }
+  #stat { top: 1430px; font-size: 150px; }
+  #stat-label { top: 1590px; }
+  #nome { top: 1080px; }
+  #tag { top: 1190px; }
+</style>
+</head>
+<body>
+<div id="stage">
+  <div id="camera">
+    <div id="bg"></div>
+    <div id="punch"><div id="content">
+      <div id="h-a" class="abs row h2">IL TUO PRODOTTO</div>
+      <div id="h-b" class="abs row h2 accent">IN 3D, FATTO DA CLAUDE</div>
+      <div id="stat" class="abs row h1">0</div>
+      <div id="stat-label" class="abs row sub">CRESCITA · DEMO</div>
+      <div id="nome" class="abs row h1">BLACK DEN</div>
+      <div id="tag" class="abs row sub">TECH · REVIEW</div>
+    </div></div>
+  </div>
+  <div id="fx"></div>
+</div>
+
+<script src="brand.js"></script>
+<script src="motion.js"></script>
+<script type="module">
+  import './motion3d.js';
+  const { P, add } = M;
+  M.META = { width: 1080, height: 1920, fps: 30, duration: 8.5 };
+  M3.init({ fov: 35, fuoco: { apertura: 0.00011, sfocaturaMax: 0.014 }, bagliore: { forza: 0.3 } });
+  const D = M3.D; // distanza a cui 1 unità = 1 px
+
+  // --- tempi delle battute (ritocca qui per cambiare il ritmo) ---
+  const T = { apre: 0, vola: 2.2, gira: 2.6, numero: 3.3, rimpicciolisce: 4.6, nome: 5.2, cta: 6.6 };
+
+  // Campo di schede (sostituisci ui con src: 'assets/tuo-screenshot.png')
+  const centro = M3.card({ ui: 'grafico', w: 760, h: 520, z: 0, ry: 32 });
+  const altre = [
+    M3.card({ ui: 'chat', w: 520, h: 380, x: -560, y: 520, z: -700, ry: 18, rz: -4 }),
+    M3.card({ ui: 'lista', w: 520, h: 380, x: 600, y: 360, z: -1100, ry: -22, rz: 3 }),
+    M3.card({ ui: 'lista', w: 460, h: 340, x: -520, y: -560, z: -500, ry: 24, rz: 5 }),
+    M3.card({ ui: 'chat', w: 480, h: 360, x: 560, y: -620, z: -900, ry: -16, rz: -3 }),
+  ];
+  altre.forEach((c, i) => M3.oscilla(c, { ampiezza: 10, velocita: 0.5, fase: i * 1.7 }));
+  M3.oscilla(centro, { ampiezza: 4, velocita: 0.4 });
+
+  // Una sola camera: si apre sul campo, poi scivola verso la scheda centrale (veloce, poi lenta a lungo)
+  M3.camera([
+    { pos: [0, 260, D * 1.9], guarda: [0, 0, -600] },
+    { pos: [-220, 140, D * 1.15], guarda: [0, 0, -200] },
+    { pos: [0, 0, D * 0.86], guarda: [0, 0, 0] },
+  ], { da: 0, a: 4.3, ease: 'out' });
+
+  // La scheda centrale si gira verso di noi, poi diventa il badge del brand (stessa scheda, nessuno stacco)
+  M3.anim(centro, [
+    { t: T.gira, ry: 32 }, { t: T.gira + 1.1, ry: 0, ease: 'out' },
+    { t: T.rimpicciolisce, y: 0, s: 1 }, { t: T.rimpicciolisce + 1.4, y: 360, s: 0.5, ease: 'inOut' },
+  ]);
+  M3.riflesso(centro, T.gira + 0.9, 0.8);
+  M3.riflesso(centro, T.rimpicciolisce + 1.3, 0.7);
+  // le altre schede si allontanano mentre la scena si stringe sul brand
+  altre.forEach((c, i) => M3.anim(c, [{ t: T.rimpicciolisce, z: c.position.z }, { t: T.rimpicciolisce + 1.6, z: c.position.z - 900, ease: 'in' }]));
+
+  // Testi HTML sopra il 3D (sempre nitidi)
+  add(P.wordsIn('#h-a', { t: 0.4, out: 2.3 }), P.lettersIn('#h-b', { t: 0.75, step: 0.025, from: 'blur', out: 2.35, sfx: false }));
+  add(P.counter('#stat', { t: T.numero, dur: 1.1, from: 0, to: 300, prefix: '+', suffix: '%' }), P.enter('#stat', { t: T.numero, dur: 0.5, from: 'blur', out: T.rimpicciolisce + 0.1 }));
+  add(P.enter('#stat-label', { t: T.numero + 0.2, dur: 0.5, out: T.rimpicciolisce + 0.1 }));
+  add(P.lettersIn('#nome', { t: T.nome, step: 0.04, from: 'blur', out: T.cta - 0.6 }), P.decode('#tag', { t: T.nome + 0.4, dur: 0.8 }),
+      P.enter('#tag', { t: T.nome + 0.4, dur: 0.2, from: { o: 0 }, out: T.cta - 0.6 }));
+  add(P.cta({ t: T.cta, hold: 1.7, y: 1120 }));
+
+  M3.boot();
+</script>
+</body>
+</html>

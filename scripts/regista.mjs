@@ -2194,6 +2194,13 @@ function anteprima(outFile, piano, durata) {
 // Una chiamata breve a Gemini sul testo montato: didascalia di Instagram e titolo/descrizione
 // per YouTube, nella voce di Denis. Senza Gemini (o se non risponde) niente didascalie: il bot
 // le fa scrivere a mano prima di pubblicare.
+// ✍️ anti-slop (19/11, dalla skill .claude/skills/anti-slop-writing): testi che non sembrano scritti da un'AI
+export const ANTI_SLOP = `Che non sembri scritto da un'AI (regole anti-slop):
+- Un dettaglio concreto detto nel video vale più di qualsiasi aggettivo: niente importanza gonfiata senza un fatto che la regga.
+- Vietati: «non è solo X, è Y», «non X. Y.», tre aggettivi di fila, «rivoluzionario», «incredibile», «game changer», «cambia tutto»,
+  «il futuro di», «scopriamo insieme», «in un mondo dove», «che tu sia X o Y», domande retoriche generiche («Sei pronto?»),
+  chiusure morali o riassuntive («alla fine…», «in definitiva…»), trattini lunghi (—).
+- Frasi come le direbbe Denis a voce: brevi, dirette, con le sue parole; ritmo vario, non tutte della stessa lunghezza.`;
 const PROMPT_DIDASCALIE = `Scrivi i testi per pubblicare questo video verticale di Denis, creator italiano che parla di prodotti e della sua vita.
 Rispondi SOLO con JSON: {"descrizione": "...", "hashtag": ["#...", "#...", "#...", "#...", "#..."], "youtube_titolo": "...", "youtube_descrizione": "..."}
 
@@ -2204,7 +2211,8 @@ Regole:
 - hashtag: ESATTAMENTE 5, pertinenti al video (argomento, prodotto, categoria), soprattutto italiani, ognuno con # e senza spazi; niente hashtag generici come #fyp o #viral.
 - Se il brief parla di sponsor o collaborazione pagata: "#adv" all'inizio della prima riga.
 - youtube_titolo: massimo 70 caratteri, chiaro e cercabile (prodotto + cosa succede), senza hashtag.
-- youtube_descrizione: 2–3 righe, poi 3 hashtag tra cui #shorts.`;
+- youtube_descrizione: 2–3 righe, poi 3 hashtag tra cui #shorts.
+${ANTI_SLOP}`;
 
 // testo dell'AI → { descrizione, hashtag (5), instagram, youtube_titolo, youtube_descrizione }
 function pulisciDidascalie(d) {
