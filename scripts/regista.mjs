@@ -2532,7 +2532,11 @@ export async function analizza(nome, brief, cache) {
   // visivo del 4K. I fogli provino si rifanno solo se l'AI deve scegliere di nuovo.
   const impronta = improntaMateriale(sorgenti);
   const opzioniCache = { correzione: Boolean(CORREZIONE), soloRender: Boolean(RIRENDER) };
-  const intera = riusoAnalisiIntera(cache, impronta, DISCORSO);
+  // stessi file ma regole cambiate (es. 19/11: «HQ grade» non è più «già montato»): se un video cambia ruolo
+  // (solo immagini sì/no) l'analisi vecchia non vale, perché sincronizzazione e voce vanno rifatte
+  const ruoli = (lista) => (lista || []).filter((x) => x.tipo === 'video').map((x) => `${x.id}:${x.soloImmagini ? 1 : 0}`).sort().join('|');
+  const stessiRuoli = !cache?.sorgenti || ruoli(cache.sorgenti) === ruoli(sorgenti);
+  const intera = riusoAnalisiIntera(cache, impronta, DISCORSO) && stessiRuoli;
   if ((CORREZIONE || (RIRENDER && cache?.frasi?.length) || intera) && cache?.frasi?.length) {
     for (const s of sorgenti) {
       const c = (CORREZIONE || RIRENDER)
