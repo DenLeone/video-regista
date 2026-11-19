@@ -80,3 +80,25 @@ test('le parole sbagliate si correggono nei sottotitoli e nel testo, con puntegg
   assert.equal(regia.testo_montato, 'è il muto.');
   assert.equal(fatte.length, 1);
 });
+
+test('gancio di più pezzi (Skill, 19/11): «cos\'è» + «dove lo trovi» in testa, nell\'ordine scritto', async () => {
+  const { idGancio } = await import('./regista.mjs');
+  assert.deepEqual(idGancio(['F6', 'F003']), ['F006', 'F003']);
+  assert.deepEqual(idGancio('F006, F007 F003'), ['F006', 'F007', 'F003']);
+  const fr = [
+    { id: 'F001', testo: 'siccome io odio quelli che vi dicono commenta' },
+    { id: 'F003', testo: 'lo trovate già nel mio link in bio' },
+    { id: 'F006', testo: 'una skill che' },
+    { id: 'F007', testo: 'vi permette di avere qualsiasi motion graphics' },
+    { id: 'F011', testo: 'poche parole gli insegnate' },
+  ];
+  const s = fr.map((f) => ({ frase: f.id }));
+  const g = spostaGancio(s, { gancio: ['F006', 'F007', 'F003'], sequenza: [] }, fr);
+  assert.deepEqual(g.seq.map((x) => x.frase), ['F006', 'F007', 'F003', 'F001', 'F011']);
+  assert.match(g.avviso, /F006 \+ F007 \+ F003/);
+  // già in testa: niente
+  assert.deepEqual(spostaGancio(g.seq, { gancio: 'F006,F007,F003' }, fr).seq, g.seq);
+  // il primo pezzo rimanda a prima: non si sposta niente
+  const fr2 = fr.map((f) => (f.id === 'F006' ? { ...f, testo: 'quindi una skill che' } : f));
+  assert.deepEqual(spostaGancio(s, { gancio: ['F006', 'F003'] }, fr2).seq, s);
+});
