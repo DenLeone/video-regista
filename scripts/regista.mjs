@@ -2407,7 +2407,9 @@ async function provaDiLetturaInterna(regia, piano, avvisi, analisi, brief) {
       note.push(`tolti ${togli.join(', ')} (appesi o fuori filo)`);
     } else log(`prova di lettura: non tolgo ${togli.join(', ')} (il discorso tornerebbe intero)`);
   }
-  const parole = applicaParole(piano, regia, esito.parole);
+  // una parola scritta da Denis nel brief è giusta per definizione (Luna Ultra, 19/11: «Luna» corretta in «Go»)
+  const delBrief = new Set(String(brief || '').split(/\s+/).map(normParola).filter(Boolean));
+  const parole = applicaParole(piano, regia, (esito.parole || []).filter((c) => !delBrief.has(normParola(c?.sbagliata))));
   if (parole.length) {
     note.push(`parole corrette: ${parole.join(', ')}`);
     regia = { ...regia, parole_corrette: unisciParole(regia.parole_corrette, esito.parole) };
