@@ -13,6 +13,10 @@ const durata = Number(execFileSync('ffprobe', ['-v', 'error', '-show_entries', '
 const ogni = Math.min(3, Math.max(0.5, +(durata / 18).toFixed(2)) || 3);
 const largo = ogni < 3 ? 480 : 360;
 execFileSync('ffmpeg', ['-y', '-v', 'error', '-i', video, '-vf', `fps=1/${ogni},scale=${largo}:-2,tile=3x3`, '-q:v', '4', path.join(out, 'fogli_%02d.jpg')]);
+// 3 fotogrammi a risoluzione piena (25%, 50%, 75%): per giudicare nitidezza, rumore e colore, non solo il contenuto
+for (const [i, k] of [0.25, 0.5, 0.75].entries()) {
+  try { execFileSync('ffmpeg', ['-y', '-v', 'error', '-ss', (durata * k).toFixed(2), '-i', video, '-frames:v', '1', '-q:v', '2', path.join(out, `pieno_${i + 1}.jpg`)]); } catch { /* fotogramma non riuscito */ }
+}
 const mp3 = path.join(out, 'voce.mp3');
 // un video senza audio (solo musica tolta, schermate) non ha niente da trascrivere
 let conAudio = true;
