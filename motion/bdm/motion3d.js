@@ -92,8 +92,12 @@ M3.init = (o = {}) => {
 };
 
 /* ---------- Texture ---------- */
-const carica = (src) => {
-  const tex = new THREE.TextureLoader().load(src);
+// adatta = [w, h]: la foto riempie la scheda senza deformarsi (ritaglio al centro, come object-fit: cover)
+const carica = (src, adatta = null) => {
+  const tex = new THREE.TextureLoader().load(src, adatta ? (t) => {
+    const r = (t.image.width / t.image.height) / (adatta[0] / adatta[1]);
+    if (r > 1) { t.repeat.set(1 / r, 1); t.offset.set((1 - 1 / r) / 2, 0); } else { t.repeat.set(1, r); t.offset.set(0, (1 - r) / 2); }
+  } : undefined);
   caricamenti.push(new Promise((ok) => { const img = new Image(); img.onload = img.onerror = ok; img.src = src; }));
   tex.colorSpace = THREE.SRGBColorSpace;
   tex.anisotropy = 8;
@@ -153,7 +157,7 @@ M3.card = (o = {}) => {
   const g = new THREE.Group();
   const geo = new THREE.ShapeGeometry(forma(w, h, r), 24); uvNormali(geo, w, h);
   const src = o.src || (o.ui ? M3.ui(o.ui, { w, h }) : null);
-  const mat = new THREE.MeshStandardMaterial({ color: src ? '#ffffff' : (o.colore || B().panel || '#1b1c22'), map: src ? carica(src) : null,
+  const mat = new THREE.MeshStandardMaterial({ color: src ? '#ffffff' : (o.colore || B().panel || '#1b1c22'), map: src ? carica(src, o.adatta ? [w, h] : null) : null,
     roughness: 0.42, metalness: 0.05, transparent: true, alphaTest: o.trasparente ? 0.02 : 0 });
   const fronte = new THREE.Mesh(geo, mat); fronte.position.z = 0.6; fronte.castShadow = !o.trasparente; g.add(fronte);
   if (sp > 0) {

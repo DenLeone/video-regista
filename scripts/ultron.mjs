@@ -106,14 +106,16 @@ export function filtroSuoni(suoni, primoIngresso, volume = 0.32) {
 export function spaziValidi(spazi, durata) {
   return (spazi || []).filter((x) => x && Number.isFinite(+x.at) && +x.at >= 0 && +x.at < durata - 1 && (x.prompt || x.testo || x.scena))
     .map((x) => ({ at: +(+x.at).toFixed(2), dur: +Math.min(x.scena ? 8 : 4.5, Math.max(1.5, +x.dur || 3.5), durata - 0.2 - x.at).toFixed(2), prompt: String(x.prompt || '').slice(0, 600), testo: String(x.testo || '').slice(0, 40),
-      ...(x.scena ? { scena: String(x.scena) } : {}) }))
+      ...(x.scena ? { scena: String(x.scena), dati: x.dati || {} } : {}) }))
     .slice(0, 3);
 }
-// i loghi veri trovati dal Regista per questo video (public/media/img_logo_*): la scena usa quelli, mai loghi disegnati a memoria
+// i loghi veri e le foto del video (public/media/img_*): la scena usa quelli, mai loghi disegnati a memoria
 function loghiDelVideo() {
   const dir = path.join(path.dirname(new URL(import.meta.url).pathname), '..', 'public', 'media');
   try {
-    return fs.readdirSync(dir).filter((f) => /^img_logo_.+\.(png|svg)$/i.test(f)).slice(0, 12).map((f) => ({ nome: f, file: path.join(dir, f) }));
+    // loghi (img_logo_*) e foto del prodotto/screenshot (img_*): prima i loghi
+    const tutte = fs.readdirSync(dir).filter((f) => /^img_.+\.(png|svg|jpe?g|webp)$/i.test(f));
+    return [...tutte.filter((f) => f.startsWith('img_logo_')), ...tutte.filter((f) => !f.startsWith('img_logo_'))].slice(0, 12).map((f) => ({ nome: f, file: path.join(dir, f) }));
   } catch { return []; }
 }
 
@@ -135,9 +137,13 @@ async function riempiSpazi({ video, uscita, spazi, dir, durata, w, h, formato, t
       // 0) scena fatta a mano (motion/scene, «Animazione: <nome>» nel brief): si prova e si renderizza così com'è
       if (m.scena) {
         const { codiceScena } = await import('./scene-mano.mjs');
-        const codice = codiceScena(m.scena);
-        if (!codice) throw new Error(`scena ${m.scena} non trovata`);
-        const opz = { ...FASCIA.verticale, dur: m.dur }, media = loghiDelVideo();
+        const media = loghiDelVideo();
+        // DATI: quello che la scena deve sapere del video (nome del prodotto, foto vere disponibili in assets/)
+        const dati = { ...(m.dati || {}), foto: media.filter((x) => !x.nome.startsWith('img_logo_') && /\.(jpe?g|png|webp)$/i.test(x.nome)).map((x) => `assets/${x.nome}`), loghi: media.filter((x) => x.nome.startsWith('img_logo_')).map((x) => `assets/${x.nome}`) };
+        const sorgente = codiceScena(m.scena);
+        if (!sorgente) throw new Error(`scena ${m.scena} non trovata`);
+        const codice = `const DATI = ${JSON.stringify(dati)};\n${sorgente}`;
+        const opz = { ...FASCIA.verticale, dur: m.dur };
         const p = await prova(codice, opz, media);
         fs.rmSync(p.dir, { recursive: true, force: true });
         if (p.errore && /errore JavaScript|vuota/.test(p.errore)) throw new Error(`scena ${m.scena}: ${p.errore.slice(0, 120)}`);

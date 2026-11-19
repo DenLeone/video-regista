@@ -26,3 +26,12 @@ test('scene a mano: parte sulla parola, toglie le grafiche nello stesso momento,
   assert.equal(scenaNelPiano({ parole: [{ at: 1, dur: 1, w: 'ciao' }] }, 'Animazione: skill-vinile').includes('non c\'è'), true);
   assert.equal(scenaNelPiano(piano, 'Stile: Ultron'), null);
 });
+
+test('prodotto-3d: parte quando Denis dice il nome del prodotto e porta il nome alla scena', () => {
+  const c = codiceScena('prodotto-3d');
+  assert.deepEqual(intestazione(c), { parola: '{prodotto}', anticipo: 0.2, durata: 4.5 });
+  const piano = { soggetto: 'PGYTECH CreateMate', parole: [{ at: 0.2, dur: 0.3, w: 'questo' }, { at: 2.4, dur: 0.5, w: 'Pgytech' }, { at: 30, dur: 0.5, w: 'fine.' }], schermate: [{ at: 2, dur: 3, tipo: 'titolo' }] };
+  assert.match(scenaNelPiano(piano, 'Animazione: prodotto-3d'), /a 2\.2 s per 4\.5 s \(tolte 1/);
+  assert.deepEqual(piano.schermate.at(-1).dati, { titolo: 'PGYTECH CreateMate' });
+  assert.match(scenaNelPiano({ soggetto: 'Ajazz AK820', parole: [{ at: 1, dur: 1, w: 'ciao' }] }, 'Animazione: prodotto-3d'), /non si sente/);
+});

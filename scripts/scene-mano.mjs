@@ -31,7 +31,11 @@ export function scenaNelPiano(piano, brief) {
   if (!codice) return `scena «${nome}» non trovata in motion/scene`;
   const { parola, anticipo, durata } = intestazione(codice);
   const durataVideo = Math.max(0, ...(piano.parole || []).map((p) => p.at + p.dur));
-  const w = parola ? (piano.parole || []).find((p) => norm(p.w).includes(norm(parola))) : null;
+  // «parola: {prodotto}» = la prima volta che Denis dice il nome del prodotto (prima parola del soggetto del video)
+  const titolo = String(piano.soggetto || piano.titolo || '').trim();
+  const cerca = parola === '{prodotto}' ? (titolo.split(/\s+/).find((x) => norm(x).length >= 3) || '') : parola;
+  const w = cerca ? (piano.parole || []).find((p) => norm(p.w).includes(norm(cerca))) : null;
+  if (parola === '{prodotto}' && !w) return `scena «${nome}»: il nome del prodotto («${cerca}») non si sente nel montaggio`;
   if (parola && !w) return `scena «${nome}»: la parola «${parola}» non c'è nel montaggio`;
   const at = +Math.max(0, (w ? w.at : 0) - anticipo).toFixed(2);
   const dur = +Math.min(durata, Math.max(1.5, durataVideo - at - 0.2)).toFixed(2);
@@ -40,7 +44,7 @@ export function scenaNelPiano(piano, brief) {
   piano.schermate = (piano.schermate || []).filter((x) => x.tipo !== 'animazione' && !fuori(x));
   if (piano.icone) piano.icone = piano.icone.filter((x) => !fuori(x));
   const tolte = prima - piano.schermate.length - (piano.icone || []).length;
-  piano.schermate.push({ at, dur, tipo: 'animazione', scena: nome, prompt: `scena fatta a mano: ${nome}`, testo: '' });
+  piano.schermate.push({ at, dur, tipo: 'animazione', scena: nome, prompt: `scena fatta a mano: ${nome}`, testo: '', dati: { titolo } });
   piano.schermate.sort((a, b) => a.at - b.at);
   return `scena «${nome}» a ${at} s per ${dur} s${tolte ? ` (tolte ${tolte} grafiche nello stesso momento)` : ''}`;
 }
