@@ -1542,7 +1542,9 @@ async function regiaConGemini(prompt, fogli, valida) {
   };
   // difetti del racconto che il controllo automatico trova (ordine rimescolato, frasi staccate,
   // chiusura a metà): Gemini rilegge la sua regia con l'elenco e la riscrive, una volta sola
-  const difetti = (r) => (r.avvisi || []).filter((a) => /ordine del discorso|staccata|lasciata a metà|apertura|finisce a metà|finisce senza punto/.test(a));
+  // Nelle CORREZIONI l'ordine nuovo è quello che chiede Denis (19/11, Skill: «apri con cos'è la skill» → la rilettura
+  // lo considerava un difetto e rimetteva l'ordine di prima): lì «ordine del discorso» non è un difetto
+  const difetti = (r) => (r.avvisi || []).filter((a) => (CORREZIONE ? /staccata|lasciata a metà|apertura|finisce a metà|finisce senza punto/ : /ordine del discorso|staccata|lasciata a metà|apertura|finisce a metà|finisce senza punto/).test(a));
   const scadenza = Date.now() + TETTO_REGIA_MS;
   let motivo = 'nessun modello';
   // Flash Lite sceglie le clip molto peggio (CapCut, 27/10: tutti i Flash in 503, regia fatta dal
