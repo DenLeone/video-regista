@@ -992,6 +992,8 @@ function preparaMediaPipe() {
 // Una volta sola per file (segno «.podcast» accanto): le macchine dei pezzi la rifanno uguale sulla loro copia.
 function voceStile(piano) {
   if (piano.grafica?.voce !== 'podcast') return;
+  // video già montato da Denis con l'audio finito («audio pronto», «già montato da me» nel brief, 19/11): la voce non si tocca
+  if (/(audio|voce)\s+(già\s+)?pront|già montato da me/i.test(BRIEF_PIENO)) { log('voce già pronta (brief): niente catena podcast'); return; }
   for (const f of new Set(piano.clips.map((c) => c.audio?.file).filter(Boolean))) {
     const p = path.join(MEDIA, f), segno = `${p}.podcast`;
     if (!fs.existsSync(p) || fs.existsSync(segno)) continue;
