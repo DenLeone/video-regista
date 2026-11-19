@@ -143,7 +143,7 @@ async function riempiSpazi({ video, uscita, spazi, dir, durata, w, h, formato, t
         const sorgente = codiceScena(m.scena);
         if (!sorgente) throw new Error(`scena ${m.scena} non trovata`);
         if (intestazione(sorgente).serve === 'foto' && !dati.foto.length) { log(`scena ${m.scena} saltata: nella cartella non c'è una foto del prodotto`); continue; }
-        const codice = `const DATI = ${JSON.stringify(dati)};\n${sorgente}`;
+        const codice = `const DATI = ${JSON.stringify(dati).replace(/</g, '\\u003c')};\n${sorgente}`;
         const opz = { ...FASCIA.verticale, dur: m.dur };
         const p = await prova(codice, opz, media);
         fs.rmSync(p.dir, { recursive: true, force: true });

@@ -1,0 +1,56 @@
+name: vetrina
+
+# 🎬 Vetrina (19/11): una scena fatta a mano (motion/scene) diventa un reel «prompt → risultato», su Drive in
+# 02 · Fatti/Vetrine. Esempio: scena skill-vinile, prompt «Trasforma il logo di Spotify in un vinile…».
+run-name: ${{ format('🎬 Vetrina · {0}', inputs.scena) }}
+on:
+  workflow_dispatch:
+    inputs:
+      scena:
+        description: 'nome del file in motion/scene (es. skill-vinile)'
+        required: true
+      prompt:
+        description: 'il prompt da mostrare in alto, come lo scriveresti a Claude'
+        required: true
+
+permissions:
+  contents: read
+
+jobs:
+  vetrina:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+      - name: Cache strumenti
+        uses: actions/cache@v5
+        with:
+          path: ~/opt/regista-strumenti
+          key: regista-strumenti-v2-${{ runner.os }}
+      - name: Strumenti e Drive
+        env:
+          RCLONE_CONF: ${{ secrets.RCLONE_CONF }}
+        run: |
+          command -v ffmpeg > /dev/null || bash scripts/programma-video.sh
+          command -v rclone > /dev/null || for i in 1 2 3; do timeout 60 bash -c 'curl -fsSL https://rclone.org/install.sh | sudo bash > /dev/null' && break; sleep 5; done
+          mkdir -p ~/.config/rclone
+          printf '%s\n' "$RCLONE_CONF" | tr -d '\r' | sed -e '1s/^\xEF\xBB\xBF//' -e 's/^[[:space:]]*//' > ~/.config/rclone/rclone.conf
+      - name: Render
+        env:
+          SCENA: ${{ inputs.scena }}
+          PROMPT: ${{ inputs.prompt }}
+        run: |
+          mkdir -p out
+          node scripts/vetrina.mjs "$SCENA" "$PROMPT" "out/Vetrina - $SCENA.mp4"
+      - name: Su Drive e avviso
+        env:
+          SCENA: ${{ inputs.scena }}
+          NOTIFY_URL: ${{ secrets.NOTIFY_URL }}
+          NOTIFY_TOKEN: ${{ secrets.NOTIFY_TOKEN }}
+        run: |
+          rclone copyto "out/Vetrina - $SCENA.mp4" "gdrive:02 · Fatti/Vetrine/Vetrina - $SCENA.mp4"
+          jq -n --arg t "🎬 Vetrina pronta: 02 · Fatti/Vetrine/Vetrina - $SCENA.mp4 (prompt → risultato). Guardala prima di pubblicare." '{tipo:"avviso", nome:"Vetrina", testo:$t}' \
+            | curl -s -X POST "$NOTIFY_URL" -H 'content-type: application/json' -H "x-regista-token: $NOTIFY_TOKEN" -d @- > /dev/null || true
