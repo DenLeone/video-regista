@@ -4,6 +4,7 @@
 //   // parola: vinile      → parte quando Denis dice questa parola (la prima volta)
 //   // anticipo: 0.5       → secondi prima della parola (il logo entra un attimo prima)
 //   // durata: 6           → secondi
+//   // serve: foto         → (facoltativo) senza una foto vera del prodotto la scena si salta
 // Prima del render: le schermate e i loghi che cadrebbero nello stesso momento escono (niente due grafiche insieme),
 // al loro posto uno spazio «animazione» con la scena; dopo il render Ultron la renderizza con i suoi suoni.
 import fs from 'node:fs';
@@ -20,7 +21,7 @@ export function codiceScena(nome) {
 }
 export function intestazione(codice) {
   const v = (k) => (new RegExp(`^//\\s*${k}\\s*:\\s*(.+)$`, 'mi').exec(codice) || [])[1]?.trim();
-  return { parola: v('parola') || null, anticipo: Number(v('anticipo')) || 0, durata: Math.min(8, Math.max(2, Number(v('durata')) || 4)) };
+  return { parola: v('parola') || null, anticipo: Number(v('anticipo')) || 0, durata: Math.min(8, Math.max(2, Number(v('durata')) || 4)), ...(v('serve') ? { serve: v('serve') } : {}) };
 }
 
 // mette la scena nel piano; ritorna un avviso per il log (o null se il brief non chiede scene)
@@ -41,7 +42,8 @@ export function scenaNelPiano(piano, brief) {
   const dur = +Math.min(durata, Math.max(1.5, durataVideo - at - 0.2)).toFixed(2);
   const fuori = (x) => x.at < at + dur + 0.2 && x.at + (x.dur || 0) > at - 0.2;
   const prima = (piano.schermate || []).length + (piano.icone || []).length;
-  piano.schermate = (piano.schermate || []).filter((x) => x.tipo !== 'animazione' && !fuori(x));
+  // escono solo le grafiche nello stesso momento: l'animazione speciale della regia, se è altrove, resta
+  piano.schermate = (piano.schermate || []).filter((x) => !fuori(x));
   if (piano.icone) piano.icone = piano.icone.filter((x) => !fuori(x));
   const tolte = prima - piano.schermate.length - (piano.icone || []).length;
   piano.schermate.push({ at, dur, tipo: 'animazione', scena: nome, prompt: `scena fatta a mano: ${nome}`, testo: '', dati: { titolo } });

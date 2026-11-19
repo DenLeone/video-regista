@@ -6,6 +6,7 @@
 // parola: {prodotto}
 // anticipo: 0.2
 // durata: 4.5
+// serve: foto
 const T3 = M3.THREE, S = M3.R.scene, DUR = M.META.duration;
 const foto = (DATI.foto || [])[0] || null;
 const nome = String(DATI.titolo || '').trim().toUpperCase();
@@ -22,7 +23,7 @@ const alone = (() => {
   m.position.set(0, 85, -140); S.add(m); return m;
 })();
 
-// la scheda con la foto vera (ritagliata al centro, senza deformarla); senza foto, l'interfaccia di esempio
+// la scheda con la foto vera (ritagliata al centro, senza deformarla); senza foto Ultron salta la scena
 const scheda = M3.card({ ...(foto ? { src: foto, adatta: true } : { ui: 'grafico' }), w: 360, h: 360, r: 36, spessore: 14, y: 85 });
 M3.anim(scheda, [
   { t: 0, z: -1300, ry: 70, rx: 12, s: 0.9 },

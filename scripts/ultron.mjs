@@ -136,12 +136,13 @@ async function riempiSpazi({ video, uscita, spazi, dir, durata, w, h, formato, t
     try {
       // 0) scena fatta a mano (motion/scene, «Animazione: <nome>» nel brief): si prova e si renderizza così com'è
       if (m.scena) {
-        const { codiceScena } = await import('./scene-mano.mjs');
+        const { codiceScena, intestazione } = await import('./scene-mano.mjs');
         const media = loghiDelVideo();
         // DATI: quello che la scena deve sapere del video (nome del prodotto, foto vere disponibili in assets/)
         const dati = { ...(m.dati || {}), foto: media.filter((x) => !x.nome.startsWith('img_logo_') && /\.(jpe?g|png|webp)$/i.test(x.nome)).map((x) => `assets/${x.nome}`), loghi: media.filter((x) => x.nome.startsWith('img_logo_')).map((x) => `assets/${x.nome}`) };
         const sorgente = codiceScena(m.scena);
         if (!sorgente) throw new Error(`scena ${m.scena} non trovata`);
+        if (intestazione(sorgente).serve === 'foto' && !dati.foto.length) { log(`scena ${m.scena} saltata: nella cartella non c'è una foto del prodotto`); continue; }
         const codice = `const DATI = ${JSON.stringify(dati)};\n${sorgente}`;
         const opz = { ...FASCIA.verticale, dur: m.dur };
         const p = await prova(codice, opz, media);
