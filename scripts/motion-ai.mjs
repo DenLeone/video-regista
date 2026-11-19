@@ -81,13 +81,12 @@ export function estraiCodice(testo) {
 // La chiave gratuita resta sui suoi modelli: Pro e Flash gratis non si saltano mai.
 function giri() {
   const lista = (v, def) => (v || def).split(',').map((s) => s.trim()).filter(Boolean);
-  const g = [];
-  if (process.env.GEMINI_API_KEY_GRATIS) for (const m of lista(process.env.MOTION_MODELLI, 'gemini-pro-latest,gemini-flash-latest')) g.push([process.env.GEMINI_API_KEY_GRATIS, m]);
-  if (process.env.GEMINI_API_KEY) {
-    for (const m of lista(process.env.MOTION_MODELLI_PAGAMENTO, '')) g.push([process.env.GEMINI_API_KEY, m]);
-    g.push([process.env.GEMINI_API_KEY, 'gemini-flash-lite-latest']);
-  }
-  return g;
+  const gratis = [], pagati = [];
+  if (process.env.GEMINI_API_KEY_GRATIS) for (const m of lista(process.env.MOTION_MODELLI, 'gemini-pro-latest,gemini-flash-latest')) gratis.push([process.env.GEMINI_API_KEY_GRATIS, m]);
+  if (process.env.GEMINI_API_KEY) for (const m of lista(process.env.MOTION_MODELLI_PAGAMENTO, '')) pagati.push([process.env.GEMINI_API_KEY, m]);
+  const lite = process.env.GEMINI_API_KEY ? [[process.env.GEMINI_API_KEY, 'gemini-flash-lite-latest']] : [];
+  // Denis 19/11: per le motion graphic prima la chiave a pagamento (Pro), poi quella gratuita (spesso esaurita), poi Flash-Lite
+  return process.env.MOTION_PAGAMENTO_PRIMA === '1' ? [...pagati, ...gratis, ...lite] : [...gratis, ...pagati, ...lite];
 }
 export async function gemini(parti, sistema, json = false) {
   const base = process.env.GEMINI_URL || 'https://generativelanguage.googleapis.com/v1beta';

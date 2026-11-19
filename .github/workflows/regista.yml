@@ -75,6 +75,8 @@ env:
   DIR_STILI: '12 · Risorse/Stili'
   # Motion graphic (Ultron): con la chiave a pagamento prova Pro prima di Flash-Lite (Denis 18/11)
   MOTION_MODELLI_PAGAMENTO: 'gemini-pro-latest'
+  # Denis 19/11: per le motion graphic la chiave a pagamento va per prima (la gratuita è spesso esaurita)
+  MOTION_PAGAMENTO_PRIMA: '1'
 
 # Una coda PER CARTELLA: GitHub tiene un solo giro "in attesa" per gruppo e scarta
 # quelli in attesa più vecchi. Con un gruppo unico, tre avvii di fila ne perdevano uno.
