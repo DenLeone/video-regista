@@ -2520,7 +2520,8 @@ export async function analizza(nome, brief, cache) {
     const perche = s.reazione ? (s.audioClip ? 'clip di un altro, con la sua voce' : 'clip di un altro')
       : s.schermo && altriVideo ? 'registrazione dello schermo'
       : /^v\d{5}g[a-z0-9]{16,}$/i.test(s.id) ? 'video scaricato da TikTok'
-      : /tik ?tok|reel|export|montat|hq.?grade/i.test(s.id) ? 'video già montato'
+      // «… HQ grade» (Denis, 19/11): è il SUO girato già colorato, col parlato da agganciare alla voce, non un video montato
+      : !/grade/i.test(s.id) && /tik ?tok|reel|export|montat/i.test(s.id) ? 'video già montato'
       : recente && s.data && recente - s.data > 3 * 86400e3 ? `girato il ${new Date(s.data).toLocaleDateString('it-IT')}, non con il resto` : null;
     if (perche) { s.soloImmagini = perche; log(`${s.id}: solo immagini (${perche})`); }
   }
