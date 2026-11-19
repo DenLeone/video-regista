@@ -87,6 +87,7 @@ M3.init = (o = {}) => {
   composer.addPass(new OutputPass());
   R = { renderer, scene, camera, composer, bokeh, D, fov };
   M3.D = D;
+  M3.R = R; // per le scene fatte a mano: scene, camera e THREE (M3.THREE) per oggetti oltre alle schede
   return R;
 };
 

@@ -13,7 +13,7 @@ import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { renderMotion } from './motion.mjs';
 import { creaIdea, gemini } from './motion-ai.mjs';
-import { creaScena, renderScena, FASCIA } from './bdm.mjs';
+import { creaScena, renderScena, prova, FASCIA } from './bdm.mjs';
 
 const log = (...a) => console.log('ultron:', ...a);
 const DURATE = { numero: 3.2, titolo: 3.8, idea: 3.6 };
@@ -104,8 +104,9 @@ export function filtroSuoni(suoni, primoIngresso, volume = 0.32) {
 // degli spazi «animazione» ({at, dur, prompt, testo}): qui Claude scrive l'animazione e la si sovrappone lì.
 // Se non riesce, al suo posto va la scritta di riserva (modello «titolo»): lo spazio non resta mai vuoto.
 export function spaziValidi(spazi, durata) {
-  return (spazi || []).filter((x) => x && Number.isFinite(+x.at) && +x.at >= 0 && +x.at < durata - 1 && (x.prompt || x.testo))
-    .map((x) => ({ at: +(+x.at).toFixed(2), dur: +Math.min(4.5, Math.max(1.5, +x.dur || 3.5), durata - 0.2 - x.at).toFixed(2), prompt: String(x.prompt || '').slice(0, 600), testo: String(x.testo || '').slice(0, 40) }))
+  return (spazi || []).filter((x) => x && Number.isFinite(+x.at) && +x.at >= 0 && +x.at < durata - 1 && (x.prompt || x.testo || x.scena))
+    .map((x) => ({ at: +(+x.at).toFixed(2), dur: +Math.min(x.scena ? 8 : 4.5, Math.max(1.5, +x.dur || 3.5), durata - 0.2 - x.at).toFixed(2), prompt: String(x.prompt || '').slice(0, 600), testo: String(x.testo || '').slice(0, 40),
+      ...(x.scena ? { scena: String(x.scena) } : {}) }))
     .slice(0, 3);
 }
 // i loghi veri trovati dal Regista per questo video (public/media/img_logo_*): la scena usa quelli, mai loghi disegnati a memoria
@@ -131,6 +132,20 @@ async function riempiSpazi({ video, uscita, spazi, dir, durata, w, h, formato, t
   for (const [i, m] of spaziValidi(spazi, durata).entries()) {
     const clip = path.join(dir, `a${i}.mov`);
     try {
+      // 0) scena fatta a mano (motion/scene, «Animazione: <nome>» nel brief): si prova e si renderizza così com'è
+      if (m.scena) {
+        const { codiceScena } = await import('./scene-mano.mjs');
+        const codice = codiceScena(m.scena);
+        if (!codice) throw new Error(`scena ${m.scena} non trovata`);
+        const opz = { ...FASCIA.verticale, dur: m.dur }, media = loghiDelVideo();
+        const p = await prova(codice, opz, media);
+        fs.rmSync(p.dir, { recursive: true, force: true });
+        if (p.errore && /errore JavaScript|vuota/.test(p.errore)) throw new Error(`scena ${m.scena}: ${p.errore.slice(0, 120)}`);
+        const r = await renderScena({ codice, opz, media, uscita: clip });
+        fatti.push({ tipo: 'animazione', at: m.at, dur: m.dur, clip, fascia: opz, wav: r.wav, motore: 'mano' });
+        log(`scena fatta a mano ${m.scena}: ${m.dur} s, ${r.suoni} suoni`);
+        continue;
+      }
       if (!m.prompt) throw new Error('senza descrizione');
       // 1) Black Den Motion: preset provati, 3D vero, effetti sonori, prova in Chrome e revisione di Claude
       if (formato === 'verticale' && process.env.ULTRON_BDM !== '0') {

@@ -3334,6 +3334,9 @@ async function main() {
         piano.note = [`⚠️ musica chiesta («${musicaChiesta.nome || 'a scelta'}») ma non preparata: video senza musica`, piano.note].filter(Boolean).join(' · ');
       }
     }
+    // 🎬 scena fatta a mano chiesta nel brief («Animazione: <nome>», motion/scene): prima del render, così le grafiche
+    // che cadrebbero nello stesso momento escono
+    if (!PROVA_SECONDI) { try { const { scenaNelPiano } = await import('./scene-mano.mjs'); const a = scenaNelPiano(piano, brief || ''); if (a) log(a); } catch (e) { log('scena fatta a mano saltata:', e.message.slice(0, 120)); } }
     fs.writeFileSync(path.join(WORK, 'piano.json'), JSON.stringify(piano, null, 1));
     validaPiano(piano, solo);
     if (process.env.AZIONE === 'kit') { await preparaKit(piano, nome, DEST); return; }
