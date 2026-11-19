@@ -13,7 +13,8 @@ const durata = Number(execFileSync('ffprobe', ['-v', 'error', '-show_entries', '
 const ogni = Math.min(3, Math.max(0.5, +(durata / 18).toFixed(2)) || 3);
 const largo = ogni < 3 ? 480 : 360;
 // un file solo audio (la voce di un microfono): niente fotogrammi, solo la trascrizione
-const conVideo = execFileSync('ffprobe', ['-v', 'error', '-select_streams', 'v:0', '-show_entries', 'stream=codec_type', '-of', 'csv=p=0', video], { encoding: 'utf8' }).trim() === 'video';
+const conVideo = execFileSync('ffprobe', ['-v', 'error', '-select_streams', 'v:0', '-show_entries', 'stream=codec_type', '-of', 'csv=p=0', video], { encoding: 'utf8' }).includes('video');
+if (!conVideo) console.log('studio: nessuna traccia video, solo trascrizione');
 if (conVideo) execFileSync('ffmpeg', ['-y', '-v', 'error', '-i', video, '-vf', `fps=1/${ogni},scale=${largo}:-2,tile=3x3`, '-q:v', '4', path.join(out, 'fogli_%02d.jpg')]);
 // 3 fotogrammi a risoluzione piena (25%, 50%, 75%): per giudicare nitidezza, rumore e colore, non solo il contenuto
 for (const [i, k] of (conVideo ? [0.25, 0.5, 0.75] : []).entries()) {
