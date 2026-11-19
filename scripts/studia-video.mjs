@@ -17,6 +17,8 @@ execFileSync('ffmpeg', ['-y', '-v', 'error', '-i', video, '-vf', `fps=1/${ogni},
 for (const [i, k] of [0.25, 0.5, 0.75].entries()) {
   try { execFileSync('ffmpeg', ['-y', '-v', 'error', '-ss', (durata * k).toFixed(2), '-i', video, '-frames:v', '1', '-q:v', '2', path.join(out, `pieno_${i + 1}.jpg`)]); } catch { /* fotogramma non riuscito */ }
 }
+// le etichette di colore e codifica (spazio colore, gamma, bit): per capire perché un video «cambia colore» nel render
+try { fs.writeFileSync(path.join(out, 'info.txt'), execFileSync('ffprobe', ['-v', 'error', '-select_streams', 'v:0', '-show_entries', 'stream=codec_name,profile,pix_fmt,width,height,r_frame_rate,color_range,color_space,color_transfer,color_primaries:stream_side_data=:format_tags=encoder,com.apple.quicktime.software', '-of', 'default=nw=1', video], { encoding: 'utf8' })); } catch { /* niente info */ }
 const mp3 = path.join(out, 'voce.mp3');
 // un video senza audio (solo musica tolta, schermate) non ha niente da trascrivere
 let conAudio = true;
