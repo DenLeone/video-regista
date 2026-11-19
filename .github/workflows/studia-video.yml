@@ -22,11 +22,16 @@ jobs:
       - uses: actions/setup-node@v5
         with:
           node-version: 22
+      - name: Cache strumenti
+        uses: actions/cache@v5
+        with:
+          path: ~/opt/regista-strumenti
+          key: regista-strumenti-v2-${{ runner.os }}
       - name: Drive e ffmpeg
         env:
           RCLONE_CONF: ${{ secrets.RCLONE_CONF }}
         run: |
-          command -v ffmpeg > /dev/null || sudo apt-get install -y -qq ffmpeg > /dev/null
+          command -v ffmpeg > /dev/null || bash scripts/programma-video.sh
           command -v rclone > /dev/null || for i in 1 2 3; do timeout 60 bash -c 'curl -fsSL https://rclone.org/install.sh | sudo bash > /dev/null' && break; sleep 5; done
           mkdir -p ~/.config/rclone
           printf '%s\n' "$RCLONE_CONF" | tr -d '\r' | sed -e '1s/^\xEF\xBB\xBF//' -e 's/^[[:space:]]*//' > ~/.config/rclone/rclone.conf
