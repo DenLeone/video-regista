@@ -84,9 +84,11 @@ export function riconosciLog(src, info, disp, brief = '', tmpDir) {
   const nome = sony ? 's-?log\\s?3?' : 'i-?log';
   const noLog = new RegExp(`\\b(senza|no)\\s+${nome}\\b`, 'i').test(brief);
   const parola = new RegExp(`\\b${nome}\\b`, 'i');
-  let iLog = !noLog && (parola.test(Object.values(info.tags).join(' ')) || ((disp === 'insta' || sony) && parola.test(brief)));
+  // REGOLA DI DENIS (19/11): i colori non si toccano MAI, a meno che il brief dica che è girato in log (i-Log / s-Log).
+  // Niente più riconoscimento automatico dai colori o dai metadati: sbagliava (PGYTECH, Luna Ultra) e rovinava girati già colorati.
+  let iLog = !noLog && (disp === 'insta' || sony) && parola.test(brief);
   let riconosciuto = false, sat = null;
-  if (!iLog && !noLog && (sony || (disp === 'insta' && /10/.test(info.colore?.pix || ''))) && !HDR.includes(info.colore?.trc)) {
+  if (process.env.LOG_AUTOMATICO === '1' && !iLog && !noLog && (sony || (disp === 'insta' && /10/.test(info.colore?.pix || ''))) && !HDR.includes(info.colore?.trc)) {
     const st = statisticheColore(src, info.durata, 'null', tmpDir);
     // l'I-Log è piatto ma chiaro (ombre alzate): un video normale girato al buio ha colori spenti
     // anche lui, ma è scuro. Anime (25/10): sera, saturazione 5.5, preso per I-Log → colori sballati

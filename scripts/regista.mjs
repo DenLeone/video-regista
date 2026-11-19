@@ -624,10 +624,10 @@ export function comandiTaglio(s, start, dur, out, conAudio, senzaLook = false, z
   const ritaglio = (s.ritaglia916 ? 'crop=trunc(ih*9/16/2)*2:ih,' : '') + (zoom > 1 ? `crop=trunc(iw/${zoom}/2)*2:trunc(ih/${zoom}/2)*2,` : '');
   const rallenta = rampa ? `${filtroRampa(rampa, dur)},` : lento > 1 ? `setpts=${lento}*PTS,` : '';
   let curva = null;
-  // «colori pronti» / «già montato da me» nel brief (Denis, 19/11: girato già colorato in DaVinci): niente curva
-  // d'esposizione, il buio voluto resta buio (Luna Ultra: volto 0,22 schiarito a 0,45, colori bruciati)
-  const coloriPronti = /colori\s+(già\s+)?pront|già montato da me/i.test(BRIEF_PIENO);
-  if (!senzaLook && !s.colore?.puro && !coloriPronti) {
+  // REGOLA DI DENIS (19/11, «NO COLOR CORRECTION»): l'esposizione si corregge SOLO sul girato in log dichiarato nel
+  // brief (i-Log / s-Log). Tutto il resto resta com'è: il buio voluto resta buio (Luna Ultra: volto 0,22 schiarito a 0,45)
+  const correggibile = Boolean(s.colore?.log);
+  if (!senzaLook && !s.colore?.puro && correggibile) {
     // look 12K: la sua curva; look chiari ("chiaro caldo" del Narrativo): centro e volto ben esposti;
     // gli altri stili: solo se il soggetto è proprio al buio (Moero air, 20/10: volto a 0,14 in controluce),
     // e solo su chi parla: un unboxing su scrivania nera non è «al buio» (14/11, AJ139 V3: primo pezzo schiarito)
