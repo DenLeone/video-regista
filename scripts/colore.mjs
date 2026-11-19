@@ -100,7 +100,10 @@ export function riconosciLog(src, info, disp, brief = '', tmpDir) {
   if (dopo) {
     luce = Math.max(0.02, (dopo.y - 16) / 219); // luminosità media 0–1 dopo la LUT
     // riconosciuto dai colori ma dopo la LUT quasi nero: non era I-Log, si lascia com'è
-    if (riconosciuto && luce < 0.06) { delete info.colore.log; return { iLog: false, scartato: true, tipo, sat, luce }; }
+    if (riconosciuto && luce < 0.06) { delete info.colore.log; return { iLog: false, scartato: true, motivo: 'quasi nero', tipo, sat, luce }; }
+    // riconosciuto dai colori ma dopo la LUT chiarissimo: era un video normale (la LUT del log lo «brucia»).
+    // PGYTECH 19/11: Denis al buio con la felpa nera, saturazione 3,1 → preso per I-Log, dopo la LUT 0,66 e slavato
+    if (riconosciuto && luce > 0.55) { delete info.colore.log; return { iLog: false, scartato: true, motivo: 'troppo chiaro', tipo, sat, luce }; }
     // al massimo ~1 stop in più: oltre si vede solo rumore
     // «senza schiarire» / «solo tecnica» nel brief (Denis, 16/11, ECC): la «S-Log3 tecnica» del laboratorio
     // (LUT + la sua schiarita di esposizione) e basta: niente curve su volto o sfondo, niente risalto

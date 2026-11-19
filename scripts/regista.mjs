@@ -2450,7 +2450,7 @@ export async function analizza(nome, brief, cache) {
       // I-Log (Insta360), S-Log3 (Sony) e HDR: conversione tecnica a Rec.709 (scripts/colore.mjs)
       const lg = riconosciLog(src, info, disp, brief || '', WORK);
       const iLog = lg.iLog;
-      if (lg.scartato) log(`  ${id}: colori spenti ma dopo la LUT quasi nero (${lg.luce.toFixed(2)}): non è ${lg.tipo}, colori originali`);
+      if (lg.scartato) log(`  ${id}: colori spenti ma dopo la LUT ${lg.motivo || 'quasi nero'} (${lg.luce.toFixed(2)}): non è ${lg.tipo}, colori originali`);
       if (lg.riconosciuto) {
         logRiconosciuti.push(lg.tipo === 'S-Log3' ? `${id} (Sony)` : id);
         log(`  ${id}: ${disp === 'sony' ? 'colori spenti' : '10 bit e colori spenti'} (saturazione ${lg.sat.toFixed(1)}): la tratto come ${lg.tipo}`);
@@ -2678,6 +2678,19 @@ export async function analizza(nome, brief, cache) {
     ? `${s.id} (${s.nomeDispositivo}) ha registrato solo fruscio (microfono collegato ma spento?): l'ho agganciata dalle immagini. Se il labiale non torna, dimmelo.`
     : `${s.id} (${s.nomeDispositivo}) ha registrato solo fruscio, senza voce (microfono collegato ma spento?) e non sono riuscito ad agganciarla nemmeno dalle immagini: l'ho usata solo come B-roll. Lascia acceso il microfono della camera, anche quello interno basta.`);
   avvisi.push(...avvisiSync(sorgenti));
+  // stessa Insta360, stesso set: se le altre clip sono a colori normali, quella «spenta» non è I-Log ma solo buia
+  // (PGYTECH 19/11: 10 B-roll normali + il parlato al buio preso per I-Log → color correction non voluta)
+  {
+    const insta = sorgenti.filter((x) => x.tipo === 'video' && x.dispositivo === 'insta');
+    const normali = insta.filter((x) => !x.colore?.log).length;
+    for (const x of insta) {
+      const i = logRiconosciuti.indexOf(x.id);
+      if (i < 0 || normali < 2 || normali < insta.length / 2) continue;
+      for (const k of ['log', 'alza', 'puro']) delete x.colore[k];
+      logRiconosciuti.splice(i, 1);
+      log(`  ${x.id}: le altre ${normali} clip Insta360 sono a colori normali: non la tratto come I-Log`);
+    }
+  }
   if (logRiconosciuti.length) avvisi.push(`${logRiconosciuti.join(', ')}: riconosciut${logRiconosciuti.length > 1 ? 'e' : 'a'} come girato in log (colori spenti) e convertit${logRiconosciuti.length > 1 ? 'e' : 'a'} con la LUT tecnica (I-Log Insta360, S-Log3 Sony). Se non era in log scrivi "senza i-Log" (Insta360) o "senza s-log" (Sony) nel brief.`);
   if (logScuri.length) avvisi.push(`${logScuri.join(', ')}: molto scur${logScuri.length > 1 ? 'e' : 'a'} anche dopo la LUT, ho schiarito il possibile. In I-Log con poca luce meglio aggiungere luce o esporre +0,7 EV.`);
   if (/\bi-?log\b/i.test(brief || '') && !/\b(senza|no)\s+i-?log\b/i.test(brief || '') && !sorgenti.some((s) => s.colore?.log)) {
