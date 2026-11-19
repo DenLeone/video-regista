@@ -305,7 +305,7 @@ export async function creaScena({ prompt, dur, formato = 'verticale', media = []
     try { c = estraiCodice(testo); } catch (e) { log(`tentativo ${n + 1} (${chi}): ${e.message}`); messaggio = `${richiesta}\n\nYour previous answer was not usable: ${e.message}. Answer again with only the js code block.`; continue; }
     const p = await prova(c, opz, media);
     if (!p.errore) { codice = c; ultimo = p; log(`tentativo ${n + 1} (${chi}): ok${usa3D(c) ? ' · 3D' : ''}`); break; }
-    log(`tentativo ${n + 1} (${chi}): da correggere`);
+    log(`tentativo ${n + 1} (${chi}): da correggere (${p.errore.split(':')[0].slice(0, 60)})`);
     fs.rmSync(p.dir, { recursive: true, force: true });
     messaggio = `${richiesta}\n\nYour program:\n\`\`\`js\n${c}\n\`\`\`\nTesting it in Chrome found this problem: ${p.errore}\nFix it and return the full program.`;
   }

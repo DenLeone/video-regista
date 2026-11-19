@@ -157,14 +157,11 @@ let STILI_APP: { nome: string; desc?: string }[] = []; // studiati nell'app, chi
 const infoStile = (nome: string) => INFO_STILI.find((x) => x.nome.toLowerCase() === nome.toLowerCase());
 // stili studiati nell'app e archiviati (Denis, 11/11: restano solo Cinematico, Kal e Ultra)
 const APP_ARCHIVIATI = new Set(['techapps', 'cinematic talk', 'strategic creator']);
-const tuttiStili = (): Stile[] => {
-  const base = unisciNomi(
-    STILI,
-    STILI_DRIVE.map((n) => ({ nome: n, cosa: infoStile(n)?.desc || 'su misura, da Drive' })),
-    STILI_APP.filter((s) => !APP_ARCHIVIATI.has(s.nome.trim().toLowerCase())),
-  );
-  return [...base, { nome: 'Ultron', tasto: '✨ Ultron', cosa: 'motion graphic automatiche sul parlato (Pro a pagamento, sopra lo stile Ultra)' }];
-};
+const tuttiStili = (): Stile[] => unisciNomi(
+  STILI,
+  STILI_DRIVE.map((n) => ({ nome: n, cosa: infoStile(n)?.desc || 'su misura, da Drive' })),
+  STILI_APP.filter((s) => !APP_ARCHIVIATI.has(s.nome.trim().toLowerCase())),
+);
 // nome esatto; se il tasto l'ha accorciato (64 byte), l'unico stile che inizia così
 function nomeStile(x?: string) {
   const t = String(x || '').toLowerCase();
@@ -1015,9 +1012,6 @@ const conStile = (brief: string, stileBase: string) => (/\bstile\s*:/i.test(brie
 
 // avvio: il messaggio diventa la scheda "in coda", poi la adotta il primo aggiornamento del giro
 async function lancia(env: Env, chat: string, i: Inputs, msgId?: number): Promise<string | null> {
-  if (i.brief && /Stile:\s*Ultron/i.test(i.brief)) {
-    i.brief = i.brief.replace(/Stile:\s*Ultron/i, 'Stile: Ultra. Motion graphic: sì');
-  }
   await mem(env).cancella(kAttesa(chat));
   const imp = await impostazioni(env);
   const err = await avvia(env, i, imp);
@@ -2625,4 +2619,3 @@ export default {
     if (lavori.length) ctx.waitUntil(mem(env).accoda(lavori));
   },
 };
-

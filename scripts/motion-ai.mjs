@@ -2,7 +2,7 @@
 // 1) Gemini scrive il codice dell'animazione (canvas 2D, attrezzi di motion/motore.js);
 // 2) la proviamo davvero in Chrome: errori, schermo vuoto, niente movimento → l'errore torna a Gemini (max 3 giri);
 // 3) Gemini GUARDA 6 fotogrammi e corregge quello che non rispetta la richiesta (1 giro di revisione);
-// 4) il render lo fa scripts/motion.mjs. Chiave gratuita prima (Pro, poi Flash); a pagamento Pro se configurato, altrimenti solo Flash-Lite.
+// 4) il render lo fa scripts/motion.mjs. Chiave gratuita prima (Pro, poi Flash); a pagamento i modelli di MOTION_MODELLI_PAGAMENTO, poi Flash-Lite.
 // Repo pubblico: nel log solo tentativi ed esiti, mai la descrizione né il codice.
 import fs from 'node:fs';
 import os from 'node:os';
@@ -76,17 +76,15 @@ export function estraiCodice(testo) {
   return c;
 }
 
-// giri di chiave e modello: gratis prima; a pagamento Pro se MOTION_MODELLI_PAGAMENTO è impostata, altrimenti solo Flash-Lite
-// Ultron / Squad: se MOTION_MODELLI_PAGAMENTO è settata, usala anche sulla chiave gratuita (Squad mette la paid key in GEMINI_API_KEY_GRATIS)
+// giri di chiave e modello: gratis prima (Pro, poi Flash); poi la chiave a pagamento.
+// A pagamento: i modelli di MOTION_MODELLI_PAGAMENTO (Denis 18/11: Pro per le motion graphic), poi Flash-Lite.
+// La chiave gratuita resta sui suoi modelli: Pro e Flash gratis non si saltano mai.
 function giri() {
+  const lista = (v, def) => (v || def).split(',').map((s) => s.trim()).filter(Boolean);
   const g = [];
-  const pagati = (process.env.MOTION_MODELLI_PAGAMENTO || '').split(',').map((s) => s.trim()).filter(Boolean);
-  if (process.env.GEMINI_API_KEY_GRATIS) {
-    const modelliGratis = pagati.length ? pagati : (process.env.MOTION_MODELLI || 'gemini-pro-latest,gemini-flash-latest').split(',').map((s) => s.trim()).filter(Boolean);
-    for (const m of modelliGratis) g.push([process.env.GEMINI_API_KEY_GRATIS, m]);
-  }
+  if (process.env.GEMINI_API_KEY_GRATIS) for (const m of lista(process.env.MOTION_MODELLI, 'gemini-pro-latest,gemini-flash-latest')) g.push([process.env.GEMINI_API_KEY_GRATIS, m]);
   if (process.env.GEMINI_API_KEY) {
-    for (const m of pagati) g.push([process.env.GEMINI_API_KEY, m]);
+    for (const m of lista(process.env.MOTION_MODELLI_PAGAMENTO, '')) g.push([process.env.GEMINI_API_KEY, m]);
     g.push([process.env.GEMINI_API_KEY, 'gemini-flash-lite-latest']);
   }
   return g;
