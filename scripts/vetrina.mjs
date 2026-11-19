@@ -54,7 +54,7 @@ export async function vetrina({ scena, prompt, uscita }) {
     const s = await renderScena({ codice: `const DATI = {};\n${sorgente}`, opz: { w: W, h: H_SCENA, dur: durScena }, uscita: path.join(dir, 'scena.mov') });
     const audio = [testo.wav, s.wav].map((w, i) => (w ? { w, at: i ? tScena : 0 } : null)).filter(Boolean);
     const ingressi = ['-f', 'lavfi', '-i', 'anullsrc=r=48000:cl=stereo', '-i', testo.mov, '-i', s.mov, ...audio.flatMap((a) => ['-i', a.w])];
-    const fa = audio.length ? `;${audio.map((a, i) => `[${3 + i}:a]aresample=48000,adelay=${Math.round(a.at * 1000)}:all=1[x${i}]`).join(';')};[0:a]${audio.map((_, i) => `[x${i}]`).join('')}amix=inputs=${audio.length + 1}:duration=first:normalize=0,atrim=0:${durata}[au]` : '';
+    const fa = audio.length ? `;${audio.map((a, i) => `[${3 + i}:a]aresample=48000,adelay=${Math.round(a.at * 1000)}:all=1[x${i}]`).join(';')};[0:a]${audio.map((_, i) => `[x${i}]`).join('')}amix=inputs=${audio.length + 1}:duration=first:normalize=0,atrim=0:${durata},volume=0.75,alimiter=limit=0.7:level=disabled[au]` : '';
     const r = spawnSync('ffmpeg', ['-y', '-v', 'error', ...ingressi, '-filter_complex', `${filtroVetrina({ tScena, durata })}${fa}`,
       '-map', '[v]', '-map', audio.length ? '[au]' : '0:a', '-t', String(durata), '-c:v', 'libx264', '-preset', 'medium', '-crf', '18', '-c:a', 'aac', '-b:a', '192k', '-movflags', '+faststart', uscita], { encoding: 'utf8' });
     if (r.status !== 0) throw new Error(`ffmpeg: ${(r.stderr || '').split('\n').filter(Boolean).pop()}`);
