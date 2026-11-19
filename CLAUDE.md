@@ -16,7 +16,7 @@ Denis nel codice o nei log (nei log solo conteggi). Parla con Denis in italiano,
 ## Zone del verticale (TASSATIVE, Denis 19/11)
 Ogni video verticale rispetta `zone.json`: tutto dentro x 60–1020, y 240–1530; sotto y 970 non oltre x 920 (tasti di
 Instagram); sotto y 1530 niente; mai grafiche sopra la faccia. Lette da `src/zone.ts` e `scripts/zone.mjs` (non copiare i
-numeri altrove); Ultron mette le fasce sopra la testa con `scripts/viso-zone.mjs`. Si possono solo stringere.
+numeri altrove); Ultron mette le fasce sopra la testa, o se non ci stanno accanto alla testa o sul petto (`scripts/viso-zone.mjs`). Si possono solo stringere.
 
 ## Scene e motion
 - Scene fatte a mano: `motion/scene/*.js` (vedi `scripts/scene-mano.mjs`), motore in `motion/bdm/`.

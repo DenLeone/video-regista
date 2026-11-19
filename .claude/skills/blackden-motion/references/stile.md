@@ -34,7 +34,7 @@ Regole di partenza. Se l'utente dà indicazioni diverse, vincono le sue.
 - Sotto **y 1530** è il «cimitero» (descrizione, nome): niente di niente.
 - **Mai grafiche sopra la faccia**: le grafiche aiutano il video, non sostituiscono Denis.
 - Posti buoni: la striscia alta (y 240–~500, sopra la testa), il lato accanto alla testa, la fascia del petto (y ~860–1110), i sottotitoli sotto (y ~1250–1450, x 160–920).
-- Nella fascia di Ultron (1080×700) le coordinate sono della fascia: Ultron la mette da y 240 e la rimpicciolisce sopra la testa.
+- Nella fascia di Ultron (1080×700) le coordinate sono della fascia: Ultron la mette sopra la testa (da y 240), o se non ci sta accanto alla testa o sul petto, rimpicciolita quanto serve.
 
 ## Motion blur
 - Nel render finale usa `--mblur 8`: i movimenti veloci (pop, punch, telefono, parole che entrano) sembrano filmati.

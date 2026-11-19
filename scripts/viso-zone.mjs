@@ -22,25 +22,48 @@ export function tracciaViso(video, dir) {
   try { return JSON.parse(fs.readFileSync(out, 'utf8')).punti || null; } catch { return null; }
 }
 
-// punto più alto della testa (capelli compresi) tra at e at+dur, in pixel del video alto h
-export function testaInAlto(punti, at, dur, h) {
-  const vicini = (punti || []).filter((p) => p.y != null && p.t >= at - 0.5 && p.t <= at + dur + 0.5);
-  if (!vicini.length) return null;
-  return Math.min(...vicini.map((p) => (p.y - 0.75 * p.s) * h)); // s = altezza del viso; i capelli arrivano ~¼ più su
+// ingombro del viso tra at e at+dur (unione di tutte le posizioni), in pixel del video w×h: {alto, basso, sx, dx}
+// alto = capelli (¼ di viso sopra la fronte), basso = mento + collo corto; larghezza ≈ 0,8 dell'altezza del viso
+export function visoNelTempo(punti, at, dur, w, h) {
+  const v = (punti || []).filter((p) => p.y != null && p.t >= at - 0.5 && p.t <= at + dur + 0.5);
+  if (!v.length) return null;
+  return {
+    alto: Math.min(...v.map((p) => (p.y - 0.75 * p.s) * h)),
+    basso: Math.max(...v.map((p) => (p.y + 0.6 * p.s) * h)),
+    sx: Math.min(...v.map((p) => p.x * w - 0.5 * p.s * h)),
+    dx: Math.max(...v.map((p) => p.x * w + 0.5 * p.s * h)),
+  };
 }
 
-// dove mettere la fascia di un'animazione (alta f.h su f.w): dal bordo alto della zona sicura fino a sopra la testa,
-// rimpicciolita e centrata se serve. null = non ci sta senza coprire la faccia (o diventerebbe troppo piccola).
-// Senza traccia del viso si suppone la testa a 560 px su 1920 (occhi a ~700, come il resto del Regista).
-export function postoFascia({ testa, w, h, f }) {
-  const k = h / ZONA.h;
-  const y0 = Math.ceil(ZONA.sicura.y0 * k);
-  const fondo = (testa ?? 560 * k) - 30 * k;
-  const piena = (w * f.h) / f.w;
-  const larga = ((ZONA.sicura.x1 - ZONA.sicura.x0) * k) / w; // dentro i margini di lato della zona sicura
-  const scala = Math.min(larga, (fondo - y0) / piena);
-  if (!(scala >= 0.45)) return null;
+// dove mettere la fascia di un'animazione (f.w × f.h), nei tre posti buoni del video «safe zone» di Denis:
+//   1) sopra la testa (dal bordo alto della zona sicura), 2) accanto alla testa (dal lato con più spazio),
+//   3) sul petto (sotto il mento, sopra i sottotitoli). Sempre dentro la zona sicura e mai sulla faccia.
+// Sopra la testa è il posto di Ultron: si usa se la fascia resta almeno al 60%; altrimenti vince il posto più grande.
+// null = in nessun posto ci sta almeno al 45%. Senza viso trovato si suppone la testa a 560–1000 px, centrata.
+// SOTTOTITOLI_Y = dove iniziano i sottotitoli «basso» di Ultron (~1215 su 1920): il petto si ferma prima.
+const SOTTOTITOLI_Y = 1190, MARGINE = 30;
+export function postoFascia({ viso, w, h, f }) {
+  const k = h / ZONA.h, s = ZONA.sicura;
+  const V = viso || { alto: 560 * k, basso: 1000 * k, sx: 390 * (w / ZONA.w), dx: 690 * (w / ZONA.w) };
+  const x0 = s.x0 * k, x1 = s.x1 * k, y0 = Math.ceil(s.y0 * k), m = MARGINE * k;
+  const rapporto = f.h / f.w, piena = w; // a scala 1 la fascia è larga quanto il video
   const pari = (n) => Math.round(n / 2) * 2;
-  const sw = pari(w * scala), sh = pari(piena * scala);
-  return { x: Math.round((w - sw) / 2), y: y0, sw, sh, scala: +scala.toFixed(2) };
+  // la fascia più grande che sta nel rettangolo (centrata dentro)
+  const dentro = (nome, rx0, ry0, rx1, ry1) => {
+    const lw = rx1 - rx0, lh = ry1 - ry0;
+    if (lw <= 0 || lh <= 0) return null;
+    const scala = Math.min(lw / piena, lh / (piena * rapporto));
+    const sw = pari(piena * scala), sh = pari(piena * rapporto * scala);
+    return { posto: nome, x: Math.round(rx0 + (lw - sw) / 2), y: Math.round(nome === 'sopra' ? ry0 : ry0 + (lh - sh) / 2), sw, sh, scala: +scala.toFixed(2) };
+  };
+  const tastiY = ZONA.tasti.y0 * k, tastiX = ZONA.tasti.x0 * k;
+  const sopra = dentro('sopra', x0, y0, x1, V.alto - m);
+  // accanto: dall'alto della zona fino a dove finisce la testa (al massimo fino ai tasti di Instagram)
+  const giu = Math.min(V.basso, tastiY);
+  const lati = [dentro('accanto', x0, y0, V.sx - m, giu), dentro('accanto', V.dx + m, y0, x1, giu)];
+  // petto: sotto il mento fino ai sottotitoli; a destra non oltre i tasti se scende sotto y 970
+  const petto = dentro('petto', x0, V.basso + m, SOTTOTITOLI_Y * k > tastiY ? tastiX : x1, SOTTOTITOLI_Y * k);
+  if (sopra && sopra.scala >= 0.6) return sopra;
+  const migliore = [sopra, ...lati, petto].filter(Boolean).sort((a, b) => b.scala - a.scala)[0];
+  return migliore && migliore.scala >= 0.45 ? migliore : null;
 }

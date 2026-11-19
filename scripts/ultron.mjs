@@ -14,7 +14,7 @@ import { spawnSync } from 'node:child_process';
 import { renderMotion } from './motion.mjs';
 import { creaIdea, gemini } from './motion-ai.mjs';
 import { creaScena, renderScena, prova, FASCIA } from './bdm.mjs';
-import { tracciaViso, testaInAlto, postoFascia } from './viso-zone.mjs';
+import { tracciaViso, visoNelTempo, postoFascia } from './viso-zone.mjs';
 
 const log = (...a) => console.log('ultron:', ...a);
 const DURATE = { numero: 3.2, titolo: 3.8, idea: 3.6 };
@@ -187,9 +187,9 @@ async function riempiSpazi({ video, uscita, spazi, dir, durata, w, h, formato, t
     const punti = tracciaViso(video, dir);
     log(punti ? `viso trovato: le animazioni stanno sopra la testa` : 'viso non trovato: suppongo la testa a 560 px');
     for (const m of fatti.filter((x) => x.fascia)) {
-      m.posto = postoFascia({ testa: punti ? testaInAlto(punti, m.at, m.dur, h) : null, w, h, f: m.fascia });
-      if (!m.posto) { log(`animazione a ${m.at} s tolta: tra la zona sicura e la testa non c'è spazio (testa troppo in alto)`); m.via = true; continue; }
-      if (m.posto.scala < 0.88) log(`animazione a ${m.at} s rimpicciolita al ${Math.round(m.posto.scala * 100)}% per non coprire la faccia`);
+      m.posto = postoFascia({ viso: punti ? visoNelTempo(punti, m.at, m.dur, w, h) : null, w, h, f: m.fascia });
+      if (!m.posto) { log(`animazione a ${m.at} s tolta: né sopra, né accanto alla testa, né sul petto c'è spazio senza coprire la faccia`); m.via = true; continue; }
+      log(`animazione a ${m.at} s ${{ sopra: 'sopra la testa', accanto: 'accanto alla testa', petto: 'sul petto' }[m.posto.posto]}, al ${Math.round(m.posto.scala * 100)}%`);
     }
     fatti = fatti.filter((m) => !m.via);
     if (!fatti.length) return null;

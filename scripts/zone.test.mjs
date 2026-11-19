@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import fs from 'node:fs';
 import { ZONA, dentroZona, topInZona, REGOLA_ZONE } from './zone.mjs';
-import { postoFascia, testaInAlto } from './viso-zone.mjs';
+import { postoFascia, visoNelTempo } from './viso-zone.mjs';
 import { FASCIA } from './bdm.mjs';
 
 test('zone: dentro/fuori, tasti di Instagram, cimitero', () => {
@@ -28,22 +28,33 @@ test('zone: le posizioni fisse cambiate stanno dentro', () => {
   assert.equal(dentroZona(60, 360, 360, 480) && dentroZona(1080 - 60 - 360, 360, 360, 480), true, 'inserti laterali');
 });
 
-test('Ultron: la fascia sta tra la zona sicura e la testa, mai sopra la faccia', () => {
+test('Ultron: tre posti (sopra la testa, accanto, petto), sempre in zona e mai sulla faccia', () => {
   const f = FASCIA.verticale;
-  // testa bassa (top capelli a 1100): fascia grande quanto la zona sicura permette (960 px di larghezza)
-  const largo = postoFascia({ testa: 1100, w: 1080, h: 1920, f });
-  assert.deepEqual(largo, { x: 60, y: 240, sw: 960, sh: 622, scala: 0.89 });
-  assert.ok(largo.y + largo.sh <= 1100 - 30);
-  // testa a metà (top a 700): più piccola, centrata, sopra la testa
-  const medio = postoFascia({ testa: 700, w: 1080, h: 1920, f });
-  assert.ok(medio.y + medio.sh <= 670 && medio.scala < 0.89 && medio.x + medio.sw / 2 === 540);
-  // testa troppo in alto: niente animazione
-  assert.equal(postoFascia({ testa: 450, w: 1080, h: 1920, f }), null);
-  // 4K verticale: stesse proporzioni
-  const k4 = postoFascia({ testa: 2200, w: 2160, h: 3840, f });
-  assert.equal(k4.y, 480);
-  // testa più alta nel tempo dell'animazione
-  const punti = [{ t: 0, y: 0.5, s: 0.1 }, { t: 1, y: 0.4, s: 0.1 }, { t: 5, y: 0.2, s: 0.1 }];
-  assert.equal(Math.round(testaInAlto(punti, 0, 1.5, 1920)), Math.round((0.4 - 0.075) * 1920));
-  assert.equal(testaInAlto([{ t: 0, y: null, s: null }], 0, 2, 1920), null);
+  const sulViso = (p, v) => !(p.y + p.sh <= v.alto || p.y >= v.basso || p.x + p.sw <= v.sx || p.x >= v.dx);
+  const inZona = (p) => dentroZona(p.x, p.y, p.sw, p.sh);
+  // testa bassa: sopra la testa, grande
+  const basso = { alto: 1100, basso: 1500, sx: 380, dx: 700 };
+  const a = postoFascia({ viso: basso, w: 1080, h: 1920, f });
+  assert.equal(a.posto, 'sopra'); assert.equal(a.y, 240); assert.ok(a.scala >= 0.85 && inZona(a) && !sulViso(a, basso));
+  // testa a metà (come Skill): sopra, rimpicciolita ma ≥ 60%
+  const meta = { alto: 750, basso: 1150, sx: 380, dx: 700 };
+  const b = postoFascia({ viso: meta, w: 1080, h: 1920, f });
+  assert.equal(b.posto, 'sopra'); assert.ok(b.scala >= 0.6 && b.y + b.sh <= 720 && inZona(b));
+  // testa in alto: sopra non c'è spazio → petto, sotto il mento e sopra i sottotitoli
+  const alta = { alto: 300, basso: 640, sx: 380, dx: 700 };
+  const c = postoFascia({ viso: alta, w: 1080, h: 1920, f });
+  assert.equal(c.posto, 'petto'); assert.ok(c.y >= 670 && c.y + c.sh <= 1190 && inZona(c) && !sulViso(c, alta));
+  // testa in alto e spostata a sinistra, petto occupato da un viso grande: accanto, a destra
+  const lato = { alto: 260, basso: 1180, sx: 60, dx: 380 };
+  const d = postoFascia({ viso: lato, w: 1080, h: 1920, f });
+  assert.equal(d.posto, 'accanto'); assert.ok(d.x >= 410 && inZona(d) && !sulViso(d, lato));
+  // faccia enorme al centro: nessun posto
+  assert.equal(postoFascia({ viso: { alto: 250, basso: 1500, sx: 100, dx: 980 }, w: 1080, h: 1920, f }), null);
+  // 4K: stesse proporzioni
+  assert.equal(postoFascia({ viso: { alto: 2200, basso: 3000, sx: 760, dx: 1400 }, w: 2160, h: 3840, f }).y, 480);
+  // ingombro del viso nel tempo dell'animazione
+  const v = visoNelTempo([{ t: 0, x: 0.5, y: 0.5, s: 0.1 }, { t: 1, x: 0.4, y: 0.4, s: 0.1 }, { t: 5, x: 0.5, y: 0.2, s: 0.1 }], 0, 1.5, 1080, 1920);
+  assert.equal(Math.round(v.alto), Math.round((0.4 - 0.075) * 1920));
+  assert.equal(Math.round(v.basso), Math.round((0.5 + 0.06) * 1920));
+  assert.equal(visoNelTempo([{ t: 0, y: null }], 0, 2, 1080, 1920), null);
 });
