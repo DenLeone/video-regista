@@ -399,7 +399,11 @@ export const SuMisura: React.FC<Piano> = (piano) => {
       {/* stile reazione: le clip dell'altro dietro a Denis (la persona ritagliata va sopra) */}
       {reazione ? <InsertiReazione piano={piano} g={g} sfx={sfx} /> : null}
       {g.dietro || reazione ? <Ritagli piano={piano} filtro={LOOK[g.look]} /> : null}
-      {reazione ? <SchedeInfo piano={piano} g={g} sfx={sfx} /> : <Inserti piano={piano} sfx={sfx} cornice={g.cornice} sopra={strati && g.posizione === 'basso' && !g.dietro ? 920 : undefined} />}
+      {reazione ? <SchedeInfo piano={piano} g={g} sfx={sfx} /> : <Inserti piano={piano} sfx={sfx} cornice={g.cornice}
+        // Ultron (zone.json, 19/11): le schede stanno sopra la testa come le schermate (y 240–640), mai sulla faccia,
+        // e non quando c'è già una schermata
+        sopra={g.schermate === 'sopra' ? 640 : strati && g.posizione === 'basso' && !g.dietro ? 920 : undefined}
+        evita={g.schermate === 'sopra' ? (piano.schermate || []).map((x) => ({ from: f(x.at), len: f(x.dur || 3) })) : []} />}
       {g.fumo && g.transizione === 'pellicola' && g.pellicola ? <Pellicole piano={piano} file={g.pellicola.file} durata={g.pellicola.durata} /> : null}
       {g.fumo && g.transizione !== 'sfocata' && !(g.transizione === 'pellicola' && g.pellicola) ? <Fumi piano={piano} /> : null}
       {g.fumo && g.transizione === 'sfocata' ? <Sfocature piano={piano} /> : null}

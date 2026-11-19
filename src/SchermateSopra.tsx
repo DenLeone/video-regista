@@ -203,7 +203,11 @@ const Repo: React.FC<{ s: SchermataSopra; len: number }> = ({ s, len }) => (
 
 const Immagine: React.FC<{ s: SchermataSopra; len: number }> = ({ s, len }) => (
   <Scheda len={len} sfondo="#111111">
-    {s.media?.[0] ? <Img src={staticFile(`media/${s.media[0]}`)} style={{ width: '100%', height: AREA.bottom - AREA.top - 20, objectFit: 'cover', display: 'block' }} /> : null}
+    {/* la foto intera (contain), mai ritagliata: dietro la stessa foto sfocata riempie la scheda (Fifine 19/11: «40% OFF» mozzato) */}
+    {s.media?.[0] ? <div style={{ position: 'relative', width: '100%', height: AREA.bottom - AREA.top - 20, overflow: 'hidden' }}>
+      <Img src={staticFile(`media/${s.media[0]}`)} style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover', filter: 'blur(28px) brightness(0.7)', transform: 'scale(1.15)' }} />
+      <Img src={staticFile(`media/${s.media[0]}`)} style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'contain' }} />
+    </div> : null}
     {s.titolo ? <div style={{ position: 'absolute', left: 24, bottom: 18, fontFamily: SANS, fontSize: 30, fontWeight: 800, color: '#fff', textShadow: '0 2px 10px rgba(0,0,0,0.8)' }}>{s.titolo}</div> : null}
   </Scheda>
 );

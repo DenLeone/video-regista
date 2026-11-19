@@ -254,19 +254,23 @@ const SchedaView: React.FC<{ s: Scheda; cornice?: Cornice; sopra?: number; n?: n
 };
 
 type Cornice = 'scheda' | 'tv' | 'reazione' | 'laterale';
-export const Inserti: React.FC<{ piano: Piano; sfx?: number; cornice?: Cornice; sopra?: number }> = ({ piano, sfx = 0, cornice, sopra }) => (
+// `evita` (fotogrammi): momenti in cui la fascia è già occupata (es. le schermate di Ultron): lì niente scheda
+export const Inserti: React.FC<{ piano: Piano; sfx?: number; cornice?: Cornice; sopra?: number; evita?: { from: number; len: number }[] }> = ({ piano, sfx = 0, cornice, sopra, evita = [] }) => {
+  const schede = schedeInserti(piano).filter((s) => !evita.some((e) => s.from < e.from + e.len && e.from < s.from + s.len));
+  return (
   <>
-    {schedeInserti(piano).map((s, i) => (
+    {schede.map((s, i) => (
       <Sequence key={`in${i}`} from={s.from} durationInFrames={Math.max(2, s.len)}>
         <SchedaView s={s} cornice={cornice} sopra={sopra} n={i} />
       </Sequence>
     ))}
-    {sfx > 0 ? schedeInserti(piano).flatMap((s, i) => [
+    {sfx > 0 ? schede.flatMap((s, i) => [
       <Sfx key={`si${i}`} nome="whoosh" da={s.from - 7} volume={0.5 * sfx} />,
       <Sfx key={`so${i}`} nome="whoosh" da={s.from + s.len - 12} volume={0.28 * sfx} />,
     ]) : null}
   </>
-);
+  );
+};
 
 // ---------- ritagli: la persona sopra le scritte grandi ----------
 // video con trasparenza (scripts/ritaglio.py) della sola persona, allineato alla clip: messo dopo
