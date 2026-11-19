@@ -1930,7 +1930,9 @@ async function onNotify(env: Env, n: Notify) {
   }
   // 🛡️ avvisi della Guardia (guardia.yml): file troncati su main, token di Claude scaduto, chiave Gemini rifiutata
   if (n.tipo === 'avviso') {
-    for (const chat of chats) await invia(env, chat, { testo: `🛡️ <b>Guardia</b>\n${esc(tronca(String(n.testo || ''), 3000))}`, tasti: [[MENU_TASTO]] });
+    // l'intestazione dice chi scrive: 🛡️ Guardia (allarmi) o 🎬 Vetrina (video pronto), mai confusi
+    const chi = n.nome === 'Vetrina' ? '🎬 <b>Vetrina</b>' : '🛡️ <b>Guardia</b>';
+    for (const chat of chats) await invia(env, chat, { testo: `${chi}\n${esc(tronca(String(n.testo || ''), 3000))}`, tasti: [[MENU_TASTO]] });
     return;
   }
   if (n.tipo === 'vuoto') {
