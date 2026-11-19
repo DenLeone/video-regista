@@ -14,6 +14,7 @@ import { spawnSync } from 'node:child_process';
 import { renderMotion } from './motion.mjs';
 import { creaIdea, gemini } from './motion-ai.mjs';
 import { creaScena, renderScena, prova, FASCIA } from './bdm.mjs';
+import { tracciaViso, testaInAlto, postoFascia } from './viso-zone.mjs';
 
 const log = (...a) => console.log('ultron:', ...a);
 const DURATE = { numero: 3.2, titolo: 3.8, idea: 3.6 };
@@ -84,9 +85,11 @@ export function filtroSovrapposizioni(momenti, w, h) {
   momenti.forEach((m, i) => {
     const fine = +(m.at + m.dur).toFixed(2);
     // le scene Black Den Motion sono una fascia (es. 1080×700): larghezza del video, in alto; le altre a schermo intero
-    const f = m.fascia, sw = w, sh = f ? Math.round((w * f.h) / f.w / 2) * 2 : h, y = f ? Math.round((f.y * w) / f.w) : 0;
+    // m.posto (zone.json): fascia rimpicciolita e centrata tra la zona sicura e la testa
+    const f = m.fascia, p = m.posto;
+    const sw = p ? p.sw : w, sh = p ? p.sh : f ? Math.round((w * f.h) / f.w / 2) * 2 : h, x = p ? p.x : 0, y = p ? p.y : f ? Math.round((f.y * w) / f.w) : 0;
     parti.push(`[${i + 1}:v]scale=${sw}:${sh},setpts=PTS-STARTPTS+${m.at}/TB,fade=t=in:st=${m.at}:d=0.12:alpha=1,fade=t=out:st=${(fine - 0.35).toFixed(2)}:d=0.35:alpha=1[o${i}]`);
-    parti.push(`[${prima}][o${i}]overlay=x=0:y=${y}:eof_action=pass:enable='between(t,${m.at},${fine})'[v${i}]`);
+    parti.push(`[${prima}][o${i}]overlay=x=${x}:y=${y}:eof_action=pass:enable='between(t,${m.at},${fine})'[v${i}]`);
     prima = `v${i}`;
   });
   return { filtro: parti.join(';'), uscita: `[${prima}]` };
@@ -131,7 +134,7 @@ function sfondiFascia(video, m, dir, i, w) {
 }
 
 async function riempiSpazi({ video, uscita, spazi, dir, durata, w, h, formato, t0, scrittore = gemini }) {
-  const fatti = [];
+  let fatti = [];
   for (const [i, m] of spaziValidi(spazi, durata).entries()) {
     const clip = path.join(dir, `a${i}.mov`);
     try {
@@ -179,6 +182,18 @@ async function riempiSpazi({ video, uscita, spazi, dir, durata, w, h, formato, t
     }
   }
   if (!fatti.length) return null;
+  // zone.json (tassative): le fasce stanno tra il bordo alto della zona sicura e la testa di Denis, mai sopra la faccia
+  if (formato === 'verticale' && fatti.some((m) => m.fascia)) {
+    const punti = tracciaViso(video, dir);
+    log(punti ? `viso trovato: le animazioni stanno sopra la testa` : 'viso non trovato: suppongo la testa a 560 px');
+    for (const m of fatti.filter((x) => x.fascia)) {
+      m.posto = postoFascia({ testa: punti ? testaInAlto(punti, m.at, m.dur, h) : null, w, h, f: m.fascia });
+      if (!m.posto) { log(`animazione a ${m.at} s tolta: tra la zona sicura e la testa non c'è spazio (testa troppo in alto)`); m.via = true; continue; }
+      if (m.posto.scala < 0.88) log(`animazione a ${m.at} s rimpicciolita al ${Math.round(m.posto.scala * 100)}% per non coprire la faccia`);
+    }
+    fatti = fatti.filter((m) => !m.via);
+    if (!fatti.length) return null;
+  }
   const { filtro, uscita: v } = filtroSovrapposizioni(fatti, w, h);
   const conAudio = spawnSync('ffprobe', ['-v', 'error', '-select_streams', 'a', '-show_entries', 'stream=index', '-of', 'csv=p=0', video], { encoding: 'utf8' }).stdout.trim() !== '';
   const suoni = conAudio ? fatti.filter((m) => m.wav) : [];

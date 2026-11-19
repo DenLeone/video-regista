@@ -10,6 +10,7 @@ import { BlocchiUltra, Sfocature } from './Ultra';
 import { InsertiReazione, SchedeInfo } from './Reazione';
 import { Beat } from './Beat';
 import { Mattoni } from './Mattoni';
+import { topInZona } from './zone';
 
 // Stile "su misura": tutta la grafica arriva da Drive (Stili/<nome>/stile.txt, letto da
 // scripts/stile-su-misura.mjs) dentro piano.grafica. Nessun codice per uno stile nuovo.
@@ -169,7 +170,7 @@ export function blocchiApertura(parole: Piano['parole'] = [], enfasi: string[] =
 // con le scritte dietro alla persona il blocco scende all'altezza di testa e spalle (come negli
 // esempi del Narrativo); senza, resta nel terzo alto
 const ScrittaDueLivelli: React.FC<{ righe: Riga[]; len: number; g: GraficaStile; top?: number }> = ({ righe, len, g, top }) => {
-  top = top ?? (g.dietro ? 420 : 240);
+  top = topInZona(top ?? (g.dietro ? 420 : 240), 320);
   const fr = useCurrentFrame();
   const esce = interpolate(fr, [len - 5, len], [0, 1], clamp);
   const lungaGrande = Math.max(1, ...righe.filter((r) => r.tipo === 'grande').map((r) => r.parole.map((x) => x.w).join(' ').length));
@@ -229,7 +230,8 @@ const Titolo: React.FC<{ k: Keyword; len: number; g: GraficaStile }> = ({ k, len
     return { opacity: v * esce, filter: `blur(${(1 - v) * 10 + (1 - esce) * 6}px)`, transform: `translateY(${(1 - v) * 26}px)` };
   };
   const fs = dentro(k.word, g.fontTitoli, Math.max(72, Math.min(124, SICURA.larghezza / Math.max(1, k.word.length * 0.66))));
-  const top = k.top ?? (g.posTitoli === 'alto' ? 380 : g.posTitoli === 'centro' ? 820 : 1250);
+  // zone.json (tassative): anche il «top» scelto dall'AI resta dentro la zona sicura (alto ~ etichetta + parola + nota)
+  const top = topInZona(k.top ?? (g.posTitoli === 'alto' ? 380 : g.posTitoli === 'centro' ? 820 : 1250), fs * 1.15 + (k.tag ? 50 : 0) + 60);
   return (
     <AbsoluteFill>
       <div style={{ position: 'absolute', top, left: SICURA.lato, right: SICURA.lato, display: 'flex', flexDirection: 'column', alignItems: 'center', textAlign: 'center', color: g.coloreTitoli, textShadow: OMBRA }}>

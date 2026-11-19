@@ -20,8 +20,9 @@ const BDM = path.join(MOTION, 'bdm');
 const log = (...a) => console.log('bdm:', ...a);
 const aspetta = (ms) => new Promise((r) => setTimeout(r, ms));
 
-// fascia sopra la testa: verticale 1080×700 (y 60–760 sul video 1080×1920), orizzontale 1920×470 (y 40–510)
-export const FASCIA = { verticale: { w: 1080, h: 700, y: 60 }, orizzontale: { w: 1920, h: 470, y: 40 } };
+// fascia sopra la testa: verticale 1080×700 (da y 240 sul video 1080×1920, poi Ultron la adatta sopra la testa), orizzontale 1920×470 (y 40–510)
+// verticale: y 240 = bordo alto della zona sicura (zone.json, Denis 19/11); Ultron poi la rimpicciolisce sopra la testa
+export const FASCIA = { verticale: { w: 1080, h: 700, y: 240 }, orizzontale: { w: 1920, h: 470, y: 40 } };
 
 /* ---------- la guida per Claude ---------- */
 // 19/11: la skill Black Den Motion sta nel repo (.claude/skills/blackden-motion): le sue regole di regia entrano nella

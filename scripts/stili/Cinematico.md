@@ -7,7 +7,7 @@ Look da spot di prodotto: immagini calde e pulite, sottotitoli bianchi parola pe
   1. Il primo titolo è il prodotto (tag = marca, word = nome, note = cosa lo rende speciale), sulla frase in cui Denis lo nomina o in apertura.
   2–4. I numeri e le specifiche che Denis dice (prezzo, autonomia, misure, confronto), sulla frase in cui li dice.
   5. Esito (vedi "L'esito": solo se Denis dà un giudizio, con le sue parole, es. "8/10", "NON È MALE"): `"fino_alla_fine": true`. Senza giudizio, niente.
-  - `top`: y del titolo (0–1920), default 380 (in alto). Se in quell'inquadratura il prodotto o il volto stanno in alto, usa 1250.
+  - `top`: y del titolo (0–1920), default 380 (in alto). Se in quell'inquadratura il prodotto o il volto stanno in alto, usa 1250. Mai sopra y 240 né sotto y 1530 (zone.json).
   - Il titolo è il dato, non la frase: non ripetere parola per parola quello che si sta già leggendo nei sottotitoli.
   - **Senza parlato** (Denis registra la voce dopo): 3–4 titoli agganciati con `elemento`, uno ogni 7–10 s, il primo sul primo o secondo elemento (tag = marca, word = nome del prodotto); poi le funzioni che si vedono nelle riprese; l'esito solo se è nel brief. Inquadrature da 1,5–3 s, movimenti lenti, tanti dettagli.
 - `flickers`: [] (questo stile non ne ha). `tavola`: "". `soggetto`: nome breve del prodotto.

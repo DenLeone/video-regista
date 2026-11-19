@@ -186,7 +186,7 @@ const Pillola: React.FC<{ s: Schermata; len: number }> = ({ s, len }) => {
   const a = appare(frame, fps, 0);
   const via = interpolate(frame, [len - 6, len], [1, 0], { extrapolateLeft: 'clamp', extrapolateRight: 'clamp' });
   return (
-    <div style={{ position: 'absolute', top: 170, left: 0, right: 0, display: 'flex', justifyContent: 'center', opacity: a * via }}>
+    <div style={{ position: 'absolute', top: 250, left: 0, right: 0, display: 'flex', justifyContent: 'center', opacity: a * via }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 22, background: 'rgba(255,255,255,0.94)', borderRadius: 26, padding: '18px 30px', boxShadow: '0 10px 30px rgba(0,0,0,0.2)',
         transform: `translateY(${(1 - a) * -60}px)`, fontFamily: FONT, minWidth: 560 }}>
         {s.numero != null ? <Cartella size={74} /> : <div style={{ width: 62, height: 62, borderRadius: 31, background: BLU, color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 28 }}>▶</div>}
@@ -242,7 +242,7 @@ const Titolo: React.FC<{ testo: string; len: number }> = ({ testo, len }) => {
   const meta = Math.min(2, parole.length);
   const grande = Math.min(132, Math.floor(1700 / Math.max(6, parole.slice(0, meta).join(' ').length)));
   return (
-    <div style={{ position: 'absolute', top: 150, left: 50, right: 50, textAlign: 'center', opacity: a * via, transform: `translateY(${(1 - a) * 30}px)`, fontFamily: FONT }}>
+    <div style={{ position: 'absolute', top: 250, left: 60, right: 60, textAlign: 'center', opacity: a * via, transform: `translateY(${(1 - a) * 30}px)`, fontFamily: FONT }}>
       <div style={{ fontSize: grande, fontWeight: 600, lineHeight: 0.95, letterSpacing: -4, color: MENTA, textShadow: '0 4px 24px rgba(0,0,0,0.25)' }}>{parole.slice(0, meta).join(' ')}</div>
       <div style={{ fontSize: 64, fontWeight: 500, color: MENTA, textShadow: '0 3px 16px rgba(0,0,0,0.3)' }}>{parole.slice(meta).join(' ')}</div>
     </div>
@@ -264,7 +264,7 @@ function blocchi(parole: Piano['parole']): Blocco[] {
 }
 
 const Sottotitolo: React.FC<{ testo: string; suCarta: boolean }> = ({ testo, suCarta }) => (
-  <AbsoluteFill style={{ justifyContent: 'flex-end', alignItems: 'center', paddingBottom: suCarta ? 330 : 560 }}>
+  <AbsoluteFill style={{ justifyContent: 'flex-end', alignItems: 'center', paddingBottom: suCarta ? 400 : 560 }}>
     <div style={{ fontFamily: FONT, fontWeight: 700, fontSize: 44, color: '#fff', padding: suCarta ? '4px 16px' : 0, borderRadius: 8,
       background: suCarta ? 'rgba(140,140,146,0.85)' : 'transparent', textShadow: suCarta ? 'none' : '0 2px 10px rgba(0,0,0,0.7)', textAlign: 'center', maxWidth: 900 }}>
       {testo}

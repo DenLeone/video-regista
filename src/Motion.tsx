@@ -337,7 +337,7 @@ export const Cartello: React.FC<{ k: Keyword; len: number; g: GraficaStile }> = 
 // ---------- firma ----------
 // logo Instagram e nome fissi in basso a sinistra, sopra la zona della didascalia di Instagram
 export const Firma: React.FC<{ nome: string; g: GraficaStile }> = ({ nome, g }) => (
-  <div style={{ position: 'absolute', left: 46, top: 1452, display: 'flex', alignItems: 'center', gap: 12, opacity: 0.9,
+  <div style={{ position: 'absolute', left: 64, top: 1452, display: 'flex', alignItems: 'center', gap: 12, opacity: 0.9,
     filter: 'drop-shadow(0 1px 4px rgba(0,0,0,0.6))' }}>
     <svg width={40} height={40} viewBox="0 0 24 24">
       <g fill="none" stroke="#FFFFFF" strokeWidth={2.1}><rect x="2.5" y="2.5" width="19" height="19" rx="5.4" /><circle cx="12" cy="12" r="4.4" /></g>

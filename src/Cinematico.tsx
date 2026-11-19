@@ -4,6 +4,7 @@ import { loadFont } from '@remotion/google-fonts/Montserrat';
 import { Clips, f, Inserti, Sfx, usaFps, volumeSfx, Icone, MusicaSotto } from './comune';
 import { Keyword, Piano, W } from './piano';
 import { dentro, SICURA } from './testo';
+import { topInZona } from './zone';
 
 // Stile "Cinematico" (dai 3 esempi di Denis, 18/10): spot di prodotto, immagini calde con
 // vignettatura, sottotitoli bianchi una parola alla volta al centro, titoli Montserrat neri
@@ -92,7 +93,7 @@ const Titolo: React.FC<{ k: Keyword; len: number }> = ({ k, len }) => {
   // letterSpacing -0.045em: la misura del canvas non lo conta, il margine resta dalla parte sicura
   const fs = dentro(k.word, { famiglia: MONTSERRAT, peso: 900 }, Math.max(72, Math.min(128, SICURA.larghezza / Math.max(1, k.word.length * 0.66))));
   const note = (k.note || '').replace(/^\/\/\s*/, '');
-  const top = k.top ?? 380;
+  const top = topInZona(k.top ?? 380, fs * 1.15 + 80); // zone.json: dentro la zona sicura
   const ombra = interpolate(fr, [0, 9], [0, 1], clamp) * esce;
   return (
     <AbsoluteFill>

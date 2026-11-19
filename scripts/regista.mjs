@@ -41,6 +41,7 @@ import { filtroRampa, grigliaBattute, motoRipresa, pianoBeat, scegliTratto } fro
 import { analizzaBrano, descriviCatalogo, DIR_MUSICA, ESTENSIONI_MUSICA, momentiParlati, richiestaMusica, scegliBrano } from './musica.mjs';
 import { AUDIO_EXT, IMAGE_EXT, NOMI_DISPOSITIVO, VIDEO_EXT, dispositivo, prioritaAudio, tagsPiatti } from './sorgenti.mjs';
 import { regolaStile } from './regolatore.mjs';
+import { REGOLA_ZONE, filtroZone } from './zone.mjs';
 import { cacheSorgente, improntaMateriale, riusoAnalisiIntera, scegliCacheAnalisi } from './cache-analisi.mjs';
 
 const REMOTE = process.env.REGISTA_REMOTE || 'gdrive';
@@ -1375,6 +1376,8 @@ function promptRegia({ modo, testoMateriale, regiaPrecedente }) {
     .replace('{{GRAFICA}}', stileSuMisura ? promptSuMisura(stileSuMisura.grafica, stileSuMisura.testoAI, { stock: fontiStock().length > 0 && !(analisiCorrente && materialeProprio(analisiCorrente)),
       libreria: analisiCorrente && materialeProprio(analisiCorrente) ? [] : libreriaStock().map((p) => path.parse(p).name) })
       : fs.readFileSync(path.join(ROOT, 'scripts', 'stili', `${stileCorrente}.md`), 'utf8').trim());
+  // zone.json (Denis 19/11, tassative): ogni «top» e ogni grafica del verticale le rispetta; lo script poi le fa rispettare comunque
+  p += `\n\n## ${REGOLA_ZONE}\nNei video verticali scegli «top» e posizioni dentro queste zone, guardando nei fogli provino dove sta la faccia in quell'inquadratura.`;
   if (regiaPrecedente) {
     p += `\n\n## MODALITÀ CORREZIONE\nEsiste già un montaggio, questa è la sua regia:\n\`\`\`json\n${JSON.stringify(regiaPrecedente, null, 1)}\n\`\`\`\nDenis l'ha guardato e chiede queste modifiche:\n\n> ${CORREZIONE.replace(/\n/g, '\n> ')}\n\nParti da questa regia e applica SOLO quello che chiede, lasciando invariato il resto. I tempi li ricalcola lo script. Nella \`note\` elenca in breve cosa hai cambiato.`;
   }
@@ -2168,7 +2171,10 @@ function fotogrammiFinale(outFile, durata, piano) {
     const scelti = tempi.slice(0, 8).sort((a, b) => a - b);
     fs.rmSync(dir, { recursive: true, force: true });
     fs.mkdirSync(dir, { recursive: true });
-    scelti.forEach((t, i) => run('ffmpeg', ['-y', '-v', 'error', '-ss', t.toFixed(2), '-i', outFile, '-frames:v', '1', '-vf', 'scale=360:-2', ...JPG_PIENO, '-q:v', '4', path.join(dir, `${String(i).padStart(2, '0')}.jpg`)]));
+    // nei verticali le zone disegnate sopra (zone.json): si vede subito se qualcosa esce dalla zona sicura
+    const [vw, vh] = run('ffprobe', ['-v', 'error', '-select_streams', 'v:0', '-show_entries', 'stream=width,height', '-of', 'csv=p=0', outFile]).trim().split(',').map(Number);
+    const verticale = vh > vw;
+    scelti.forEach((t, i) => run('ffmpeg', ['-y', '-v', 'error', '-ss', t.toFixed(2), '-i', outFile, '-frames:v', '1', '-vf', `scale=360:-2${verticale ? `,${filtroZone()}` : ''}`, ...JPG_PIENO, '-q:v', '4', path.join(dir, `${String(i).padStart(2, '0')}.jpg`)]));
     run('ffmpeg', ['-y', '-v', 'error', '-i', path.join(dir, '%02d.jpg'), '-vf', `tile=4x${Math.ceil(scelti.length / 4)}`, '-frames:v', '1', ...JPG_PIENO, '-q:v', '4', out]);
     return out;
   } catch (e) { log('fotogrammi del finale non riusciti', e.message); return null; }

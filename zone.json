@@ -1,0 +1,9 @@
+{
+  "nota": "Zone del video verticale 1080x1920 (Denis 19/11, video «safe zone» in 30 · Sviluppo/Regista): TASSATIVE per ogni video verticale. Misurate dai fotogrammi e arrotondate verso l'interno. Si possono solo stringere.",
+  "w": 1080,
+  "h": 1920,
+  "sicura": { "x0": 60, "x1": 1020, "y0": 240, "y1": 1530 },
+  "tasti": { "y0": 970, "x0": 920, "nota": "sotto y0 a destra di x0 ci sono i tasti di Instagram (like, commenti, condividi): niente grafiche" },
+  "cimitero": { "y0": 1530, "nota": "sotto y0 descrizione e nome: niente di niente" },
+  "viso": "niente grafiche sopra la faccia: le grafiche aiutano il video, non ti sostituiscono"
+}

@@ -18,7 +18,7 @@ const VERDE = '#2FBF71';
 const INCLINAZIONI = [-2.2, 1.6, -1.1, 2.4, -1.7, 0.9];
 const SFX = { riser: 0.6, ui_in: 0.45, ui_conferma: 0.55, strappo: 0.35 } as const;
 // riquadro del video: lascia carta sopra e sotto per i ritagli
-const CARD = { left: 70, top: 300, width: 940, height: 1320 };
+const CARD = { left: 70, top: 300, width: 940, height: 1220 }; // zone.json: finisce a y 1520, sopra il «cimitero»
 const DURATA_TITOLO = 2.2;
 
 // i ritagli si alternano sopra e sotto il video, spostati a destra e sinistra
@@ -26,7 +26,7 @@ const DURATA_TITOLO = 2.2;
 function posto(i: number, sotto = false) {
   const sopra = !sotto && i % 2 === 0;
   return {
-    top: sopra ? 110 + (i % 4 === 0 ? 0 : 40) : 1640 + (i % 4 === 1 ? 0 : 40),
+    top: sopra ? 240 + (i % 4 === 0 ? 0 : 20) : 1330 + (i % 4 === 1 ? 0 : 30),
     left: i % 3 === 0 ? 60 : i % 3 === 1 ? 300 : 160,
     rotate: INCLINAZIONI[(i + 2) % INCLINAZIONI.length],
     sopra,
@@ -133,7 +133,7 @@ const Titolo: React.FC<{ testo: string; len: number }> = ({ testo, len }) => {
   const entra = spring({ frame, fps, config: { damping: 12, stiffness: 150 } });
   const opacita = interpolate(frame, [len - 6, len], [1, 0], { extrapolateLeft: 'clamp', extrapolateRight: 'clamp' });
   return (
-    <div style={{ position: 'absolute', top: 120, left: 60, right: 60, opacity: opacita, transform: `scale(${0.7 + 0.3 * entra}) rotate(-2deg)` }}>
+    <div style={{ position: 'absolute', top: 250, left: 60, right: 60, opacity: opacita, transform: `scale(${0.7 + 0.3 * entra}) rotate(-2deg)` }}>
       <div style={{ display: 'inline-block', background: GIALLO, color: INCHIOSTRO, fontFamily: MONTSERRAT, fontWeight: 900, fontSize: 70, lineHeight: 1.05, padding: '10px 24px', border: `3px solid ${INCHIOSTRO}`, boxShadow: `6px 7px 0 ${INCHIOSTRO}` }}>
         {testo.toUpperCase()}
       </div>

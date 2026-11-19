@@ -230,7 +230,7 @@ const SchedaView: React.FC<{ s: Scheda; cornice?: Cornice; sopra?: number; n?: n
     return (
       <AbsoluteFill>
         <div style={{
-          position: 'absolute', left: sinistra ? 48 : 1080 - 48 - lw, top: 360 + (LH - lh) / 2, width: lw, height: lh, borderRadius: 26, overflow: 'hidden',
+          position: 'absolute', left: sinistra ? 60 : 1080 - 60 - lw, top: 360 + (LH - lh) / 2, width: lw, height: lh, borderRadius: 26, overflow: 'hidden',
           border: '4px solid rgba(255,255,255,0.9)', boxShadow: '0 24px 60px rgba(0,0,0,0.5)', backgroundColor: '#111', opacity: vis,
           transform: `translateX(${verso * ((1 - entra) * 120 + esce * 60)}px) scale(${0.9 + 0.1 * entra}) rotate(${verso * (4 - 2 * (1 - entra))}deg)`,
         }}>

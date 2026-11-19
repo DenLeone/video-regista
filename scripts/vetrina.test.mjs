@@ -10,6 +10,6 @@ test('vetrina: battitura tra 1,6 e 4 s, prompt al sicuro nel codice, scena che p
   assert.doesNotMatch(c, /<\/script>/);
   assert.match(c, /P\.typewriter\('#pr'/);
   const f = filtroVetrina({ tScena: 4.8, durata: 12 });
-  assert.match(f, /\[2:v\]setpts=PTS-STARTPTS\+4\.8\/TB\[s\]/);
-  assert.match(f, /overlay=0:820/);
+  assert.match(f, /\[2:v\]scale=860:558,setpts=PTS-STARTPTS\+4\.8\/TB\[s\]/);
+  assert.match(f, /scale=860:558,.*overlay=60:820/s);
 });

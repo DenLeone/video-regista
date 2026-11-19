@@ -18,8 +18,8 @@ const { fontFamily: MONO } = loadMono('normal', { weights: ['500', '700'], subse
 export type SchermataSopra = NonNullable<Piano['schermate']>[number];
 export const TIPI_SOPRA = new Set(['chat', 'terminale', 'numeri', 'titolo', 'repo', 'immagine', 'lista', 'primadopo', 'logo', 'parola']);
 // ✨ Ultron 2 (18/11): «animazione» = spazio lasciato vuoto nel render; dopo, Ultron ci mette l'animazione scritta da Claude
-// fascia delle schermate: da 100 px fino a ~1/3 dell'altezza (1920), larghe 940 px
-const AREA = { top: 100, bottom: 640, left: 70, larghezza: 940 };
+// fascia delle schermate: da 240 px (zone.json, Denis 19/11: sopra è fuori dalla zona sicura) fino a ~1/3 dell'altezza, larghe 940 px
+const AREA = { top: 240, bottom: 640, left: 70, larghezza: 940 };
 const CORALLO = '#D97757';
 const ARANCIO = '#FF6A13';
 

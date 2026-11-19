@@ -39,7 +39,10 @@ const Etichetta: React.FC<{ e: NonNullable<Piano['etichette']>[number]; len: num
   const px = e.x * W, py = e.y * H;
   // l'etichetta sta dalla parte con più spazio, un po' sopra il punto
   const aDestra = e.x < 0.5;
-  const lx = aDestra ? Math.min(W - 120, px + 230) : Math.max(120, px - 230);
+  // zone.json (tassative): l'etichetta resta tra x 60 e 920 (a destra sotto y 970 ci sono i tasti di Instagram)
+  const lx = aDestra ? Math.min(W - 160 - 300, px + 230) : Math.max(60 + 300, px - 230);
+  const largMax = aDestra ? 920 - lx : lx - 60;
+  const fsEt = Math.min(64, Math.floor((largMax - 60) / Math.max(1, String(e.testo).length * 0.62)));
   const ly = Math.max(300, Math.min(H - 640, py - 170));
   const punto = entra(fr, 0, 6), linea = entra(fr, 4, 9), testo = entra(fr, 10, 8), via = esce(fr, len);
   const lunga = Math.hypot(lx - px, ly - py);
@@ -55,8 +58,8 @@ const Etichetta: React.FC<{ e: NonNullable<Piano['etichette']>[number]; len: num
       <div style={{ position: 'absolute', top: ly - 58, ...(aDestra ? { left: lx } : { right: W - lx }), opacity: testo,
         transform: `translateX(${(aDestra ? -1 : 1) * (1 - testo) * 30}px)`, background: 'rgba(10,10,12,0.78)', borderRadius: 14,
         borderLeft: aDestra ? `8px solid ${g.accento}` : undefined, borderRight: aDestra ? undefined : `8px solid ${g.accento}`, padding: '14px 26px',
-        textAlign: aDestra ? 'left' : 'right', maxWidth: 560 }}>
-        <div style={{ ...stileFont(g.fontTitoli), fontSize: 64, lineHeight: 1, color: '#FFFFFF', textTransform: 'uppercase', whiteSpace: 'nowrap' }}>{e.testo}</div>
+        textAlign: aDestra ? 'left' : 'right', maxWidth: largMax }}>
+        <div style={{ ...stileFont(g.fontTitoli), fontSize: fsEt, lineHeight: 1, color: '#FFFFFF', textTransform: 'uppercase', whiteSpace: 'nowrap' }}>{e.testo}</div>
         {e.sotto ? <div style={{ ...stileFont(g.fontSottotitoli), fontSize: 30, marginTop: 8, color: '#E8E8E8', textTransform: 'uppercase', letterSpacing: '0.06em' }}>{e.sotto}</div> : null}
       </div>
     </AbsoluteFill>

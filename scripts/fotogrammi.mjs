@@ -53,7 +53,9 @@ async function main() {
   fs.mkdirSync(path.dirname(path.resolve(foglio)), { recursive: true });
   // in fila, con il secondo scritto sotto ogni fotogramma
   const ingressi = fatti.flatMap((f) => ['-i', f.output]);
-  const etichette = fatti.map((f, i) => `[${i}:v]pad=iw:ih+44:0:0:color=black,drawtext=text='${f.s.toFixed(1)} s':x=(w-text_w)/2:y=h-36:fontsize=28:fontcolor=white[v${i}]`).join(';');
+  // ZONE=1: le zone del verticale disegnate sopra (zone.json)
+  const zone = process.env.ZONE === '1' && composition.height > composition.width ? `${(await import('./zone.mjs')).filtroZone({ pieno: true })},` : '';
+  const etichette = fatti.map((f, i) => `[${i}:v]${zone}pad=iw:ih+44:0:0:color=black,drawtext=text='${f.s.toFixed(1)} s':x=(w-text_w)/2:y=h-36:fontsize=28:fontcolor=white[v${i}]`).join(';');
   const fila = fatti.length > 1 ? `;${fatti.map((_, i) => `[v${i}]`).join('')}hstack=inputs=${fatti.length}[o]` : ';[v0]null[o]';
   execFileSync('ffmpeg', ['-y', '-v', 'error', ...ingressi, '-filter_complex', etichette + fila, '-map', '[o]', '-frames:v', '1', '-q:v', '3', path.resolve(foglio)], { stdio: 'inherit' });
   fs.rmSync(dir, { recursive: true, force: true });

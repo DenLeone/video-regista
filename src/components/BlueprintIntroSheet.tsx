@@ -10,7 +10,7 @@ export const BlueprintIntroSheet: React.FC<{ label: string }> = ({ label }) => {
   const grow = interpolate(frame, [0, 6], [0, 1], { extrapolateLeft: 'clamp', extrapolateRight: 'clamp', easing: Easing.out(Easing.cubic) });
   const dimX = 930;
   const top = 380;
-  const bottom = 1700;
+  const bottom = 1530; // zone.json: sotto y 1530 è «cimitero»
   const yA = top + ((bottom - top) * (1 - grow)) / 2;
   const yB = bottom - ((bottom - top) * (1 - grow)) / 2;
   return (
@@ -37,7 +37,7 @@ export const BlueprintIntroSheet: React.FC<{ label: string }> = ({ label }) => {
         background: DARK, padding: '4px 12px', fontFamily: MONO_FONT, fontWeight: 700, fontSize: 26, letterSpacing: 2, color: ACCENT, whiteSpace: 'nowrap' }}>
         H 1:1
       </div>
-      <div style={{ position: 'absolute', left: 80, bottom: 150, fontFamily: MONO_FONT, fontWeight: 700, fontSize: 30,
+      <div style={{ position: 'absolute', left: 80, bottom: 410, fontFamily: MONO_FONT, fontWeight: 700, fontSize: 30,
         letterSpacing: 3, color: '#FFFFFF' }}>{label}</div>
     </AbsoluteFill>
   );

@@ -11,6 +11,8 @@ import { renderScena } from './bdm.mjs';
 import { codiceScena, intestazione } from './scene-mano.mjs';
 
 const W = 1080, H = 1920, Y_SCENA = 820, H_SCENA = 700;
+// zone.json (tassative): la scena si rimpicciolisce per stare tra x 60 e 920 (sotto y 970 a destra ci sono i tasti di Instagram)
+const X_SCENA = 60, W_SCENA_VIDEO = 860, H_SCENA_VIDEO = Math.round((H_SCENA * W_SCENA_VIDEO) / W / 2) * 2;
 const log = (...a) => console.log('vetrina:', ...a);
 // dentro <script>: «</script>» nel testo chiuderebbe la pagina, quindi < diventa \u003c
 const js = (s) => JSON.stringify(String(s)).replace(/</g, '\\u003c');
@@ -21,12 +23,12 @@ export const tempoBattitura = (prompt) => Math.min(4, Math.max(1.6, String(promp
 // la pagina del testo: etichetta, prompt che si scrive, firma in fondo alla durata
 export function codiceTesto(prompt, durata) {
   return `
-M.el('div', { id: 'et', cls: 'abs sub', text: 'IL PROMPT', style: { left: '60px', top: '210px', letterSpacing: '8px' } });
-M.el('div', { id: 'pr', cls: 'abs txt', text: ${js(prompt)}, style: { left: '60px', top: '280px', width: '960px', whiteSpace: 'normal', fontSize: '46px', fontWeight: 700, lineHeight: 1.3 } });
+M.el('div', { id: 'et', cls: 'abs sub', text: 'IL PROMPT', style: { left: '60px', top: '240px', letterSpacing: '8px' } });
+M.el('div', { id: 'pr', cls: 'abs txt', text: ${js(prompt)}, style: { left: '60px', top: '300px', width: '960px', whiteSpace: 'normal', fontSize: '46px', fontWeight: 700, lineHeight: 1.3 } });
 add(P.enter('#et', { t: 0.1, dur: 0.4, from: 'left' }), P.typewriter('#pr', { t: 0.35, cps: 28, cursor: true, hideCursorAfter: ${(0.35 + tempoBattitura(prompt) + 0.4).toFixed(2)} }));
 M.el('div', { id: 'ok', cls: 'abs sub', text: '↓ IL RISULTATO', style: { left: '60px', top: '720px', letterSpacing: '8px' } });
 add(P.enter('#ok', { t: ${(0.35 + tempoBattitura(prompt) + 0.2).toFixed(2)}, dur: 0.4, from: 'up' }));
-M.el('div', { id: 'firma', cls: 'abs row', text: 'Black Den Motion · @itsblackden', style: { top: '1720px', fontSize: '34px', fontWeight: 600, opacity: 0.6 } });
+M.el('div', { id: 'firma', cls: 'abs row', text: 'Black Den Motion · @itsblackden', style: { top: '1460px', fontSize: '34px', fontWeight: 600, opacity: 0.6 } }); // zone.json: sopra il «cimitero» (y 1530)
 add(P.enter('#firma', { t: ${Math.max(0, durata - 2.2).toFixed(2)}, dur: 0.5, from: 'up' }));`;
 }
 
@@ -34,9 +36,9 @@ export function filtroVetrina({ tScena, durata }) {
   return [
     `color=c=0x0b0b0e:s=${W}x${H}:d=${durata}:r=30,format=rgba[bg]`,
     `[1:v]setpts=PTS-STARTPTS[t]`,
-    `[2:v]setpts=PTS-STARTPTS+${tScena}/TB[s]`,
+    `[2:v]scale=${W_SCENA_VIDEO}:${H_SCENA_VIDEO},setpts=PTS-STARTPTS+${tScena}/TB[s]`,
     `[bg][t]overlay=0:0:eof_action=repeat[a]`,
-    `[a][s]overlay=0:${Y_SCENA}:eof_action=repeat,format=yuv420p[v]`,
+    `[a][s]overlay=${X_SCENA}:${Y_SCENA}:eof_action=repeat,format=yuv420p[v]`,
   ].join(';');
 }
 

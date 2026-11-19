@@ -51,7 +51,7 @@ const SchedaInclinata: React.FC<{ s: Scheda; sinistra: boolean }> = ({ s, sinist
   return (
     <AbsoluteFill style={{ perspective: 1500 }}>
       <div style={{
-        position: 'absolute', left, top: orizz ? (pieno ? 260 : 300) : pieno ? 110 : 150, width: w, height: h, borderRadius: 36, overflow: 'hidden', backgroundColor: '#0D0D0F',
+        position: 'absolute', left, top: orizz ? (pieno ? 260 : 300) : pieno ? 240 : 250, width: w, height: h, borderRadius: 36, overflow: 'hidden', backgroundColor: '#0D0D0F',
         border: '2px solid rgba(255,255,255,0.28)', boxShadow: '0 30px 70px rgba(0,0,0,0.45)',
         opacity: Math.min(entra * 1.5, 1 - esce),
         transform: `translateX(${verso * -(1 - entra) * 160}px) rotateY(${verso * giro}deg)`, transformOrigin: sinistra ? 'left center' : 'right center',
@@ -70,7 +70,7 @@ const Copertina: React.FC<{ s: Scheda }> = ({ s }) => {
   const entra = interpolate(fr, [0, 9], [0, 1], { ...clamp, easing: Easing.out(Easing.back(1.4)) });
   const esce = interpolate(fr, [s.len - 7, s.len], [0, 1], clamp);
   return (
-    <div style={{ position: 'absolute', left: 230, top: 130, width: 620, height: 640, opacity: 1 - esce,
+    <div style={{ position: 'absolute', left: 230, top: 240, width: 620, height: 640, opacity: 1 - esce,
       transform: `translateY(${(1 - entra) * -80}px) scale(${0.9 + 0.1 * entra})`, filter: 'drop-shadow(0 24px 50px rgba(0,0,0,0.45))' }}>
       <Contenuto s={s} />
     </div>
@@ -85,7 +85,7 @@ const Telefono: React.FC<{ s: Scheda; sinistra: boolean }> = ({ s, sinistra }) =
   const w = 360, h = 740;
   return (
     <div style={{
-      position: 'absolute', left: sinistra ? 90 : 1080 - 90 - w, top: 170, width: w, height: h, borderRadius: 62, padding: 13,
+      position: 'absolute', left: sinistra ? 90 : 1080 - 90 - w, top: 250, width: w, height: h, borderRadius: 62, padding: 13,
       background: 'linear-gradient(145deg, #F4F4F6, #CFCFD4)', boxShadow: '0 40px 80px rgba(0,0,0,0.5), inset 0 0 0 2px rgba(0,0,0,0.15)',
       opacity: 1 - esce, transform: `translateY(${(1 - entra) * 260 + esce * -120}px) rotate(${(sinistra ? -1 : 1) * (4 - 4 * entra + 3)}deg)`,
     }}>

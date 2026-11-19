@@ -7,7 +7,7 @@
   5. Se c'è sponsor: nome prodotto, tag "MAT.", `filled: true`.
   6. Esito (vedi "L'esito": solo se Denis dà un giudizio, con le sue parole, es. "8/10", "NON È MALE"): tag "ESITO", `filled: true`, `"fino_alla_fine": true`; "✓" in fondo solo se il giudizio è positivo, "✗" se negativo; `note` ironica con "// " solo se calza.
   - `dur` 1,5–3 s; parole brevi (max ~14 caratteri) in MAIUSCOLO.
-  - `top` di default 1330 (terzo inferiore). Se nei fogli provino il volto o il prodotto stanno in basso in quell'inquadratura, usa 300–450.
+  - `top` di default 1330 (terzo inferiore). Se nei fogli provino il volto o il prodotto stanno in basso in quell'inquadratura, usa 300–450. Mai sopra y 240 né sotto y 1530 (zone.json).
 - `flickers`: 3–5, sui cambi di scena più importanti: `prima_di` = numero (da 1) dell'elemento della sequenza su cui avviene il taglio; `seed` diverso per ognuno (es. 3, 7, 11, 5); uno solo con `tear: true` prima del momento chiave (sponsor o verdetto).
 - `sponsor`: `{ "material": "...", "test": "..." }` solo se il brief lo dice, altrimenti `null`; `sponsorFrase` = la frase in cui viene nominato.
 - `note`: una riga per Denis con dubbi o scelte fatte.

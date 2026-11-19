@@ -28,13 +28,13 @@ Regole di partenza. Se l'utente dà indicazioni diverse, vincono le sue.
 - Accento solo su 1–2 elementi per scena: sottotitolo, linea, bagliore.
 - Contrasto testo/sfondo almeno 4,5:1.
 
-## Zone sicure social (9:16, 1080×1920) — valori indicativi
-L'interfaccia di TikTok, Reels e Shorts copre i bordi. Tieni testi e loghi dentro:
-- alto: lascia libero circa 220 px;
-- basso: lascia libero circa 420 px (didascalia, nome, musica);
-- destra: lascia libero circa 160 px (like, commenti, condividi);
-- sinistra: almeno 60 px.
-Area consigliata per il contenuto importante: x 60–920, y 220–1500.
+## Zone sicure del verticale (9:16, 1080×1920) — TASSATIVE (Denis 19/11, `zone.json` nella radice di video-regista)
+- Tutto (testi, grafiche, loghi, sottotitoli) dentro **x 60–1020, y 240–1530**.
+- Sotto **y 970** non oltre **x 920**: lì ci sono i tasti di Instagram (like, commenti, condividi).
+- Sotto **y 1530** è il «cimitero» (descrizione, nome): niente di niente.
+- **Mai grafiche sopra la faccia**: le grafiche aiutano il video, non sostituiscono Denis.
+- Posti buoni: la striscia alta (y 240–~500, sopra la testa), il lato accanto alla testa, la fascia del petto (y ~860–1110), i sottotitoli sotto (y ~1250–1450, x 160–920).
+- Nella fascia di Ultron (1080×700) le coordinate sono della fascia: Ultron la mette da y 240 e la rimpicciolisce sopra la testa.
 
 ## Motion blur
 - Nel render finale usa `--mblur 8`: i movimenti veloci (pop, punch, telefono, parole che entrano) sembrano filmati.

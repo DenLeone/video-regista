@@ -49,7 +49,7 @@ RULES (they make it look expensive):
 
 ${trasparente ? `OVERLAY MODE (important): this graphic goes ON TOP of a video of a person talking. Keep the background fully transparent: never fill the
 whole canvas and never call M.fondo; start render(t) with ctx.setTransform(1,0,0,1,0,0); ctx.clearRect(0,0,cv.width,cv.height); then M.spinta(...).
-Keep every element inside the TOP 38% of the frame (y < H*0.38), horizontally centred, away from the face. Duration 3–4 s.
+SAFE ZONE (mandatory): keep every element between x=W*0.056 and x=W*0.944 and between y=H*0.125 and y=H*0.29 (above the person's head), horizontally centred; never over the face, never below. Duration 3–4 s.
 Text and shapes need soft dark shadows (ctx.shadowColor='rgba(0,0,0,.6)') to read on any video. No M.grana.
 ` : ''}OUTPUT: only the JavaScript program inside one \`\`\`js code block. No HTML, no explanations.`;
 };
