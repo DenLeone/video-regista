@@ -1,0 +1,47 @@
+name: guardia
+
+# 🛡️ Guardia (19/11, dopo la notte di Grok): a ogni push su main controlla che nessun file importante sia stato
+# troncato, cancellato o rotto (scripts/guardia.mjs); ogni mattina prova i token di Claude e le chiavi Gemini
+# (scripts/guardia-chiavi.mjs). Avvisa Denis sul bot Regista solo quando c'è qualcosa da fare.
+on:
+  push:
+    branches: [main]
+  schedule:
+    - cron: '41 6 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  file:
+    if: github.event_name == 'push'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+      - name: File troncati o rotti
+        env:
+          NOTIFY_URL: ${{ secrets.NOTIFY_URL }}
+          NOTIFY_TOKEN: ${{ secrets.NOTIFY_TOKEN }}
+        run: node scripts/guardia.mjs "${{ github.event.before }}" "${{ github.sha }}"
+
+  chiavi:
+    if: github.event_name != 'push'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+      - name: Claude e Gemini rispondono?
+        env:
+          CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          GEMINI_API_KEY_GRATIS: ${{ secrets.GEMINI_API_KEY_GRATIS }}
+          NOTIFY_URL: ${{ secrets.NOTIFY_URL }}
+          NOTIFY_TOKEN: ${{ secrets.NOTIFY_TOKEN }}
+        run: node scripts/guardia-chiavi.mjs

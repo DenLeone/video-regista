@@ -1846,7 +1846,7 @@ type Info = {
 type SceltaStile = { nome: string; stili: string[]; scelta?: string };
 // azione: com'è partito il giro (monta, render, esempi, regia, elenco); prova: secondi del render di prova
 type Notify = {
-  tipo?: 'fase' | 'esito' | 'cartelle' | 'vuoto' | 'pubblicato'; esito?: string; nome: string; testo: string; ok?: boolean; foto?: string;
+  tipo?: 'fase' | 'esito' | 'cartelle' | 'vuoto' | 'pubblicato' | 'avviso'; esito?: string; nome: string; testo: string; ok?: boolean; foto?: string;
   nonce?: string; instagram?: EsitoPiattaforma; youtube?: EsitoPiattaforma; spostato?: boolean; errore?: string;
   run_url?: string; run_id?: string; step?: IdFase; minuti?: number; versione?: string; origine?: '97' | '98'; info?: Info; richiesto?: string;
   cartelle?: string[]; vai?: string[]; tgFile?: boolean; stili?: string[]; stili_info?: InfoStile[]; yt?: boolean;
@@ -1926,6 +1926,11 @@ async function onNotify(env: Env, n: Notify) {
         await mem(env).cancella(kAttesa(chat));
       }
     }
+    return;
+  }
+  // 🛡️ avvisi della Guardia (guardia.yml): file troncati su main, token di Claude scaduto, chiave Gemini rifiutata
+  if (n.tipo === 'avviso') {
+    for (const chat of chats) await invia(env, chat, { testo: `🛡️ <b>Guardia</b>\n${esc(tronca(String(n.testo || ''), 3000))}`, tasti: [[MENU_TASTO]] });
     return;
   }
   if (n.tipo === 'vuoto') {
