@@ -2349,9 +2349,41 @@ export function applicaParole(piano, regia, correzioni) {
   }
   return fatte;
 }
+// ✏️ sostituzioni di FRASI nei sottotitoli, scritte da Denis nel brief o nella correzione (19/11, DDL: Whisper aveva
+// scritto «Il DDL è antisemitismo» al posto di «Il DDL antisemitismo», cioè il contrario):  «A» → «B»  (anche ->).
+// Le parole di B prendono il posto di quelle di A nei sottotitoli, con i loro tempi; B può essere più corta o vuota.
+export const sostituzioniDa = (testo = '') => [...String(testo).matchAll(/«([^»]+)»\s*(?:→|->)\s*«([^»]*)»/g)].map((m) => ({ da: m[1].trim(), a: m[2].trim() }));
+export function applicaFrasi(piano, regia, sostituzioni) {
+  const fatte = [];
+  for (const { da, a } of sostituzioni || []) {
+    const cerca = da.split(/\s+/).map(normParola).filter(Boolean);
+    const nuove = a ? a.split(/\s+/) : [];
+    if (!cerca.length) continue;
+    const ps = piano?.parole || [];
+    let n = 0;
+    for (let i = 0; i + cerca.length <= ps.length; i++) {
+      if (!cerca.every((w, k) => normParola(ps[i + k].w) === w)) continue;
+      const pezzo = ps.slice(i, i + cerca.length);
+      const coda = (String(pezzo.at(-1).w).match(/[^\p{L}\p{N}]+$/u) || [''])[0]; // la punteggiatura finale resta
+      const inizio = pezzo[0].at, fine = pezzo.at(-1).at + (pezzo.at(-1).dur || 0);
+      const passo = nuove.length ? (fine - inizio) / nuove.length : 0;
+      const sost = nuove.map((w, k) => ({ ...pezzo[Math.min(k, pezzo.length - 1)], w: k === nuove.length - 1 ? w + coda : w, at: +(inizio + k * passo).toFixed(3), dur: +passo.toFixed(3) }));
+      ps.splice(i, cerca.length, ...sost);
+      i += Math.max(0, sost.length - 1);
+      n++;
+    }
+    const re = new RegExp(da.replace(/[.*+?^${}()|[\]\\]/g, '\\$&').replace(/\s+/g, '\\s+'), 'gi');
+    for (const o of [piano, regia]) for (const k of ['testo', 'testo_montato']) if (typeof o?.[k] === 'string') o[k] = o[k].replace(re, a);
+    if (n) fatte.push(`«${da}» → «${a}» (${n})`);
+  }
+  return fatte;
+}
+
 // le correzioni salvate nella regia, di nuovo su un piano rifatto dalla regia
 export function riapplicaParole(piano, regia) {
   if (piano && regia?.parole_corrette?.length) applicaParole(piano, regia, regia.parole_corrette);
+  const frasi = sostituzioniDa(`${BRIEF_PIENO}\n${CORREZIONE || ''}`);
+  if (piano && frasi.length) { const f = applicaFrasi(piano, regia, frasi); if (f.length) log(`sottotitoli corretti: ${f.join(', ')}`); }
 }
 // unione delle correzioni (l'ultima vince sulla stessa parola sbagliata)
 export function unisciParole(prima = [], nuove = []) {
