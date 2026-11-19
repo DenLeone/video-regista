@@ -448,6 +448,16 @@ jobs:
       # Chiavi mancanti e cartella inesistente hanno già avvisato e non si rilanciano.
       # Lo script, se parte e fallisce, avvisa lui. Qui resta il resto: apt, Drive, immagine.
       # È un errore del server: si rilancia una volta sola, e Telegram parte solo se fallisce anche il secondo.
+      # 🎣 «3 ganci»: il Regista lascia in out/ganci.json la prossima variante (render con un'altra apertura, una macchina)
+      - name: Varianti del gancio
+        if: always() && hashFiles('out/ganci.json') != ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          jq -n --arg ref "$GITHUB_REF_NAME" --slurpfile v out/ganci.json \
+            '{ref:$ref, inputs:{cartella:$v[0].cartella, brief:$v[0].brief, origine:"98", azione:"render", macchine:"1", chi:"Ganci"}}' \
+            | gh api --method POST "/repos/${GITHUB_REPOSITORY}/actions/workflows/regista.yml/dispatches" --input - \
+            && echo "variante del gancio avviata" || echo "::warning::variante del gancio non partita"
       - name: È un errore del server?
         id: causa
         if: failure()
@@ -729,3 +739,14 @@ jobs:
         run: |
           export REGISTA_PACCHETTO_DIR="$HOME/.cache/regista-pacchetto"
           bash scripts/muto.sh node scripts/regista.mjs
+
+      # 🎣 «3 ganci»: il Regista lascia in out/ganci.json la prossima variante (render con un'altra apertura, una macchina)
+      - name: Varianti del gancio
+        if: always() && hashFiles('out/ganci.json') != ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          jq -n --arg ref "$GITHUB_REF_NAME" --slurpfile v out/ganci.json \
+            '{ref:$ref, inputs:{cartella:$v[0].cartella, brief:$v[0].brief, origine:"98", azione:"render", macchine:"1", chi:"Ganci"}}' \
+            | gh api --method POST "/repos/${GITHUB_REPOSITORY}/actions/workflows/regista.yml/dispatches" --input - \
+            && echo "variante del gancio avviata" || echo "::warning::variante del gancio non partita"

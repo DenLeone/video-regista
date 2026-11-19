@@ -102,3 +102,20 @@ test('gancio di più pezzi (Skill, 19/11): «cos\'è» + «dove lo trovi» in te
   const fr2 = fr.map((f) => (f.id === 'F006' ? { ...f, testo: 'quindi una skill che' } : f));
   assert.deepEqual(spostaGancio(s, { gancio: ['F006', 'F003'] }, fr2).seq, s);
 });
+
+test('3 ganci: solo se Denis lo chiede; il brief della variante porta gancio, numero e le prossime', async () => {
+  const { vuoleTreGanci, briefVariante } = await import('./regista.mjs');
+  assert.equal(vuoleTreGanci('Stile: Ultron\n3 ganci'), true);
+  assert.equal(vuoleTreGanci('tre ganci per favore'), true);
+  assert.equal(vuoleTreGanci('Stile: Ultra'), false);
+  const b = briefVariante('Ultron', ['F015', 'F016'], 2, [['F020']]);
+  assert.equal(b, 'Stile: Ultron\nGancio: F015, F016\nVariante: 2\nGanci dopo: [["F020"]]');
+  assert.equal(briefVariante('Ultra', 'F020', 3, []), 'Stile: Ultra\nGancio: F020\nVariante: 3');
+});
+
+test('3 ganci: un giro «render» con «Gancio:» nel brief è una variante', async () => {
+  const { execFileSync } = await import('node:child_process');
+  const leggi = (env) => execFileSync(process.execPath, ['--input-type=module', '-e', "const m = await import('./scripts/regista.mjs'); console.log(JSON.stringify(m.VARIANTE))"], { encoding: 'utf8', env: { ...process.env, ...env } }).trim().split('\n').pop();
+  assert.equal(leggi({ AZIONE: 'render', BRIEF_EXTRA: 'Stile: Ultron\nGancio: F015, F016\nVariante: 2\nGanci dopo: [["F020"]]' }), '{"gancio":"F015, F016","n":2,"dopo":[["F020"]]}');
+  assert.equal(leggi({ AZIONE: 'monta', BRIEF_EXTRA: 'Gancio: F015' }), 'null');
+});
