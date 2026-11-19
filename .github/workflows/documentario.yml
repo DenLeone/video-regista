@@ -24,6 +24,9 @@ on:
         default: ''
 
 env:
+  # Advisor (Opus consigliere) spento sui montaggi: qui Claude è già Sonnet, Opus aggiungerebbe solo consumo.
+  # Per una regia migliore (ma più consumo) metti '0'.
+  CLAUDE_CODE_DISABLE_ADVISOR_TOOL: '1'
   DIR_EDITARE: '01 · Da editare'
   DIR_FATTI: '02 · Fatti'
   DIR_SFX: '12 · Risorse/SFX — regista'
