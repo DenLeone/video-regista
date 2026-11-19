@@ -12,9 +12,11 @@ const durata = Number(execFileSync('ffprobe', ['-v', 'error', '-show_entries', '
 // video corti (es. classifiche veloci): fotogrammi più fitti e più grandi, almeno ~18 in tutto
 const ogni = Math.min(3, Math.max(0.5, +(durata / 18).toFixed(2)) || 3);
 const largo = ogni < 3 ? 480 : 360;
-execFileSync('ffmpeg', ['-y', '-v', 'error', '-i', video, '-vf', `fps=1/${ogni},scale=${largo}:-2,tile=3x3`, '-q:v', '4', path.join(out, 'fogli_%02d.jpg')]);
+// un file solo audio (la voce di un microfono): niente fotogrammi, solo la trascrizione
+const conVideo = execFileSync('ffprobe', ['-v', 'error', '-select_streams', 'v:0', '-show_entries', 'stream=codec_type', '-of', 'csv=p=0', video], { encoding: 'utf8' }).trim() === 'video';
+if (conVideo) execFileSync('ffmpeg', ['-y', '-v', 'error', '-i', video, '-vf', `fps=1/${ogni},scale=${largo}:-2,tile=3x3`, '-q:v', '4', path.join(out, 'fogli_%02d.jpg')]);
 // 3 fotogrammi a risoluzione piena (25%, 50%, 75%): per giudicare nitidezza, rumore e colore, non solo il contenuto
-for (const [i, k] of [0.25, 0.5, 0.75].entries()) {
+for (const [i, k] of (conVideo ? [0.25, 0.5, 0.75] : []).entries()) {
   try { execFileSync('ffmpeg', ['-y', '-v', 'error', '-ss', (durata * k).toFixed(2), '-i', video, '-frames:v', '1', '-q:v', '2', path.join(out, `pieno_${i + 1}.jpg`)]); } catch { /* fotogramma non riuscito */ }
 }
 // le etichette di colore e codifica (spazio colore, gamma, bit): per capire perché un video «cambia colore» nel render
