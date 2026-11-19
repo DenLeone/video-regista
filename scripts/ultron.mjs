@@ -108,6 +108,14 @@ export function spaziValidi(spazi, durata) {
     .map((x) => ({ at: +(+x.at).toFixed(2), dur: +Math.min(4.5, Math.max(1.5, +x.dur || 3.5), durata - 0.2 - x.at).toFixed(2), prompt: String(x.prompt || '').slice(0, 600), testo: String(x.testo || '').slice(0, 40) }))
     .slice(0, 3);
 }
+// i loghi veri trovati dal Regista per questo video (public/media/img_logo_*): la scena usa quelli, mai loghi disegnati a memoria
+function loghiDelVideo() {
+  const dir = path.join(path.dirname(new URL(import.meta.url).pathname), '..', 'public', 'media');
+  try {
+    return fs.readdirSync(dir).filter((f) => /^img_logo_.+\.(png|svg)$/i.test(f)).slice(0, 12).map((f) => ({ nome: f, file: path.join(dir, f) }));
+  } catch { return []; }
+}
+
 // fotogrammi del video montato nella fascia, ai tempi della prova: Claude giudica l'animazione sopra il video vero
 function sfondiFascia(video, m, dir, i, w) {
   const f = FASCIA.verticale, y = Math.round((f.y * w) / f.w), hh = Math.round((w * f.h) / f.w);
@@ -127,8 +135,9 @@ async function riempiSpazi({ video, uscita, spazi, dir, durata, w, h, formato, t
       // 1) Black Den Motion: preset provati, 3D vero, effetti sonori, prova in Chrome e revisione di Claude
       if (formato === 'verticale' && process.env.ULTRON_BDM !== '0') {
         try {
-          const scena = await creaScena({ prompt: m.prompt, dur: m.dur, formato, sfondi: sfondiFascia(video, m, dir, i, w), gemini: scrittore });
-          const r = await renderScena({ ...scena, uscita: clip });
+          const media = loghiDelVideo();
+          const scena = await creaScena({ prompt: m.prompt, dur: m.dur, formato, media, sfondi: sfondiFascia(video, m, dir, i, w), gemini: scrittore });
+          const r = await renderScena({ ...scena, media, uscita: clip });
           fatti.push({ tipo: 'animazione', at: m.at, dur: m.dur, clip, fascia: scena.opz, wav: r.wav, motore: 'bdm' });
           continue;
         } catch (e) { log(`animazione ${i + 1}: Black Den Motion non riuscito (${e.message.slice(0, 100)}), provo il motore di prima`); }

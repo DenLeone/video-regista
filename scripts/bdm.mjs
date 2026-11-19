@@ -64,6 +64,7 @@ Use real logos/screenshots from this list when the idea mentions them. Never dra
 - The subject is centred; something always moves (a slow drift is enough); motion never reverses direction.
 - Fast in (0.3–0.6 s), then hold long enough to read; exit in the last 0.35 s (the overlay fades out anyway).
 - Text: big, bold, max 5 words per line, max 2 lines, Italian, inside the band with 40 px margins. Only facts given in the request.
+  Width budget (.row is nowrap!): .h1 (128px) fits ~${Math.floor((w - 80) / 80)} characters per line, .h2 (84px) ~${Math.floor((w - 80) / 52)}, .h3 (56px) ~${Math.floor((w - 80) / 35)}. Longer → smaller class or set style.fontSize, or split in two rows.
 - Contrast on video: white text with the accent colour on the key word; add text-shadow 0 4px 18px rgba(0,0,0,.75) to text.
 - Never overlap two readable texts at the same time. Nothing outside the band. Nothing covers the whole band with a solid colour.`;
 
@@ -219,9 +220,16 @@ export function giudica({ errori, coperture, uguali, rettangoli, w, h }) {
   if (coperture.every((c) => c < 0.004)) return 'non si vede niente: la fascia è vuota in tutti i fotogrammi';
   if (coperture.some((c) => c > 0.85)) return 'un fotogramma copre quasi tutta la fascia con un colore pieno: lascia trasparente lo sfondo';
   if (uguali) return 'i fotogrammi sono tutti uguali: l\'animazione non si muove';
-  // un testo in uscita può scivolare un po' fuori (30% della sua altezza)
+  // primo e ultimo fotogramma sono entrate/uscite (scale, scivolate): lì un testo può sbordare per un attimo.
+  // Nei fotogrammi in mezzo, quando si legge, deve stare dentro (un testo in uscita può sbordare del 30% della sua altezza)
   for (const [i, rs] of rettangoli.entries()) {
-    for (const r of rs) if (r.x < -2 || r.y < -0.3 * r.h || r.x + r.w > w + 2 || r.y + r.h > h + 0.3 * r.h) return `un testo esce dalla fascia (fotogramma ${i + 1}): rimpiccioliscilo o spostalo dentro ${w}×${h}`;
+    const transizione = i === 0 || i === rettangoli.length - 1;
+    for (const r of rs) {
+      if (transizione) continue;
+      const fuori = [r.x < -2 && `a sinistra di ${Math.round(-r.x)} px`, r.x + r.w > w + 2 && `a destra di ${Math.round(r.x + r.w - w)} px`,
+        r.y < -0.3 * r.h && `sopra di ${Math.round(-r.y)} px`, r.y + r.h > h + 0.3 * r.h && `sotto di ${Math.round(r.y + r.h - h)} px`].filter(Boolean);
+      if (fuori.length) return `un testo largo ${Math.round(r.w)} px esce dalla fascia ${fuori.join(', ')} (fotogramma ${i + 1} di ${rettangoli.length}): rimpiccioliscilo (font più piccolo, meno parole per riga) o spostalo dentro ${w}×${h}`;
+    }
     for (let a = 0; a < rs.length; a++) for (let b = a + 1; b < rs.length; b++) {
       const A = rs[a], B = rs[b];
       const ix = Math.max(0, Math.min(A.x + A.w, B.x + B.w) - Math.max(A.x, B.x)), iy = Math.max(0, Math.min(A.y + A.h, B.y + B.h) - Math.max(A.y, B.y));

@@ -31,7 +31,12 @@ test('bdm: le prove bocciano errori, fascia vuota o piena, scena ferma, testi fu
   assert.match(giudica({ ...base, coperture: [0, 0, 0, 0, 0, 0] }), /vuota/);
   assert.match(giudica({ ...base, coperture: [0.2, 0.95, 0.2, 0.2, 0.2, 0.2] }), /colore pieno/);
   assert.match(giudica({ ...base, uguali: true }), /non si muove/);
-  assert.match(giudica({ ...base, rettangoli: [[{ x: 100, y: 640, w: 600, h: 90, n: 5 }]] }), /esce dalla fascia/);
-  assert.equal(giudica({ ...base, rettangoli: [[{ x: 100, y: -20, w: 600, h: 90, n: 5 }]] }), null); // sta uscendo: va bene
+  const ok = [{ x: 100, y: 100, w: 600, h: 90, n: 5 }];
+  const fuori = (r) => ({ ...base, rettangoli: [ok, r, ok] });
+  assert.match(giudica(fuori([{ x: 100, y: 640, w: 600, h: 90, n: 5 }])), /esce dalla fascia sotto di 30 px \(fotogramma 2 di 3\)/);
+  assert.match(giudica(fuori([{ x: -60, y: 100, w: 1200, h: 90, n: 5 }])), /a sinistra di 60 px, a destra di 60 px/);
+  assert.equal(giudica(fuori([{ x: 100, y: -20, w: 600, h: 90, n: 5 }])), null); // sta uscendo: va bene
+  // entrata (primo fotogramma) e uscita (ultimo): uno sbordo per un attimo è normale
+  assert.equal(giudica({ ...base, rettangoli: [[{ x: -200, y: 100, w: 1500, h: 90, n: 5 }], ok, [{ x: -200, y: 100, w: 1500, h: 90, n: 5 }]] }), null);
   assert.match(giudica({ ...base, rettangoli: [[{ x: 100, y: 100, w: 600, h: 90, n: 5 }, { x: 150, y: 120, w: 500, h: 90, n: 4 }]] }), /sovrappongono/);
 });
