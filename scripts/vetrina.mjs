@@ -9,6 +9,7 @@ import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { renderScena } from './bdm.mjs';
 import { codiceScena, intestazione } from './scene-mano.mjs';
+import { pathToFileURL } from 'node:url';
 
 const W = 1080, H = 1920, Y_SCENA = 820, H_SCENA = 700;
 // zone.json (tassative): la scena si rimpicciolisce per stare tra x 60 e 920 (sotto y 970 a destra ci sono i tasti di Instagram)
@@ -65,7 +66,7 @@ export async function vetrina({ scena, prompt, uscita }) {
   } finally { fs.rmSync(dir, { recursive: true, force: true }); }
 }
 
-if (import.meta.url === `file://${process.argv[1]}`) {
+if (import.meta.url === pathToFileURL(process.argv[1] || '').href) {
   const [scena, prompt, uscita = 'vetrina.mp4'] = process.argv.slice(2);
   try { await vetrina({ scena, prompt, uscita }); } catch (e) { console.error(`vetrina: ${e.message}`); process.exit(1); }
 }

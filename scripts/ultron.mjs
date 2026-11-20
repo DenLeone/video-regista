@@ -15,6 +15,7 @@ import { renderMotion } from './motion.mjs';
 import { creaIdea, gemini } from './motion-ai.mjs';
 import { creaScena, renderScena, prova, FASCIA } from './bdm.mjs';
 import { tracciaViso, visoNelTempo, postoFascia } from './viso-zone.mjs';
+import { pathToFileURL } from 'node:url';
 
 const log = (...a) => console.log('ultron:', ...a);
 const DURATE = { numero: 3.2, titolo: 3.8, idea: 3.6 };
@@ -244,7 +245,7 @@ export async function ultron({ video, uscita, brief = '', spazi = null, scrittor
   } finally { fs.rmSync(dir, { recursive: true, force: true }); }
 }
 
-if (import.meta.url === `file://${process.argv[1]}`) {
+if (import.meta.url === pathToFileURL(process.argv[1] || '').href) {
   const [video, uscita] = process.argv.slice(2);
   try { console.log(JSON.stringify(await ultron({ video, uscita, brief: process.env.BRIEF || '' }))); } catch (e) { console.error(`ultron: ${e.message}`); process.exit(1); }
 }

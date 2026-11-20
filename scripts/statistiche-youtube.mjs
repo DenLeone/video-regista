@@ -7,6 +7,7 @@
 // «YouTube Analytics API»: se mancano, nel file finisce un errore che spiega cosa fare (niente crash).
 // Repo pubblico: nel log solo i conteggi, mai titoli o numeri dei video.
 import fs from 'node:fs';
+import { pathToFileURL } from 'node:url';
 
 const API = () => process.env.YT_API_BASE || 'https://www.googleapis.com/youtube/v3';
 const ANALYTICS = () => process.env.YT_ANALYTICS_BASE || 'https://youtubeanalytics.googleapis.com/v2/reports';
@@ -104,7 +105,7 @@ export async function numeriYouTube() {
 }
 
 // dal workflow: unisce i numeri di YouTube a quelli del bot (file passato come argomento) e riscrive il file
-if (import.meta.url === `file://${process.argv[1]}`) {
+if (import.meta.url === pathToFileURL(process.argv[1] || '').href) {
   const file = process.argv[2];
   const base = JSON.parse(fs.readFileSync(file, 'utf8'));
   let yt;

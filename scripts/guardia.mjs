@@ -9,6 +9,7 @@ import { execFileSync, spawnSync } from 'node:child_process';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { pathToFileURL } from 'node:url';
 
 const IMPORTANTI = /^(\.github\/workflows\/[^/]+\.ya?ml|scripts\/[^/]+\.(mjs|js|sh|py)|telegram\/src\/.+\.(ts|js)|bot\/src\/.+\.js|src\/.+\.tsx?)$/;
 const git = (...a) => execFileSync('git', a, { encoding: 'utf8', maxBuffer: 1 << 26 });
@@ -49,7 +50,7 @@ async function avvisa(testo) {
   console.log(`bot: ${r.status}`);
 }
 
-if (import.meta.url === `file://${process.argv[1]}`) {
+if (import.meta.url === pathToFileURL(process.argv[1] || '').href) {
   let [prima, dopo] = process.argv.slice(2);
   if (!prima || /^0+$/.test(prima)) prima = `${dopo}~1`;
   const messaggi = git('log', '--format=%h %an: %s%n%b', `${prima}..${dopo}`);

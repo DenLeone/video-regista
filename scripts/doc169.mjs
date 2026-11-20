@@ -14,6 +14,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { filtroTecnico, probe, riconosciLog } from './colore.mjs';
 import { dispositivo } from './sorgenti.mjs';
+import { pathToFileURL } from 'node:url';
 
 const ROOT = path.resolve(path.dirname(new URL(import.meta.url).pathname), '..');
 const REMOTE = process.env.REGISTA_REMOTE || 'gdrive';
@@ -391,4 +392,4 @@ async function main() {
   for (const f of fase ? [fase] : Object.keys(FASI)) await FASI[f]();
 }
 
-if (import.meta.url === `file://${process.argv[1]}`) main().catch((e) => { console.error(e); process.exit(1); });
+if (import.meta.url === pathToFileURL(process.argv[1] || '').href) main().catch((e) => { console.error(e); process.exit(1); });

@@ -5,6 +5,7 @@
 // Avvisa su Telegram SOLO se Denis deve fare qualcosa (token scaduto, chiave rifiutata). Un limite raggiunto si
 // azzera da solo: va nel log, niente messaggio. Repo pubblico: nel log solo esiti, mai chiavi.
 import { spawnSync } from 'node:child_process';
+import { pathToFileURL } from 'node:url';
 
 export function giudicaClaude({ status, stdout = '', stderr = '' }) {
   let j = {};
@@ -28,7 +29,7 @@ async function provaGemini(chiave) {
   return r.status;
 }
 
-if (import.meta.url === `file://${process.argv[1]}`) {
+if (import.meta.url === pathToFileURL(process.argv[1] || '').href) {
   const azioni = [];
   if (process.env.CLAUDE_CODE_OAUTH_TOKEN) {
     if (spawnSync('claude', ['--version']).status !== 0) spawnSync('npm', ['install', '-g', '@anthropic-ai/claude-code'], { stdio: 'ignore', timeout: 180_000 });
