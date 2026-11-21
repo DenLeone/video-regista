@@ -123,7 +123,7 @@ export const Cinematico: React.FC<Piano> = (piano) => {
       <AbsoluteFill style={{ backgroundColor: '#FF8A2A', mixBlendMode: 'soft-light', opacity: 0.1 }} />
       <AbsoluteFill style={{ background: 'radial-gradient(ellipse 100% 80% at 50% 50%, rgba(0,0,0,0) 62%, rgba(0,0,0,0.28) 100%)' }} />
 
-      <Inserti piano={piano} sfx={sfx} />
+      <Inserti piano={piano} sfx={sfx} sopra={CENTRO_PAROLE - 80} />
       <Icone piano={piano} sfx={sfx} />
       <MusicaSotto piano={piano} />
 
