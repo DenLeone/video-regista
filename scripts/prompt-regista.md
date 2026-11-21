@@ -40,6 +40,11 @@ Prima delle inquadrature costruisci il TESTO. Chi guarda deve capire di cosa par
 - Le REGISTRAZIONI DELLO SCHERMO vanno sempre come inserto, mai a tutto schermo.
 - Una scheda per volta: 1–5 inserti in un video, ognuno su 1–3 frasi di fila (stesso file con `inserto_da` consecutivi = la scheda resta e il video prosegue). Mai insieme a una scritta grande o a un titolo.
 
+### Gestione Card e Infografiche 16:9 da Drive
+- Se nella cartella Drive sono presenti immagini .jpg/.png in formato 16:9, usale come B-roll in sovrimpressione abbinandole alle parole chiave del parlato.
+- Posizionale nella **metà alta dello schermo** (sopra il viso, mai sopra gli occhi o i sottotitoli) con larghezza 88%, angoli arrotondati e leggero zoom lento (100% -> 105%).
+- Accompagna l'entrata di ogni card con l'effetto sonoro ui_in.wav a volume basso.
+
 ## Icone (loghi di app, marche, prodotti)
 - Le immagini segnate ICONA nel materiale sono loghi: entrano sopra il video con un bagliore nel momento esatto in cui Denis nomina quella cosa. Vanno usate TUTTE, ognuna una volta, mai come inserto.
 - Guarda il foglio delle immagini per capire di cosa è ognuna (il nome del file spesso non lo dice) e mettila sulla frase in cui Denis la nomina: `{ "icona": "<id>", "frase": "F007", "dette": "Edits" }`, con `dette` = la parola (o le 2–3 parole) ESATTE con cui la nomina, copiate dalla trascrizione.
