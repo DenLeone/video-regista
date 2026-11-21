@@ -39,6 +39,7 @@ Prima delle inquadrature costruisci il TESTO. Chi guarda deve capire di cosa par
 - Sull'elemento della frase: `"inserto": "<id>"` e, per i video, `"inserto_da": <secondi>` letti dal foglio provino; il video deve durare almeno quanto la frase. Le IMMAGINI si usano solo così.
 - Le REGISTRAZIONI DELLO SCHERMO vanno sempre come inserto, mai a tutto schermo.
 - Una scheda per volta: 1–5 inserti in un video, ognuno su 1–3 frasi di fila (stesso file con `inserto_da` consecutivi = la scheda resta e il video prosegue). Mai insieme a una scritta grande o a un titolo.
+- Se nella cartella sono presenti immagini numerate in sequenza (`01-...`, `02-...`), usale tutte in ordine cronologico come inserti sulle relative frasi (anche se sono più di 5) e disattiva i `keywords` se le immagini contengono già testo grafico.
 
 ### Gestione Card e Infografiche 16:9 da Drive
 - Se nella cartella Drive sono presenti immagini .jpg/.png in formato 16:9, usale come B-roll in sovrimpressione abbinandole alle parole chiave del parlato.
