@@ -762,6 +762,9 @@ const A_TESTO: Passo[] = ['cartella', 'sponsor_testo', 'giudizio', 'tavola', 'no
 // la tavola esiste solo nel Blueprint
 const conTavola = (d: Brief, stileBase: string) => (d.stile || stileBase) === 'Blueprint';
 type Cartelle = { elenco: string[]; vai: string[]; aggiornato: number };
+// tasti delle cartelle di 01 (dalla più recente, ordine del workflow): erano 12, e le nuove non si vedevano (21/11).
+// Telegram regge ~100 tasti per messaggio
+const MAX_TASTI_CARTELLE = 40;
 
 // nome scritto a mano: le cartelle più simili dell'elenco ("Giacca autunno" → "Giacca autunnale")
 const normNome = (t: string) => t.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/\s+/g, ' ').trim();
@@ -813,7 +816,7 @@ async function schermoLotto(env: Env, a: Attesa & { tipo: 'lotto' }): Promise<Sc
   const c = await leggi<Cartelle>(env, 'cartelle');
   const imp = await impostazioni(env);
   const stile = a.stile || imp.stile;
-  const elenco = (c?.elenco || []).slice(0, 20);
+  const elenco = (c?.elenco || []).slice(0, MAX_TASTI_CARTELLE);
   const tasti: Kb = elenco.map((n, i) => [tasto(`${a.scelte.includes(n) ? '✅' : '⬜'} ${c?.vai.includes(n) ? '⚡ ' : ''}${tronca(n, 34)}`, `l:t:${i}`)]);
   if (elenco.length) tasti.push([tasto('☑️ Tutte', 'l:tutte'), tasto('⬜ Nessuna', 'l:nessuna'), tasto('🔄 Aggiorna', 'l:aggiorna')]);
   else tasti.push([tasto('🔄 Aggiorna elenco', 'l:aggiorna')]);
@@ -892,7 +895,7 @@ async function schermoPasso(env: Env, a: Attesa & { tipo: 'nuovo' }): Promise<Sc
     case 'cartella': {
       if (d.telegram) return { testo: `${testata(a)}\n✏️ <b>Come si chiama il video?</b>\nScrivimi il nome: diventa la cartella in 97 e in 98.`, tasti: [nav(a)] };
       const c = await leggi<Cartelle>(env, 'cartelle');
-      const elenco = (c?.elenco || []).slice(0, 12);
+      const elenco = (c?.elenco || []).slice(0, MAX_TASTI_CARTELLE);
       const righe: Kb = [];
       let avviso = '';
       if (d.scritta) {
@@ -1523,7 +1526,7 @@ Ti mando il video qui quando è pronto; il file intero va in <b>02 · Fatti/${es
     if (a?.tipo !== 'lotto') { await avviso('Questa schermata è scaduta'); return mostra(env, chat, await pannello(env), msgId); }
     const [, azione, x = ''] = data.split(':');
     const c = await leggi<Cartelle>(env, 'cartelle');
-    const elenco = (c?.elenco || []).slice(0, 20);
+    const elenco = (c?.elenco || []).slice(0, MAX_TASTI_CARTELLE);
     if (azione === 't') {
       const n = elenco[Number(x)];
       if (n) a.scelte = a.scelte.includes(n) ? a.scelte.filter((y) => y !== n) : [...a.scelte, n];

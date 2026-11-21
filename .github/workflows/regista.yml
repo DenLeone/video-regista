@@ -215,7 +215,8 @@ jobs:
           # solo vero/falso (il valore resta segreto): il bot mostra se YouTube è collegato
           YT_PRONTO: ${{ secrets.YT_CLIENT_ID != '' && secrets.YT_CLIENT_SECRET != '' && secrets.YT_REFRESH_TOKEN != '' }}
         run: |
-          mapfile -t cartelle < <(rclone lsf "gdrive:$DIR_EDITARE" --dirs-only | sed 's:/$::')
+          # dalla più recente (21/11: in ordine alfabetico le cartelle nuove finivano oltre i tasti del bot)
+          mapfile -t cartelle < <(rclone lsjson "gdrive:$DIR_EDITARE" --dirs-only | jq -r 'sort_by(.ModTime) | reverse | .[].Name')
           declare -A vai_di=()
           con_vai=()
           # le cartelle si guardano 8 alla volta (09/11): una dopo l'altra, con 40 cartelle, era più di un minuto
