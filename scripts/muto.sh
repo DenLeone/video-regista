@@ -11,7 +11,7 @@ _muto_pezzo="${PEZZO:+-pezzo${PEZZO%%/*}}"
 _MUTO_REG="$_MUTO_DIR/registro-${GITHUB_WORKFLOW:-giro}-${GITHUB_RUN_ID:-0}-${GITHUB_RUN_ATTEMPT:-1}-${GITHUB_JOB:-job}${_muto_pezzo}${DOC_FASE:+-$DOC_FASE}.txt"
 _MUTO_REG="$_MUTO_DIR/$(basename "$_MUTO_REG" | tr ' ' '_')"
 "$@" 2>&1 | tee -a "$_MUTO_REG" \
-  | grep --line-buffered -E '\[fase\]|\] tempi:|\] fatto|##\[|::(error|warning)|Error:|ERRORE|[Nn]on riuscit|[Ff]allit|HTTP [0-9]{3}|exit code' \
+  | grep --line-buffered -E '\[fase\]|\] tempi:|\] fatto|\] archivio:|\] lancio da 05:|\] parlato più recente:|##\[|::(error|warning)|Error:|ERRORE|[Nn]on riuscit|[Ff]allit|HTTP [0-9]{3}|exit code' \
   | cut -c1-200
 _muto_stato=${PIPESTATUS[0]}
 _muto_dove="${DIR_REGISTRI:-12 · Risorse/_registri}"
