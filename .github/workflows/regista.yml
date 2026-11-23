@@ -35,7 +35,7 @@ on:
         required: false
         default: ''
       azione:
-        description: 'monta (default) | elenco = manda solo al bot le cartelle di 01 · Da editare | regia = prova veloce della sola regia (testo, niente render) su una cartella già montata | render = rifà solo il render con la regia salvata (origine 98) | esempi = fogli di fotogrammi degli esempi di uno stile (cartella = nome dello stile) | archivio = copia su Drive i file caricati dall''app, senza montare | squadra = come archivio ma in 05 · Archivio, poi il bot Squadra fa la catena | prepara = analizza il girato appena arrivato su R2, senza montare e senza cancellarlo | kit = niente render: piano e pezzi in piccolo su Drive (_regista/kit) per provare gli stili in pochi secondi (origine 98) | descrizione = riscrive descrizione e 5 hashtag di un video già montato (origine 98) e li manda al bot'
+        description: 'monta (default) | elenco = manda solo al bot le cartelle di 01 · Da editare | regia = prova veloce della sola regia (testo, niente render) su una cartella già montata | render = rifà solo il render con la regia salvata (origine 98) | esempi = fogli di fotogrammi degli esempi di uno stile (cartella = nome dello stile) | archivio = copia su Drive i file caricati dall''app, senza montare | squadra = come archivio ma in 05 · Archivio, poi il bot Squadra fa la catena | riordina = sposta in 05 i file veri rimasti in 02 e 01 (brief «prova»: dice solo cosa farebbe) | prepara = analizza il girato appena arrivato su R2, senza montare e senza cancellarlo | kit = niente render: piano e pezzi in piccolo su Drive (_regista/kit) per provare gli stili in pochi secondi (origine 98) | descrizione = riscrive descrizione e 5 hashtag di un video già montato (origine 98) e li manda al bot'
         required: false
         default: 'monta'
       r2:
@@ -151,7 +151,7 @@ jobs:
         run: |
           manca=()
           [ -n "$RCLONE_CONF" ] || manca+=("RCLONE_CONF (Drive)")
-          if [ "$AZIONE" != "elenco" ] && [ "$AZIONE" != "archivio" ] && [ "$AZIONE" != "squadra" ]; then
+          if [ "$AZIONE" != "elenco" ] && [ "$AZIONE" != "archivio" ] && [ "$AZIONE" != "squadra" ] && [ "$AZIONE" != "riordina" ]; then
             [ -n "$GEMINI_API_KEY" ] || [ -n "$CLAUDE_CODE_OAUTH_TOKEN" ] || manca+=("GEMINI_API_KEY o CLAUDE_CODE_OAUTH_TOKEN")
             [ -n "$GROQ_API_KEY" ] || manca+=("GROQ_API_KEY")
           fi
@@ -276,7 +276,7 @@ jobs:
           fi
           # nome scritto a mano: deve esistere prima di apt. VAI non serve. Telegram, R2,
           # elenco, esempi e archivio creano o non cercano la cartella in 01.
-          if [ -n "$CARTELLA" ] && [ "$AZIONE" != "elenco" ] && [ "$AZIONE" != "esempi" ] && [ "$AZIONE" != "archivio" ] && [ "$AZIONE" != "squadra" ] \
+          if [ -n "$CARTELLA" ] && [ "$AZIONE" != "elenco" ] && [ "$AZIONE" != "esempi" ] && [ "$AZIONE" != "archivio" ] && [ "$AZIONE" != "squadra" ] && [ "$AZIONE" != "riordina" ] \
              && { [ -z "$TELEGRAM" ] || [ "$TELEGRAM" = "[]" ]; } && [ -z "$R2" ]; then
             cerca() {
               local dir="$1" elenco stato
@@ -387,7 +387,7 @@ jobs:
 
       - name: Cache strumenti
         # stessa chiave di stile.yml, laboratorio.yml e del giro «strumenti»: un solo scarico
-        if: vars.USA_IMMAGINE != '1' && steps.check.outputs.cartella != '' && inputs.azione != 'regia' && inputs.azione != 'archivio' && inputs.azione != 'squadra'
+        if: vars.USA_IMMAGINE != '1' && steps.check.outputs.cartella != '' && inputs.azione != 'regia' && inputs.azione != 'archivio' && inputs.azione != 'squadra' && inputs.azione != 'riordina'
         uses: actions/cache@v5
         with:
           path: ~/opt/regista-strumenti
@@ -396,7 +396,7 @@ jobs:
       # Il pacchetto Remotion (gli stili impacchettati) cambia solo quando cambia src/: tra un giro e
       # l'altro resta in cache, così il render parte senza rifarlo (10/11)
       - name: Cache pacchetto Remotion
-        if: steps.check.outputs.cartella != '' && inputs.azione != 'regia' && inputs.azione != 'archivio' && inputs.azione != 'squadra'
+        if: steps.check.outputs.cartella != '' && inputs.azione != 'regia' && inputs.azione != 'archivio' && inputs.azione != 'squadra' && inputs.azione != 'riordina'
         uses: actions/cache@v5
         with:
           path: ~/.cache/regista-pacchetto
@@ -405,7 +405,7 @@ jobs:
       - name: Dipendenze
         id: dipendenze
         # la prova della sola regia non tocca video: niente ffmpeg né Remotion
-        if: steps.check.outputs.cartella != '' && inputs.azione != 'regia' && inputs.azione != 'archivio' && inputs.azione != 'squadra'
+        if: steps.check.outputs.cartella != '' && inputs.azione != 'regia' && inputs.azione != 'archivio' && inputs.azione != 'squadra' && inputs.azione != 'riordina'
         # di solito ~30 s; il 22/10 un mirror di Ubuntu bloccato l'ha tenuto fermo 20 minuti
         timeout-minutes: 16
         env:
@@ -430,7 +430,7 @@ jobs:
 
       - name: Prova dei tagli in parallelo
         # Stesso test del bot. Lì ffmpeg non c'è e il test si salta; qui c'è e non deve saltare.
-        if: steps.check.outputs.cartella != '' && inputs.azione != 'regia' && inputs.azione != 'archivio' && inputs.azione != 'squadra'
+        if: steps.check.outputs.cartella != '' && inputs.azione != 'regia' && inputs.azione != 'archivio' && inputs.azione != 'squadra' && inputs.azione != 'riordina'
         run: |
           node --experimental-strip-types --import ./telegram/test/register.mjs --test --test-reporter=tap telegram/test/tagli-paralleli.test.ts | tee /tmp/tagli-prova.tap
           if grep -q '# SKIP' /tmp/tagli-prova.tap; then

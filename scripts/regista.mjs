@@ -2947,6 +2947,52 @@ async function archiviaDaR2(squadra = false) {
   await notifica('📥 originali su Drive', nome, `${n.length} file in ${qui}${giaFatto ? ` (collegati in ${OUT_DIR}/${nome})` : ''}. Il montaggio già partito non li vede: per usarli, 🔁 Rifai da zero.`, { ok: true });
 }
 
+// 🧹 Riordino del vecchio (23/11, archivio unico; azione «riordina»). In 02 i file veri del girato vanno in
+// 05 · Archivio/<prodotto> (B-roll o Parlato/<video>, secondo l'analisi salvata del montaggio) e al loro posto resta un
+// collegamento (Rifai funziona ancora). Le cartelle rimaste in 01 con file veri, ferme da più di un giorno, passano
+// intere in 05 (girato da montare; se il nome c'è già, in una sottocartella). «prova» nel brief: dice solo cosa farebbe.
+// Nei log solo conteggi; i nomi vanno solo al bot.
+async function riordina() {
+  const prova = /\bprova\b/i.test(process.env.BRIEF_EXTRA || '');
+  const isMedia = (f) => VIDEO_EXT.concat(IMAGE_EXT, AUDIO_EXT).includes(path.extname(f.Name).toLowerCase()) && !isNostro(f.Name);
+  const righe = [];
+  const conto = { c02: 0, f02: 0, broll: 0, parlato: 0, falliti: 0, c01: 0, lasciate01: 0 };
+  const cartelle = (d) => JSON.parse(rclone('lsjson', remote(d), '--dirs-only')).filter((x) => !x.Name.startsWith('_'));
+  for (const { Name: nome } of cartelle(OUT_DIR)) {
+    let veri;
+    try { veri = JSON.parse(rclone('lsjson', remote(OUT_DIR, nome), '--files-only', '--drive-skip-shortcuts')).filter(isMedia); } catch { continue; }
+    if (!veri.length) continue;
+    conto.c02++; conto.f02 += veri.length;
+    if (prova) { righe.push(`✅ ${nome}: ${veri.length} file`); continue; }
+    let analisi = null;
+    try { analisi = JSON.parse(rclone('cat', remote(OUT_DIR, nome, CACHE, 'materiale.json'))); } catch { /* senza analisi: tutto nel parlato del video */ }
+    const e = archiviaOriginali({ rclone, R: REMOTE, dir: OUT_DIR, nome, analisi, isMedia, log });
+    conto.broll += e.broll; conto.parlato += e.parlato; conto.falliti += e.falliti;
+    righe.push(`✅ ${nome}: ${e.broll} B-roll, ${e.parlato} parlato${e.falliti ? `, ⚠️ ${e.falliti} non spostati` : ''}`);
+  }
+  const ieri = Date.now() - 86400e3;
+  let in05 = new Set();
+  try { in05 = new Set(cartelle(DIR_ARCHIVIO).map((x) => x.Name)); } catch { /* 05 non letto */ }
+  for (const d of cartelle(IN_DIR)) {
+    let veri;
+    try { veri = JSON.parse(rclone('lsjson', remote(IN_DIR, d.Name), '-R', '--files-only', '--drive-skip-shortcuts')).filter((f) => isMedia(f) && !f.Path.split('/').slice(0, -1).some((x) => x.startsWith('_'))); } catch { continue; }
+    if (!veri.length) continue;
+    if (veri.some((f) => Date.parse(f.ModTime) > ieri)) { conto.lasciate01++; righe.push(`📂 ${d.Name}: lasciata in 01 (toccata nelle ultime 24 ore)`); continue; }
+    conto.c01++;
+    const dest = in05.has(d.Name) ? `${DIR_ARCHIVIO}/${d.Name}/${d.Name} · da 01` : `${DIR_ARCHIVIO}/${d.Name}`;
+    if (prova) { righe.push(`📂 ${d.Name}: ${veri.length} file → ${dest}`); continue; }
+    try {
+      rclone('move', remote(IN_DIR, d.Name), remote(dest), '--delete-empty-src-dirs');
+      try { rclone('rmdirs', remote(IN_DIR, d.Name)); } catch { /* già tolta */ }
+      righe.push(`📂 ${d.Name}: ${veri.length} file → ${dest}`);
+    } catch { conto.falliti++; righe.push(`📂 ${d.Name}: ⚠️ non spostata`); }
+  }
+  log(`riordino${prova ? ' (prova, niente spostato)' : ''}: 02 ${conto.c02} cartelle con ${conto.f02} file (${conto.broll} B-roll, ${conto.parlato} parlato), 01 ${conto.c01} cartelle in 05, ${conto.lasciate01} lasciate, ${conto.falliti} non riusciti`);
+  const titolo = prova ? '🧹 Riordino: PROVA (non ho spostato niente)' : '🧹 Riordino fatto';
+  const testo = [`02 · Fatti: ${conto.c02} cartelle, ${conto.f02} file${prova ? '' : ` (${conto.broll} B-roll, ${conto.parlato} parlato)`}`, `01 · Da editare: ${conto.c01} cartelle in 05, ${conto.lasciate01} lasciate`, '', ...righe].join('\n');
+  await invia({ tipo: 'esito', esito: titolo, nome: 'Archivio', testo: testo.slice(0, 3800), ok: !conto.falliti });
+}
+
 // Parte da sola quando l'app ha finito di caricare su R2, prima del tap «Monta».
 // Non monta, non cancella R2, non scrive materiale.json: solo materiale-anticipato.json.
 // Il montaggio, se i file sono gli stessi, riusa trascrizione e sync.
@@ -3102,6 +3148,13 @@ async function main() {
     return soloDescrizione().catch(async (e) => {
       log(e.stack || e.message);
       await notifica('⚠️ descrizione', process.env.CARTELLA || '—', `Errore: ${e.message}`);
+      process.exitCode = 1;
+    });
+  }
+  if (process.env.AZIONE === 'riordina') {
+    return riordina().catch(async (e) => {
+      log(`riordino fermato: ${String(e.message).split('\n')[0].slice(0, 80)}`);
+      await invia({ tipo: 'esito', esito: '⚠️ riordino fermato', nome: 'Archivio', testo: `Errore: ${e.message}`, ok: false });
       process.exitCode = 1;
     });
   }
