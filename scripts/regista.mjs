@@ -224,6 +224,17 @@ export function ripreseDiverse(a, b) {
   return Math.abs(a.ora - b.ora) > Math.max(a.durata, b.durata) + 10;
 }
 
+// «Parlato: solo il più recente» nel brief (Denis, 23/11: due video nella stessa cartella di 05): restano solo le
+// voci del giorno più recente; le altre escono dal montaggio (nemmeno come B-roll) e restano in 05 per il loro video
+export const vuoleSoloUltimoParlato = (brief = '') => /parlato\s*:\s*solo\s+(il\s+)?pi[uù]\s+recente/i.test(brief);
+const giornoRoma = (t) => new Date(t).toLocaleDateString('it-IT', { timeZone: 'Europe/Rome' });
+export function parlatiVecchi(sorgenti) {
+  const voci = sorgenti.filter((s) => s.parlato && s.data);
+  if (!voci.length) return [];
+  const ultimo = giornoRoma(Math.max(...voci.map((s) => s.data)));
+  return voci.filter((s) => giornoRoma(s.data) !== ultimo);
+}
+
 function dataRipresa(tags, nome) {
   for (const k of ['com.apple.quicktime.creationdate', 'creation_time', 'date']) {
     const d = Date.parse(tags?.[k] || '');
@@ -2619,6 +2630,12 @@ export async function analizza(nome, brief, cache) {
     s.livello = +v.voce.toFixed(1);
     if (s.tipo === 'video' && audioMuto(e)) s.audioMuto = true;
     log(`livelli ${s.id}: fondo ${v.fondo.toFixed(0)} dB, voce ${v.voce.toFixed(0)} dB${v.haVoce ? ' → parlato' : s.audioMuto ? ' → audio muto' : ''}`);
+  }
+
+  if (vuoleSoloUltimoParlato(brief)) {
+    const via = new Set(parlatiVecchi(sorgenti).map((s) => s.id));
+    for (let i = sorgenti.length - 1; i >= 0; i--) if (via.has(sorgenti[i].id)) sorgenti.splice(i, 1);
+    log(`parlato più recente: ${via.size} clip parlate di un giorno prima tolte dal montaggio`);
   }
 
   // audio principale: mic esterno > Insta360 > iPhone > altre camere > Sony.

@@ -40,7 +40,7 @@ test('nome del prodotto dalla cartella del video', () => {
   assert.deepEqual(candidatiProdotto('CreateMate 2'), ['CreateMate 2', 'CreateMate']);
 });
 
-test('nel dubbio è parlato; B-roll solo se il Regista l\'ha visto senza voce', () => {
+test('B-roll solo se il Regista l\'ha visto senza voce; mai visto = null', () => {
   const tipo = tipiFile({ sorgenti: [
     { originale: '/s/VOCE.mp4', tipo: 'video', parlato: true },
     { originale: '/s/MIC.wav', tipo: 'audio' },
@@ -50,7 +50,7 @@ test('nel dubbio è parlato; B-roll solo se il Regista l\'ha visto senza voce', 
   assert.equal(tipo('MIC.wav'), 'Parlato');
   assert.equal(tipo('B1.mp4'), 'B-roll');
   assert.equal(tipo('FOTO.jpg'), 'B-roll');
-  assert.equal(tipo('SCONOSCIUTO.mp4'), 'Parlato');
+  assert.equal(tipo('SCONOSCIUTO.mp4'), null);
 });
 
 const analisi = { sorgenti: [{ originale: '/s/VOCE.mp4', tipo: 'video', parlato: true }, { originale: '/s/B1.mp4', tipo: 'video' }, { originale: '/s/B2.mp4', tipo: 'video' }] };
@@ -146,4 +146,19 @@ test('lancio da 05: collegamenti in 01, B-roll e Parlato saltati, poi a fine mon
 test('lancio da 05 senza girato: errore chiaro', () => {
   const { rclone } = driveFinto({ '05 · Archivio/Vuoto/B-roll/X.mp4': { size: 1 } });
   assert.throws(() => collegaDaArchivio({ rclone, R: 'gdrive', sorgente: 'Vuoto', dir: '01', nome: 'Vuoto', isMedia, scrivi: () => {} }), /non c'è girato/);
+});
+
+test('lancio da 05 con due parlati: quello non usato dal Regista resta dov\'è', () => {
+  const { d, rclone } = driveFinto({
+    '05 · Archivio/P/NUOVO.mp4': { size: 10 },
+    '05 · Archivio/P/VECCHIO.mp4': { size: 9 },
+    '05 · Archivio/P/B1.mp4': { size: 5 },
+  });
+  const scrivi = (dove, testo) => d.set(dove, { size: testo.length, testo });
+  collegaDaArchivio({ rclone, R: 'gdrive', sorgente: 'P', dir: '01', nome: 'P', isMedia, scrivi });
+  const vista = { sorgenti: [{ originale: '/s/NUOVO.mp4', tipo: 'video', parlato: true }, { originale: '/s/B1.mp4', tipo: 'video' }] };
+  const e = ordinaArchivio({ rclone, R: 'gdrive', dir: '01', nome: 'P', analisi: vista });
+  assert.deepEqual([e.broll, e.parlato, e.lasciati], [1, 1, 1]);
+  assert.ok(d.has('05 · Archivio/P/VECCHIO.mp4'));
+  assert.ok(d.has('05 · Archivio/P/Parlato/P/NUOVO.mp4'));
 });

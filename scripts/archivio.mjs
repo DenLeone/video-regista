@@ -45,7 +45,8 @@ export function tipiFile(analisi) {
     else if (s.tipo === 'video') broll.add(n);
   }
   for (const i of analisi?.immagini || []) if (!i.libreria) broll.add(path.basename(String(i.originale || '')));
-  return (nome) => (broll.has(nome) && !voce.has(nome) ? BROLL : PARLATO);
+  // null = il Regista non l'ha usato (es. il parlato di un altro video): chi lo chiama decide
+  return (nome) => (broll.has(nome) && !voce.has(nome) ? BROLL : voce.has(nome) ? PARLATO : null);
 }
 
 const nomi = (rclone, dove) => {
@@ -58,10 +59,12 @@ function archiviatore({ rclone, R, prodotto, nome, analisi }) {
   const tipo = tipiFile(analisi);
   const cartelle = { [BROLL]: `${DIR_ARCHIVIO}/${prodotto}/${BROLL}`, [PARLATO]: cartellaParlato(prodotto, nome) };
   const gia = { [BROLL]: nomi(rclone, `${R}:${cartelle[BROLL]}`), [PARLATO]: nomi(rclone, `${R}:${cartelle[PARLATO]}`) };
-  const esito = { broll: 0, parlato: 0, doppioni: 0, senzaCollegamento: 0, falliti: 0, giaAPosto: 0 };
+  const esito = { broll: 0, parlato: 0, doppioni: 0, senzaCollegamento: 0, falliti: 0, giaAPosto: 0, lasciati: 0 };
   // da = percorso del file su Drive; chi = nome con cui il Regista l'ha visto; size = peso
-  const sposta = (da, chi, size) => {
-    const t = tipo(chi);
+  // ignoti = PARLATO (file veri da togliere da 01) oppure null (girato di 05 non usato: resta dov'è)
+  const sposta = (da, chi, size, ignoti = PARLATO) => {
+    const t = tipo(chi) || ignoti;
+    if (!t) { esito.lasciati++; return null; }
     const nomeFile = da.split('/').pop();
     if (da.startsWith(`${cartelle[t]}/`)) { esito.giaAPosto++; return null; }
     let dest = cartelle[t];
@@ -76,7 +79,7 @@ function archiviatore({ rclone, R, prodotto, nome, analisi }) {
   };
   return { sposta, esito };
 }
-const riassunto = (e) => `archivio: ${e.broll} B-roll e ${e.parlato} parlato in 05${e.giaAPosto ? `, ${e.giaAPosto} già a posto` : ''}${e.doppioni ? `, ${e.doppioni} doppioni messi da parte` : ''}${e.senzaCollegamento ? `, ${e.senzaCollegamento} senza collegamento` : ''}${e.falliti ? `, ${e.falliti} NON spostati` : ''}`;
+const riassunto = (e) => `archivio: ${e.broll} B-roll e ${e.parlato} parlato in 05${e.giaAPosto ? `, ${e.giaAPosto} già a posto` : ''}${e.lasciati ? `, ${e.lasciati} non usati lasciati dov'erano` : ''}${e.doppioni ? `, ${e.doppioni} doppioni messi da parte` : ''}${e.senzaCollegamento ? `, ${e.senzaCollegamento} senza collegamento` : ''}${e.falliti ? `, ${e.falliti} NON spostati` : ''}`;
 
 // Fine montaggio: i file veri di <dir>/<nome> vanno nell'archivio del prodotto, al loro posto un collegamento.
 // Se il collegamento non riesce il file è comunque al sicuro in 05.
@@ -133,7 +136,7 @@ export function ordinaArchivio({ rclone, R, dir, nome, analisi, log = () => {} }
   try { m = JSON.parse(rclone('cat', `${R}:${dir}/${nome}/${MAPPA}`)); } catch { return null; }
   if (!m?.file?.length || !m.prodotto) return null;
   const { sposta, esito } = archiviatore({ rclone, R, prodotto: m.prodotto, nome, analisi });
-  for (const f of m.file) sposta(f.file, f.chi, f.size);
+  for (const f of m.file) sposta(f.file, f.chi, f.size, null);
   log(riassunto(esito));
   return esito;
 }
