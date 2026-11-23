@@ -3,7 +3,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { test } from 'node:test';
-import { archiviaOriginali, candidatiProdotto, collegaDaArchivio, MAPPA, ordinaArchivio, PREFISSO_BROLL, scaricaBrollProdotto, tipiFile } from './archivio.mjs';
+import { archiviaOriginali, candidatiProdotto, cartellaSimile, collegaDaArchivio, MAPPA, ordinaArchivio, PREFISSO_BROLL, scaricaBrollProdotto, tipiFile } from './archivio.mjs';
 
 // Drive finto: percorso → { size, link } (link = collegamento). Solo i comandi che usa archivio.mjs.
 function driveFinto(file = {}) {
@@ -161,4 +161,30 @@ test('lancio da 05 con due parlati: quello non usato dal Regista resta dov\'è',
   assert.deepEqual([e.broll, e.parlato, e.lasciati], [1, 1, 1]);
   assert.ok(d.has('05 · Archivio/P/VECCHIO.mp4'));
   assert.ok(d.has('05 · Archivio/P/Parlato/P/NUOVO.mp4'));
+});
+
+test('cartella di 05 scritta al volo: nome simile, solo se è una', () => {
+  const in05 = ['PGYTECH CreateMate 2611', 'Ajazz AK820', 'Insta 360'];
+  assert.equal(cartellaSimile('pgythech createmate 2611', in05).trovata, 'PGYTECH CreateMate 2611');
+  assert.equal(cartellaSimile('PGYTECH-CreateMate 2611', in05).trovata, 'PGYTECH CreateMate 2611');
+  assert.equal(cartellaSimile('ajazz ak820', in05).trovata, 'Ajazz AK820');
+  assert.equal(cartellaSimile('createmate', in05).trovata, null);
+  assert.deepEqual(cartellaSimile('ajazz ak82x', ['Ajazz AK820', 'Ajazz AK821']), { trovata: null, quante: 2 });
+  assert.equal(cartellaSimile('createmate 2611', ['Novembre/CreateMate 2611']).trovata, 'Novembre/CreateMate 2611');
+});
+
+test('lancio da una cartella dentro un\'altra: il prodotto è la cartella intera, B-roll compresi', () => {
+  const { d, rclone } = driveFinto({
+    '05 · Archivio/Novembre/CM/VOCE.mp4': { size: 10 },
+    '05 · Archivio/Novembre/CM/B-roll/VECCHIO.mp4': { size: 3 },
+  });
+  const scrivi = (dove, testo) => d.set(dove, { size: testo.length, testo });
+  collegaDaArchivio({ rclone, R: 'gdrive', sorgente: 'Novembre/CM', dir: '01', nome: 'CM', isMedia, scrivi });
+  const base = fs.mkdtempSync(path.join(os.tmpdir(), 'archivio-'));
+  const dest = path.join(base, 'scarico'); fs.mkdirSync(dest);
+  assert.equal(scaricaBrollProdotto({ rclone, R: 'gdrive', nome: 'CM', dest, isMedia, dir: '01' }), 1);
+  fs.rmSync(base, { recursive: true, force: true });
+  const e = ordinaArchivio({ rclone, R: 'gdrive', dir: '01', nome: 'CM', analisi: { sorgenti: [{ originale: '/s/VOCE.mp4', tipo: 'video', parlato: true }] } });
+  assert.equal(e.parlato, 1);
+  assert.ok(d.has('05 · Archivio/Novembre/CM/Parlato/CM/VOCE.mp4'));
 });

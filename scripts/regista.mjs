@@ -3182,7 +3182,7 @@ async function main() {
     }
     try { rclone('copy', remote(SRC_DIR, nome), SCARICO, '--max-depth', '1', '--include', 'brief.txt'); } catch { /* cartella nuova */ }
     // 📦 i B-roll del prodotto già in 05 · Archivio/<Prodotto>/B-roll (anche dei video vecchi): l'AI sceglie quali usare
-    scaricaBrollProdotto({ rclone, R: REMOTE, nome, dest: SCARICO, isMedia, log });
+    scaricaBrollProdotto({ rclone, R: REMOTE, nome, dest: SCARICO, isMedia, dir: SRC_DIR, log });
 
     // macchina dei pezzi partita insieme alla prima: il girato è scaricato, ora si aspetta la regia
     if (PEZZO && ATTENDI) {

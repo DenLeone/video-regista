@@ -124,7 +124,7 @@ export function collegaDaArchivio({ rclone, R, sorgente, dir, nome, isMedia, scr
     catch { throw new Error(`Drive non mi lascia creare i collegamenti in 01 (fatti ${mappa.length} su ${file.length})`); }
     mappa.push({ chi, file: `${base}/${f.Path}`, size: f.Size });
   }
-  scrivi(`${dir}/${nome}/${MAPPA}`, JSON.stringify({ sorgente, prodotto: sorgente.split('/')[0], file: mappa }, null, 1));
+  scrivi(`${dir}/${nome}/${MAPPA}`, JSON.stringify({ sorgente, prodotto: sorgente, file: mappa }, null, 1));
   log(`lancio da 05: ${mappa.length} collegamenti`);
   return mappa.length;
 }
@@ -141,10 +141,34 @@ export function ordinaArchivio({ rclone, R, dir, nome, analisi, log = () => {} }
   return esito;
 }
 
+// Il nome della cartella di 05 detto a voce o scritto al volo («pgythech createmate 2611»): maiuscole, spazi e
+// simboli non contano, e si tollerano 2 lettere sbagliate. Prima il primo livello, poi uno sotto. Solo se è UNA.
+const chiave = (x) => String(x).toLowerCase().replace(/[^a-z0-9]+/g, '');
+function distanza(a, b) {
+  const d = Array.from({ length: b.length + 1 }, (_, j) => j);
+  for (let i = 1; i <= a.length; i++) {
+    let prec = d[0]; d[0] = i;
+    for (let j = 1; j <= b.length; j++) { const t = d[j]; d[j] = Math.min(d[j] + 1, d[j - 1] + 1, prec + (a[i - 1] === b[j - 1] ? 0 : 1)); prec = t; }
+  }
+  return d[b.length];
+}
+export function cartellaSimile(cercata, cartelle) {
+  const k = chiave(cercata);
+  if (!k) return { trovata: null, quante: 0 };
+  for (const prova of [(x) => x === k, (x) => distanza(x, k) <= 2]) {
+    const ok = cartelle.filter((c) => prova(chiave(c.split('/').pop())));
+    if (ok.length) return { trovata: ok.length === 1 ? ok[0] : null, quante: ok.length };
+  }
+  return { trovata: null, quante: 0 };
+}
+
 // Prima del montaggio: tutti i B-roll del prodotto (anche dei video vecchi) entrano nel materiale; l'AI sceglie.
 // Si saltano quelli che ci sono già (stesso nome nella cartella del video).
-export function scaricaBrollProdotto({ rclone, R, nome, dest, isMedia, log = () => {} }) {
-  const prodotto = prodottoEsistente(rclone, R, nome);
+// prodotto: dalla mappa del lancio da 05 (<dir>/<nome>/_regista/archivio.json), se c'è; se no dal nome del video
+export function scaricaBrollProdotto({ rclone, R, nome, dest, isMedia, dir, log = () => {} }) {
+  let prodotto = null;
+  if (dir) try { prodotto = JSON.parse(rclone('cat', `${R}:${dir}/${nome}/${MAPPA}`)).prodotto || null; } catch { /* non lanciato da 05 */ }
+  prodotto ||= prodottoEsistente(rclone, R, nome);
   if (!prodotto) return 0;
   const dove = `${R}:${DIR_ARCHIVIO}/${prodotto}/${BROLL}`;
   let file;
@@ -188,14 +212,18 @@ if (process.argv[2] === 'collega' && process.argv[1] && path.resolve(process.arg
   // già pronta in 01 (c'è la mappa): rilancio, niente da fare. Senza mappa = giro interrotto, si completa
   const giaPronta = (() => { try { return JSON.parse(rclone('lsjson', `${R}:${DIR_EDITARE}/${nome}/${MAPPA}`)).length > 0; } catch { return false; } })();
   if (giaPronta) { console.log('la cartella c\'è già in 01: niente collegamenti nuovi (rilancio)'); process.exit(0); }
-  // il nome della cartella di 05: maiuscole e spazi non contano (come per 01)
-  const norm = (x) => String(x).toLowerCase().replace(/\s+/g, '');
-  const [primo, ...resto] = sorgente.split('/');
+  // il nome della cartella di 05: simile basta (maiuscole, spazi, 2 lettere sbagliate), primo livello o uno sotto
   let in05 = [];
-  try { in05 = JSON.parse(rclone('lsjson', `${R}:${DIR_ARCHIVIO}`, '--dirs-only')).map((x) => x.Name); } catch { esce(`non riesco a leggere ${DIR_ARCHIVIO}`); }
-  const trovata = in05.find((x) => x === primo) || in05.find((x) => norm(x) === norm(primo));
-  if (!trovata) esce(`non trovo la cartella in ${DIR_ARCHIVIO} (maiuscole e spazi non contano)`);
-  const daUsare = [trovata, ...resto].join('/');
+  try { in05 = JSON.parse(rclone('lsjson', `${R}:${DIR_ARCHIVIO}`, '--dirs-only')).map((x) => x.Name).filter((x) => !x.startsWith('_')); } catch { esce(`non riesco a leggere ${DIR_ARCHIVIO}`); }
+  let { trovata, quante } = cartellaSimile(sorgente, in05);
+  if (!trovata && !quante) {
+    let sotto = [];
+    try { sotto = JSON.parse(rclone('lsjson', `${R}:${DIR_ARCHIVIO}`, '--dirs-only', '-R', '--max-depth', '2')).map((x) => x.Path).filter((x) => x.includes('/') && !x.split('/').some((y) => y.startsWith('_') || y === BROLL || y === PARLATO)); } catch { /* resta il primo livello */ }
+    ({ trovata, quante } = cartellaSimile(sorgente, sotto));
+  }
+  if (!trovata) esce(quante > 1 ? `in ${DIR_ARCHIVIO} ci sono ${quante} cartelle con un nome simile: scrivi il nome preciso` : `non trovo la cartella in ${DIR_ARCHIVIO}, nemmeno con un nome simile`);
+  if (chiave(trovata) !== chiave(sorgente)) console.log(`cartella di 05 trovata con un nome simile${trovata.includes('/') ? ', dentro un\'altra cartella' : ''}`);
+  const daUsare = trovata;
   const isMedia = (f) => VIDEO_EXT.concat(IMAGE_EXT, AUDIO_EXT).includes(path.extname(f.Name).toLowerCase());
   const scrivi = (dove, testo) => {
     const tmp = path.join(os.tmpdir(), `archivio-${process.pid}.json`);
