@@ -27,6 +27,7 @@ import { clipDelTratto, dividi, fotogrammiClip, sceltePerCopertina } from './pez
 import path from 'node:path';
 import { audioMuto, frasi, inviluppo, sincronizza, sogliaVoce } from './audio.mjs';
 import { DIR_ASSETS, DIR_EDITARE, DIR_FATTI, DIR_STILI } from './cartelle.mjs';
+import { archiviaOriginali, cartellaParlato, DIR_ARCHIVIO, prodottoEsistente, scaricaBrollProdotto } from './archivio.mjs';
 import { preparaSuoni, suoniDelloStile } from './suoni-veri.mjs';
 import { loghiDetti, nomiLogo, scegliFont } from './libreria.mjs';
 import { HDR, curvaChiara, curvaEsposizione, filtroTecnico, misuraPezzo, perFiltro, probe, riconosciLog } from './colore.mjs';
@@ -2902,7 +2903,7 @@ async function analizzaEsempi() {
 // Un montaggio già partito non li vede: per usarli serve 🔁 Rifai.
 // 👥 dest = 05 · Archivio quando il girato va alla Squadra (azione «squadra»): da lì il 🧭 Capo squadra del bot Squadra
 async function archiviaDaR2(squadra = false) {
-  const dest = squadra ? (process.env.DIR_ARCHIVIO || '05 · Archivio') : IN_DIR;
+  const dest = squadra ? DIR_ARCHIVIO : IN_DIR;
   const nome = String(process.env.CARTELLA || '').trim();
   if (!nome) throw new Error('archivio: manca il nome della cartella');
   if (!DA_R2) throw new Error('archivio: manca il caricamento R2');
@@ -3139,6 +3140,7 @@ async function main() {
     } else {
       // correzione di un video nato da Telegram: in 98 c'è solo il risultato, gli originali sono in 97
       let dirMedia = SRC_DIR;
+      let cartellaMedia = null; // percorso intero, quando il girato non sta in <dir>/<nome>
       let media = files.filter(isMedia);
       if (SRC_DIR === OUT_DIR && !media.length) {
         try {
@@ -3146,13 +3148,24 @@ async function main() {
           if (in97.length) { dirMedia = IN_DIR; media = in97; log(`originali in ${IN_DIR}/${nome}`); }
         } catch { /* non c'è nemmeno in 97 */ }
       }
+      // 📦 collegamenti mancanti in 02: il parlato è in 05 · Archivio/<Prodotto>/Parlato/<video> (i B-roll arrivano sotto)
+      if (SRC_DIR === OUT_DIR && !media.length) {
+        const prodotto = prodottoEsistente(rclone, REMOTE, nome);
+        const inArchivio = prodotto && cartellaParlato(prodotto, nome);
+        try {
+          const in05 = inArchivio ? JSON.parse(rclone('lsjson', remote(inArchivio), '--files-only')).filter(isMedia) : [];
+          if (in05.length) { cartellaMedia = inArchivio; media = in05; log('originali in 05 · Archivio'); }
+        } catch { /* non c'è nemmeno in 05 */ }
+      }
       const peso = media.reduce((t, f) => t + (f.Size || 0), 0);
       await fase(nome, `${CORREZIONE ? '✏️ Correzione · ' : ''}📥 Scarico ${media.length} file (${mb(peso)})`, 'scarico');
       // solo il materiale: niente sottocartelle (_regista), niente video finali/note/segnali
-      rclone('copy', remote(dirMedia, nome), SCARICO, '--max-depth', '1', '--transfers', '8', '--multi-thread-streams', '8',
+      rclone('copy', cartellaMedia ? remote(cartellaMedia) : remote(dirMedia, nome), SCARICO, '--max-depth', '1', '--transfers', '8', '--multi-thread-streams', '8',
         '--exclude', '*.XML', '--exclude', '*.xml', '--exclude', '*FINALE*', '--exclude', '* - GANCIO *', '--exclude', '* - PROVA *', '--exclude', '* - documentario*', '--exclude', '* - COPERTINA*', '--exclude', '_VAI_*', '--exclude', '*.txt');
     }
     try { rclone('copy', remote(SRC_DIR, nome), SCARICO, '--max-depth', '1', '--include', 'brief.txt'); } catch { /* cartella nuova */ }
+    // 📦 i B-roll del prodotto già in 05 · Archivio/<Prodotto>/B-roll (anche dei video vecchi): l'AI sceglie quali usare
+    scaricaBrollProdotto({ rclone, R: REMOTE, nome, dest: SCARICO, isMedia, log });
 
     // macchina dei pezzi partita insieme alla prima: il girato è scaricato, ora si aspetta la regia
     if (PEZZO && ATTENDI) {
@@ -3581,6 +3594,9 @@ async function main() {
       // «move» (non «moveto»: non accetta --delete-empty-src-dirs, e il 10/11 il giro di Insta Mic Pro è
       // finito in errore a video già fatto). Se lo spostamento non riesce il video resta in 01 ma è pronto:
       // non è un motivo per dire "non montato".
+      // 📦 prima i file veri in 05 · Archivio/<Prodotto> (B-roll o Parlato/<video>), al loro posto un collegamento:
+      // in 02 arriva solo il risultato più i collegamenti (per Rifai). Le cartelle della Squadra hanno già solo collegamenti.
+      try { archiviaOriginali({ rclone, R: REMOTE, dir: IN_DIR, nome, analisi, isMedia, log }); } catch { log('archivio: originali non spostati, restano con il video'); }
       try {
         rclone('move', remote(IN_DIR, nome), remote(OUT_DIR, nome), '--delete-empty-src-dirs');
         try { rclone('rmdirs', remote(IN_DIR, nome)); } catch (e) { log(`cartella ${IN_DIR}/${nome} non tolta`, e.message.split('\n')[0]); }

@@ -132,6 +132,12 @@ Variabili utili:
   - Taglio frasi e pause in `scripts/regia.mjs`; render con **Remotion** (`src/*.tsx`).
   - Il girato arriva da Drive con rclone.
 - **Cartelle Drive**: `01 · Da editare/<Nome>` (girato) → `02 · Fatti/<Nome>` (risultato) → `03 · Da pubblicare`. Gli stili stanno in `12 · Risorse/Stili/<Stile>/stile.txt`.
+- **📦 Archivio unico (23/11, regola di Denis)**: un file vero del girato sta solo in `05 · Archivio`, diviso per prodotto:
+  `05 · Archivio/<Prodotto>/B-roll` (riusati da ogni video nuovo del prodotto) e `05 · Archivio/<Prodotto>/Parlato/<video>`.
+  In 01 e 02 solo collegamenti di Drive. A fine montaggio il Regista sposta i file veri di `01/<nome>` lì (B-roll o
+  parlato secondo l'analisi; nel dubbio parlato) e lascia un collegamento; prima del montaggio scarica tutti i B-roll
+  del prodotto (prefisso `BR_`, l'AI sceglie). Prodotto = nome della cartella del video, senza « · Video 03».
+  Codice: `scripts/archivio.mjs`. Ancora da fare: caricamenti da app/Telegram, lancio da 05, Ispettore/Fabbrica in Den.
 - **Stili**: nel bot dal 05/11 solo **Cinematico** (predefinito), **Lista UI** e **🔴 Focus** (dal 09/11) tra quelli col codice, più gli "stili su misura" da Drive (`stile.txt`, senza codice: Narrativo, Esplicativo, 12K Quality, Motion, Ultra, Impact, Beat, Blackden…). Blueprint e MotionCollage restano nel codice ma non si scelgono più. A parte il tasto **🎞 Documentario** (§5-ter).
 - **Laboratorio**: `.github/workflows/laboratorio.yml` con le ricette in `lab/*.json`. Fa prove, fotogrammi, varianti e l'analisi di video YouTube con Gemini. Gli esiti vanno sul ramo `laboratorio-esiti-<ricetta>` e su Drive.
 - **Pubblica**: `scripts/pubblica.mjs` (Instagram Reel + YouTube Shorts) dal tasto 📤 del bot.
