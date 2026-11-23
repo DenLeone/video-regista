@@ -43,3 +43,17 @@ test('camera con voce sua non agganciata al microfono: due discorsi separati, de
 test('solo video (niente microfono esterno): nessun avviso di sync', () => {
   assert.deepEqual(avvisiSync([{ id: 'CAM', tipo: 'video', principale: true, parole }]), []);
 });
+
+// 🗂️ 23/11: due video nella stessa cartella di 05, «Parlato: solo il più recente»
+test('parlato più recente: fuori le voci di un giorno prima, B-roll e voci senza data restano', async () => {
+  const { parlatiVecchi, vuoleSoloUltimoParlato } = await import('./regista.mjs');
+  assert.ok(vuoleSoloUltimoParlato('Stile: Kal\nParlato: solo il più recente'));
+  assert.ok(vuoleSoloUltimoParlato('parlato: solo piu recente'));
+  assert.ok(!vuoleSoloUltimoParlato('Stile: Kal'));
+  const ieri = Date.UTC(2026, 10, 22, 15), mattina = Date.UTC(2026, 10, 22, 8), prima = Date.UTC(2026, 10, 20, 15);
+  const via = parlatiVecchi([
+    { id: 'A', parlato: true, data: ieri }, { id: 'A2', parlato: true, data: mattina },
+    { id: 'B', parlato: true, data: prima }, { id: 'BR', parlato: false, data: prima }, { id: 'M', parlato: true },
+  ]).map((s) => s.id);
+  assert.deepEqual(via, ['B']);
+});

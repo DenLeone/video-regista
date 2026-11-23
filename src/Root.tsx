@@ -3,6 +3,7 @@ import { Composition, Still } from 'remotion';
 import { Blueprint } from './Blueprint';
 import { Cinematico } from './Cinematico';
 import { Kal } from './Kal';
+import { KalOrizzontale } from './KalOrizzontale';
 import { Collage, durataCollage, PropsCollage } from './Collage';
 import { Copertina, PropsCopertina } from './Copertina';
 import { DocNintendo, DURATA_DOC } from './DocNintendo';
@@ -69,6 +70,10 @@ export const Root: React.FC = () => (
     <Composition id="Kal" component={Kal} fps={FPS} width={W} height={H}
       durationInFrames={90} calculateMetadata={metadati}
       defaultProps={{ ...esempio, keywords: [{ at: 0.4, dur: 2.5, word: 'RODE WIRELESS', note: 'Pro' }] }} />
+    {/* Kal in 16:9 (23/11, TikTok orizzontale) */}
+    <Composition id="KalOrizzontale" component={KalOrizzontale} fps={FPS} width={1920} height={1080}
+      durationInFrames={90} calculateMetadata={metadati}
+      defaultProps={{ ...esempio, keywords: [{ at: 0.4, dur: 2.5, word: 'RODE WIRELESS', note: 'Pro' }] }} />
     <Composition id="MotionCollage" component={MotionCollage} fps={FPS} width={W} height={H}
       durationInFrames={90} calculateMetadata={metadati} defaultProps={esempio} />
     <Composition id="ListaUI" component={ListaUI} fps={FPS} width={W} height={H}
@@ -102,6 +107,9 @@ export const Root: React.FC = () => (
       calculateMetadata={({ props }) => ({ fps: props.fps ?? 30, durationInFrames: Math.max(1, Math.round(props.durata * (props.fps ?? 30))) })} />
     {/* copertina per Reel e TikTok: props da scripts/regista.mjs (copertina) */}
     <Still id="Copertina" component={Copertina} width={W} height={H}
+      defaultProps={{ sfondo: 'media/copertina-sfondo.jpg', testo: 'Titolo di prova', evidenzia: ['prova'], grafica: null } as PropsCopertina} />
+    {/* la stessa, 16:9: per i video orizzontali (Kal Orizzontale) */}
+    <Still id="CopertinaOrizzontale" component={Copertina} width={1920} height={1080}
       defaultProps={{ sfondo: 'media/copertina-sfondo.jpg', testo: 'Titolo di prova', evidenzia: ['prova'], grafica: null } as PropsCopertina} />
   </>
 );
