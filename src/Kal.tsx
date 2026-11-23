@@ -6,6 +6,7 @@ import { loadFont as loadMontserrat } from '@remotion/google-fonts/Montserrat';
 import { Clips, f, Icone, MusicaSotto, Sfx, usaFps, volumeSfx } from './comune';
 import { Clip, durataClip, Keyword, Piano } from './piano';
 import { dentro, SICURA } from './testo';
+import { ZONA } from './zone';
 
 // Stile "Kal" (dai 3 esempi in 12 · Risorse/Kal, 10/11): persona seduta, inquadratura fissa, pochi tagli.
 // Una parola grande alla volta in maiuscolo stretto giallo senape nel terzo alto, a volte attraversata da
@@ -64,13 +65,15 @@ const Sottotitolo: React.FC<{ testo: string; len: number }> = ({ testo, len }) =
 };
 
 // ---------- parola grande, con la scritta a mano rossa ----------
-const Parola: React.FC<{ k: Keyword; len: number }> = ({ k, len }) => {
+const Parola: React.FC<{ k: Keyword; len: number; sopraRiquadro: boolean }> = ({ k, len, sopraRiquadro }) => {
   const fr = useCurrentFrame();
   const entra = interpolate(fr, [0, 6], [0, 1], { ...clamp, easing: Easing.out(Easing.back(1.6)) });
   const esce = interpolate(fr, [len - 5, len], [1, 0], clamp);
   const parola = k.word.toUpperCase();
-  const righe = parola.length > 11 && parola.includes(' ') ? [parola.slice(0, parola.lastIndexOf(' ', Math.ceil(parola.length / 2) + 2)), parola.slice(parola.lastIndexOf(' ', Math.ceil(parola.length / 2) + 2) + 1)] : [parola];
-  const fs = Math.min(240, ...righe.map((r) => dentro(r, { famiglia: ANTON, peso: 400 }, 240)));
+  // sopra il riquadro di un B-roll: una riga sola e più piccola, deve stare tra 250 e l'inizio del riquadro
+  const righe = !sopraRiquadro && parola.length > 11 && parola.includes(' ') ? [parola.slice(0, parola.lastIndexOf(' ', Math.ceil(parola.length / 2) + 2)), parola.slice(parola.lastIndexOf(' ', Math.ceil(parola.length / 2) + 2) + 1)] : [parola];
+  const massimo = sopraRiquadro ? (k.tag ? 100 : 150) : 240;
+  const fs = Math.min(massimo, ...righe.map((r) => dentro(r, { famiglia: ANTON, peso: 400 }, massimo)));
   const mano = (k.note || '').replace(/^\/\/\s*/, '').trim();
   const scrive = interpolate(fr, [4, 14], [0, 1], { ...clamp, easing: Easing.out(Easing.cubic) });
   const top = 250; // sempre in alto: l'AI a volte manda il top degli altri stili (in basso)
@@ -111,19 +114,24 @@ const Tappetino: React.FC = () => (
   </AbsoluteFill>
 );
 
-const Riquadro: React.FC<{ clip: Clip; len: number; parola: boolean }> = ({ clip, len, parola }) => {
+// Riquadro FISSO (Denis, 23/11: «mi abbassa la scheda prodotto nei tre quarti bassi»): stesso posto in ogni B-roll,
+// con o senza parola grande, tutto dentro zone.json. Finisce a y1 della zona sicura; scende sotto i tasti di Instagram
+// (y 970), quindi a destra si ferma a x 920: è spostato di 50 px a sinistra, ma resta grande.
+const R_TOP = 420;
+const R_X = ZONA.sicura.x0;
+const R_W = ZONA.tasti.x0 - ZONA.sicura.x0;
+const R_H = ZONA.sicura.y1 - R_TOP;
+const Riquadro: React.FC<{ clip: Clip; len: number }> = ({ clip, len }) => {
   const fr = useCurrentFrame();
   const entra = interpolate(fr, [0, 8], [0, 1], { ...clamp, easing: Easing.out(Easing.cubic) });
   const ins = clip.inserto;
   const immagine = ins?.tipo === 'immagine';
   // sotto la parola grande (in alto da 250): prima il riquadro partiva da 240 e la parola ci finiva sopra (banco, 11/11)
-  // Il prodotto deve vedersi GRANDE (Denis, 13/11: «la finestra è piccola e in basso»): quasi tutta la larghezza
-  // e più di metà schermo. Con la parola grande in alto parte subito sotto; senza, sale e prende quasi tutto.
-  const w = 940, top = parola ? 730 : 300, h = parola ? 1070 : 1380; // 730: sotto una parola grande su due righe
+  // Il prodotto deve vedersi GRANDE (Denis, 13/11: «la finestra è piccola e in basso»)
   return (
     <AbsoluteFill>
       <Tappetino />
-      <div style={{ position: 'absolute', left: (1080 - w) / 2, top, width: w, height: h, borderRadius: 34, overflow: 'hidden',
+      <div style={{ position: 'absolute', left: R_X, top: R_TOP, width: R_W, height: R_H, borderRadius: 34, overflow: 'hidden',
         backgroundColor: '#0d0d0d', boxShadow: '0 30px 70px rgba(0,0,0,0.55), 0 6px 18px rgba(0,0,0,0.4)',
         transform: `translateY(${(1 - entra) * 60}px) scale(${0.94 + 0.06 * entra})`, opacity: entra }}>
         {immagine && ins
@@ -153,7 +161,7 @@ export const Kal: React.FC<Piano> = (piano) => {
       <Clips piano={{ ...piano, clips: piano.clips.map((c) => (c.inserto ? { ...c, inserto: undefined } : c)) }} fondo="#0A0A0A" />
       {riquadri.map(({ c, da, len }, i) => (
         <Sequence key={`r${i}`} from={da} durationInFrames={len}>
-          <Riquadro clip={c} len={len} parola={titoli.some((k) => f(k.at) < da + len && f(k.at + k.dur) > da)} />
+          <Riquadro clip={c} len={len} />
         </Sequence>
       ))}
       <Icone piano={piano} sfx={sfx} />
@@ -166,7 +174,7 @@ export const Kal: React.FC<Piano> = (piano) => {
       ))}
       {titoli.map((k, i) => (
         <Sequence key={`k${i}`} from={f(k.at)} durationInFrames={Math.max(1, f(k.dur))}>
-          <Parola k={k} len={Math.max(1, f(k.dur))} />
+          <Parola k={k} len={Math.max(1, f(k.dur))} sopraRiquadro={riquadri.some(({ da, len }) => f(k.at) < da + len && f(k.at + k.dur) > da)} />
         </Sequence>
       ))}
       {sfx > 0 ? titoli.map((k, i) => <Sfx key={`w${i}`} nome="whoosh" da={f(k.at) - 5} volume={0.45 * sfx} />) : null}
