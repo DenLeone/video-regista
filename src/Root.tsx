@@ -3,6 +3,7 @@ import { Composition, Still } from 'remotion';
 import { Blueprint } from './Blueprint';
 import { Cinematico } from './Cinematico';
 import { Kal } from './Kal';
+import { KalOrizzontale } from './KalOrizzontale';
 import { Collage, durataCollage, PropsCollage } from './Collage';
 import { Copertina, PropsCopertina } from './Copertina';
 import { DocNintendo, DURATA_DOC } from './DocNintendo';
@@ -67,6 +68,10 @@ export const Root: React.FC = () => (
       durationInFrames={90} calculateMetadata={metadati}
       defaultProps={{ ...esempio, keywords: [{ at: 0.4, dur: 2.5, word: 'ROG ALLY X', tag: 'ASUS', note: '20 anniversario' }] }} />
     <Composition id="Kal" component={Kal} fps={FPS} width={W} height={H}
+      durationInFrames={90} calculateMetadata={metadati}
+      defaultProps={{ ...esempio, keywords: [{ at: 0.4, dur: 2.5, word: 'RODE WIRELESS', note: 'Pro' }] }} />
+    {/* Kal in 16:9 (23/11, TikTok orizzontale) */}
+    <Composition id="KalOrizzontale" component={KalOrizzontale} fps={FPS} width={1920} height={1080}
       durationInFrames={90} calculateMetadata={metadati}
       defaultProps={{ ...esempio, keywords: [{ at: 0.4, dur: 2.5, word: 'RODE WIRELESS', note: 'Pro' }] }} />
     <Composition id="MotionCollage" component={MotionCollage} fps={FPS} width={W} height={H}

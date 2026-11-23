@@ -95,7 +95,8 @@ const Parola: React.FC<{ k: Keyword; len: number; sopraRiquadro: boolean }> = ({
 };
 
 // ---------- B-roll e immagini nel riquadro sul tappetino da taglio verde ----------
-const Tappetino: React.FC = () => (
+// larghezza: 1080 (Kal) o 1920 (Kal Orizzontale): il righello in alto arriva fino in fondo
+export const Tappetino: React.FC<{ larghezza?: number }> = ({ larghezza = 1080 }) => (
   <AbsoluteFill style={{
     backgroundColor: MAT,
     backgroundImage: [
@@ -107,7 +108,7 @@ const Tappetino: React.FC = () => (
     backgroundPosition: '-1px -1px',
   }}>
     {/* righello in alto e a sinistra, come i tappetini veri */}
-    {Array.from({ length: 8 }, (_, i) => (
+    {Array.from({ length: Math.ceil(larghezza / 150) }, (_, i) => (
       <div key={`n${i}`} style={{ position: 'absolute', top: 10, left: 150 * i + 6, fontFamily: MONTSERRAT, fontWeight: 600, fontSize: 22, color: 'rgba(255,255,255,0.55)' }}>{i * 5}</div>
     ))}
     <AbsoluteFill style={{ background: 'radial-gradient(ellipse 90% 70% at 50% 50%, rgba(0,0,0,0) 55%, rgba(0,0,0,0.35) 100%)' }} />

@@ -1766,7 +1766,8 @@ function scegliStile(brief) {
   LOOK_12K = false;
   LOOK_STILE = null;
   if (!richiesto) return { stile: STILI[0] };
-  const trovato = STILI.find((x) => x.toLowerCase() === richiesto.toLowerCase());
+  // «Kal Orizzontale» = KalOrizzontale: spazi e maiuscole non contano
+  const trovato = STILI.find((x) => x.toLowerCase() === richiesto.toLowerCase().replace(/\s+/g, ''));
   if (trovato) return { stile: trovato };
   try {
     const cartelle = JSON.parse(rclone('lsjson', remote(DIR_STILI), '--dirs-only')).map((d) => d.Name).filter((d) => !d.startsWith('_'));
@@ -3405,7 +3406,7 @@ async function main() {
     }
     const nomeStile = stileSuMisura?.nome || stile;
     // Kal: inquadratura fissa come nei riferimenti, niente zoom alternato sui tagli
-    if (stile === 'Kal') for (const c of piano.clips) c.punch = false;
+    if (stile === 'Kal' || stile === 'KalOrizzontale') for (const c of piano.clips) c.punch = false;
     if (PROVA_SECONDI) { troncaPiano(piano, PROVA_SECONDI, PROVA_DA); log(`render di prova: ${PROVA_DA ? `da ${PROVA_DA} s, ` : 'primi '}${PROVA_SECONDI} s (${piano.clips.length} tagli)`); }
     // i pezzi scelti, prima del render vero: la card dell'app distingue tagli e render
     await fase(nome, `✂️ Taglio ${piano.clips.length} pezzi`, 'tagli');
