@@ -104,16 +104,21 @@ export function archiviaOriginali({ rclone, R, dir, nome, analisi, isMedia, log 
 export const MAPPA = '_regista/archivio.json';
 export function collegaDaArchivio({ rclone, R, sorgente, dir, nome, isMedia, scrivi, log = () => {} }) {
   const base = `${DIR_ARCHIVIO}/${sorgente}`;
-  const tutti = JSON.parse(rclone('lsjson', `${R}:${base}`, '-R', '--files-only'));
+  let tutti;
+  try { tutti = JSON.parse(rclone('lsjson', `${R}:${base}`, '-R', '--files-only')); } catch { throw new Error('non riesco a leggere la cartella di 05'); }
   const file = tutti.filter((f) => isMedia(f) && !f.Path.split('/').slice(0, -1).some((x) => x.startsWith('_') || x === BROLL || x === PARLATO));
   if (!file.length) throw new Error('nella cartella di 05 non c\'è girato da montare (fuori da B-roll e Parlato)');
   const mappa = [];
   const usati = new Set();
+  // giro interrotto a metà: i collegamenti già fatti non si rifanno (Drive accetta due file con lo stesso nome)
+  const fatti = nomi(rclone, `${R}:${dir}/${nome}`);
   for (const f of file) {
     let chi = f.Path.split('/').map(pulisci).join(' - ');
     for (let k = 2; usati.has(chi.toLowerCase()); k++) chi = `${k} - ${f.Name}`;
     usati.add(chi.toLowerCase());
-    rclone('backend', 'shortcut', `${R}:`, `${base}/${f.Path}`, `${dir}/${nome}/${chi}`);
+    if (fatti.has(chi)) { mappa.push({ chi, file: `${base}/${f.Path}`, size: f.Size }); continue; }
+    try { rclone('backend', 'shortcut', `${R}:`, `${base}/${f.Path}`, `${dir}/${nome}/${chi}`); }
+    catch { throw new Error(`Drive non mi lascia creare i collegamenti in 01 (fatti ${mappa.length} su ${file.length})`); }
     mappa.push({ chi, file: `${base}/${f.Path}`, size: f.Size });
   }
   scrivi(`${dir}/${nome}/${MAPPA}`, JSON.stringify({ sorgente, prodotto: sorgente.split('/')[0], file: mappa }, null, 1));
@@ -177,7 +182,17 @@ if (process.argv[2] === 'collega' && process.argv[1] && path.resolve(process.arg
   if (!sorgente || !nome) esce('servono la cartella di 05 e il nome del video');
   const cartelle = (d) => { try { return JSON.parse(rclone('lsjson', `${R}:${d}`, '--dirs-only')).map((x) => x.Name.toLowerCase()); } catch { return []; } };
   if (cartelle(DIR_FATTI).includes(nome.toLowerCase())) esce(`in ${DIR_FATTI} c'è già un video con questo nome: scegline un altro (es. con « 2»)`);
-  if (cartelle(DIR_EDITARE).includes(nome.toLowerCase())) { console.log('la cartella c\'è già in 01: niente collegamenti nuovi (rilancio)'); process.exit(0); }
+  // già pronta in 01 (c'è la mappa): rilancio, niente da fare. Senza mappa = giro interrotto, si completa
+  const giaPronta = (() => { try { return JSON.parse(rclone('lsjson', `${R}:${DIR_EDITARE}/${nome}/${MAPPA}`)).length > 0; } catch { return false; } })();
+  if (giaPronta) { console.log('la cartella c\'è già in 01: niente collegamenti nuovi (rilancio)'); process.exit(0); }
+  // il nome della cartella di 05: maiuscole e spazi non contano (come per 01)
+  const norm = (x) => String(x).toLowerCase().replace(/\s+/g, '');
+  const [primo, ...resto] = sorgente.split('/');
+  let in05 = [];
+  try { in05 = JSON.parse(rclone('lsjson', `${R}:${DIR_ARCHIVIO}`, '--dirs-only')).map((x) => x.Name); } catch { esce(`non riesco a leggere ${DIR_ARCHIVIO}`); }
+  const trovata = in05.find((x) => x === primo) || in05.find((x) => norm(x) === norm(primo));
+  if (!trovata) esce(`non trovo la cartella in ${DIR_ARCHIVIO} (maiuscole e spazi non contano)`);
+  const daUsare = [trovata, ...resto].join('/');
   const isMedia = (f) => VIDEO_EXT.concat(IMAGE_EXT, AUDIO_EXT).includes(path.extname(f.Name).toLowerCase());
   const scrivi = (dove, testo) => {
     const tmp = path.join(os.tmpdir(), `archivio-${process.pid}.json`);
@@ -185,7 +200,7 @@ if (process.argv[2] === 'collega' && process.argv[1] && path.resolve(process.arg
     rclone('copyto', tmp, `${R}:${dove}`);
     fs.rmSync(tmp, { force: true });
   };
-  try { collegaDaArchivio({ rclone, R, sorgente, dir: DIR_EDITARE, nome, isMedia, scrivi, log: console.log }); }
+  try { collegaDaArchivio({ rclone, R, sorgente: daUsare, dir: DIR_EDITARE, nome, isMedia, scrivi, log: console.log }); }
   // repo pubblico: i messaggi di rclone contengono nomi di file, qui solo il nostro
-  catch (e) { esce(/^nella cartella di 05/.test(e.message) ? e.message : 'dall\'archivio: collegamenti non creati (cartella di 05 sbagliata o Drive non raggiungibile)'); }
+  catch (e) { esce(/^(nella cartella di 05|non riesco|Drive non mi lascia)/.test(e.message) ? e.message : 'dall\'archivio: collegamenti non creati'); }
 }

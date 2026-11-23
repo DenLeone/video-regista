@@ -205,6 +205,7 @@ jobs:
           rclone lsf "gdrive:$DIR_EDITARE" --dirs-only > /dev/null && echo "Drive OK"
 
       - name: Dall'archivio
+        id: archivio
         if: inputs.archivio != '' && inputs.cartella != ''
         env:
           ARCHIVIO: ${{ inputs.archivio }}
@@ -481,9 +482,11 @@ jobs:
           CHIAVI: ${{ steps.chiavi.outcome }}
           MANCANTE: ${{ steps.check.outputs.mancante }}
           MONTA: ${{ steps.monta.outcome }}
+          ARCHIVIO: ${{ steps.archivio.outcome }}
         run: |
           infra=1
-          if [ "$CHIAVI" = "failure" ] || [ "$MANCANTE" = "1" ] || [ "$MONTA" = "failure" ]; then
+          # lancio da 05 fermato (cartella non trovata, collegamenti rifiutati): non è il server, niente rilancio
+          if [ "$CHIAVI" = "failure" ] || [ "$MANCANTE" = "1" ] || [ "$MONTA" = "failure" ] || [ "$ARCHIVIO" = "failure" ]; then
             infra=0
           fi
           echo "infra=$infra" >> "$GITHUB_OUTPUT"
