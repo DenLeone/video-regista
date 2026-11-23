@@ -1845,6 +1845,7 @@ type Info = {
   motion?: boolean; // ✨ Motion (motion.yml): didascalia corta, niente tagli né sorgenti
   idea?: boolean; // ✍️ animazione scritta dall'AI: sotto il video ✏️ Correggi
   scaletta?: string[]; avvisi?: string[];
+  orizzontale?: boolean; // video 16:9 (Kal Orizzontale): a Telegram si dichiara 1280x720, non 720x1280
 };
 type SceltaStile = { nome: string; stili: string[]; scelta?: string };
 // azione: com'è partito il giro (monta, render, esempi, regia, elenco); prova: secondi del render di prova
@@ -2169,8 +2170,8 @@ async function onVideo(env: Env, form: FormData) {
     out.append('caption', corpo);
     out.append('parse_mode', 'HTML');
     out.append('supports_streaming', 'true');
-    out.append('width', '720');
-    out.append('height', '1280');
+    out.append('width', info?.orizzontale ? '1280' : '720');
+    out.append('height', info?.orizzontale ? '720' : '1280');
     if (form.get('durata')) out.append('duration', String(Math.round(Number(form.get('durata')))));
     if (tasti.length) out.append('reply_markup', JSON.stringify(tastiera(tasti)));
     if (fileId) out.append('video', fileId);
