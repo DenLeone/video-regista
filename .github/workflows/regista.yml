@@ -66,6 +66,11 @@ on:
         description: 'Chi lo lancia, solo per il nome del giro (es. Revisore, Claude). Vuoto = Denis dal bot'
         required: false
         default: ''
+      # 🚀 lancio da 05 (23/11): girato in 05 · Archivio/<archivio>; il Regista mette i collegamenti in 01/<cartella>
+      archivio:
+        description: 'Cartella in 05 · Archivio da cui montare (es. CreateMate): collegamenti in 01, gli originali restano in 05'
+        required: false
+        default: ''
 
 # cartelle di Drive (rinominate da Denis il 20/10): le legge anche scripts/cartelle.mjs
 env:
@@ -198,6 +203,13 @@ jobs:
           # via env + printf: il token è JSON con virgolette, echo "..." le rovinerebbe
           printf '%s\n' "$RCLONE_CONF" | tr -d '\r' | sed -e '1s/^\xEF\xBB\xBF//' -e 's/^[[:space:]]*//' > ~/.config/rclone/rclone.conf
           rclone lsf "gdrive:$DIR_EDITARE" --dirs-only > /dev/null && echo "Drive OK"
+
+      - name: Dall'archivio
+        if: inputs.archivio != '' && inputs.cartella != ''
+        env:
+          ARCHIVIO: ${{ inputs.archivio }}
+          CARTELLA: ${{ inputs.cartella }}
+        run: node scripts/archivio.mjs collega "$ARCHIVIO" "$CARTELLA"
 
       - name: C'è qualcosa da fare?
         id: check

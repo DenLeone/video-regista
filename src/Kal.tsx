@@ -116,10 +116,10 @@ const Tappetino: React.FC = () => (
 
 // Riquadro FISSO (Denis, 23/11: «mi abbassa la scheda prodotto nei tre quarti bassi»): stesso posto in ogni B-roll,
 // con o senza parola grande, tutto dentro zone.json. Finisce a y1 della zona sicura; scende sotto i tasti di Instagram
-// (y 970), quindi a destra si ferma a x 920: è spostato di 50 px a sinistra, ma resta grande.
+// (y 970), quindi a destra si ferma a x 920 e, centrato (Denis, 23/11), a sinistra parte da x 160.
 const R_TOP = 420;
-const R_X = ZONA.sicura.x0;
-const R_W = ZONA.tasti.x0 - ZONA.sicura.x0;
+const R_X = Math.max(ZONA.sicura.x0, ZONA.w - ZONA.tasti.x0);
+const R_W = ZONA.w - 2 * R_X;
 const R_H = ZONA.sicura.y1 - R_TOP;
 const Riquadro: React.FC<{ clip: Clip; len: number }> = ({ clip, len }) => {
   const fr = useCurrentFrame();

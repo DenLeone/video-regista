@@ -52,32 +52,84 @@ const nomi = (rclone, dove) => {
   try { return new Map(JSON.parse(rclone('lsjson', dove, '--files-only')).map((f) => [f.Name, f.Size])); } catch { return new Map(); }
 };
 
+// Sposta un file nell'archivio del prodotto (B-roll o Parlato/<video>), senza sovrascrivere niente:
+// stesso nome e stesso peso = doppione, messo da parte; stesso nome e peso diverso = «2 - nome».
+function archiviatore({ rclone, R, prodotto, nome, analisi }) {
+  const tipo = tipiFile(analisi);
+  const cartelle = { [BROLL]: `${DIR_ARCHIVIO}/${prodotto}/${BROLL}`, [PARLATO]: cartellaParlato(prodotto, nome) };
+  const gia = { [BROLL]: nomi(rclone, `${R}:${cartelle[BROLL]}`), [PARLATO]: nomi(rclone, `${R}:${cartelle[PARLATO]}`) };
+  const esito = { broll: 0, parlato: 0, doppioni: 0, senzaCollegamento: 0, falliti: 0, giaAPosto: 0 };
+  // da = percorso del file su Drive; chi = nome con cui il Regista l'ha visto; size = peso
+  const sposta = (da, chi, size) => {
+    const t = tipo(chi);
+    const nomeFile = da.split('/').pop();
+    if (da.startsWith(`${cartelle[t]}/`)) { esito.giaAPosto++; return null; }
+    let dest = cartelle[t];
+    let nuovo = nomeFile;
+    const doppio = gia[t].has(nomeFile) && gia[t].get(nomeFile) === size;
+    if (doppio) { dest = `${cartelle[t]}/${DOPPIONI}`; nuovo = `${pulisci(nome)} - ${nomeFile}`; }
+    else for (let k = 2; gia[t].has(nuovo); k++) nuovo = `${k} - ${nomeFile}`;
+    try { rclone('moveto', `${R}:${da}`, `${R}:${dest}/${nuovo}`); } catch { esito.falliti++; return null; }
+    if (!doppio) gia[t].set(nuovo, size);
+    esito[doppio ? 'doppioni' : t === BROLL ? 'broll' : 'parlato']++;
+    return `${dest}/${nuovo}`;
+  };
+  return { sposta, esito };
+}
+const riassunto = (e) => `archivio: ${e.broll} B-roll e ${e.parlato} parlato in 05${e.giaAPosto ? `, ${e.giaAPosto} già a posto` : ''}${e.doppioni ? `, ${e.doppioni} doppioni messi da parte` : ''}${e.senzaCollegamento ? `, ${e.senzaCollegamento} senza collegamento` : ''}${e.falliti ? `, ${e.falliti} NON spostati` : ''}`;
+
 // Fine montaggio: i file veri di <dir>/<nome> vanno nell'archivio del prodotto, al loro posto un collegamento.
 // Se il collegamento non riesce il file è comunque al sicuro in 05.
 export function archiviaOriginali({ rclone, R, dir, nome, analisi, isMedia, log = () => {} }) {
   const qui = `${dir}/${nome}`;
   let veri;
   try { veri = JSON.parse(rclone('lsjson', `${R}:${qui}`, '--files-only', '--drive-skip-shortcuts')).filter(isMedia); } catch { veri = []; }
-  const esito = { broll: 0, parlato: 0, doppioni: 0, senzaCollegamento: 0, falliti: 0 };
-  if (!veri.length) return esito;
+  if (!veri.length) return { broll: 0, parlato: 0, doppioni: 0, senzaCollegamento: 0, falliti: 0, giaAPosto: 0 };
   // prodotto nuovo: il nome senza « · Video 03» (il numero finale resta: «iPhone 17» non è «iPhone»)
   const prodotto = prodottoEsistente(rclone, R, nome) || pulisci(nome).split(' · ')[0].trim();
-  const tipo = tipiFile(analisi);
-  const cartelle = { [BROLL]: `${DIR_ARCHIVIO}/${prodotto}/${BROLL}`, [PARLATO]: cartellaParlato(prodotto, nome) };
-  const gia = { [BROLL]: nomi(rclone, `${R}:${cartelle[BROLL]}`), [PARLATO]: nomi(rclone, `${R}:${cartelle[PARLATO]}`) };
+  const { sposta, esito } = archiviatore({ rclone, R, prodotto, nome, analisi });
   for (const f of veri) {
-    const t = tipo(f.Name);
-    let dest = cartelle[t];
-    let nuovo = f.Name;
-    const doppio = gia[t].has(f.Name) && gia[t].get(f.Name) === f.Size;
-    if (doppio) { dest = `${cartelle[t]}/${DOPPIONI}`; nuovo = `${pulisci(nome)} - ${f.Name}`; }
-    else for (let k = 2; gia[t].has(nuovo); k++) nuovo = `${k} - ${f.Name}`;
-    try { rclone('moveto', `${R}:${qui}/${f.Name}`, `${R}:${dest}/${nuovo}`); } catch { esito.falliti++; continue; }
-    if (!doppio) gia[t].set(nuovo, f.Size);
-    esito[doppio ? 'doppioni' : t === BROLL ? 'broll' : 'parlato']++;
-    try { rclone('backend', 'shortcut', `${R}:`, `${dest}/${nuovo}`, `${qui}/${f.Name}`); } catch { esito.senzaCollegamento++; }
+    const dove = sposta(`${qui}/${f.Name}`, f.Name, f.Size);
+    if (!dove) continue;
+    try { rclone('backend', 'shortcut', `${R}:`, dove, `${qui}/${f.Name}`); } catch { esito.senzaCollegamento++; }
   }
-  log(`archivio: ${esito.broll} B-roll e ${esito.parlato} parlato in 05${esito.doppioni ? `, ${esito.doppioni} doppioni messi da parte` : ''}${esito.senzaCollegamento ? `, ${esito.senzaCollegamento} senza collegamento` : ''}${esito.falliti ? `, ${esito.falliti} NON spostati` : ''}`);
+  log(riassunto(esito));
+  return esito;
+}
+
+// 🚀 Lancio da 05 (23/11): in <dir>/<nome> un collegamento per ogni file del girato di 05 · Archivio/<sorgente>.
+// Si saltano B-roll/ (arrivano da soli, tutti), Parlato/ (sono di altri video) e le cartelle «_».
+// I file nelle sottocartelle prendono davanti il nome della sottocartella (niente nomi uguali).
+// La mappa collegamento → file va in <dir>/<nome>/_regista/archivio.json: a fine montaggio serve per ordinarli.
+export const MAPPA = '_regista/archivio.json';
+export function collegaDaArchivio({ rclone, R, sorgente, dir, nome, isMedia, scrivi, log = () => {} }) {
+  const base = `${DIR_ARCHIVIO}/${sorgente}`;
+  const tutti = JSON.parse(rclone('lsjson', `${R}:${base}`, '-R', '--files-only'));
+  const file = tutti.filter((f) => isMedia(f) && !f.Path.split('/').slice(0, -1).some((x) => x.startsWith('_') || x === BROLL || x === PARLATO));
+  if (!file.length) throw new Error('nella cartella di 05 non c\'è girato da montare (fuori da B-roll e Parlato)');
+  const mappa = [];
+  const usati = new Set();
+  for (const f of file) {
+    let chi = f.Path.split('/').map(pulisci).join(' - ');
+    for (let k = 2; usati.has(chi.toLowerCase()); k++) chi = `${k} - ${f.Name}`;
+    usati.add(chi.toLowerCase());
+    rclone('backend', 'shortcut', `${R}:`, `${base}/${f.Path}`, `${dir}/${nome}/${chi}`);
+    mappa.push({ chi, file: `${base}/${f.Path}`, size: f.Size });
+  }
+  scrivi(`${dir}/${nome}/${MAPPA}`, JSON.stringify({ sorgente, prodotto: sorgente.split('/')[0], file: mappa }, null, 1));
+  log(`lancio da 05: ${mappa.length} collegamenti`);
+  return mappa.length;
+}
+
+// Fine montaggio di un lancio da 05: i file veri (già in 05) si ordinano in B-roll o Parlato/<video> del prodotto.
+// I collegamenti seguono il file, non il percorso: continuano a funzionare.
+export function ordinaArchivio({ rclone, R, dir, nome, analisi, log = () => {} }) {
+  let m;
+  try { m = JSON.parse(rclone('cat', `${R}:${dir}/${nome}/${MAPPA}`)); } catch { return null; }
+  if (!m?.file?.length || !m.prodotto) return null;
+  const { sposta, esito } = archiviatore({ rclone, R, prodotto: m.prodotto, nome, analisi });
+  for (const f of m.file) sposta(f.file, f.chi, f.size);
+  log(riassunto(esito));
   return esito;
 }
 
@@ -109,4 +161,31 @@ export function scaricaBrollProdotto({ rclone, R, nome, dest, isMedia, log = () 
     fs.rmSync(tmp, { recursive: true, force: true });
     fs.rmSync(elenco, { force: true });
   }
+}
+
+// Riga di comando (regista.yml, passo «Dall'archivio»): node scripts/archivio.mjs collega <sorgente in 05> <nome in 01>
+if (process.argv[2] === 'collega' && process.argv[1] && path.resolve(process.argv[1]) === (await import('node:url')).fileURLToPath(import.meta.url)) {
+  const { execFileSync } = await import('node:child_process');
+  const os = await import('node:os');
+  const { AUDIO_EXT, IMAGE_EXT, VIDEO_EXT } = await import('./sorgenti.mjs');
+  const rclone = (...a) => String(execFileSync('rclone', a, { stdio: ['ignore', 'pipe', 'pipe'], maxBuffer: 1 << 26 }));
+  const R = process.env.REGISTA_REMOTE || 'gdrive';
+  const DIR_EDITARE = process.env.DIR_EDITARE || '01 · Da editare';
+  const DIR_FATTI = process.env.DIR_FATTI || '02 · Fatti';
+  const [sorgente, nome] = [process.argv[3], process.argv[4]].map((x) => String(x || '').trim());
+  const esce = (t) => { console.log(`::error::${t}`); process.exit(1); };
+  if (!sorgente || !nome) esce('servono la cartella di 05 e il nome del video');
+  const cartelle = (d) => { try { return JSON.parse(rclone('lsjson', `${R}:${d}`, '--dirs-only')).map((x) => x.Name.toLowerCase()); } catch { return []; } };
+  if (cartelle(DIR_FATTI).includes(nome.toLowerCase())) esce(`in ${DIR_FATTI} c'è già un video con questo nome: scegline un altro (es. con « 2»)`);
+  if (cartelle(DIR_EDITARE).includes(nome.toLowerCase())) { console.log('la cartella c\'è già in 01: niente collegamenti nuovi (rilancio)'); process.exit(0); }
+  const isMedia = (f) => VIDEO_EXT.concat(IMAGE_EXT, AUDIO_EXT).includes(path.extname(f.Name).toLowerCase());
+  const scrivi = (dove, testo) => {
+    const tmp = path.join(os.tmpdir(), `archivio-${process.pid}.json`);
+    fs.writeFileSync(tmp, testo);
+    rclone('copyto', tmp, `${R}:${dove}`);
+    fs.rmSync(tmp, { force: true });
+  };
+  try { collegaDaArchivio({ rclone, R, sorgente, dir: DIR_EDITARE, nome, isMedia, scrivi, log: console.log }); }
+  // repo pubblico: i messaggi di rclone contengono nomi di file, qui solo il nostro
+  catch (e) { esce(/^nella cartella di 05/.test(e.message) ? e.message : 'dall\'archivio: collegamenti non creati (cartella di 05 sbagliata o Drive non raggiungibile)'); }
 }

@@ -3,7 +3,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { test } from 'node:test';
-import { archiviaOriginali, candidatiProdotto, PREFISSO_BROLL, scaricaBrollProdotto, tipiFile } from './archivio.mjs';
+import { archiviaOriginali, candidatiProdotto, collegaDaArchivio, MAPPA, ordinaArchivio, PREFISSO_BROLL, scaricaBrollProdotto, tipiFile } from './archivio.mjs';
 
 // Drive finto: percorso → { size, link } (link = collegamento). Solo i comandi che usa archivio.mjs.
 function driveFinto(file = {}) {
@@ -15,10 +15,12 @@ function driveFinto(file = {}) {
       const dir = via(a[0]);
       const sotto = figli(dir);
       if (!sotto.length) throw new Error('directory not found');
+      if (a.includes('-R')) return JSON.stringify(sotto.map((Path) => ({ Path, Name: Path.split('/').pop(), Size: d.get(`${dir}/${Path}`).size })));
       if (a.includes('--dirs-only')) return JSON.stringify([...new Set(sotto.filter((s) => s.includes('/')).map((s) => s.split('/')[0]))].map((Name) => ({ Name })));
       return JSON.stringify(sotto.filter((s) => !s.includes('/')).filter((s) => !(a.includes('--drive-skip-shortcuts') && d.get(`${dir}/${s}`).link)).map((Name) => ({ Name, Size: d.get(`${dir}/${Name}`).size })));
     }
-    if (cmd === 'moveto') { const [da, a2] = a.map(via); d.set(a2, d.get(da)); d.delete(da); return ''; }
+    if (cmd === 'cat') { const x = d.get(via(a[0])); if (!x) throw new Error('not found'); return x.testo; }
+    if (cmd === 'moveto') { const [da, a2] = a.map(via); if (!d.has(da)) throw new Error('not found'); d.set(a2, d.get(da)); d.delete(da); return ''; }
     if (cmd === 'backend' && a[0] === 'shortcut') { d.set(a[3], { size: d.get(a[2]).size, link: a[2] }); return ''; }
     if (cmd === 'copy') {
       const dir = via(a[0]);
@@ -112,4 +114,36 @@ test('prima del montaggio: arrivano tutti i B-roll del prodotto, tranne quelli g
   assert.deepEqual(fs.readdirSync(dest).sort(), ['B1.mp4', `${PREFISSO_BROLL}VECCHIO.mp4`]);
   assert.equal(scaricaBrollProdotto({ rclone, R: 'gdrive', nome: 'Nuovo', dest, isMedia }), 0);
   fs.rmSync(base, { recursive: true, force: true });
+});
+
+test('lancio da 05: collegamenti in 01, B-roll e Parlato saltati, poi a fine montaggio si ordina in 05', () => {
+  const { d, rclone } = driveFinto({
+    '05 · Archivio/CreateMate/VOCE.mp4': { size: 10 },
+    '05 · Archivio/CreateMate/Giorno 2/B1.mp4': { size: 5 },
+    '05 · Archivio/CreateMate/B-roll/VECCHIO.mp4': { size: 3 },
+    '05 · Archivio/CreateMate/Parlato/Altro video/V.mp4': { size: 3 },
+    '05 · Archivio/CreateMate/_servizio/x.mp4': { size: 1 },
+  });
+  const scrivi = (dove, testo) => d.set(dove, { size: testo.length, testo });
+  const n = collegaDaArchivio({ rclone, R: 'gdrive', sorgente: 'CreateMate', dir: '01 · Da editare', nome: 'CreateMate', isMedia, scrivi });
+  assert.equal(n, 2);
+  assert.equal(d.get('01 · Da editare/CreateMate/VOCE.mp4').link, '05 · Archivio/CreateMate/VOCE.mp4');
+  assert.equal(d.get('01 · Da editare/CreateMate/Giorno 2 - B1.mp4').link, '05 · Archivio/CreateMate/Giorno 2/B1.mp4');
+  assert.ok(d.has(`01 · Da editare/CreateMate/${MAPPA}`));
+
+  // il Regista ha visto i collegamenti con questi nomi
+  const vista = { sorgenti: [{ originale: '/s/VOCE.mp4', tipo: 'video', parlato: true }, { originale: '/s/Giorno 2 - B1.mp4', tipo: 'video' }] };
+  // a fine montaggio non c'è niente di vero in 01: archiviaOriginali non tocca niente
+  assert.equal(archiviaOriginali({ rclone, R: 'gdrive', dir: '01 · Da editare', nome: 'CreateMate', analisi: vista, isMedia }).broll, 0);
+  const e = ordinaArchivio({ rclone, R: 'gdrive', dir: '01 · Da editare', nome: 'CreateMate', analisi: vista });
+  assert.deepEqual([e.broll, e.parlato, e.falliti], [1, 1, 0]);
+  assert.ok(d.has('05 · Archivio/CreateMate/B-roll/B1.mp4'));
+  assert.ok(d.has('05 · Archivio/CreateMate/B-roll/VECCHIO.mp4'));
+  assert.ok(d.has('05 · Archivio/CreateMate/Parlato/CreateMate/VOCE.mp4'));
+  assert.ok(!d.has('05 · Archivio/CreateMate/VOCE.mp4'));
+});
+
+test('lancio da 05 senza girato: errore chiaro', () => {
+  const { rclone } = driveFinto({ '05 · Archivio/Vuoto/B-roll/X.mp4': { size: 1 } });
+  assert.throws(() => collegaDaArchivio({ rclone, R: 'gdrive', sorgente: 'Vuoto', dir: '01', nome: 'Vuoto', isMedia, scrivi: () => {} }), /non c'è girato/);
 });

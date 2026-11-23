@@ -27,7 +27,7 @@ import { clipDelTratto, dividi, fotogrammiClip, sceltePerCopertina } from './pez
 import path from 'node:path';
 import { audioMuto, frasi, inviluppo, sincronizza, sogliaVoce } from './audio.mjs';
 import { DIR_ASSETS, DIR_EDITARE, DIR_FATTI, DIR_STILI } from './cartelle.mjs';
-import { archiviaOriginali, cartellaParlato, DIR_ARCHIVIO, prodottoEsistente, scaricaBrollProdotto } from './archivio.mjs';
+import { archiviaOriginali, cartellaParlato, DIR_ARCHIVIO, ordinaArchivio, prodottoEsistente, scaricaBrollProdotto } from './archivio.mjs';
 import { preparaSuoni, suoniDelloStile } from './suoni-veri.mjs';
 import { loghiDetti, nomiLogo, scegliFont } from './libreria.mjs';
 import { HDR, curvaChiara, curvaEsposizione, filtroTecnico, misuraPezzo, perFiltro, probe, riconosciLog } from './colore.mjs';
@@ -3597,6 +3597,8 @@ async function main() {
       // 📦 prima i file veri in 05 · Archivio/<Prodotto> (B-roll o Parlato/<video>), al loro posto un collegamento:
       // in 02 arriva solo il risultato più i collegamenti (per Rifai). Le cartelle della Squadra hanno già solo collegamenti.
       try { archiviaOriginali({ rclone, R: REMOTE, dir: IN_DIR, nome, analisi, isMedia, log }); } catch { log('archivio: originali non spostati, restano con il video'); }
+      // 🚀 lancio da 05: i file sono già in 05, si ordinano in B-roll o Parlato/<video> del prodotto
+      try { ordinaArchivio({ rclone, R: REMOTE, dir: IN_DIR, nome, analisi, log }); } catch { log('archivio: girato di 05 non ordinato'); }
       try {
         rclone('move', remote(IN_DIR, nome), remote(OUT_DIR, nome), '--delete-empty-src-dirs');
         try { rclone('rmdirs', remote(IN_DIR, nome)); } catch (e) { log(`cartella ${IN_DIR}/${nome} non tolta`, e.message.split('\n')[0]); }

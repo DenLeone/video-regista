@@ -137,7 +137,7 @@ Variabili utili:
   In 01 e 02 solo collegamenti di Drive. A fine montaggio il Regista sposta i file veri di `01/<nome>` lì (B-roll o
   parlato secondo l'analisi; nel dubbio parlato) e lascia un collegamento; prima del montaggio scarica tutti i B-roll
   del prodotto (prefisso `BR_`, l'AI sceglie). Prodotto = nome della cartella del video, senza « · Video 03».
-  Codice: `scripts/archivio.mjs`. Ancora da fare: caricamenti da app/Telegram, lancio da 05, Ispettore/Fabbrica in Den.
+  Codice: `scripts/archivio.mjs`. Lancio da 05: input `archivio` di regista.yml (es. `CreateMate`) → collegamenti in `01/<cartella>` (mappa in `_regista/archivio.json`); a fine montaggio i file si ordinano in B-roll o Parlato/<video> dentro 05. Ancora da fare: caricamenti da app/Telegram, tasti del bot e di Ultron, Ispettore/Fabbrica in Den.
 - **Stili**: nel bot dal 05/11 solo **Cinematico** (predefinito), **Lista UI** e **🔴 Focus** (dal 09/11) tra quelli col codice, più gli "stili su misura" da Drive (`stile.txt`, senza codice: Narrativo, Esplicativo, 12K Quality, Motion, Ultra, Impact, Beat, Blackden…). Blueprint e MotionCollage restano nel codice ma non si scelgono più. A parte il tasto **🎞 Documentario** (§5-ter).
 - **Laboratorio**: `.github/workflows/laboratorio.yml` con le ricette in `lab/*.json`. Fa prove, fotogrammi, varianti e l'analisi di video YouTube con Gemini. Gli esiti vanno sul ramo `laboratorio-esiti-<ricetta>` e su Drive.
 - **Pubblica**: `scripts/pubblica.mjs` (Instagram Reel + YouTube Shorts) dal tasto 📤 del bot.
