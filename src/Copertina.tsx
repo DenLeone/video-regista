@@ -1,5 +1,5 @@
 import React from 'react';
-import { AbsoluteFill, Img, staticFile } from 'remotion';
+import { AbsoluteFill, Img, staticFile, useVideoConfig } from 'remotion';
 import { FontStile, GraficaStile } from './piano';
 import { useFont } from './SuMisura';
 import { norm, stileFont } from './testo';
@@ -32,15 +32,18 @@ export const Copertina: React.FC<PropsCopertina> = ({ sfondo, testo, evidenzia =
   const forti = new Set(evidenzia.flatMap((e) => e.split(/\s+/)).map(norm));
   const rr = righe(testo);
   const lunga = Math.max(...rr.map((r) => r.length), 1);
-  // un carattere maiuscolo pieno è largo ~0,75 em: la riga più lunga sta nei 960 px utili
-  const fs = Math.min(180, 960 / (lunga * 0.75));
+  // verticale 1080x1920 o orizzontale 1920x1080 (Kal Orizzontale, 23/11): margini e titolo seguono le misure vere
+  const { width, height } = useVideoConfig();
+  const utili = width - 120;
+  // un carattere maiuscolo pieno è largo ~0,75 em: la riga più lunga sta nei px utili
+  const fs = Math.min(180 * Math.min(1, height / 1920 * 1.6), utili / (lunga * 0.75));
   return (
     <AbsoluteFill style={{ backgroundColor: '#0B0B0B' }}>
       <Img src={staticFile(sfondo)} style={{ width: '100%', height: '100%', objectFit: 'cover', transform: 'scale(1.04)' }} />
       {/* scuro in basso e ai bordi: il titolo si legge su qualsiasi sfondo */}
       <AbsoluteFill style={{ background: 'linear-gradient(180deg, rgba(0,0,0,0.25) 0%, rgba(0,0,0,0) 22%, rgba(0,0,0,0) 45%, rgba(0,0,0,0.72) 78%, rgba(0,0,0,0.82) 100%)' }} />
       <AbsoluteFill style={{ background: 'radial-gradient(ellipse 95% 75% at 50% 45%, rgba(0,0,0,0) 60%, rgba(0,0,0,0.35) 100%)' }} />
-      <div style={{ position: 'absolute', left: 60, right: 60, bottom: 1920 - 1440, display: 'flex', flexDirection: 'column', alignItems: 'center', textAlign: 'center' }}>
+      <div style={{ position: 'absolute', left: 60, right: 60, bottom: height * 0.25, display: 'flex', flexDirection: 'column', alignItems: 'center', textAlign: 'center' }}>
         {rr.map((r, i) => (
           <div key={i} style={{ ...stileFont(font), fontSize: fs, lineHeight: 0.98, letterSpacing: '-0.01em', whiteSpace: 'nowrap',
             filter: 'drop-shadow(0 6px 18px rgba(0,0,0,0.6)) drop-shadow(0 2px 3px rgba(0,0,0,0.7))' }}>

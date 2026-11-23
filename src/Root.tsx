@@ -108,5 +108,8 @@ export const Root: React.FC = () => (
     {/* copertina per Reel e TikTok: props da scripts/regista.mjs (copertina) */}
     <Still id="Copertina" component={Copertina} width={W} height={H}
       defaultProps={{ sfondo: 'media/copertina-sfondo.jpg', testo: 'Titolo di prova', evidenzia: ['prova'], grafica: null } as PropsCopertina} />
+    {/* la stessa, 16:9: per i video orizzontali (Kal Orizzontale) */}
+    <Still id="CopertinaOrizzontale" component={Copertina} width={1920} height={1080}
+      defaultProps={{ sfondo: 'media/copertina-sfondo.jpg', testo: 'Titolo di prova', evidenzia: ['prova'], grafica: null } as PropsCopertina} />
   </>
 );

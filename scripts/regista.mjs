@@ -2093,7 +2093,7 @@ function copertina(piano, regia, analisi, out) {
     const testo = String(cop.testo || piano.titolo || '').trim().slice(0, 60);
     const props = { sfondo: 'media/copertina-sfondo.jpg', testo, evidenzia: [].concat(cop.evidenzia || []).map(String).slice(0, 3), grafica: piano.grafica || null };
     fs.writeFileSync(path.join(WORK, 'copertina.json'), JSON.stringify(props));
-    run('npx', ['remotion', 'still', ingressoRemotion(), 'Copertina', out, `--props=${path.join(WORK, 'copertina.json')}`, '--image-format=jpeg', '--jpeg-quality=92',
+    run('npx', ['remotion', 'still', ingressoRemotion(), stileCorrente === 'KalOrizzontale' ? 'CopertinaOrizzontale' : 'Copertina', out, `--props=${path.join(WORK, 'copertina.json')}`, '--image-format=jpeg', '--jpeg-quality=92',
       ...(process.env.REMOTION_BROWSER ? [`--browser-executable=${process.env.REMOTION_BROWSER}`] : [])], { cwd: ROOT, stdio: 'inherit', shell: process.platform === 'win32' });
     log(`copertina: "${testo}" su un fotogramma di ${path.basename(migliore.jpg)} (sfocatura ${migliore.b.toFixed(2)})`);
     return out;
