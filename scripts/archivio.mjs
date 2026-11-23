@@ -152,11 +152,14 @@ function distanza(a, b) {
   }
   return d[b.length];
 }
+// quanto è lontana la cartella più simile (diagnosi nei log pubblici: solo numeri)
+export const piuVicina = (cercata, cartelle) => Math.min(Infinity, ...cartelle.map((c) => Math.min(distanza(chiave(c.split('/').pop()), chiave(cercata)), distanza(chiave(c), chiave(cercata)))));
 export function cartellaSimile(cercata, cartelle) {
   const k = chiave(cercata);
   if (!k) return { trovata: null, quante: 0 };
   for (const prova of [(x) => x === k, (x) => distanza(x, k) <= 2]) {
-    const ok = cartelle.filter((c) => prova(chiave(c.split('/').pop())));
+    // «PGYTECH CreateMate 2611» = «PGYTECH/CreateMate 2611»: vale il nome della cartella o il percorso intero
+    const ok = cartelle.filter((c) => prova(chiave(c.split('/').pop())) || prova(chiave(c)));
     if (ok.length) return { trovata: ok.length === 1 ? ok[0] : null, quante: ok.length };
   }
   return { trovata: null, quante: 0 };
@@ -215,12 +218,13 @@ if (process.argv[2] === 'collega' && process.argv[1] && path.resolve(process.arg
   // il nome della cartella di 05: simile basta (maiuscole, spazi, 2 lettere sbagliate), primo livello o uno sotto
   let in05 = [];
   try { in05 = JSON.parse(rclone('lsjson', `${R}:${DIR_ARCHIVIO}`, '--dirs-only')).map((x) => x.Name).filter((x) => !x.startsWith('_')); } catch { esce(`non riesco a leggere ${DIR_ARCHIVIO}`); }
+  let sotto = [];
   let { trovata, quante } = cartellaSimile(sorgente, in05);
   if (!trovata && !quante) {
-    let sotto = [];
     try { sotto = JSON.parse(rclone('lsjson', `${R}:${DIR_ARCHIVIO}`, '--dirs-only', '-R', '--max-depth', '2')).map((x) => x.Path).filter((x) => x.includes('/') && !x.split('/').some((y) => y.startsWith('_') || y === BROLL || y === PARLATO)); } catch { /* resta il primo livello */ }
     ({ trovata, quante } = cartellaSimile(sorgente, sotto));
   }
+  if (!trovata && !quante) console.log(`cartelle guardate: ${in05.length} al primo livello, ${sotto.length} un livello sotto; la più simile ha ${piuVicina(sorgente, [...in05, ...sotto])} lettere diverse`);
   if (!trovata) esce(quante > 1 ? `in ${DIR_ARCHIVIO} ci sono ${quante} cartelle con un nome simile: scrivi il nome preciso` : `non trovo la cartella in ${DIR_ARCHIVIO}, nemmeno con un nome simile`);
   if (chiave(trovata) !== chiave(sorgente)) console.log(`cartella di 05 trovata con un nome simile${trovata.includes('/') ? ', dentro un\'altra cartella' : ''}`);
   const daUsare = trovata;

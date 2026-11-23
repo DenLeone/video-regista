@@ -171,6 +171,7 @@ test('cartella di 05 scritta al volo: nome simile, solo se è una', () => {
   assert.equal(cartellaSimile('createmate', in05).trovata, null);
   assert.deepEqual(cartellaSimile('ajazz ak82x', ['Ajazz AK820', 'Ajazz AK821']), { trovata: null, quante: 2 });
   assert.equal(cartellaSimile('createmate 2611', ['Novembre/CreateMate 2611']).trovata, 'Novembre/CreateMate 2611');
+  assert.equal(cartellaSimile('pgythech createmate 2611', ['PGYTECH/CreateMate 2611', 'Ajazz/AK820']).trovata, 'PGYTECH/CreateMate 2611');
 });
 
 test('lancio da una cartella dentro un\'altra: il prodotto è la cartella intera, B-roll compresi', () => {
