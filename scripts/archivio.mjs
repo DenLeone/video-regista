@@ -198,7 +198,9 @@ export function scaricaBrollProdotto({ rclone, R, nome, dest, isMedia, dir, log 
   }
 }
 
-// Riga di comando (regista.yml, passo «Dall'archivio»): node scripts/archivio.mjs collega <sorgente in 05> <nome in 01>
+// Riga di comando (regista.yml, passo «Dall'archivio»): node scripts/archivio.mjs collega [--auto] <sorgente in 05> <nome in 01>
+// --auto: il nome arriva dal bot, dall'app o da Ultron e in 01 non c'è; se non c'è nemmeno in 05 non è un errore qui
+// (lo dice il controllo di 01, come sempre)
 if (process.argv[2] === 'collega' && process.argv[1] && path.resolve(process.argv[1]) === (await import('node:url')).fileURLToPath(import.meta.url)) {
   const { execFileSync } = await import('node:child_process');
   const os = await import('node:os');
@@ -207,8 +209,14 @@ if (process.argv[2] === 'collega' && process.argv[1] && path.resolve(process.arg
   const R = process.env.REGISTA_REMOTE || 'gdrive';
   const DIR_EDITARE = process.env.DIR_EDITARE || '01 · Da editare';
   const DIR_FATTI = process.env.DIR_FATTI || '02 · Fatti';
-  const [sorgente, nome] = [process.argv[3], process.argv[4]].map((x) => String(x || '').trim());
-  const esce = (t) => { console.log(`::error::${t}`); process.exit(1); };
+  const auto = process.argv[3] === '--auto';
+  const [sorgente, nome] = process.argv.slice(auto ? 4 : 3, auto ? 6 : 5).map((x) => String(x || '').trim());
+  // il motivo va anche al bot (passo «Avvisa il bot se il giro si è fermato prima di montare»)
+  const esce = (t) => {
+    console.log(`::error::${t}`);
+    if (process.env.GITHUB_OUTPUT) fs.appendFileSync(process.env.GITHUB_OUTPUT, `errore=${t.replace(/\n/g, ' ')}\n`);
+    process.exit(1);
+  };
   if (!sorgente || !nome) esce('servono la cartella di 05 e il nome del video');
   const cartelle = (d) => { try { return JSON.parse(rclone('lsjson', `${R}:${d}`, '--dirs-only')).map((x) => x.Name.toLowerCase()); } catch { return []; } };
   if (cartelle(DIR_FATTI).includes(nome.toLowerCase())) esce(`in ${DIR_FATTI} c'è già un video con questo nome: scegline un altro (es. con « 2»)`);
@@ -225,6 +233,7 @@ if (process.argv[2] === 'collega' && process.argv[1] && path.resolve(process.arg
     ({ trovata, quante } = cartellaSimile(sorgente, sotto));
   }
   if (!trovata && !quante) console.log(`cartelle guardate: ${in05.length} al primo livello, ${sotto.length} un livello sotto; la più simile ha ${piuVicina(sorgente, [...in05, ...sotto])} lettere diverse`);
+  if (!trovata && !quante && auto) { console.log(`non è né in 01 né in ${DIR_ARCHIVIO}: decide il controllo di 01`); process.exit(0); }
   if (!trovata) esce(quante > 1 ? `in ${DIR_ARCHIVIO} ci sono ${quante} cartelle con un nome simile: scrivi il nome preciso` : `non trovo la cartella in ${DIR_ARCHIVIO}, nemmeno con un nome simile`);
   if (chiave(trovata) !== chiave(sorgente)) console.log(`cartella di 05 trovata con un nome simile${trovata.includes('/') ? ', dentro un\'altra cartella' : ''}`);
   const daUsare = trovata;

@@ -204,13 +204,24 @@ jobs:
           printf '%s\n' "$RCLONE_CONF" | tr -d '\r' | sed -e '1s/^\xEF\xBB\xBF//' -e 's/^[[:space:]]*//' > ~/.config/rclone/rclone.conf
           rclone lsf "gdrive:$DIR_EDITARE" --dirs-only > /dev/null && echo "Drive OK"
 
+      # 🚀 lancio da 05 (23/11). Con «archivio» = la cartella di 05 detta apposta. Senza: il nome del bot, dell'app o di
+      # Ultron; se in 01 non c'è, si cerca in 05 (nome simile) e si mettono i collegamenti in 01. Solo montaggi nuovi da 01
       - name: Dall'archivio
         id: archivio
-        if: inputs.archivio != '' && inputs.cartella != ''
+        if: inputs.cartella != '' && inputs.origine != '98' && inputs.correzione == '' && inputs.r2 == '' && (inputs.telegram == '' || inputs.telegram == '[]') && (inputs.azione == '' || inputs.azione == 'monta')
         env:
           ARCHIVIO: ${{ inputs.archivio }}
           CARTELLA: ${{ inputs.cartella }}
-        run: node scripts/archivio.mjs collega "$ARCHIVIO" "$CARTELLA"
+        run: |
+          if [ -n "$ARCHIVIO" ]; then
+            node scripts/archivio.mjs collega "$ARCHIVIO" "$CARTELLA"
+            exit 0
+          fi
+          # già in 01 (0), con due cartelle simili (3) o Drive che non risponde (1): decide il controllo di sempre
+          stato=0
+          rclone lsf "gdrive:$DIR_EDITARE" --dirs-only | python3 scripts/nome-cartella.py "$CARTELLA" > /dev/null || stato=$?
+          [ "$stato" = 2 ] || exit 0
+          node scripts/archivio.mjs collega --auto "$CARTELLA" "$CARTELLA"
 
       - name: C'è qualcosa da fare?
         id: check
@@ -545,10 +556,13 @@ jobs:
           RICHIESTO: ${{ inputs.cartella }}
           INSTALLAZIONE: ${{ steps.dipendenze.outcome }}
           USA_IMMAGINE: ${{ vars.USA_IMMAGINE }}
+          ERRORE_ARCHIVIO: ${{ steps.archivio.outputs.errore }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: |
           [ -n "$NOTIFY_URL" ] || exit 0
-          if [ "$INSTALLAZIONE" = "failure" ] && [ "$USA_IMMAGINE" = "1" ]; then
+          if [ -n "$ERRORE_ARCHIVIO" ]; then
+            causa="$ERRORE_ARCHIVIO"
+          elif [ "$INSTALLAZIONE" = "failure" ] && [ "$USA_IMMAGINE" = "1" ]; then
             causa="l'immagine del runner non è completa o non si collega: in Variables metti USA_IMMAGINE a 0 per tornare all'installazione di sempre"
           elif [ "$INSTALLAZIONE" = "failure" ]; then
             causa="installazione dei programmi non riuscita (server dei pacchetti di Ubuntu lento o fermo): riprova tra qualche minuto"
