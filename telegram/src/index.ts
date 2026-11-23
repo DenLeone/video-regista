@@ -424,7 +424,7 @@ async function pannello(env: Env): Promise<Schermo> {
       `<b>Stile</b>       ${esc(imp.stile)} · <b>AI</b> ${esc(motore(imp))}`,
       ...(tgFile === false ? ['📥 <i>Video mandati in chat: da attivare (vedi ❓ Guida). Intanto usa Drive.</i>'] : []),
       LINEA,
-      `<i>Girato in <code>01 · Da editare/NomeVideo</code>${tgFile === false ? '' : ' (o qui come File)'} → 🆕 Nuovo montaggio → il video arriva qui.</i>`,
+      `<i>Girato in <code>05 · Archivio/Prodotto</code>${tgFile === false ? '' : ' (o qui come File)'} → 🆕 Nuovo montaggio → il video arriva qui.</i>`,
     ].join('\n'),
     tasti: [
       [tasto('🆕 Nuovo montaggio', 'nuovo'), tasto('📦 Più video', 'lotto')],
@@ -633,7 +633,7 @@ const GUIDA: Schermo = {
   testo: [
     '❓ <b>Come funziona</b>', LINEA,
     '<b>1. Il girato</b>',
-    '📂 Su Drive: <code>01 · Da editare/NomeVideo/</code> con tutte le clip (iPhone, Sony, Insta360, B-roll, audio del microfono).',
+    '📂 Su Drive: <code>05 · Archivio/Prodotto/</code> con tutte le clip (iPhone, Sony, Insta360, B-roll, audio del microfono). A fine montaggio il Regista le mette in <code>B-roll</code> (riusati nei video dopo) e <code>Parlato</code>.',
     '📥 In chat: mandami i file come <b>File</b> (📎 → File, così non vengono compressi), il nome del video come didascalia.',
     '',
     '<b>2. Il montaggio</b>',

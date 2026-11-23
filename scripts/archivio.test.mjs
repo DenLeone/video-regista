@@ -3,7 +3,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { test } from 'node:test';
-import { archiviaOriginali, candidatiProdotto, cartellaSimile, collegaDaArchivio, MAPPA, ordinaArchivio, PREFISSO_BROLL, scaricaBrollProdotto, tipiFile } from './archivio.mjs';
+import { archiviaOriginali, candidatiProdotto, cartellaSimile, collegaDaArchivio, daMontare, MAPPA, ordinaArchivio, PREFISSO_BROLL, scaricaBrollProdotto, tipiFile } from './archivio.mjs';
 
 // Drive finto: percorso → { size, link } (link = collegamento). Solo i comandi che usa archivio.mjs.
 function driveFinto(file = {}) {
@@ -188,4 +188,16 @@ test('lancio da una cartella dentro un\'altra: il prodotto è la cartella intera
   const e = ordinaArchivio({ rclone, R: 'gdrive', dir: '01', nome: 'CM', analisi: { sorgenti: [{ originale: '/s/VOCE.mp4', tipo: 'video', parlato: true }] } });
   assert.equal(e.parlato, 1);
   assert.ok(d.has('05 · Archivio/Novembre/CM/Parlato/CM/VOCE.mp4'));
+});
+
+test('elenco del bot: solo le cartelle di 05 con girato nuovo, dalla più recente', () => {
+  const elenco = [
+    { Path: 'A/VOCE.mp4', Name: 'VOCE.mp4', ModTime: '2026-11-20T10:00:00Z' },
+    { Path: 'B/B-roll/X.mp4', Name: 'X.mp4', ModTime: '2026-11-23T10:00:00Z' },
+    { Path: 'B/Parlato/V1/Y.mp4', Name: 'Y.mp4', ModTime: '2026-11-23T10:00:00Z' },
+    { Path: 'C/Giorno 2/Z.mov', Name: 'Z.mov', ModTime: '2026-11-22T10:00:00Z' },
+    { Path: 'D/_brief.txt', Name: '_brief.txt', ModTime: '2026-11-23T10:00:00Z' },
+    { Path: 'sciolto.mp4', Name: 'sciolto.mp4', ModTime: '2026-11-23T10:00:00Z' },
+  ];
+  assert.deepEqual(daMontare(elenco, isMedia), ['C', 'A']);
 });

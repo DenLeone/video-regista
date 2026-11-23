@@ -141,6 +141,20 @@ export function ordinaArchivio({ rclone, R, dir, nome, analisi, log = () => {} }
   return esito;
 }
 
+// Cartelle di 05 con girato ancora da montare (file fuori da B-roll/, Parlato/ e dalle cartelle «_»), dalla più
+// recente: per i tasti del bot, accanto a quelle di 01. elenco = rclone lsjson -R --files-only di 05.
+export function daMontare(elenco, isMedia) {
+  const ultimo = new Map();
+  for (const f of elenco) {
+    const parti = String(f.Path).split('/');
+    if (parti.length < 2 || !isMedia(f)) continue;
+    if (parti.slice(0, -1).some((x) => x.startsWith('_') || x === BROLL || x === PARLATO)) continue;
+    const t = Date.parse(f.ModTime || '') || 0;
+    if (!ultimo.has(parti[0]) || ultimo.get(parti[0]) < t) ultimo.set(parti[0], t);
+  }
+  return [...ultimo].sort((a, b) => b[1] - a[1]).map(([n]) => n);
+}
+
 // Il nome della cartella di 05 detto a voce o scritto al volo («pgythech createmate 2611»): maiuscole, spazi e
 // simboli non contano, e si tollerano 2 lettere sbagliate. Prima il primo livello, poi uno sotto. Solo se è UNA.
 const chiave = (x) => String(x).toLowerCase().replace(/[^a-z0-9]+/g, '');
@@ -196,6 +210,18 @@ export function scaricaBrollProdotto({ rclone, R, nome, dest, isMedia, dir, log 
     fs.rmSync(tmp, { recursive: true, force: true });
     fs.rmSync(elenco, { force: true });
   }
+}
+
+// Riga di comando (regista.yml, elenco del bot): node scripts/archivio.mjs da-montare → una cartella per riga
+if (process.argv[2] === 'da-montare' && process.argv[1] && path.resolve(process.argv[1]) === (await import('node:url')).fileURLToPath(import.meta.url)) {
+  const { execFileSync } = await import('node:child_process');
+  const { AUDIO_EXT, IMAGE_EXT, VIDEO_EXT } = await import('./sorgenti.mjs');
+  const R = process.env.REGISTA_REMOTE || 'gdrive';
+  const isMedia = (f) => VIDEO_EXT.concat(IMAGE_EXT, AUDIO_EXT).includes(path.extname(f.Name).toLowerCase());
+  try {
+    const elenco = JSON.parse(String(execFileSync('rclone', ['lsjson', `${R}:${DIR_ARCHIVIO}`, '-R', '--files-only', '--max-depth', '4'], { stdio: ['ignore', 'pipe', 'ignore'], maxBuffer: 1 << 28 })));
+    for (const n of daMontare(elenco, isMedia)) console.log(n);
+  } catch { /* 05 non letto: il bot mostra solo 01 */ }
 }
 
 // Riga di comando (regista.yml, passo «Dall'archivio»): node scripts/archivio.mjs collega [--auto] <sorgente in 05> <nome in 01>

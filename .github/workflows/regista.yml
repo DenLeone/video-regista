@@ -342,8 +342,18 @@ jobs:
             stili_info=$(jq -c --arg s "$(basename "$(dirname "$f")")" --arg d "$d" 'map(if .nome == $s then . + {desc: $d} else . end)' <<< "$stili_info")
           done
           mapfile -t stili < <(jq -r '.[].nome' <<< "$stili_info")
+          # 📦 (23/11) dopo quelle di 01, le cartelle di 05 con girato da montare: scelta dal bot, il passo «Dall'archivio»
+          # mette i collegamenti in 01. Solo al bot, mai nel log (repo pubblico)
+          tutte=("${cartelle[@]}")
           if [ -n "$NOTIFY_URL" ]; then
-            jq -n --args '{tipo:"cartelle", cartelle:$ARGS.positional}' -- "${cartelle[@]}" \
+            declare -A in01=()
+            for d in "${cartelle[@]}"; do in01["${d,,}"]=1; done
+            while IFS= read -r d; do
+              [ -n "$d" ] && [ -z "${in01[${d,,}]:-}" ] && tutte+=("$d")
+            done < <(node scripts/archivio.mjs da-montare 2>/dev/null || true)
+          fi
+          if [ -n "$NOTIFY_URL" ]; then
+            jq -n --args '{tipo:"cartelle", cartelle:$ARGS.positional}' -- "${tutte[@]}" \
               | jq --args '. + {vai:$ARGS.positional}' -- "${liberi[@]}" \
               | jq --args '. + {stili:$ARGS.positional}' -- "${stili[@]}" \
               | jq --argjson info "$stili_info" --argjson yt "${YT_PRONTO:-false}" '. + {stili_info:$info, yt:$yt}' \
