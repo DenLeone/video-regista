@@ -2921,8 +2921,13 @@ async function analizzaEsempi() {
 // Un montaggio già partito non li vede: per usarli serve 🔁 Rifai.
 // 👥 dest = 05 · Archivio quando il girato va alla Squadra (azione «squadra»): da lì il 🧭 Capo squadra del bot Squadra
 async function archiviaDaR2(squadra = false) {
-  const dest = squadra ? DIR_ARCHIVIO : IN_DIR;
   const nome = String(process.env.CARTELLA || '').trim();
+  // 📦 «Manda il resto» a video già fatto (23/11): niente file veri in 01, vanno nel parlato del video in 05 e in 02
+  // c'è un collegamento (Rifai li vede). Prima del montaggio restano in 01: a fine montaggio li archivia lui.
+  let giaFatto = false;
+  if (!squadra && nome) try { giaFatto = JSON.parse(rclone('lsjson', remote(OUT_DIR), '--dirs-only')).some((d) => d.Name === nome); } catch { /* 02 non letto: come prima */ }
+  const prodotto = giaFatto ? (prodottoEsistente(rclone, REMOTE, nome) || nome.split(' · ')[0].trim()) : null;
+  const qui = squadra ? `${DIR_ARCHIVIO}/${nome}` : giaFatto ? cartellaParlato(prodotto, nome) : `${IN_DIR}/${nome}`;
   if (!nome) throw new Error('archivio: manca il nome della cartella');
   if (!DA_R2) throw new Error('archivio: manca il caricamento R2');
   fs.rmSync(SCARICO, { recursive: true, force: true });
@@ -2931,10 +2936,15 @@ async function archiviaDaR2(squadra = false) {
   scaricaDaR2(R2_ID, SCARICO);
   const n = fs.readdirSync(SCARICO).filter((f) => f !== 'manifest.json');
   if (!n.length) throw new Error('su R2 non ci sono file');
-  rclone(...comandiCopiaDrive(SCARICO, remote(dest, nome)));
+  rclone(...comandiCopiaDrive(SCARICO, remote(qui)));
+  if (giaFatto) {
+    let fatti = 0;
+    for (const f of n.filter((x) => VIDEO_EXT.concat(IMAGE_EXT, AUDIO_EXT).includes(path.extname(x).toLowerCase()))) try { rclone('backend', 'shortcut', `${REMOTE}:`, `${qui}/${f}`, `${OUT_DIR}/${nome}/${f}`); fatti++; } catch { /* il file è comunque in 05 */ }
+    log(`archivio: ${n.length} file nel parlato del video in 05, ${fatti} collegamenti in 02`);
+  }
   cancellaR2(R2_ID);
-  if (squadra) return notifica('👥 alla Squadra', nome, `${n.length} file in ${dest}/${nome}. Tra un minuto il bot Squadra ti chiede lo stile e fa partire la catena.`, { ok: true });
-  await notifica('📥 originali su Drive', nome, `${n.length} file in ${dest}/${nome}. Il montaggio già partito non li vede: per usarli, 🔁 Rifai da zero.`, { ok: true });
+  if (squadra) return notifica('👥 alla Squadra', nome, `${n.length} file in ${qui}. Tra un minuto il bot Squadra ti chiede lo stile e fa partire la catena.`, { ok: true });
+  await notifica('📥 originali su Drive', nome, `${n.length} file in ${qui}${giaFatto ? ` (collegati in ${OUT_DIR}/${nome})` : ''}. Il montaggio già partito non li vede: per usarli, 🔁 Rifai da zero.`, { ok: true });
 }
 
 // Parte da sola quando l'app ha finito di caricare su R2, prima del tap «Monta».
@@ -3605,7 +3615,9 @@ async function main() {
     const [fileCopertina, didascalie, anteprimaMp4] = await Promise.all([cronometra('copertina', copertinaP), cronometra('didascalie', didascalieP), anteprimaP, uploadVideo, cronometra('note', noteP)]);
     tappa('chiusura');
     if (vai) rclone('moveto', remote(SRC_DIR, nome, vai), remote(SRC_DIR, nome, vaiUsato));
-    if (SRC_DIR === IN_DIR && !DA_TELEGRAM && !DA_R2) {
+    // 📦 originali in 01: quelli caricati a mano o dal bot, e (23/11) quelli dell'app e di Telegram, se la copia è riuscita
+    const caricatiIn01 = (DA_TELEGRAM || DA_R2) && copiaOriginali && !avvisoOriginali;
+    if ((SRC_DIR === IN_DIR && !DA_TELEGRAM && !DA_R2) || caricatiIn01) {
       // rclone sposta i file ma lascia le cartelle vuote: la cartella del video restava in 01 vuota
       // (con dentro _regista vuota). --delete-empty-src-dirs toglie le sottocartelle, rmdirs la cartella
       // stessa; rmdirs cancella solo cartelle vuote, quindi un file rimasto indietro non si perde.
