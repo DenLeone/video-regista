@@ -42,6 +42,7 @@ import { analizzaBrano, descriviCatalogo, DIR_MUSICA, ESTENSIONI_MUSICA, momenti
 import { AUDIO_EXT, IMAGE_EXT, NOMI_DISPOSITIVO, VIDEO_EXT, dispositivo, prioritaAudio, tagsPiatti } from './sorgenti.mjs';
 import { regolaStile } from './regolatore.mjs';
 import { REGOLA_ZONE, filtroZone } from './zone.mjs';
+import { vuoleCarrello, applicaCarrello } from './carrello.mjs';
 import { cacheSorgente, improntaMateriale, riusoAnalisiIntera, scegliCacheAnalisi } from './cache-analisi.mjs';
 
 const REMOTE = process.env.REGISTA_REMOTE || 'gdrive';
@@ -3502,6 +3503,10 @@ async function main() {
         const fatte = await ultron({ video: outFile, brief: briefPerAI(brief || ''), spazi });
         if (fatte?.length) { motionFatte = fatte; log(`Ultron: ${fatte.length} motion graphic (${fatte.map((m) => m.tipo).join(', ')})`); }
       } catch (e) { log('Ultron saltato, il video resta senza motion graphic:', e.message.slice(0, 200)); }
+    }
+    // 🛒 Sponsor (24/11): «Sponsor: carrello» nel brief → freccia sul carrello + «Aggiungi al carrello» ogni 5-6 s per 2 s
+    if (!PROVA_SECONDI && vuoleCarrello(brief || '')) {
+      try { await applicaCarrello({ video: outFile, log }); } catch (e) { log('carrello saltato, il video resta com\'era:', e.message.slice(0, 200)); }
     }
     await fase(nome, '📤 Carico su Drive', 'carico');
 

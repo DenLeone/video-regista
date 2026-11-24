@@ -22,6 +22,7 @@ export const MODELLI = {
   codice: { pagina: 'codice.html', nome: '💻 Dal codice al logo' },
   titolo: { pagina: 'titolo.html', nome: '🔤 Titolo animato' },
   numero: { pagina: 'numero.html', nome: '🔢 Numero che sale' },
+  carrello: { pagina: 'carrello.html', nome: '🛒 Aggiungi al carrello (sponsor)' },
   idea: { pagina: 'idea.html', nome: '✍️ Idea tua (scritta dall\'AI)' },
 };
 
