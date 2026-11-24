@@ -424,7 +424,7 @@ async function pannello(env: Env): Promise<Schermo> {
       `<b>Stile</b>       ${esc(imp.stile)} · <b>AI</b> ${esc(motore(imp))}`,
       ...(tgFile === false ? ['📥 <i>Video mandati in chat: da attivare (vedi ❓ Guida). Intanto usa Drive.</i>'] : []),
       LINEA,
-      `<i>Girato in <code>01 · Da editare/NomeVideo</code>${tgFile === false ? '' : ' (o qui come File)'} → 🆕 Nuovo montaggio → il video arriva qui.</i>`,
+      `<i>Girato in <code>05 · Archivio/Prodotto</code>${tgFile === false ? '' : ' (o qui come File)'} → 🆕 Nuovo montaggio → il video arriva qui.</i>`,
     ].join('\n'),
     tasti: [
       [tasto('🆕 Nuovo montaggio', 'nuovo'), tasto('📦 Più video', 'lotto')],
@@ -633,7 +633,7 @@ const GUIDA: Schermo = {
   testo: [
     '❓ <b>Come funziona</b>', LINEA,
     '<b>1. Il girato</b>',
-    '📂 Su Drive: <code>01 · Da editare/NomeVideo/</code> con tutte le clip (iPhone, Sony, Insta360, B-roll, audio del microfono).',
+    '📂 Su Drive: <code>05 · Archivio/Prodotto/</code> con tutte le clip (iPhone, Sony, Insta360, B-roll, audio del microfono). A fine montaggio il Regista le mette in <code>B-roll</code> (riusati nei video dopo) e <code>Parlato</code>.',
     '📥 In chat: mandami i file come <b>File</b> (📎 → File, così non vengono compressi), il nome del video come didascalia.',
     '',
     '<b>2. Il montaggio</b>',
@@ -1845,6 +1845,7 @@ type Info = {
   motion?: boolean; // ✨ Motion (motion.yml): didascalia corta, niente tagli né sorgenti
   idea?: boolean; // ✍️ animazione scritta dall'AI: sotto il video ✏️ Correggi
   scaletta?: string[]; avvisi?: string[];
+  orizzontale?: boolean; // video 16:9 (Kal Orizzontale): a Telegram si dichiara 1280x720, non 720x1280
 };
 type SceltaStile = { nome: string; stili: string[]; scelta?: string };
 // azione: com'è partito il giro (monta, render, esempi, regia, elenco); prova: secondi del render di prova
@@ -2169,8 +2170,8 @@ async function onVideo(env: Env, form: FormData) {
     out.append('caption', corpo);
     out.append('parse_mode', 'HTML');
     out.append('supports_streaming', 'true');
-    out.append('width', '720');
-    out.append('height', '1280');
+    out.append('width', info?.orizzontale ? '1280' : '720');
+    out.append('height', info?.orizzontale ? '720' : '1280');
     if (form.get('durata')) out.append('duration', String(Math.round(Number(form.get('durata')))));
     if (tasti.length) out.append('reply_markup', JSON.stringify(tastiera(tasti)));
     if (fileId) out.append('video', fileId);

@@ -27,6 +27,7 @@ import { clipDelTratto, dividi, fotogrammiClip, sceltePerCopertina } from './pez
 import path from 'node:path';
 import { audioMuto, frasi, inviluppo, sincronizza, sogliaVoce } from './audio.mjs';
 import { DIR_ASSETS, DIR_EDITARE, DIR_FATTI, DIR_STILI } from './cartelle.mjs';
+import { archiviaOriginali, cartellaParlato, DIR_ARCHIVIO, ordinaArchivio, prodottoEsistente, scaricaBrollProdotto } from './archivio.mjs';
 import { preparaSuoni, suoniDelloStile } from './suoni-veri.mjs';
 import { loghiDetti, nomiLogo, scegliFont } from './libreria.mjs';
 import { HDR, curvaChiara, curvaEsposizione, filtroTecnico, misuraPezzo, perFiltro, probe, riconosciLog } from './colore.mjs';
@@ -222,6 +223,17 @@ function oraRipresa(tags) {
 export function ripreseDiverse(a, b) {
   if (a.dispositivo !== b.dispositivo || a.ora == null || b.ora == null) return false;
   return Math.abs(a.ora - b.ora) > Math.max(a.durata, b.durata) + 10;
+}
+
+// «Parlato: solo il più recente» nel brief (Denis, 23/11: due video nella stessa cartella di 05): restano solo le
+// voci del giorno più recente; le altre escono dal montaggio (nemmeno come B-roll) e restano in 05 per il loro video
+export const vuoleSoloUltimoParlato = (brief = '') => /parlato\s*:\s*solo\s+(il\s+)?pi[uù]\s+recente/i.test(brief);
+const giornoRoma = (t) => new Date(t).toLocaleDateString('it-IT', { timeZone: 'Europe/Rome' });
+export function parlatiVecchi(sorgenti) {
+  const voci = sorgenti.filter((s) => s.parlato && s.data);
+  if (!voci.length) return [];
+  const ultimo = giornoRoma(Math.max(...voci.map((s) => s.data)));
+  return voci.filter((s) => giornoRoma(s.data) !== ultimo);
 }
 
 function dataRipresa(tags, nome) {
@@ -1755,7 +1767,8 @@ function scegliStile(brief) {
   LOOK_12K = false;
   LOOK_STILE = null;
   if (!richiesto) return { stile: STILI[0] };
-  const trovato = STILI.find((x) => x.toLowerCase() === richiesto.toLowerCase());
+  // «Kal Orizzontale» = KalOrizzontale: spazi e maiuscole non contano
+  const trovato = STILI.find((x) => x.toLowerCase() === richiesto.toLowerCase().replace(/\s+/g, ''));
   if (trovato) return { stile: trovato };
   try {
     const cartelle = JSON.parse(rclone('lsjson', remote(DIR_STILI), '--dirs-only')).map((d) => d.Name).filter((d) => !d.startsWith('_'));
@@ -2081,7 +2094,7 @@ function copertina(piano, regia, analisi, out) {
     const testo = String(cop.testo || piano.titolo || '').trim().slice(0, 60);
     const props = { sfondo: 'media/copertina-sfondo.jpg', testo, evidenzia: [].concat(cop.evidenzia || []).map(String).slice(0, 3), grafica: piano.grafica || null };
     fs.writeFileSync(path.join(WORK, 'copertina.json'), JSON.stringify(props));
-    run('npx', ['remotion', 'still', ingressoRemotion(), 'Copertina', out, `--props=${path.join(WORK, 'copertina.json')}`, '--image-format=jpeg', '--jpeg-quality=92',
+    run('npx', ['remotion', 'still', ingressoRemotion(), stileCorrente === 'KalOrizzontale' ? 'CopertinaOrizzontale' : 'Copertina', out, `--props=${path.join(WORK, 'copertina.json')}`, '--image-format=jpeg', '--jpeg-quality=92',
       ...(process.env.REMOTION_BROWSER ? [`--browser-executable=${process.env.REMOTION_BROWSER}`] : [])], { cwd: ROOT, stdio: 'inherit', shell: process.platform === 'win32' });
     log(`copertina: "${testo}" su un fotogramma di ${path.basename(migliore.jpg)} (sfocatura ${migliore.b.toFixed(2)})`);
     return out;
@@ -2621,6 +2634,12 @@ export async function analizza(nome, brief, cache) {
     log(`livelli ${s.id}: fondo ${v.fondo.toFixed(0)} dB, voce ${v.voce.toFixed(0)} dB${v.haVoce ? ' → parlato' : s.audioMuto ? ' → audio muto' : ''}`);
   }
 
+  if (vuoleSoloUltimoParlato(brief)) {
+    const via = new Set(parlatiVecchi(sorgenti).map((s) => s.id));
+    for (let i = sorgenti.length - 1; i >= 0; i--) if (via.has(sorgenti[i].id)) sorgenti.splice(i, 1);
+    log(`parlato più recente: ${via.size} clip parlate di un giorno prima tolte dal montaggio`);
+  }
+
   // audio principale: mic esterno > Insta360 > iPhone > altre camere > Sony.
   // Chi è sincronizzato con una voce migliore diventa solo un'inquadratura.
   const candidati = sorgenti.filter((s) => s.parlato).sort((a, b) => prioritaAudio(a.dispositivo) - prioritaAudio(b.dispositivo) || b.durata - a.durata);
@@ -2903,8 +2922,13 @@ async function analizzaEsempi() {
 // Un montaggio già partito non li vede: per usarli serve 🔁 Rifai.
 // 👥 dest = 05 · Archivio quando il girato va alla Squadra (azione «squadra»): da lì il 🧭 Capo squadra del bot Squadra
 async function archiviaDaR2(squadra = false) {
-  const dest = squadra ? (process.env.DIR_ARCHIVIO || '05 · Archivio') : IN_DIR;
   const nome = String(process.env.CARTELLA || '').trim();
+  // 📦 «Manda il resto» a video già fatto (23/11): niente file veri in 01, vanno nel parlato del video in 05 e in 02
+  // c'è un collegamento (Rifai li vede). Prima del montaggio restano in 01: a fine montaggio li archivia lui.
+  let giaFatto = false;
+  if (!squadra && nome) try { giaFatto = JSON.parse(rclone('lsjson', remote(OUT_DIR), '--dirs-only')).some((d) => d.Name === nome); } catch { /* 02 non letto: come prima */ }
+  const prodotto = giaFatto ? (prodottoEsistente(rclone, REMOTE, nome) || nome.split(' · ')[0].trim()) : null;
+  const qui = squadra ? `${DIR_ARCHIVIO}/${nome}` : giaFatto ? cartellaParlato(prodotto, nome) : `${IN_DIR}/${nome}`;
   if (!nome) throw new Error('archivio: manca il nome della cartella');
   if (!DA_R2) throw new Error('archivio: manca il caricamento R2');
   fs.rmSync(SCARICO, { recursive: true, force: true });
@@ -2913,10 +2937,61 @@ async function archiviaDaR2(squadra = false) {
   scaricaDaR2(R2_ID, SCARICO);
   const n = fs.readdirSync(SCARICO).filter((f) => f !== 'manifest.json');
   if (!n.length) throw new Error('su R2 non ci sono file');
-  rclone(...comandiCopiaDrive(SCARICO, remote(dest, nome)));
+  rclone(...comandiCopiaDrive(SCARICO, remote(qui)));
+  if (giaFatto) {
+    let fatti = 0;
+    for (const f of n.filter((x) => VIDEO_EXT.concat(IMAGE_EXT, AUDIO_EXT).includes(path.extname(x).toLowerCase()))) try { rclone('backend', 'shortcut', `${REMOTE}:`, `${qui}/${f}`, `${OUT_DIR}/${nome}/${f}`); fatti++; } catch { /* il file è comunque in 05 */ }
+    log(`archivio: ${n.length} file nel parlato del video in 05, ${fatti} collegamenti in 02`);
+  }
   cancellaR2(R2_ID);
-  if (squadra) return notifica('👥 alla Squadra', nome, `${n.length} file in ${dest}/${nome}. Tra un minuto il bot Squadra ti chiede lo stile e fa partire la catena.`, { ok: true });
-  await notifica('📥 originali su Drive', nome, `${n.length} file in ${dest}/${nome}. Il montaggio già partito non li vede: per usarli, 🔁 Rifai da zero.`, { ok: true });
+  if (squadra) return notifica('👥 alla Squadra', nome, `${n.length} file in ${qui}. Tra un minuto il bot Squadra ti chiede lo stile e fa partire la catena.`, { ok: true });
+  await notifica('📥 originali su Drive', nome, `${n.length} file in ${qui}${giaFatto ? ` (collegati in ${OUT_DIR}/${nome})` : ''}. Il montaggio già partito non li vede: per usarli, 🔁 Rifai da zero.`, { ok: true });
+}
+
+// 🧹 Riordino del vecchio (23/11, archivio unico; azione «riordina»). In 02 i file veri del girato vanno in
+// 05 · Archivio/<prodotto> (B-roll o Parlato/<video>, secondo l'analisi salvata del montaggio) e al loro posto resta un
+// collegamento (Rifai funziona ancora). Le cartelle rimaste in 01 con file veri, ferme da più di un giorno, passano
+// intere in 05 (girato da montare; se il nome c'è già, in una sottocartella). «prova» nel brief: dice solo cosa farebbe.
+// Nei log solo conteggi; i nomi vanno solo al bot.
+async function riordina() {
+  const prova = /\bprova\b/i.test(process.env.BRIEF_EXTRA || '');
+  const isMedia = (f) => VIDEO_EXT.concat(IMAGE_EXT, AUDIO_EXT).includes(path.extname(f.Name).toLowerCase()) && !isNostro(f.Name);
+  const righe = [];
+  const conto = { c02: 0, f02: 0, broll: 0, parlato: 0, falliti: 0, c01: 0, lasciate01: 0 };
+  const cartelle = (d) => JSON.parse(rclone('lsjson', remote(d), '--dirs-only')).filter((x) => !x.Name.startsWith('_'));
+  for (const { Name: nome } of cartelle(OUT_DIR)) {
+    let veri;
+    try { veri = JSON.parse(rclone('lsjson', remote(OUT_DIR, nome), '--files-only', '--drive-skip-shortcuts')).filter(isMedia); } catch { continue; }
+    if (!veri.length) continue;
+    conto.c02++; conto.f02 += veri.length;
+    if (prova) { righe.push(`✅ ${nome}: ${veri.length} file`); continue; }
+    let analisi = null;
+    try { analisi = JSON.parse(rclone('cat', remote(OUT_DIR, nome, CACHE, 'materiale.json'))); } catch { /* senza analisi: tutto nel parlato del video */ }
+    const e = archiviaOriginali({ rclone, R: REMOTE, dir: OUT_DIR, nome, analisi, isMedia, log });
+    conto.broll += e.broll; conto.parlato += e.parlato; conto.falliti += e.falliti;
+    righe.push(`✅ ${nome}: ${e.broll} B-roll, ${e.parlato} parlato${e.falliti ? `, ⚠️ ${e.falliti} non spostati` : ''}`);
+  }
+  const ieri = Date.now() - 86400e3;
+  let in05 = new Set();
+  try { in05 = new Set(cartelle(DIR_ARCHIVIO).map((x) => x.Name)); } catch { /* 05 non letto */ }
+  for (const d of cartelle(IN_DIR)) {
+    let veri;
+    try { veri = JSON.parse(rclone('lsjson', remote(IN_DIR, d.Name), '-R', '--files-only', '--drive-skip-shortcuts')).filter((f) => isMedia(f) && !f.Path.split('/').slice(0, -1).some((x) => x.startsWith('_'))); } catch { continue; }
+    if (!veri.length) continue;
+    if (veri.some((f) => Date.parse(f.ModTime) > ieri)) { conto.lasciate01++; righe.push(`📂 ${d.Name}: lasciata in 01 (toccata nelle ultime 24 ore)`); continue; }
+    conto.c01++;
+    const dest = in05.has(d.Name) ? `${DIR_ARCHIVIO}/${d.Name}/${d.Name} · da 01` : `${DIR_ARCHIVIO}/${d.Name}`;
+    if (prova) { righe.push(`📂 ${d.Name}: ${veri.length} file → ${dest}`); continue; }
+    try {
+      rclone('move', remote(IN_DIR, d.Name), remote(dest), '--delete-empty-src-dirs');
+      try { rclone('rmdirs', remote(IN_DIR, d.Name)); } catch { /* già tolta */ }
+      righe.push(`📂 ${d.Name}: ${veri.length} file → ${dest}`);
+    } catch { conto.falliti++; righe.push(`📂 ${d.Name}: ⚠️ non spostata`); }
+  }
+  log(`riordino${prova ? ' (prova, niente spostato)' : ''}: 02 ${conto.c02} cartelle con ${conto.f02} file (${conto.broll} B-roll, ${conto.parlato} parlato), 01 ${conto.c01} cartelle in 05, ${conto.lasciate01} lasciate, ${conto.falliti} non riusciti`);
+  const titolo = prova ? '🧹 Riordino: PROVA (non ho spostato niente)' : '🧹 Riordino fatto';
+  const testo = [`02 · Fatti: ${conto.c02} cartelle, ${conto.f02} file${prova ? '' : ` (${conto.broll} B-roll, ${conto.parlato} parlato)`}`, `01 · Da editare: ${conto.c01} cartelle in 05, ${conto.lasciate01} lasciate`, '', ...righe].join('\n');
+  await invia({ tipo: 'esito', esito: titolo, nome: 'Archivio', testo: testo.slice(0, 3800), ok: !conto.falliti });
 }
 
 // Parte da sola quando l'app ha finito di caricare su R2, prima del tap «Monta».
@@ -3077,6 +3152,13 @@ async function main() {
       process.exitCode = 1;
     });
   }
+  if (process.env.AZIONE === 'riordina') {
+    return riordina().catch(async (e) => {
+      log(`riordino fermato: ${String(e.message).split('\n')[0].slice(0, 80)}`);
+      await invia({ tipo: 'esito', esito: '⚠️ riordino fermato', nome: 'Archivio', testo: `Errore: ${e.message}`, ok: false });
+      process.exitCode = 1;
+    });
+  }
   if (process.env.AZIONE === 'archivio' || process.env.AZIONE === 'squadra') {
     return archiviaDaR2(process.env.AZIONE === 'squadra').catch(async (e) => {
       log(e.stack || e.message);
@@ -3140,6 +3222,7 @@ async function main() {
     } else {
       // correzione di un video nato da Telegram: in 98 c'è solo il risultato, gli originali sono in 97
       let dirMedia = SRC_DIR;
+      let cartellaMedia = null; // percorso intero, quando il girato non sta in <dir>/<nome>
       let media = files.filter(isMedia);
       if (SRC_DIR === OUT_DIR && !media.length) {
         try {
@@ -3147,13 +3230,24 @@ async function main() {
           if (in97.length) { dirMedia = IN_DIR; media = in97; log(`originali in ${IN_DIR}/${nome}`); }
         } catch { /* non c'è nemmeno in 97 */ }
       }
+      // 📦 collegamenti mancanti in 02: il parlato è in 05 · Archivio/<Prodotto>/Parlato/<video> (i B-roll arrivano sotto)
+      if (SRC_DIR === OUT_DIR && !media.length) {
+        const prodotto = prodottoEsistente(rclone, REMOTE, nome);
+        const inArchivio = prodotto && cartellaParlato(prodotto, nome);
+        try {
+          const in05 = inArchivio ? JSON.parse(rclone('lsjson', remote(inArchivio), '--files-only')).filter(isMedia) : [];
+          if (in05.length) { cartellaMedia = inArchivio; media = in05; log('originali in 05 · Archivio'); }
+        } catch { /* non c'è nemmeno in 05 */ }
+      }
       const peso = media.reduce((t, f) => t + (f.Size || 0), 0);
       await fase(nome, `${CORREZIONE ? '✏️ Correzione · ' : ''}📥 Scarico ${media.length} file (${mb(peso)})`, 'scarico');
       // solo il materiale: niente sottocartelle (_regista), niente video finali/note/segnali
-      rclone('copy', remote(dirMedia, nome), SCARICO, '--max-depth', '1', '--transfers', '8', '--multi-thread-streams', '8',
+      rclone('copy', cartellaMedia ? remote(cartellaMedia) : remote(dirMedia, nome), SCARICO, '--max-depth', '1', '--transfers', '8', '--multi-thread-streams', '8',
         '--exclude', '*.XML', '--exclude', '*.xml', '--exclude', '*FINALE*', '--exclude', '* - GANCIO *', '--exclude', '* - PROVA *', '--exclude', '* - documentario*', '--exclude', '* - COPERTINA*', '--exclude', '_VAI_*', '--exclude', '*.txt');
     }
     try { rclone('copy', remote(SRC_DIR, nome), SCARICO, '--max-depth', '1', '--include', 'brief.txt'); } catch { /* cartella nuova */ }
+    // 📦 i B-roll del prodotto già in 05 · Archivio/<Prodotto>/B-roll (anche dei video vecchi): l'AI sceglie quali usare
+    scaricaBrollProdotto({ rclone, R: REMOTE, nome, dest: SCARICO, isMedia, dir: SRC_DIR, log });
 
     // macchina dei pezzi partita insieme alla prima: il girato è scaricato, ora si aspetta la regia
     if (PEZZO && ATTENDI) {
@@ -3376,7 +3470,7 @@ async function main() {
     }
     const nomeStile = stileSuMisura?.nome || stile;
     // Kal: inquadratura fissa come nei riferimenti, niente zoom alternato sui tagli
-    if (stile === 'Kal') for (const c of piano.clips) c.punch = false;
+    if (stile === 'Kal' || stile === 'KalOrizzontale') for (const c of piano.clips) c.punch = false;
     if (PROVA_SECONDI) { troncaPiano(piano, PROVA_SECONDI, PROVA_DA); log(`render di prova: ${PROVA_DA ? `da ${PROVA_DA} s, ` : 'primi '}${PROVA_SECONDI} s (${piano.clips.length} tagli)`); }
     // i pezzi scelti, prima del render vero: la card dell'app distingue tagli e render
     await fase(nome, `✂️ Taglio ${piano.clips.length} pezzi`, 'tagli');
@@ -3579,13 +3673,20 @@ async function main() {
     const [fileCopertina, didascalie, anteprimaMp4] = await Promise.all([cronometra('copertina', copertinaP), cronometra('didascalie', didascalieP), anteprimaP, uploadVideo, cronometra('note', noteP)]);
     tappa('chiusura');
     if (vai) rclone('moveto', remote(SRC_DIR, nome, vai), remote(SRC_DIR, nome, vaiUsato));
-    if (SRC_DIR === IN_DIR && !DA_TELEGRAM && !DA_R2) {
+    // 📦 originali in 01: quelli caricati a mano o dal bot, e (23/11) quelli dell'app e di Telegram, se la copia è riuscita
+    const caricatiIn01 = (DA_TELEGRAM || DA_R2) && copiaOriginali && !avvisoOriginali;
+    if ((SRC_DIR === IN_DIR && !DA_TELEGRAM && !DA_R2) || caricatiIn01) {
       // rclone sposta i file ma lascia le cartelle vuote: la cartella del video restava in 01 vuota
       // (con dentro _regista vuota). --delete-empty-src-dirs toglie le sottocartelle, rmdirs la cartella
       // stessa; rmdirs cancella solo cartelle vuote, quindi un file rimasto indietro non si perde.
       // «move» (non «moveto»: non accetta --delete-empty-src-dirs, e il 10/11 il giro di Insta Mic Pro è
       // finito in errore a video già fatto). Se lo spostamento non riesce il video resta in 01 ma è pronto:
       // non è un motivo per dire "non montato".
+      // 📦 prima i file veri in 05 · Archivio/<Prodotto> (B-roll o Parlato/<video>), al loro posto un collegamento:
+      // in 02 arriva solo il risultato più i collegamenti (per Rifai). Le cartelle della Squadra hanno già solo collegamenti.
+      try { archiviaOriginali({ rclone, R: REMOTE, dir: IN_DIR, nome, analisi, isMedia, log }); } catch { log('archivio: originali non spostati, restano con il video'); }
+      // 🚀 lancio da 05: i file sono già in 05, si ordinano in B-roll o Parlato/<video> del prodotto
+      try { ordinaArchivio({ rclone, R: REMOTE, dir: IN_DIR, nome, analisi, log }); } catch { log('archivio: girato di 05 non ordinato'); }
       try {
         rclone('move', remote(IN_DIR, nome), remote(OUT_DIR, nome), '--delete-empty-src-dirs');
         try { rclone('rmdirs', remote(IN_DIR, nome)); } catch (e) { log(`cartella ${IN_DIR}/${nome} non tolta`, e.message.split('\n')[0]); }
@@ -3607,6 +3708,8 @@ async function main() {
       ...(regia?.scaletta ? { scaletta: [].concat(regia.scaletta).slice(0, 6) } : {}),
       ...(avvisi?.length ? { avvisi: avvisi.filter((a) => /chiusura|continuat|agganciat|apertura spostata|finisce a metà|lasciata a metà/.test(a)).slice(0, 4) } : {}),
       ...(fileId ? { link: `https://drive.google.com/file/d/${fileId}/view` } : {}),
+      // 16:9 (Kal Orizzontale, 23/11): il bot lo dice a Telegram, che se no lo mostra stirato in verticale
+      ...((() => { try { const d = probe(outFile); return d.w > d.h ? { orizzontale: true } : {}; } catch { return {}; } })()),
       ...(PROVA_SECONDI ? { prova: PROVA_SECONDI } : {}),
       ...(fileId && !PROVA_SECONDI ? { pubblica: { fileId, file: finale, didascalia: didascalie?.instagram || '', copertina: Math.round(tempoCopertina(piano, durataN) * 1000), ...(copertinaId ? { copertinaId } : {}), youtube: didascalie ? { titolo: didascalie.youtube_titolo, descrizione: didascalie.youtube_descrizione } : null } } : {}),
     };

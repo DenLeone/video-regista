@@ -23,6 +23,10 @@ NO COLOR CORRECTION: i colori del girato non si toccano mai, a meno che il brief
 Niente riconoscimento automatico del log, niente curve d'esposizione automatiche. Resta solo la conversione tecnica
 HDR → SDR (senza, l'HDR su Instagram esce slavato) e il look che uno stile su misura dichiara esplicitamente.
 
+## Archivio unico (REGOLA DI DENIS, 23/11)
+Un file vero del girato sta solo in `05 · Archivio/<Prodotto>` (al primo livello il nuovo, `B-roll/` riusati da ogni video del
+prodotto, `Parlato/<video>` già montati). In 01 e 02 solo collegamenti di Drive. Codice e dettagli: `scripts/archivio.mjs`, PASSAGGIO.md.
+
 ## Scene e motion
 - Scene fatte a mano: `motion/scene/*.js` (vedi `scripts/scene-mano.mjs`), motore in `motion/bdm/`.
 - Skill: `.claude/skills/blackden-motion` (regia ed esempi), `remotion-regole`, `anti-slop-writing` (testi).

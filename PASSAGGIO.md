@@ -132,6 +132,21 @@ Variabili utili:
   - Taglio frasi e pause in `scripts/regia.mjs`; render con **Remotion** (`src/*.tsx`).
   - Il girato arriva da Drive con rclone.
 - **Cartelle Drive**: `01 · Da editare/<Nome>` (girato) → `02 · Fatti/<Nome>` (risultato) → `03 · Da pubblicare`. Gli stili stanno in `12 · Risorse/Stili/<Stile>/stile.txt`.
+- **📦 Archivio unico (23/11, regola di Denis)**: un file vero del girato sta solo in `05 · Archivio`, diviso per prodotto.
+  - `05 · Archivio/<Prodotto>/` (al primo livello): girato nuovo, da montare.
+  - `05 · Archivio/<Prodotto>/B-roll`: B-roll già usati, entrano da soli in ogni video nuovo del prodotto (prefisso `BR_`, l'AI sceglie).
+  - `05 · Archivio/<Prodotto>/Parlato/<video>`: il parlato di ogni video fatto.
+  - `01 · Da editare`: solo collegamenti di Drive durante il montaggio. `02 · Fatti`: risultato + collegamenti (Rifai funziona).
+  - Lancio: il nome dal bot, dall'app o da Ultron; se in 01 non c'è, il passo «Dall'archivio» di regista.yml lo cerca in 05
+    (nome simile, anche dentro un'altra cartella) e mette i collegamenti in 01, con la mappa in `_regista/archivio.json`.
+    L'elenco dei tasti del bot ha anche le cartelle di 05 con girato da montare.
+  - Fine montaggio: i file veri in 01 (caricati a mano, dall'app, da Telegram) e quelli della mappa (lancio da 05, Squadra)
+    vanno in B-roll o Parlato/<video> secondo l'analisi; nel dubbio parlato. Il parlato non usato resta dov'era.
+  - «Parlato: solo il più recente» nel brief: con due video nella stessa cartella resta solo la voce del giorno più recente.
+  - Azione `riordina` (brief «prova» = solo elenco): porta in 05 il vecchio girato rimasto in 02 e 01.
+  - Codice: `scripts/archivio.mjs` (+ test). Nei log pubblici solo conteggi (`archivio:`, `lancio da 05:`, `riordino`).
+- **Kal Orizzontale (23/11)**: Kal in 16:9 per TikTok orizzontale (`src/KalOrizzontale.tsx`, copertina `CopertinaOrizzontale`).
+  Il bot lo manda a Telegram come 1280x720 (prima tutti 720x1280: il 16:9 si vedeva stirato).
 - **Stili**: nel bot dal 05/11 solo **Cinematico** (predefinito), **Lista UI** e **🔴 Focus** (dal 09/11) tra quelli col codice, più gli "stili su misura" da Drive (`stile.txt`, senza codice: Narrativo, Esplicativo, 12K Quality, Motion, Ultra, Impact, Beat, Blackden…). Blueprint e MotionCollage restano nel codice ma non si scelgono più. A parte il tasto **🎞 Documentario** (§5-ter).
 - **Laboratorio**: `.github/workflows/laboratorio.yml` con le ricette in `lab/*.json`. Fa prove, fotogrammi, varianti e l'analisi di video YouTube con Gemini. Gli esiti vanno sul ramo `laboratorio-esiti-<ricetta>` e su Drive.
 - **Pubblica**: `scripts/pubblica.mjs` (Instagram Reel + YouTube Shorts) dal tasto 📤 del bot.
