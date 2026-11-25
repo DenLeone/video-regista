@@ -1,5 +1,5 @@
 // ✂️ Video lungo → 3 reel (16/11, Denis): da un video lungo (il girato letto al gobbo per YouTube, una chiacchierata)
-// l'AI sceglie i 3 momenti più forti (25–60 s, che si capiscono da soli, con un aggancio nei primi secondi);
+// l'AI sceglie i 3 momenti più forti (25–45 s, che si capiscono da soli, con un aggancio nei primi secondi);
 // ognuno si taglia dal girato ORIGINALE (copia senza ricodifica: resta il LOG, restano i dati del telefono), va
 // in 01 · Da editare/<nome> · reel N e parte il montaggio verticale del Regista, ognuno in uno STILE DIVERSO
 // (Denis: «così mal che vada almeno uno lo uso»). Il risultato arriva sul bot Regista come sempre.
@@ -24,7 +24,7 @@ const PROMPT = (frasi, durata, quanti, suggeriti, brief) => `Sei l'editor dei so
 ${frasi.map((f) => `[${f.a}–${f.b}] ${f.t}`).join('\n')}
 ${suggeriti ? `\nIl suo redattore aveva segnato questi momenti da reel (usali se ci sono davvero):\n${suggeriti}\n` : ''}${brief ? `\nIndicazioni di Denis: ${brief}\n` : ''}
 Scegli i ${quanti} momenti MIGLIORI da tagliare come reel verticali (Instagram, TikTok, YouTube Shorts):
-- ognuno dura 25–60 secondi e si capisce DA SOLO, senza il resto del video;
+- ognuno dura 25–40 secondi (MAI più di 45) e si capisce DA SOLO, senza il resto del video;
 - inizia con una frase che aggancia (una domanda, un fatto che sorprende, un'affermazione forte), mai a metà di un discorso;
 - finisce su una frase chiusa (una conclusione, una battuta, una domanda al pubblico);
 - momenti diversi tra loro (argomenti diversi), senza sovrapposizioni;
@@ -50,7 +50,7 @@ async function chiedi(prompt) {
   throw new Error('Gemini non ha risposto');
 }
 
-// i tempi dell'AI si agganciano all'inizio/fine vera delle frasi; durata 20–75 s; niente sovrapposizioni
+// i tempi dell'AI si agganciano all'inizio/fine vera delle frasi; durata 20–45 s; niente sovrapposizioni
 export function pulisciMomenti(lista, frasi, durata, quanti) {
   const fuori = [];
   for (const m of [...(lista || [])]) {
@@ -58,7 +58,7 @@ export function pulisciMomenti(lista, frasi, durata, quanti) {
     const inizio = frasi.reduce((x, f) => (Math.abs(f.a - m.da) < Math.abs(x.a - m.da) ? f : x));
     const fine = frasi.reduce((x, f) => (Math.abs(f.b - m.a) < Math.abs(x.b - m.a) ? f : x));
     const da = Math.max(0, inizio.a - 0.25), a = Math.min(durata, fine.b + 0.4);
-    if (!(a - da >= 20 && a - da <= 75)) continue;
+    if (!(a - da >= 20 && a - da <= 45)) continue;
     if (fuori.some((x) => da < x.a && a > x.da)) continue;
     fuori.push({ da: +da.toFixed(2), a: +a.toFixed(2), titolo: String(m.titolo || '').slice(0, 40), gancio: String(m.gancio || '').slice(0, 200), perche: String(m.perche || '').slice(0, 200) });
     if (fuori.length >= quanti) break;
@@ -121,7 +121,7 @@ export async function main() {
     run('ffmpeg', ['-y', '-v', 'error', '-ss', String(m.da), '-i', src, '-t', String(+(m.a - m.da).toFixed(2)), '-map', '0:v:0', '-map', '0:a:0?', '-c', 'copy',
       '-map_metadata', '0', '-avoid_negative_ts', 'make_zero', '-movflags', '+faststart', pezzo]);
     run('rclone', ['copyto', pezzo, `${REMOTE}:${DA_EDITARE}/${cartella}/${path.basename(pezzo)}`]);
-    const brief = [`Stile: ${stile}`, 'Durata: 30-60 s', `Note: reel tagliato dal video lungo «${nome}». Aggancio: «${m.gancio}». Tieni tutto il filo del discorso`, process.env.BRIEF || ''].filter(Boolean).join('. ');
+    const brief = [`Stile: ${stile}`, 'Durata: 30-45 s', `Note: reel tagliato dal video lungo «${nome}». Aggancio: «${m.gancio}». Tieni tutto il filo del discorso`, process.env.BRIEF || ''].filter(Boolean).join('. ');
     const partito = await lanciaRegista(cartella, brief.slice(0, 900));
     esiti.push({ ...m, stile, cartella, partito });
     log(`reel ${i + 1} · ${stile} · ${m.da}–${m.a} s · «${m.titolo}»${partito ? '' : ' · Regista NON partito'}`);
