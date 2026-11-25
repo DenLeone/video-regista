@@ -23,7 +23,7 @@ const run = (cmd, args) => String(execFileSync(cmd, args, { stdio: ['ignore', 'p
 const PROMPT = (frasi, durata, quanti, suggeriti, brief) => `Sei l'editor dei social di Denis, creator italiano (tech, storia, attualità). Questo è un suo video lungo (${Math.round(durata / 60)} minuti), trascritto con i tempi in secondi:
 ${frasi.map((f) => `[${f.a}–${f.b}] ${f.t}`).join('\n')}
 ${suggeriti ? `\nIl suo redattore aveva segnato questi momenti da reel (usali se ci sono davvero):\n${suggeriti}\n` : ''}${brief ? `\nIndicazioni di Denis: ${brief}\n` : ''}
-Scegli i ${quanti} momenti MIGLIORI da tagliare come reel verticali (Instagram, TikTok, YouTube Shorts):
+Scegli i ${quanti} momenti MIGLIORI da tagliare come reel (Instagram, TikTok, YouTube Shorts):
 - ognuno dura 25–40 secondi (MAI più di 45) e si capisce DA SOLO, senza il resto del video;
 - inizia con una frase che aggancia (una domanda, un fatto che sorprende, un'affermazione forte), mai a metà di un discorso;
 - finisce su una frase chiusa (una conclusione, una battuta, una domanda al pubblico);
@@ -106,6 +106,12 @@ export async function main() {
   log(`${sorgente}: ${(durata / 60).toFixed(1)} min`);
   const { frasi } = await trascrivi(src, WORK);
   log(`trascrizione: ${frasi.length} frasi`);
+  // formato (25/11): video orizzontale → clip 16:9 in Kal Orizzontale, stesso stile per tutte; FORMATO=verticale per i reel verticali
+  const sonda = JSON.parse(run('ffprobe', ['-v', 'error', '-select_streams', 'v:0', '-show_entries', 'stream=width,height:stream_side_data=rotation', '-of', 'json', src])).streams?.[0] || {};
+  const ruotato = Math.abs(Number(sonda.side_data_list?.find((d) => d.rotation !== undefined)?.rotation || 0)) % 180 === 90;
+  const [w, h] = ruotato ? [sonda.height, sonda.width] : [sonda.width, sonda.height];
+  const formato = (process.env.FORMATO || 'auto').toLowerCase();
+  const orizzontale = formato === 'orizzontale' || (formato !== 'verticale' && w > h);
   if (durata < 60 || frasi.length < 5) throw new Error('video troppo corto per tagliarne dei reel');
   const ai = await chiedi(PROMPT(frasi, durata, quanti, suggeriti, process.env.BRIEF || ''));
   const momenti = pulisciMomenti(ai.reel, frasi, durata, quanti);
@@ -113,7 +119,7 @@ export async function main() {
   const ext = path.extname(src) || '.mp4';
   const esiti = [];
   for (const [i, m] of momenti.entries()) {
-    const stile = stili[i % stili.length];
+    const stile = orizzontale ? 'Kal Orizzontale' : stili[i % stili.length];
     const cartella = pulito(`${nome} · reel ${i + 1} ${m.titolo}`).slice(0, 90);
     // copia senza ricodifica (parte dal fotogramma chiave prima: il Regista toglie comunque le pause in testa);
     // il nome del file resta quello del telefono, così il Regista riconosce dispositivo e LOG
@@ -121,7 +127,7 @@ export async function main() {
     run('ffmpeg', ['-y', '-v', 'error', '-ss', String(m.da), '-i', src, '-t', String(+(m.a - m.da).toFixed(2)), '-map', '0:v:0', '-map', '0:a:0?', '-c', 'copy',
       '-map_metadata', '0', '-avoid_negative_ts', 'make_zero', '-movflags', '+faststart', pezzo]);
     run('rclone', ['copyto', pezzo, `${REMOTE}:${DA_EDITARE}/${cartella}/${path.basename(pezzo)}`]);
-    const brief = [`Stile: ${stile}`, 'Durata: 30-45 s', `Note: reel tagliato dal video lungo «${nome}». Aggancio: «${m.gancio}». Tieni tutto il filo del discorso`, process.env.BRIEF || ''].filter(Boolean).join('. ');
+    const brief = [`Stile: ${stile}`, 'Durata: 30-45 s', ...(orizzontale ? ['Formato: 16:9, clip orizzontale'] : []), `Note: reel tagliato dal video lungo «${nome}». Aggancio: «${m.gancio}». Tieni tutto il filo del discorso`, process.env.BRIEF || ''].filter(Boolean).join('. ');
     const partito = await lanciaRegista(cartella, brief.slice(0, 900));
     esiti.push({ ...m, stile, cartella, partito });
     log(`reel ${i + 1} · ${stile} · ${m.da}–${m.a} s · «${m.titolo}»${partito ? '' : ' · Regista NON partito'}`);

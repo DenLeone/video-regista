@@ -17,6 +17,10 @@ on:
         description: 'Quanti reel (1–5)'
         required: false
         default: '3'
+      formato:
+        description: 'auto = come il video (orizzontale resta 16:9); oppure verticale / orizzontale'
+        required: false
+        default: 'auto'
       brief:
         description: 'Indicazioni facoltative (valgono per tutti i reel)'
         required: false
@@ -64,6 +68,7 @@ jobs:
           SORGENTE: ${{ inputs.sorgente }}
           STILI: ${{ inputs.stili }}
           QUANTI: ${{ inputs.quanti }}
+          FORMATO: ${{ inputs.formato }}
           BRIEF: ${{ inputs.brief }}
           GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
