@@ -138,7 +138,7 @@ const URL_98 = 'https://drive.google.com/drive/folders/1icN7ww-f6CrClZ5nhxi9eiX3
 const URL_STILI = 'https://drive.google.com/drive/folders/1HD6Qv-KO3tmAQORJXuvsSnCALpK85e8w';
 const cartellaDrive = (id: string) => `https://drive.google.com/drive/folders/${id}`;
 const PROVA_S = 10; // render di prova di uno stile: i primi N secondi del video
-const VERSIONE_COMANDI = 7; // cambia → il bot ri-registra da solo il menu comandi
+const VERSIONE_COMANDI = 8; // cambia → il bot ri-registra da solo il menu comandi
 let ORIGINE_BOT = ''; // https://regista-telegram…workers.dev (dalla richiesta in corso)
 const ANTEPRIMA_URL = () => (ORIGINE_BOT ? `${ORIGINE_BOT}/stili.jpg?v=1` : undefined);
 const LINEA = '━━━━━━━━━━━━━━━━━━';
@@ -424,13 +424,12 @@ async function pannello(env: Env): Promise<Schermo> {
       `<b>Stile</b>       ${esc(imp.stile)} · <b>AI</b> ${esc(motore(imp))}`,
       ...(tgFile === false ? ['📥 <i>Video mandati in chat: da attivare (vedi ❓ Guida). Intanto usa Drive.</i>'] : []),
       LINEA,
-      `<i>Girato in <code>05 · Archivio/Prodotto</code>${tgFile === false ? '' : ' (o qui come File)'} → 🆕 Nuovo montaggio → il video arriva qui.</i>`,
+      `<i>Girato in <code>05 · Archivio/Prodotto</code>${tgFile === false ? '' : ' (o qui come File)'} → 🆕 Nuovo video → il video arriva qui.</i>`,
     ].join('\n'),
     tasti: [
-      [tasto('🆕 Nuovo montaggio', 'nuovo'), tasto('📦 Più video', 'lotto')],
-      [tasto('📼 Ultimi video', 'video'), tasto('🎨 Stili', 'stili')],
-      [tasto('🎞 Documentario', 'doc')],
-      [tasto('📊 Stato', 'stato'), tasto('⚙️ Impostazioni', 'imp')],
+      [tasto('🆕 Nuovo video', 'nuovo'), tasto('👀 Cosa sta succedendo', 'stato')],
+      [tasto('📤 Da pubblicare', 'video'), tasto('🎨 Stili', 'stili')],
+      [tasto('📈 Social', 'social'), tasto('🧰 Altro', 'altro')],
       [link('📂 01 · Da editare', URL_97), link('✅ 02 · Fatti', URL_98)],
       [tasto('❓ Guida', 'guida')],
     ],
@@ -632,6 +631,8 @@ async function schermoAvanzate(env: Env): Promise<Schermo> {
 const GUIDA: Schermo = {
   testo: [
     '❓ <b>Come funziona</b>', LINEA,
+    '<b>Il menu</b>: 🆕 Nuovo video · 👀 Cosa sta succedendo (lo stato) · 📤 Da pubblicare (gli ultimi video) · 🎨 Stili · 📈 Social · 🧰 Altro (più video, documentario, Motion, commenti, report, radar, TikTok, impostazioni).',
+    '',
     '<b>1. Il girato</b>',
     '📂 Su Drive: <code>05 · Archivio/Prodotto/</code> con tutte le clip (iPhone, Sony, Insta360, B-roll, audio del microfono). A fine montaggio il Regista le mette in <code>B-roll</code> (riusati nei video dopo) e <code>Parlato</code>.',
     '📥 In chat: mandami i file come <b>File</b> (📎 → File, così non vengono compressi), il nome del video come didascalia.',
@@ -728,6 +729,25 @@ const SCHERMO_MOTION: Schermo = {
     [tasto('💻 Dal codice', 'mo:m:codice'), tasto('⚡ subito', 'mo:q:codice')],
     [tasto('🔤 Titolo animato', 'mo:m:titolo')],
     [tasto('✍️ Descrivi tu (AI gratis)', 'mo:m:idea')],
+    [MENU_TASTO],
+  ],
+};
+// 🧰 Altro (25/11): tutto quello che prima era nel pannello o solo a comando, in un posto solo
+const SCHERMO_ALTRO: Schermo = {
+  testo: ['🧰 <b>Altro</b>', LINEA,
+    '📦 <b>Più video</b>: spunti tante cartelle, partono tutte insieme',
+    '🎞 <b>Documentario</b>: video lungo in più capitoli',
+    '✨ <b>Motion</b>: loghi e titoli animati',
+    '💬 <b>Commenti</b>: nuovi su Instagram, con la risposta pronta',
+    '📈 <b>Report</b>: la settimana',
+    '🕵️ <b>Radar</b>: account concorrenti',
+    '🔗 <b>TikTok</b>: collega per le statistiche',
+    '⚙️ <b>Impostazioni</b>: stile di sempre, AI, Instagram e YouTube'].join('\n'),
+  tasti: [
+    [tasto('📦 Più video', 'lotto'), tasto('🎞 Documentario', 'doc')],
+    [tasto('✨ Motion', 'mo'), tasto('💬 Commenti', 'commenti')],
+    [tasto('📈 Report', 'report'), tasto('🕵️ Radar', 'radar')],
+    [tasto('🔗 TikTok', 'tiktok'), tasto('⚙️ Impostazioni', 'imp')],
     [MENU_TASTO],
   ],
 };
@@ -1187,6 +1207,8 @@ async function onMessage(env: Env, msg: Msg): Promise<unknown> {
     if (nome === 'stili') return invia(env, chat, await schermoStili(env));
     if (nome === 'impostazioni') return invia(env, chat, await schermoImpostazioni(env));
     if (nome === 'aiuto' || nome === 'guida') return invia(env, chat, GUIDA);
+    if (nome === 'altro') return invia(env, chat, SCHERMO_ALTRO);
+    if (nome === 'motion') return invia(env, chat, SCHERMO_MOTION);
     if (nome === 'social') return social(env, chat);
     if (nome === 'tiktok') return invia(env, chat, await schermoTikTok(env));
     if (nome === 'commenti') return commentiOra(env, chat);
@@ -1405,6 +1427,9 @@ Ti mando il video qui quando è pronto; il file intero va in <b>02 · Fatti/${es
   }
   // ✨ Motion (workflow motion.yml, 17/11): modello → testi scritti → formato → video in chat e su Drive
   if (data === 'mo') { await avviso(); return mostra(env, chat, SCHERMO_MOTION, msgId); }
+  if (data === 'altro') { await avviso(); return mostra(env, chat, SCHERMO_ALTRO, msgId); }
+  if (data === 'radar') { await avviso(); return schermoRadar(env, chat, ''); }
+  if (data === 'tiktok') { await avviso(); return invia(env, chat, await schermoTikTok(env)); }
   const mo = /^mo:(m|q|f|c):([a-z]+)(?::(v|o):(1080|4k))?$/.exec(data);
   if (mo) {
     if (mo[1] === 'c') {   // ✏️ correggi l'ultima animazione scritta dall'AI
@@ -2340,6 +2365,8 @@ const COMANDI = [
   { command: 'radar', description: 'Account concorrenti da tenere d’occhio' },
   { command: 'tiktok', description: 'Collega TikTok per le statistiche' },
   { command: 'stili', description: 'Stili disponibili e predefinito' },
+  { command: 'motion', description: 'Loghi e titoli animati' },
+  { command: 'altro', description: 'Più video, documentario, commenti, report, radar, impostazioni' },
   { command: 'impostazioni', description: 'Stile predefinito, AI, Instagram e YouTube' },
   { command: 'aiuto', description: 'Come funziona' },
   { command: 'annulla', description: 'Annulla la procedura in corso' },
