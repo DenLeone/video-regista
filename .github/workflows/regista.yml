@@ -226,7 +226,8 @@ jobs:
       - name: C'è qualcosa da fare?
         id: check
         env:
-          CARTELLA: ${{ inputs.cartella }}
+          # se «Dall'archivio» ha trovato il nome già usato in 02, il montaggio va avanti col nome libero («nome 2»)
+          CARTELLA: ${{ steps.archivio.outputs.cartella_nuova || inputs.cartella }}
           AZIONE: ${{ inputs.azione }}
           ORIGINE: ${{ inputs.origine }}
           CORREZIONE: ${{ inputs.correzione }}

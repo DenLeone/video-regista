@@ -168,6 +168,13 @@ function distanza(a, b) {
 }
 // quanto è lontana la cartella più simile (diagnosi nei log pubblici: solo numeri)
 export const piuVicina = (cercata, cartelle) => Math.min(Infinity, ...cartelle.map((c) => Math.min(distanza(chiave(c.split('/').pop()), chiave(cercata)), distanza(chiave(c), chiave(cercata)))));
+// Nome libero (25/11, Denis: «non può essere bloccante»): se «nome» c'è già (in 02 o in 01), si aggiunge « 2», « 3»…
+export function nomeLibero(nome, occupati) {
+  const presi = new Set(occupati.map((x) => String(x).toLowerCase()));
+  if (!presi.has(nome.toLowerCase())) return nome;
+  for (let n = 2; ; n++) if (!presi.has(`${nome} ${n}`.toLowerCase())) return `${nome} ${n}`;
+}
+
 export function cartellaSimile(cercata, cartelle) {
   const k = chiave(cercata);
   if (!k) return { trovata: null, quante: 0 };
@@ -236,7 +243,8 @@ if (process.argv[2] === 'collega' && process.argv[1] && path.resolve(process.arg
   const DIR_EDITARE = process.env.DIR_EDITARE || '01 · Da editare';
   const DIR_FATTI = process.env.DIR_FATTI || '02 · Fatti';
   const auto = process.argv[3] === '--auto';
-  const [sorgente, nome] = process.argv.slice(auto ? 4 : 3, auto ? 6 : 5).map((x) => String(x || '').trim());
+  const [sorgente, nomeChiesto] = process.argv.slice(auto ? 4 : 3, auto ? 6 : 5).map((x) => String(x || '').trim());
+  let nome = nomeChiesto;
   // il motivo va anche al bot (passo «Avvisa il bot se il giro si è fermato prima di montare»)
   const esce = (t) => {
     console.log(`::error::${t}`);
@@ -245,7 +253,12 @@ if (process.argv[2] === 'collega' && process.argv[1] && path.resolve(process.arg
   };
   if (!sorgente || !nome) esce('servono la cartella di 05 e il nome del video');
   const cartelle = (d) => { try { return JSON.parse(rclone('lsjson', `${R}:${d}`, '--dirs-only')).map((x) => x.Name.toLowerCase()); } catch { return []; } };
-  if (cartelle(DIR_FATTI).includes(nome.toLowerCase())) esce(`in ${DIR_FATTI} c'è già un video con questo nome: scegline un altro (es. con « 2»)`);
+  // in 02 c'è già un video con questo nome: non si ferma, si usa «nome 2». Solo 02 conta: col tasto Riprova «nome 2» è già in 01 e il rilancio la riusa
+  if (cartelle(DIR_FATTI).includes(nome.toLowerCase())) {
+    nome = nomeLibero(nome, cartelle(DIR_FATTI));
+    console.log(`in ${DIR_FATTI} c'è già un video con questo nome: uso «${nome}»`);
+    if (process.env.GITHUB_OUTPUT) fs.appendFileSync(process.env.GITHUB_OUTPUT, `cartella_nuova<<REGISTA_NOME_END\n${nome}\nREGISTA_NOME_END\n`);
+  }
   // già pronta in 01 (c'è la mappa): rilancio, niente da fare. Senza mappa = giro interrotto, si completa
   const giaPronta = (() => { try { return JSON.parse(rclone('lsjson', `${R}:${DIR_EDITARE}/${nome}/${MAPPA}`)).length > 0; } catch { return false; } })();
   if (giaPronta) { console.log('la cartella c\'è già in 01: niente collegamenti nuovi (rilancio)'); process.exit(0); }

@@ -3,7 +3,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { test } from 'node:test';
-import { archiviaOriginali, candidatiProdotto, cartellaSimile, collegaDaArchivio, daMontare, MAPPA, ordinaArchivio, PREFISSO_BROLL, scaricaBrollProdotto, tipiFile } from './archivio.mjs';
+import { archiviaOriginali, candidatiProdotto, cartellaSimile, collegaDaArchivio, daMontare, MAPPA, nomeLibero, ordinaArchivio, PREFISSO_BROLL, scaricaBrollProdotto, tipiFile } from './archivio.mjs';
 
 // Drive finto: percorso → { size, link } (link = collegamento). Solo i comandi che usa archivio.mjs.
 function driveFinto(file = {}) {
@@ -200,4 +200,10 @@ test('elenco del bot: solo le cartelle di 05 con girato nuovo, dalla più recent
     { Path: 'sciolto.mp4', Name: 'sciolto.mp4', ModTime: '2026-11-23T10:00:00Z' },
   ];
   assert.deepEqual(daMontare(elenco, isMedia), ['C', 'A']);
+});
+
+test('nomeLibero: aggiunge 2, 3… solo se il nome c\'è già', () => {
+  assert.equal(nomeLibero('Fifine AM8', ['Altro']), 'Fifine AM8');
+  assert.equal(nomeLibero('Fifine AM8', ['fifine am8']), 'Fifine AM8 2');
+  assert.equal(nomeLibero('Fifine AM8', ['Fifine AM8', 'Fifine AM8 2']), 'Fifine AM8 3');
 });
