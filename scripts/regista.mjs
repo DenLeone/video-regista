@@ -77,7 +77,7 @@ const PROVA_NOME = PROVA_PEZZO ? `${PROVA_PEZZO[1]}-${PROVA_PEZZO[2]}s` : `${PRO
 // Confronto stili: un solo scarico, 2 o 3 anteprime da 10 s, il server aspetta il tasto
 // e monta il video intero nello stile scelto senza riscaricare. Nomi separati da |.
 const STILI_CONFRONTO = (process.env.STILI_SCELTA || '').split('|').map((s) => s.trim()).filter(Boolean).slice(0, 3);
-const ATTESA_SCELTA_MS = Math.max(60_000, Number(process.env.ATTESA_SCELTA_MS) || 12 * 60 * 1000);
+const ATTESA_SCELTA_MS = Math.max(60_000, Number(process.env.ATTESA_SCELTA_MS) || 3 * 60 * 1000);
 // file mandati direttamente al bot: [{"m": id_messaggio, "n": "nome.mov"}, ...]
 const TELEGRAM_FILE = (process.env.TELEGRAM_FILE || '').trim();
 const DA_TELEGRAM = Boolean(TELEGRAM_FILE && TELEGRAM_FILE !== '[]');
@@ -3067,6 +3067,34 @@ async function regiaDiUnoStile(nomeStile, nome, analisi, testoMateriale, fogliUs
   return { ...rifinito, stile, nomeStile: stileSuMisura?.nome || nomeStile };
 }
 
+// Bozze in gara (25/11): Gemini Flash guarda 4 fotogrammi di ogni anteprima da 10 s e consiglia lo stile.
+// Se non risponde vale il primo: la scelta non deve mai fermare il montaggio.
+export async function giudicaAnteprime(pronti, brief = '') {
+  const primo = { nomeStile: pronti[0].nomeStile, motivo: 'giudizio AI non disponibile: propongo il primo stile' };
+  if (!process.env.GEMINI_API_KEY) return primo;
+  try {
+    const parts = [{ text: `Sei il revisore dei video social di Denis (verticali 9:16). Hai le anteprime da 10 secondi dello STESSO video in ${pronti.length} stili, ognuna come 4 fotogrammi in ordine. Scegli lo stile che rende meglio: testo leggibile e dentro le zone, faccia mai coperta, ritmo e pulizia, coerenza col brief.${brief ? `\nBrief: ${String(brief).slice(0, 300)}` : ''}\nRispondi SOLO con JSON: {"scelta":"<nome esatto dello stile>","motivo":"una frase breve in italiano"}\nStili: ${pronti.map((p) => p.nomeStile).join(' | ')}` }];
+    for (const p of pronti) {
+      for (const t of [1, 3, 5, 8]) {
+        const jpg = path.join(WORK, `giudice-${pronti.indexOf(p)}-${t}.jpg`);
+        execFileSync('ffmpeg', ['-y', '-v', 'error', '-ss', String(t), '-i', p.anteprima, '-frames:v', '1', '-vf', 'scale=360:-2', jpg]);
+        parts.push({ text: `Stile «${p.nomeStile}», secondo ${t}:` }, { inline_data: { mime_type: 'image/jpeg', data: fs.readFileSync(jpg).toString('base64') } });
+      }
+    }
+    const headers = { 'content-type': 'application/json', 'x-goog-api-key': process.env.GEMINI_API_KEY };
+    const body = JSON.stringify({ contents: [{ role: 'user', parts }], generationConfig: { responseMimeType: 'application/json', temperature: 0.2 } });
+    for (const modello of (await modelliGemini(headers)).slice(0, 2)) {
+      const esito = await chiamaGemini(modello, body, headers, { scadenza: Date.now() + 90_000 });
+      if (!esito.risposta) continue;
+      const j = await esito.risposta.json();
+      const r = JSON.parse((j.candidates?.[0]?.content?.parts || []).map((x) => x.text || '').join('').replace(/^```(?:json)?\s*|\s*```$/g, ''));
+      const scelto = pronti.find((p) => p.nomeStile === r.scelta);
+      if (scelto) return { nomeStile: scelto.nomeStile, motivo: String(r.motivo || '').slice(0, 200) };
+    }
+  } catch (e) { log('giudizio sulle anteprime non riuscito', e.message.split('\n')[0]); }
+  return primo;
+}
+
 // Tre anteprime da 10 secondi, poi attesa del tasto. Ritorna il piano intero dello stile scelto,
 // con i file originali ancora da tagliare. null = Denis non ha scelto in tempo.
 async function confrontaStili(nome, analisi, testoMateriale, fogliUsati) {
@@ -3094,6 +3122,7 @@ async function confrontaStili(nome, analisi, testoMateriale, fogliUsati) {
         prova: 10, stile: uno.nomeStile, confronta: true, tagli: copia.clips.length,
         minuti: Math.round((Date.now() - T0) / 60000),
       });
+      uno.anteprima = out;
       pronti.push(uno);
       log(`anteprima pronta: ${uno.nomeStile}`);
     } catch (e) {
@@ -3103,14 +3132,16 @@ async function confrontaStili(nome, analisi, testoMateriale, fogliUsati) {
   }
   if (pronti.length < 2) throw new Error(`confronto fermo: servono almeno 2 anteprime, ne ho ${pronti.length}`);
   if (!process.env.NOTIFY_URL) throw new Error('confronto senza NOTIFY_URL: non posso chiedere lo stile in chat');
+  const consiglio = await giudicaAnteprime(pronti, analisi.brief);
+  log(`consiglio AI: ${consiglio.nomeStile} · ${consiglio.motivo}`);
   const url = process.env.NOTIFY_URL.replace(/\/notify$/, '/scegli');
   const token = process.env.NOTIFY_TOKEN || '';
   const apri = await fetch(url, {
     method: 'POST', headers: { 'content-type': 'application/json', 'x-regista-token': token },
-    body: JSON.stringify({ run_id: process.env.GITHUB_RUN_ID || '', nome, stili: pronti.map((p) => p.nomeStile) }),
+    body: JSON.stringify({ run_id: process.env.GITHUB_RUN_ID || '', nome, stili: pronti.map((p) => p.nomeStile), consigliato: consiglio.nomeStile, motivo: consiglio.motivo }),
   });
   if (!apri.ok) throw new Error(`non riesco a mandare i tasti dello stile (HTTP ${apri.status})`);
-  await fase(nome, `⏸ Scegli lo stile in chat (${pronti.map((p) => p.nomeStile).join(' · ')}). Aspetto 12 minuti, i file restano qui`, 'render');
+  await fase(nome, `⏸ Scegli lo stile in chat (${pronti.map((p) => p.nomeStile).join(' · ')}). Se non scegli entro ${Math.round(ATTESA_SCELTA_MS / 60000)} minuti uso ${consiglio.nomeStile} (consiglio dell'AI)`, 'render');
   const fino = Date.now() + ATTESA_SCELTA_MS;
   let scelta = '';
   while (Date.now() < fino && !scelta) {
@@ -3121,8 +3152,9 @@ async function confrontaStili(nome, analisi, testoMateriale, fogliUsati) {
       scelta = String((await r.json())?.scelta || '');
     } catch { /* riprovo */ }
   }
-  const uno = pronti.find((p) => p.nomeStile === scelta);
+  const uno = pronti.find((p) => p.nomeStile === (scelta || consiglio.nomeStile));
   if (!uno) return null;
+  if (!scelta) log(`nessuna scelta in chat: vale il consiglio dell'AI (${uno.nomeStile})`);
   log(`stile scelto: ${uno.nomeStile}`);
   scegliStile(`Stile: ${uno.nomeStile}`);
   stileCorrente = uno.stile;

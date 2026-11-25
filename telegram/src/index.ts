@@ -2496,15 +2496,17 @@ export default {
     }
     if (req.method === 'POST' && url.pathname === '/scegli') {
       if (req.headers.get('x-regista-token') !== env.NOTIFY_TOKEN) return new Response('no', { status: 401 });
-      const corpo = await req.json().catch(() => ({})) as { run_id?: string; nome?: string; stili?: string[] };
+      const corpo = await req.json().catch(() => ({})) as { run_id?: string; nome?: string; stili?: string[]; consigliato?: string; motivo?: string };
       const stili = (corpo.stili || []).map((s) => String(s)).filter(Boolean).slice(0, 3);
       const runId = String(corpo.run_id || '');
       if (!runId || stili.length < 2) return new Response('scelta incompleta', { status: 400 });
       await mem(env).scrivi(`scegli:${runId}`, { nome: String(corpo.nome || ''), stili } satisfies SceltaStile);
-      const tasti = [stili.map((s, i) => tasto(s, `cs:${runId}:${i}`))];
+      const consigliato = stili.includes(String(corpo.consigliato || '')) ? String(corpo.consigliato) : '';
+      const tasti = [stili.map((s, i) => tasto(s === consigliato ? `⭐ ${s}` : s, `cs:${runId}:${i}`))];
+      const consiglio = consigliato ? `\n⭐ Consiglio dell'AI: <b>${esc(consigliato)}</b>${corpo.motivo ? ` · ${esc(String(corpo.motivo).slice(0, 200))}` : ''}` : '';
       for (const chat of autorizzati(env)) {
         await invia(env, chat, {
-          testo: `👁 <b>${esc(String(corpo.nome || ''))}</b>\nQuale stile monto per intero?\n<i>Il server è acceso: se non scegli entro 12 minuti si ferma e il girato resta dov'è.</i>`,
+          testo: `👁 <b>${esc(String(corpo.nome || ''))}</b>\nQuale stile monto per intero?${consiglio}\n<i>Se non scegli entro 3 minuti ${consigliato ? 'monto quello consigliato' : 'si ferma e il girato resta dov\'è'}.</i>`,
           tasti,
         });
       }
