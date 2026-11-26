@@ -67,6 +67,7 @@ fs.writeFileSync(path.join(bin, 'ffmpeg'), '#!/bin/bash\nout="${@: -1}"\nif [[ "
 
 // Gemini finto: il prodotto lo dice la cartella, il parlato il nome del file («p_…»)
 const richieste = [];
+let fermaAlRaggruppa = false; // il bot che segna «fermato» su Drive mentre il giro raggruppa i prodotti
 const gemini = http.createServer((q, r) => {
   let b = ''; q.on('data', (d) => (b += d));
   q.on('end', () => {
@@ -75,6 +76,10 @@ const gemini = http.createServer((q, r) => {
     const testi = parts.filter((p) => p.text).map((p) => p.text);
     const clip = testi.map((t) => /^Clip (\d+) \((\w+), cartella «(.*)», file «(.*)»\):$/.exec(t)).filter(Boolean)
       .map((m) => ({ k: Number(m[1]), prodotto: /Anker/.test(m[3]) ? 'Anker powerbank' : /Moero/.test(m[3]) ? 'Moero' : '', parlato: m[4].startsWith('p_'), conf: /Anker|Moero/.test(m[3]) ? 0.9 : 0.1 }));
+    if (!clip.length && fermaAlRaggruppa) {
+      const f = path.join(drive, '00 · Preparazione/_riordino/stato.json');
+      fs.writeFileSync(f, JSON.stringify({ ...JSON.parse(fs.readFileSync(f, 'utf8')), fase: 'fermato' }));
+    }
     r.setHeader('content-type', 'application/json');
     r.end(JSON.stringify({ candidates: [{ content: { parts: [{ text: JSON.stringify(clip.length ? { clip } : { gruppi: [] }) }] } }] }));
   });
@@ -155,6 +160,17 @@ test('«ferma» segna lo stato e il «continua» dopo non riprende', async () =>
   await lancia('continua');
   assert.equal(avvisi.length, n); // nessun nuovo avviso dal «continua»
   assert.deepEqual(albero(A), prima);
+});
+
+test('«ferma» premuto mentre prepara il piano: non sposta niente', async () => {
+  fermaAlRaggruppa = true;
+  const r = await lancia('vai');
+  fermaAlRaggruppa = false;
+  assert.equal(r.codice, 0, r.err);
+  assert.deepEqual(albero(A), prima);
+  assert.match(r.out, /fermato da Denis prima degli spostamenti/);
+  assert.ok(!/comincio a riordinare/.test(avvisi.at(-1)));
+  assert.equal(JSON.parse(fs.readFileSync(path.join(drive, '00 · Preparazione/_riordino/stato.json'), 'utf8')).fase, 'fermato');
 });
 
 test('fine', () => { gemini.close(); bot.close(); fs.rmSync(radice, { recursive: true, force: true }); });

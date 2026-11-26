@@ -386,6 +386,8 @@ export async function main() {
     await avvisa(`🔎 Ispettore (prova, non ho spostato niente): ${piano.mosse.length} file da riordinare, ${prodotti.length} prodotti.\n${righe.join('\n')}${piano.dubbie.length ? `\n${piano.dubbie.length} clip dal prodotto non chiaro restano dove sono.` : ''}`);
     return;
   }
+  // «ferma» premuto mentre si raggruppava e si preparava il piano: qui sotto lo stato si riscrive, quindi si guarda prima
+  if (await stop()) { log('fermato da Denis prima degli spostamenti'); return; }
   if (piano.mosse.length) await avvisa(`🔎 Ispettore: comincio a riordinare in background (${piano.mosse.length} file, ${prodotti.length} prodotti). Lo fa con calma; ⛔ per fermarlo, «annulla» per rimettere tutto.\n${righe.join('\n')}`);
   scriviJson(`${STATO_DIR}/stato.json`, { fase: 'riordino', avviato: stato.avviato || new Date().toISOString(), aggiornato: new Date().toISOString(), mosse: piano.mosse.length });
   const fine = await esegui(piano.mosse, giornale, deps, { scadenza, stop });
