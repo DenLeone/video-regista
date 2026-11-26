@@ -508,6 +508,7 @@ function htmlOggi() {
   const video = stato.home?.video || [];
   const aperto = stato.home?.upload && !stato.home.upload.avviato && !pronto && !occupato;
   return `${htmlBarra('Oggi', { destra: htmlChipRete() })}
+    <div class="in-breve" data-inbreve>${htmlInBreve()}</div>
     <div data-vivo data-firma="${esc(firmaStato(s))}">${vivo}</div>
     <div data-squadra-box data-firma="${esc(firmaSquadra())}">${htmlSquadra()}</div>
     ${sotto}
@@ -515,6 +516,34 @@ function htmlOggi() {
     ${video.length ? `<h2 class="sezione">Ultimi montaggi</h2><div class="carosello">${video.map((v) => htmlLocandina(v, video)).join('')}</div>` : (lavori ? '' : '<p class="vuoto">Nessun montaggio ancora.</p>')}
     ${lavori ? '' : '<p class="meta-3">Lo stato si aggiorna da solo mentre l’app è aperta. Nessun montaggio parte da solo.</p>'}`;
 }
+// 🎯 Oggi in breve (restyling 26/11): tre numeri con il loro colore, per capire a colpo d'occhio dove si guarda.
+// ciano = sta lavorando · verde = pronto da pubblicare · rosso = da guardare
+const ICO_BREVE = {
+  corso: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M13 2 4 14h7l-1 8 9-12h-7z"/></svg>',
+  pronti: '<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="m8 12.5 3 3 5-6"/></svg>',
+  guarda: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3 2 20h20z"/><path d="M12 10v5M12 18v.01"/></svg>',
+};
+function conteggiOggi() {
+  const s = stato.home?.stato || {};
+  const sq = stato.squadra?.presente ? (stato.squadra.stato?.lavori || []) : [];
+  const recente = (v) => { const t = typeof v.quando === 'number' ? v.quando : Date.parse(v.quando); return !Number.isFinite(t) || Date.now() - t < 3 * 864e5; };
+  return {
+    corso: (s.attivi || []).length + (s.pendenti || []).length + sq.filter((l) => l.stato === 'lavora').length,
+    pronti: (stato.home?.video || []).filter((v) => !v.memo?.pubblicato && recente(v)).length,
+    guarda: (s.falliti || []).length + sq.filter((l) => l.stato === 'errore').length,
+  };
+}
+function htmlInBreve() {
+  const c = conteggiOggi();
+  const chip = (k, nome, tasto) => `<${tasto ? 'button type="button" data-azione="vai" data-verso="video"' : 'div'} class="stat ${k} ${c[k] ? '' : 'zero'}">
+    <span class="stat-ico">${ICO_BREVE[k]}</span><b class="numeri">${c[k]}</b><span class="stat-nome">${nome}</span></${tasto ? 'button' : 'div'}>`;
+  return `${chip('corso', 'In corso')}${chip('pronti', 'Da pubblicare', true)}${chip('guarda', 'Da guardare')}`;
+}
+function aggiornaInBreve() {
+  const box = document.querySelector('[data-inbreve]');
+  if (box && stato.schermo === 'oggi') box.innerHTML = htmlInBreve();
+}
+
 // 👥 La Squadra (Mini App passo 4): quello che fanno le catene dei bot, come lo spinge il bot Squadra (già ridotto ai campi
 // sicuri: nomi, passi, stati, testi corti). Se la Squadra non ha mai mandato niente la scheda non c'è.
 const PASSI_SQUADRA = ['Archivista', 'Cartelle', 'Foto', 'Montaggio', 'Testi', 'Pronto'];
@@ -533,7 +562,7 @@ function htmlSquadra() {
   const punto = rotto ? 'err' : inCorso || adesso.length ? '' : 'warn';
   const rail = (l) => PASSI_SQUADRA.map((_, k) => `<i class="${l.stato === 'fatto' || k < l.passo ? 'done' : ''} ${k === l.passo && l.stato === 'lavora' ? 'now' : ''} ${k === l.passo && l.stato === 'errore' ? 'ko' : ''}"></i>`).join('');
   const catena = (l) => `<div class="squadra-riga" data-squadra-lavoro>
-      <p class="meta"><strong>${esc(l.id)}</strong>${l.stile ? ` · ${esc(l.stile)}` : ''}</p>
+      <p class="meta squadra-nome"><span><strong>${esc(l.id)}</strong>${l.stile ? ` · ${esc(l.stile)}` : ''}</span><span class="pill ${esc(l.stato)}">${l.stato === 'lavora' ? 'In corso' : l.stato === 'errore' ? 'Fermo' : l.stato === 'fatto' ? 'Pronto' : esc(l.stato)}</span></p>
       <div class="rail" style="grid-template-columns:repeat(${PASSI_SQUADRA.length},1fr)" aria-hidden="true">${rail(l)}</div>
       <p class="meta-3">${esc(l.stato === 'errore' ? [PASSI_SQUADRA[l.passo], l.testo].filter(Boolean).join(' · ') : l.testo || PASSI_SQUADRA[l.passo] || '')}</p>
     </div>`;
@@ -554,6 +583,7 @@ async function aggiornaSquadra() {
   if (!box || stato.schermo !== 'oggi') return;
   const firma = firmaSquadra();
   if (box.dataset.firma !== firma) { box.dataset.firma = firma; box.innerHTML = htmlSquadra(); }
+  aggiornaInBreve();
 }
 
 function htmlVivo(s) {
@@ -1098,6 +1128,7 @@ async function cicloPoll() {
       else { box.dataset.firma = firma; box.innerHTML = htmlVivo(s); }
     }
     aggiornaBadge();
+    aggiornaInBreve();
     await aggiornaSquadra();
     if (stato.foglio?.tipo === 'fasi') {
       const sheet = document.getElementById('sheet');

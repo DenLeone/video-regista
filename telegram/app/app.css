@@ -956,3 +956,83 @@ html[data-motion="off"] *, html[data-motion="off"] *::before, html[data-motion="
 .squadra .squadra-adesso { margin-top: 12px; padding-top: 10px; border-top: 1px solid rgba(255, 255, 255, .08); display: grid; gap: 4px; }
 .squadra .squadra-adesso .meta-3 { margin: 0; }
 [data-squadra-box]:empty { display: none; }
+
+/* ───────── Restyling 26/11 · colore con un significato, aspetto più tecnico ─────────
+   ciano = sta lavorando · verde = pronto · ambra = in attesa · rosso = da guardare · viola = accento secondario.
+   Tutto sopra la grafica di prima (nessun layout spostato): se serve tornare indietro basta togliere questo blocco. */
+:root {
+  --acc: #5ac8fa;
+  --acc-2: #8b7cff;
+  --acc-soft: rgba(90, 200, 250, .16);
+  --acc-glow: rgba(90, 200, 250, .45);
+  --mono: ui-monospace, "SF Mono", SFMono-Regular, Menlo, Consolas, monospace;
+}
+body {
+  background:
+    radial-gradient(85% 38% at 0% -8%, rgba(90, 200, 250, .12), transparent 55%),
+    radial-gradient(70% 34% at 110% 108%, rgba(139, 124, 255, .11), transparent 48%),
+    radial-gradient(rgba(255, 255, 255, .055) 1px, transparent 1.2px) 0 0 / 22px 22px,
+    #000;
+}
+::selection { background: var(--acc-soft); }
+:focus-visible { outline-color: var(--acc); }
+input, textarea { caret-color: var(--acc); }
+
+/* numeri e tempi: carattere a spaziatura fissa, da cruscotto */
+.numeri, .progresso-num { font-family: var(--mono); font-variant-numeric: tabular-nums; letter-spacing: -.02em; }
+
+/* sta lavorando: ciano con bagliore, e una linea luminosa sul bordo alto della scheda */
+.live-dot { background: var(--acc); box-shadow: 0 0 10px var(--acc-glow); animation: pulse-acc 1.8s ease-out infinite; }
+.live-dot.warn { background: var(--warn); box-shadow: 0 0 10px rgba(255, 179, 64, .45); animation: none; }
+.live-dot.err { background: var(--err); box-shadow: 0 0 10px rgba(255, 107, 107, .5); animation: none; }
+@keyframes pulse-acc { 0% { box-shadow: 0 0 0 0 var(--acc-glow); } 70% { box-shadow: 0 0 0 9px rgba(90, 200, 250, 0); } 100% { box-shadow: 0 0 0 0 rgba(90, 200, 250, 0); } }
+.card[data-fase]::before, .card.squadra::before {
+  content: ""; position: absolute; left: 22px; right: 22px; top: 0; height: 2px; border-radius: 0 0 3px 3px;
+  background: linear-gradient(90deg, var(--acc), var(--acc-2) 55%, transparent);
+  box-shadow: 0 0 14px var(--acc-glow);
+}
+.card.job--err::before { content: ""; position: absolute; left: 22px; right: 22px; top: 0; height: 2px; border-radius: 0 0 3px 3px; background: linear-gradient(90deg, var(--err), transparent); box-shadow: 0 0 14px rgba(255, 107, 107, .45); }
+
+/* binari di avanzamento: gradiente ciano → viola, errore rosso */
+.rail i.done { background: linear-gradient(90deg, var(--acc), var(--acc-2)); }
+.rail i.now { background: rgba(90, 200, 250, .28); }
+.rail i.now::after { background: linear-gradient(90deg, transparent, var(--acc), transparent); }
+.rail i.ko { background: var(--err); box-shadow: 0 0 8px rgba(255, 107, 107, .5); }
+
+/* barra dei tab: la scheda aperta si accende */
+.tab[aria-current="page"] { color: var(--acc); background: var(--acc-soft); box-shadow: 0 0 0 1px rgba(90, 200, 250, .35) inset; }
+
+/* 🎯 Oggi in breve */
+.in-breve { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin: 2px 0 14px; }
+.stat {
+  appearance: none; border: 0; text-align: left; font: inherit; color: var(--ink); cursor: default;
+  position: relative; overflow: hidden; display: grid; gap: 2px; padding: 12px 12px 11px; border-radius: var(--r-md);
+  background: var(--surf); box-shadow: 0 0 0 1px var(--hair) inset;
+  -webkit-tap-highlight-color: transparent; touch-action: manipulation;
+}
+button.stat { cursor: pointer; transition: transform var(--d-snappy) var(--spring-snappy); }
+button.stat:active { transform: scale(.97); transition-duration: .1s; }
+.stat .stat-ico { width: 28px; height: 28px; border-radius: 9px; display: grid; place-items: center; background: var(--c-soft); color: var(--c); margin-bottom: 4px; }
+.stat .stat-ico svg { width: 17px; height: 17px; stroke: currentColor; fill: none; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+.stat b { font: 700 1.7rem/1.05 var(--mono); letter-spacing: -.03em; }
+.stat .stat-nome { color: var(--ink-2); font-size: 12px; line-height: 1.2; }
+.stat.corso { --c: var(--acc); --c-soft: rgba(90, 200, 250, .16); --c-glow: rgba(90, 200, 250, .35); }
+.stat.pronti { --c: var(--ok); --c-soft: rgba(48, 209, 88, .16); --c-glow: rgba(48, 209, 88, .35); }
+.stat.guarda { --c: var(--err); --c-soft: rgba(255, 107, 107, .16); --c-glow: rgba(255, 107, 107, .35); }
+.stat:not(.zero) { box-shadow: 0 0 0 1px var(--c-glow) inset, 0 10px 26px -14px var(--c-glow); background: linear-gradient(180deg, var(--c-soft), transparent 70%), var(--surf); }
+.stat:not(.zero) b { color: var(--c); }
+.stat.zero { opacity: .6; }
+.stat.zero .stat-ico { background: rgba(255, 255, 255, .06); color: var(--ink-3); }
+
+/* 👥 Squadra: etichetta di stato per ogni catena */
+.squadra .squadra-nome { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin: 0; }
+.pill { flex: none; font: 600 11px/1 var(--font); letter-spacing: .02em; padding: 5px 9px; border-radius: var(--r-pill); text-transform: uppercase; background: rgba(255, 255, 255, .08); color: var(--ink-2); }
+.pill.lavora { background: var(--acc-soft); color: var(--acc); box-shadow: 0 0 0 1px rgba(90, 200, 250, .35) inset; }
+.pill.fatto { background: rgba(48, 209, 88, .16); color: var(--ok); box-shadow: 0 0 0 1px rgba(48, 209, 88, .35) inset; }
+.pill.errore { background: rgba(255, 107, 107, .16); color: var(--err); box-shadow: 0 0 0 1px rgba(255, 107, 107, .4) inset; }
+@media (prefers-reduced-motion: reduce) { .live-dot, .rail i.now::after { animation: none; } }
+
+/* puntini sulle locandine: ambra = da approvare · verde = approvato · ciano = pubblicato */
+.punto { width: 10px; height: 10px; box-shadow: 0 0 0 1.5px rgba(0, 0, 0, .55), 0 0 10px rgba(255, 179, 64, .55); }
+.punto.ok { box-shadow: 0 0 0 1.5px rgba(0, 0, 0, .55), 0 0 10px rgba(48, 209, 88, .55); }
+.punto.pub { background: var(--acc); box-shadow: 0 0 0 1.5px rgba(0, 0, 0, .55), 0 0 10px var(--acc-glow); }
