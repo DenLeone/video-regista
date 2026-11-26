@@ -1,0 +1,57 @@
+name: riordino
+
+# 🔎 Ispettore · riordino per prodotto (scripts/riordino.mjs, 26/11): cerca tra TUTTE le cartelle di 05 · Archivio i prodotti, riunisce
+# lo stesso prodotto in una sola cartella (parlato nella cartella, B-roll in B-roll/) e toglie le vecchie rimaste vuote. Lavora in
+# background e con calma: nel repo pubblico i minuti sono gratis, e se un giro non basta (ci vogliono ore) il successivo riprende
+# da dove era arrivato (lo stato sta su Drive, in 00 · Preparazione/_riordino). Niente file cancellati, niente sovrascritti:
+# tutto va nel giornale e «annulla» rimette ogni file dov'era.
+run-name: ${{ format('riordino · {0}', inputs.modo || 'continua') }}
+on:
+  workflow_dispatch:
+    inputs:
+      modo:
+        description: 'vai = parte (poi continua da solo) | prova = solo il piano, non sposta niente | continua | annulla = rimette tutto com''era | ferma'
+        required: false
+        default: 'vai'
+  # ogni 3 ore controlla se c'è da riprendere (un giro già finito non fa niente: ~1 minuto) e, una volta al giorno, se è arrivato girato nuovo
+  schedule:
+    - cron: '41 */3 * * *'
+
+concurrency:
+  group: riordino
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  riordina:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 350
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Collego Drive
+        env:
+          RCLONE_CONF: ${{ secrets.RCLONE_CONF }}
+        run: |
+          curl -fsSL https://rclone.org/install.sh | sudo bash > /dev/null
+          mkdir -p ~/.config/rclone
+          printf '%s\n' "$RCLONE_CONF" | tr -d '\r' | sed -e '1s/^\xEF\xBB\xBF//' -e 's/^[[:space:]]*//' > ~/.config/rclone/rclone.conf
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+
+      - name: Strumenti (ffmpeg)
+        run: |
+          command -v ffmpeg >/dev/null || { sudo apt-get update -qq && sudo apt-get install -y -qq ffmpeg > /dev/null; }
+
+      - name: Riordino
+        env:
+          MODO: ${{ inputs.modo || 'continua' }}
+          BUDGET_MINUTI: '300'
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          NOTIFY_URL: ${{ secrets.NOTIFY_URL }}
+          NOTIFY_TOKEN: ${{ secrets.NOTIFY_TOKEN }}
+        run: node scripts/riordino.mjs
