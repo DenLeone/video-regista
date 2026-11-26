@@ -112,6 +112,14 @@ function demoSquadra() {
       { id: 'Fifine AM8 2', stile: 'Ultra', passo: 5, stato: 'fatto', testo: 'pronto da pubblicare: il riepilogo è su Telegram', prodotti: [] },
     ],
     adesso: [{ testo: '🎬 Montaggio di Ajazz AK820', coda: false, min: 6 }, { testo: '🥷 Studia lo stile Wes A', coda: true, min: 1 }],
+    pronti: [{ nome: 'Fifine AM8 2', stile: 'Ultra' }],
+    stili: [
+      { nome: 'Wes A', origine: 'frase', genitore: '', famiglia: 'Wes', etichetta: 'A', versioni: 2, promossa: false, voto: null },
+      { nome: 'Wes A · m1', origine: 'mutazione', genitore: 'Wes A', famiglia: 'Wes A', etichetta: 'm1', versioni: 0, promossa: true, voto: null },
+      { nome: 'Wes A · m2', origine: 'mutazione', genitore: 'Wes A', famiglia: 'Wes A', etichetta: 'm2', versioni: 0, promossa: false, voto: null },
+      { nome: 'Wes B', origine: 'frase', genitore: '', famiglia: 'Wes', etichetta: 'B', versioni: 1, promossa: false, voto: null },
+      { nome: 'Tech Unboxing', origine: 'copia', genitore: '', famiglia: '', etichetta: '', versioni: 3, promossa: false, voto: 8 },
+    ],
   } };
 }
 function demoApi(path, method, body) {
@@ -511,6 +519,7 @@ function htmlOggi() {
     <div class="in-breve" data-inbreve>${htmlInBreve()}</div>
     <div data-vivo data-firma="${esc(firmaStato(s))}">${vivo}</div>
     <div data-squadra-box data-firma="${esc(firmaSquadra())}">${htmlSquadra()}</div>
+    <div data-pubblicare-box>${htmlDaPubblicare()}</div>
     ${sotto}
     ${aperto ? '<p class="nota">C’è un caricamento aperto. I pezzi già arrivati restano. <button type="button" class="btn quiet" data-azione="apri-carica">Apri</button></p>' : ''}
     ${video.length ? `<h2 class="sezione">Ultimi montaggi</h2><div class="carosello">${video.map((v) => htmlLocandina(v, video)).join('')}</div>` : (lavori ? '' : '<p class="vuoto">Nessun montaggio ancora.</p>')}
@@ -523,13 +532,17 @@ const ICO_BREVE = {
   pronti: '<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="m8 12.5 3 3 5-6"/></svg>',
   guarda: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3 2 20h20z"/><path d="M12 10v5M12 18v.01"/></svg>',
 };
+// video del Regista finiti da meno di 3 giorni e non ancora pubblicati
+function videoDaPubblicare() {
+  const recente = (v) => { const t = typeof v.quando === 'number' ? v.quando : Date.parse(v.quando); return !Number.isFinite(t) || Date.now() - t < 3 * 864e5; };
+  return (stato.home?.video || []).filter((v) => !v.memo?.pubblicato && recente(v));
+}
 function conteggiOggi() {
   const s = stato.home?.stato || {};
   const sq = stato.squadra?.presente ? (stato.squadra.stato?.lavori || []) : [];
-  const recente = (v) => { const t = typeof v.quando === 'number' ? v.quando : Date.parse(v.quando); return !Number.isFinite(t) || Date.now() - t < 3 * 864e5; };
   return {
     corso: (s.attivi || []).length + (s.pendenti || []).length + sq.filter((l) => l.stato === 'lavora').length,
-    pronti: (stato.home?.video || []).filter((v) => !v.memo?.pubblicato && recente(v)).length,
+    pronti: videoDaPubblicare().length + (stato.squadra?.presente ? (stato.squadra.stato?.pronti || []).length : 0),
     guarda: (s.falliti || []).length + sq.filter((l) => l.stato === 'errore').length,
   };
 }
@@ -540,8 +553,41 @@ function htmlInBreve() {
   return `${chip('corso', 'In corso')}${chip('pronti', 'Da pubblicare', true)}${chip('guarda', 'Da guardare')}`;
 }
 function aggiornaInBreve() {
+  if (stato.schermo !== 'oggi') return;
   const box = document.querySelector('[data-inbreve]');
-  if (box && stato.schermo === 'oggi') box.innerHTML = htmlInBreve();
+  if (box) box.innerHTML = htmlInBreve();
+  const pub = document.querySelector('[data-pubblicare-box]');
+  if (pub) { const h = htmlDaPubblicare(); if (pub.innerHTML !== h) pub.innerHTML = h; }
+}
+
+// 📤 Da pubblicare (Mini App passo 6): i video del Regista non ancora pubblicati (si aprono) e i prodotti che la Squadra ha portato
+// fino a «pronto» (si pubblicano dal bot Squadra, che ha il riepilogo e i tasti: l'app non pubblica da sola)
+function htmlDaPubblicare() {
+  const regista = videoDaPubblicare();
+  const squadra = stato.squadra?.presente ? (stato.squadra.stato?.pronti || []) : [];
+  if (!regista.length && !squadra.length) return '';
+  const rigaR = (v) => `<button type="button" class="riga-pub" data-azione="apri-video" data-verso="${esc(v.runId)}">
+      <span><strong>${esc(v.nome)}</strong><span class="meta-3">${esc([v.stile, v.memo?.approvato ? 'approvato' : 'da approvare'].filter(Boolean).join(' · '))}</span></span><span class="chev">${ICO.chev}</span></button>`;
+  const rigaS = (p) => `<div class="riga-pub"><span><strong>${esc(p.nome)}</strong><span class="meta-3">${esc([p.stile, 'dalla Squadra'].filter(Boolean).join(' · '))}</span></span><span class="pill fatto">Pronto</span></div>`;
+  return `<article class="card pubblica" aria-label="Da pubblicare">
+    <div class="fase-riga"><h2 class="fase-nome">Da pubblicare</h2><span class="numeri">${regista.length + squadra.length}</span></div>
+    ${regista.slice(0, 4).map(rigaR).join('')}${squadra.slice(0, 6).map(rigaS).join('')}
+    ${squadra.length ? '<p class="meta-3">I video della Squadra si pubblicano dal bot Squadra (📤 Da pubblicare): l’app non pubblica da sola.</p>' : ''}
+  </article>`;
+}
+
+// 🎨 Stili della Squadra (passo 7), in sola lettura: famiglie, mutazioni, versioni salvate
+const ORIGINE_STILE = { copia: 'Copiato', frase: 'Da una frase', mutazione: 'Mutazione', manuale: 'A mano' };
+function htmlStiliSquadra() {
+  const stili = stato.squadra?.presente ? (stato.squadra.stato?.stili || []) : [];
+  if (!stili.length) return '';
+  const nomi = new Set(stili.map((x) => x.nome));
+  const figli = (n) => stili.filter((x) => x.origine === 'mutazione' && x.genitore === n);
+  const radici = stili.filter((x) => !(x.origine === 'mutazione' && nomi.has(x.genitore)));
+  const riga = (x, figlio) => `<div class="riga-set stile-riga ${figlio ? 'figlio' : ''}"><span>${esc(x.nome)}<span class="sub">${[
+    x.versioni ? `${x.versioni} ${x.versioni === 1 ? 'versione' : 'versioni'} salvate` : '', x.voto != null ? `somiglianza ${x.voto}/10` : '', x.promossa ? 'promossa' : ''].filter(Boolean).map(esc).join(' · ') || '&nbsp;'}</span></span><span class="pill ${esc(x.origine)}">${esc(ORIGINE_STILE[x.origine] || x.origine)}</span></div>`;
+  return `<section class="blocco"><h2>Stili della Squadra</h2><div class="gruppo">${radici.map((x) => riga(x, false) + figli(x.nome).map((f) => riga(f, true)).join('')).join('')}</div>
+    <p class="nota">Solo da guardare. Per creare, mutare, correggere o promuovere uno stile usa il bot Squadra (🎨 Stili); qui si aggiorna da solo.</p></section>`;
 }
 
 // 👥 La Squadra (Mini App passo 4): quello che fanno le catene dei bot, come lo spinge il bot Squadra (già ridotto ai campi
@@ -549,7 +595,7 @@ function aggiornaInBreve() {
 const PASSI_SQUADRA = ['Archivista', 'Cartelle', 'Foto', 'Montaggio', 'Testi', 'Pronto'];
 function firmaSquadra() {
   const q = stato.squadra;
-  return q?.presente ? JSON.stringify([q.vecchio, q.stato?.lavori, q.stato?.adesso]) : '';
+  return q?.presente ? JSON.stringify([q.vecchio, q.stato?.lavori, q.stato?.adesso, q.stato?.pronti]) : '';
 }
 function htmlSquadra() {
   const q = stato.squadra;
@@ -745,6 +791,7 @@ function htmlAltro() {
       ${stili.map((s) => `<div class="riga-set"><span>${esc(s.nome)}<span class="sub">${esc(s.cosa || s.desc || '')}</span></span></div>`).join('')}
       <button type="button" class="riga-set" data-azione="vai" data-verso="stile">Studia un nuovo stile<span class="chev">${ICO.chev}</span></button>
     </div></section>
+    ${htmlStiliSquadra()}
     <section class="blocco"><h2>Montaggio</h2><div class="gruppo">
       <label class="riga-set">Prova prima<select data-imp="prova">${opt('manuale', imp.prova, 'A mano')}${opt('auto', imp.prova, 'Sempre, 10 s')}${opt('no', imp.prova, 'No, monta tutto')}</select></label>
       <div class="riga-set" style="align-items:flex-start;flex-direction:column">${elenco.length ? elenco.map((c) => `<label class="check"><input type="checkbox" value="${esc(c)}" data-lotto> ${esc(c)}</label>`).join('') : '<p class="meta">Nessuna cartella in elenco.</p>'}
@@ -1838,6 +1885,7 @@ async function caricaAltro() {
   stato.collegamenti = col;
   stato.regia = regia;
   stato.chiaveNuova = null;
+  try { stato.squadra = await api('/api/squadra/stato'); } catch { /* la sezione Stili della Squadra non c'è */ }
   try { stato.comandi = await api('/api/comandi/chiave'); } catch { stato.comandi = null; }
 }
 

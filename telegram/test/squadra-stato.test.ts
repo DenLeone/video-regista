@@ -17,7 +17,7 @@ test('pulisciStato: tiene solo i campi ammessi e taglia', () => {
 
 test('pulisciStato / leggiInvio: roba che non è uno stato', () => {
   for (const x of [null, undefined, 'testo', 5, [1], []]) assert.equal(pulisciStato(x), null);
-  assert.deepEqual(pulisciStato({}), { agenti: {}, lavori: [], adesso: [], passi: [] });
+  assert.deepEqual(pulisciStato({}), { agenti: {}, lavori: [], adesso: [], passi: [], pronti: [], stili: [] });
   const r = leggiInvio({ quando: 'non è una data', stato: {} }, 1_000);
   assert.ok(r.ok && r.salvato.ricevuto === 1_000 && r.salvato.quando === new Date(1_000).toISOString());
   assert.equal(leggiInvio({}).ok, false);

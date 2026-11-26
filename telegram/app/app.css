@@ -1036,3 +1036,16 @@ button.stat:active { transform: scale(.97); transition-duration: .1s; }
 .punto { width: 10px; height: 10px; box-shadow: 0 0 0 1.5px rgba(0, 0, 0, .55), 0 0 10px rgba(255, 179, 64, .55); }
 .punto.ok { box-shadow: 0 0 0 1.5px rgba(0, 0, 0, .55), 0 0 10px rgba(48, 209, 88, .55); }
 .punto.pub { background: var(--acc); box-shadow: 0 0 0 1.5px rgba(0, 0, 0, .55), 0 0 10px var(--acc-glow); }
+
+/* 📤 Da pubblicare e 🎨 Stili della Squadra (passi 6 e 7) */
+.pubblica::before { content: ""; position: absolute; left: 22px; right: 22px; top: 0; height: 2px; border-radius: 0 0 3px 3px; background: linear-gradient(90deg, var(--ok), transparent); box-shadow: 0 0 14px rgba(48, 209, 88, .4); }
+.riga-pub { appearance: none; border: 0; background: transparent; color: inherit; font: inherit; width: 100%; text-align: left; display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 10px 0; border-top: 1px solid rgba(255, 255, 255, .07); -webkit-tap-highlight-color: transparent; touch-action: manipulation; }
+.pubblica .fase-riga + .riga-pub { border-top: 0; margin-top: 6px; }
+.riga-pub > span:first-child { display: grid; gap: 2px; min-width: 0; }
+.riga-pub strong { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+button.riga-pub { cursor: pointer; }
+button.riga-pub .chev { color: var(--ink-3); width: 18px; flex: none; }
+.pill.frase { background: rgba(139, 124, 255, .16); color: var(--acc-2); box-shadow: 0 0 0 1px rgba(139, 124, 255, .4) inset; }
+.pill.mutazione { background: var(--acc-soft); color: var(--acc); box-shadow: 0 0 0 1px rgba(90, 200, 250, .35) inset; }
+.pill.copia { background: rgba(255, 179, 64, .16); color: var(--warn); box-shadow: 0 0 0 1px rgba(255, 179, 64, .4) inset; }
+.stile-riga.figlio { margin-left: 14px; border-left: 2px solid rgba(90, 200, 250, .35); padding-left: 12px; }

@@ -14,6 +14,8 @@ export type StatoSquadra = {
   lavori: { id: string; stile: string; passo: number; stato: string; testo: string; prodotti: { nome: string; passo: number; stato: string; testo: string }[] }[];
   adesso: { testo: string; coda: boolean; min: number }[];
   passi: string[];
+  pronti: { nome: string; stile: string }[];
+  stili: { nome: string; origine: 'frase' | 'mutazione' | 'copia' | 'manuale'; genitore: string; famiglia: string; etichetta: string; versioni: number; promossa: boolean; voto: number | null }[];
 };
 
 /** qualunque cosa arrivi → solo i campi ammessi, tagliati; null se non è nemmeno un oggetto */
@@ -30,6 +32,12 @@ export function pulisciStato(x: unknown): StatoSquadra | null {
     })),
     adesso: lista(s.adesso, 12, (a) => ({ testo: t(a?.testo), coda: Boolean(a?.coda), min: num(a?.min) })),
     passi: lista(s.passi, 8, (p) => t(p, 30)),
+    pronti: lista(s.pronti, 40, (p) => ({ nome: t(p?.nome, 60), stile: t(p?.stile, 30) })).filter((p) => p.nome).slice(0, 10),
+    stili: lista(s.stili, 80, (x) => ({
+      nome: t(x?.nome, 40), origine: (['frase', 'mutazione', 'copia'].includes(x?.origine) ? x.origine : 'manuale') as 'frase' | 'mutazione' | 'copia' | 'manuale',
+      genitore: t(x?.genitore, 40), famiglia: t(x?.famiglia, 40), etichetta: t(x?.etichetta, 12), versioni: Math.min(999, num(x?.versioni)),
+      promossa: Boolean(x?.promossa), voto: x?.voto === null || x?.voto === undefined || !Number.isFinite(Number(x.voto)) ? null : Math.min(10, num(x.voto)),
+    })).filter((x) => x.nome).slice(0, 40),
   };
 }
 
