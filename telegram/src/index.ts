@@ -138,7 +138,7 @@ const URL_98 = 'https://drive.google.com/drive/folders/1icN7ww-f6CrClZ5nhxi9eiX3
 const URL_STILI = 'https://drive.google.com/drive/folders/1HD6Qv-KO3tmAQORJXuvsSnCALpK85e8w';
 const cartellaDrive = (id: string) => `https://drive.google.com/drive/folders/${id}`;
 const PROVA_S = 10; // render di prova di uno stile: i primi N secondi del video
-const VERSIONE_COMANDI = 8; // cambia → il bot ri-registra da solo il menu comandi
+const VERSIONE_COMANDI = 9; // cambia → il bot ri-registra da solo il menu comandi
 let ORIGINE_BOT = ''; // https://regista-telegram…workers.dev (dalla richiesta in corso)
 const ANTEPRIMA_URL = () => (ORIGINE_BOT ? `${ORIGINE_BOT}/stili.jpg?v=1` : undefined);
 const LINEA = '━━━━━━━━━━━━━━━━━━';
@@ -205,7 +205,7 @@ const motore = (i: Imp) => {
 };
 
 // ---------- Telegram ----------
-type Button = { text: string; callback_data?: string; url?: string };
+type Button = { text: string; callback_data?: string; url?: string; web_app?: { url: string } };
 type Kb = Button[][];
 // anteprima: URL di un'immagine mostrata grande sopra il testo (anteprima del link)
 type Schermo = { testo: string; tasti?: Kb; anteprima?: string };
@@ -257,6 +257,8 @@ function corto(s: string, n = 64) {
 }
 const tasto = (text: string, callback_data: string): Button => ({ text, callback_data: corto(callback_data) });
 const link = (text: string, url: string): Button => ({ text, url });
+// 📱 la Mini App dentro Telegram (solo in chat private): l'accesso lo dà la firma di Telegram (tg-login.ts)
+const appInTelegram = (text: string): Button => ({ text, web_app: { url: `${origineBot()}/` } });
 const MENU_TASTO = tasto('◀ Menu', 'menu');
 
 // ---------- GitHub ----------
@@ -430,6 +432,7 @@ async function pannello(env: Env): Promise<Schermo> {
       [tasto('🆕 Nuovo video', 'nuovo'), tasto('👀 Cosa sta succedendo', 'stato')],
       [tasto('📤 Da pubblicare', 'video'), tasto('🎨 Stili', 'stili')],
       [tasto('📈 Social', 'social'), tasto('🧰 Altro', 'altro')],
+      [appInTelegram('📱 Apri la app')],
       [link('📂 01 · Da editare', URL_97), link('✅ 02 · Fatti', URL_98)],
       [tasto('❓ Guida', 'guida')],
     ],
@@ -1207,6 +1210,7 @@ async function onMessage(env: Env, msg: Msg): Promise<unknown> {
     if (nome === 'stili') return invia(env, chat, await schermoStili(env));
     if (nome === 'impostazioni') return invia(env, chat, await schermoImpostazioni(env));
     if (nome === 'aiuto' || nome === 'guida') return invia(env, chat, GUIDA);
+    if (nome === 'app') return invia(env, chat, { testo: '📱 <b>La app</b>: montaggi, video e stili in un posto solo.', tasti: [[appInTelegram('📱 Apri la app')], [MENU_TASTO]] });
     if (nome === 'altro') return invia(env, chat, SCHERMO_ALTRO);
     if (nome === 'motion') return invia(env, chat, SCHERMO_MOTION);
     if (nome === 'social') return social(env, chat);
@@ -2365,6 +2369,7 @@ const COMANDI = [
   { command: 'radar', description: 'Account concorrenti da tenere d’occhio' },
   { command: 'tiktok', description: 'Collega TikTok per le statistiche' },
   { command: 'stili', description: 'Stili disponibili e predefinito' },
+  { command: 'app', description: 'Apri la app (montaggi, video, stili)' },
   { command: 'motion', description: 'Loghi e titoli animati' },
   { command: 'altro', description: 'Più video, documentario, commenti, report, radar, impostazioni' },
   { command: 'impostazioni', description: 'Stile predefinito, AI, Instagram e YouTube' },

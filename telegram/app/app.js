@@ -2628,9 +2628,24 @@ async function inviaRiferimento(file, avanzamento = (pct) => notaUpload(`Carico 
   return upload.id;
 }
 
+// dentro Telegram l'app si apre con «#tgWebAppData=…»: sono i dati firmati da Telegram (accesso senza passkey) e NON una vista
+function datiTelegram() {
+  try { return new URLSearchParams((location.hash || '').replace(/^#/, '')).get('tgWebAppData') || ''; } catch { return ''; }
+}
+
 async function parti() {
   avviaServiceWorker();
+  const daTelegram = DEMO ? '' : datiTelegram();
   stato.auth = await api('/api/auth/stato').catch(() => ({ sessione: false, passkey: false }));
+  if (daTelegram) {
+    if (!stato.auth.sessione) {
+      try {
+        await api('/api/auth/telegram', { method: 'POST', body: { initData: daTelegram } });
+        stato.auth = await api('/api/auth/stato').catch(() => ({ sessione: false, passkey: false }));
+      } catch (e) { stato.toast = e.message; }
+    }
+    history.replaceState(null, '', location.pathname + location.search); // via il # di Telegram: non è una vista dell'app
+  }
   if (!stato.auth.sessione) { vai('accesso'); return; }
   await caricaHome();
   const raw = decodeURIComponent((location.hash || '').replace(/^#/, ''));

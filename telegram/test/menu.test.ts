@@ -1,5 +1,6 @@
 // Il bot Regista con Telegram finto e memoria finta: il menu per intenzione e ogni suo tasto.
 import assert from 'node:assert/strict';
+import { createHmac } from 'node:crypto';
 import { after, test } from 'node:test';
 import { register } from 'node:module';
 
@@ -23,7 +24,7 @@ globalThis.fetch = (async (u: string | URL | Request, o?: RequestInit) => {
 
 const memoria = new Map<string, unknown>();
 const env: any = {
-  ALLOWED_CHAT_ID: '1', TELEGRAM_SECRET: 's', TELEGRAM_TOKEN: 't', GITHUB_TOKEN: 'g', GITHUB_REPO: 'x/y',
+  ALLOWED_CHAT_ID: '1', TELEGRAM_SECRET: 's', TELEGRAM_BOT_TOKEN: 't', GITHUB_TOKEN: 'g', GITHUB_REPO: 'x/y',
   MEMORIA: { idFromName: () => 'm', get: () => ({
     leggi: async (k: string) => memoria.get(k), scrivi: async (k: string, v: unknown) => { memoria.set(k, v); },
     cancella: async (k: string) => { memoria.delete(k); }, aggiungi: async () => 1, socialDopo: async () => {},
@@ -69,5 +70,45 @@ test('ogni tasto dei due menu risponde (nessun punto morto)', async () => {
 test('/motion e /altro esistono anche come comandi', async () => {
   const [mo] = await manda({ message: { chat: { id: 1 }, text: '/motion' } });
   assert.match(testoDi(mo), /Motion/);
+});
+
+// ---- 📱 la app dentro Telegram ----
+const firmato = (campi: Record<string, string>, token = 't') => {
+  const controllo = Object.entries(campi).sort(([a], [b]) => (a < b ? -1 : 1)).map(([k, v]) => `${k}=${v}`).join('\n');
+  const hash = createHmac('sha256', createHmac('sha256', 'WebAppData').update(token).digest()).update(controllo).digest('hex');
+  return new URLSearchParams({ ...campi, hash }).toString();
+};
+const initDi = (id: number, token = 't') => firmato({ auth_date: String(Math.floor(Date.now() / 1000) - 30), user: JSON.stringify({ id }) }, token);
+const accedi = (initData: string) => bot.fetch(new Request('https://bot.test/api/auth/telegram', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ initData }) }), env, { waitUntil: () => {} });
+
+test('il pannello ha il tasto «📱 Apri la app» che apre la Mini App dentro Telegram', async () => {
+  const [m] = await manda({ message: { chat: { id: 1 }, text: '/menu' } });
+  const bottoni = (m.corpo.reply_markup.inline_keyboard as any[][]).flat();
+  const app = bottoni.find((b) => b.web_app);
+  assert.equal(app.text, '📱 Apri la app');
+  assert.equal(app.web_app.url, 'https://bot.test/');
+  const [c] = await manda({ message: { chat: { id: 1 }, text: '/app' } });
+  assert.ok((c.corpo.reply_markup.inline_keyboard as any[][]).flat().some((b) => b.web_app));
+});
+
+test('accesso con Telegram: firma giusta e account di Denis → sessione; altrimenti 401 senza cookie', async () => {
+  const bene = await accedi(initDi(1));
+  assert.equal(bene.status, 200);
+  const cookie = bene.headers.get('set-cookie') || '';
+  assert.match(cookie, /HttpOnly/);
+  assert.match(cookie, /Secure/);
+  // con quel cookie la sessione risulta attiva
+  const stato = await bot.fetch(new Request('https://bot.test/api/auth/stato', { headers: { cookie: cookie.split(';')[0] } }), env, { waitUntil: () => {} });
+  assert.equal(((await stato.json()) as { sessione: boolean }).sessione, true);
+  for (const male of [initDi(1, 'altro-token'), initDi(777), '']) {
+    const r = await accedi(male);
+    assert.equal(r.status, 401);
+    assert.equal(r.headers.get('set-cookie'), null);
+  }
+});
+
+test('senza accesso le API restano chiuse', async () => {
+  const r = await bot.fetch(new Request('https://bot.test/api/home'), env, { waitUntil: () => {} });
+  assert.equal(r.status, 401);
 });
 after(() => { globalThis.fetch = vero; });

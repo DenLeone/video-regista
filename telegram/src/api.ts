@@ -8,6 +8,7 @@ import {
 } from './upload-stato';
 import { verificaAccesso, verificaRegistrazione, type Passkey } from './webauthn';
 import { pushAttivo } from './push';
+import { verificaInitData } from './tg-login';
 import { gestisciStile } from './stile-api';
 import { FASI_APP, faseAttuale, minutiMancanti, motivoChiaro, nomeRiprovabile, schedaFasi, testoMancano } from './stato-giro';
 
@@ -385,6 +386,17 @@ export async function gestisciApp(
       passkey: pk.length > 0, bloccato: Boolean(await ops.leggi(env, 'app:bloccato')),
       sessione: await sessioneAttiva(req, env, ops), setup: Boolean(env.APP_SETUP_CODE),
     });
+  }
+
+  // 📱 dentro Telegram: l'app manda i dati firmati da Telegram (initData); se sono giusti e dell'account di Denis, si apre la sessione
+  if (req.method === 'POST' && path === '/api/auth/telegram') {
+    const body = await req.json().catch(() => ({})) as { initData?: string };
+    const permessi = String(env.ALLOWED_CHAT_ID || '').split(',').map((s) => s.trim()).filter(Boolean);
+    if (!env.TELEGRAM_BOT_TOKEN || !permessi.length) return errore(503, 'Mancano il token del bot o ALLOWED_CHAT_ID: non posso verificare l\'accesso.');
+    const r = await verificaInitData(String(body.initData || ''), env.TELEGRAM_BOT_TOKEN, permessi);
+    if (!r.ok) return errore(401, `Accesso con Telegram rifiutato: ${r.motivo}.`);
+    const token = await apriSessione(env, ops, `tg:${r.id}`);
+    return json({ ok: true }, 200, { 'set-cookie': cookieSessione(token, 30 * 86400) });
   }
 
   if (req.method === 'POST' && path === '/api/auth/codice') {
