@@ -220,6 +220,11 @@ jobs:
           # già in 01 (0), con due cartelle simili (3) o Drive che non risponde (1): decide il controllo di sempre
           stato=0
           rclone lsf "gdrive:$DIR_EDITARE" --dirs-only | python3 scripts/nome-cartella.py "$CARTELLA" > /dev/null || stato=$?
+          if [ "$stato" = 0 ]; then
+            # rilancio di una cartella nata da 05: i file arrivati dopo si collegano (solo se c'è la mappa di 05); mai un errore
+            SOLO_RILANCIO=1 node scripts/archivio.mjs collega --auto "$CARTELLA" "$CARTELLA" || true
+            exit 0
+          fi
           [ "$stato" = 2 ] || exit 0
           node scripts/archivio.mjs collega --auto "$CARTELLA" "$CARTELLA"
 

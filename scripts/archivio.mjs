@@ -263,6 +263,7 @@ if (process.argv[2] === 'collega' && process.argv[1] && path.resolve(process.arg
   const giaPronta = (() => { try { return JSON.parse(rclone('lsjson', `${R}:${DIR_EDITARE}/${nome}/${MAPPA}`)).length > 0; } catch { return false; } })();
   // rilancio: i file arrivati dopo il primo giro (es. il video caricato dopo) si collegano ora; i collegamenti già fatti restano.
   // Se qualcosa non va non si ferma il rilancio: resta quello che c'era.
+  if (process.env.SOLO_RILANCIO && !giaPronta) process.exit(0);
   if (giaPronta) console.log('la cartella c\'è già in 01 (rilancio): aggiungo solo i collegamenti mancanti');
   const esceRilancio = (t) => { if (giaPronta) { console.log(`rilancio: ${t}; resta com'è`); process.exit(0); } esce(t); };
   // il nome della cartella di 05: simile basta (maiuscole, spazi, 2 lettere sbagliate), primo livello o uno sotto
