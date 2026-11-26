@@ -13,6 +13,7 @@ const stato = {
   stili: [],
   regia: null,
   collegamenti: null,
+  squadra: null,
   nuovo: null,
   toast: '',
   carica: caricaVuota(),
@@ -102,6 +103,17 @@ async function api(path, { method = 'GET', body, ms } = {}) {
   return data;
 }
 
+function demoSquadra() {
+  return { presente: true, vecchio: DEMO_STATO === 'squadravecchia', quando: new Date().toISOString(), ricevuto: Date.now(), stato: {
+    agenti: {}, passi: PASSI_SQUADRA,
+    lavori: [
+      { id: 'Ajazz AK820', stile: 'Wes A · m1', passo: 3, stato: 'lavora', testo: 'montaggio in corso · da 6 min (di solito 15–25)', prodotti: [] },
+      { id: 'Moero', stile: 'Kal', passo: 4, stato: 'errore', testo: 'si è fermato: vedi Telegram', prodotti: [] },
+      { id: 'Fifine AM8 2', stile: 'Ultra', passo: 5, stato: 'fatto', testo: 'pronto da pubblicare: il riepilogo è su Telegram', prodotti: [] },
+    ],
+    adesso: [{ testo: '🎬 Montaggio di Ajazz AK820', coda: false, min: 6 }, { testo: '🥷 Studia lo stile Wes A', coda: true, min: 1 }],
+  } };
+}
 function demoApi(path, method, body) {
   if (path === '/api/auth/stato') {
     return DEMO_VISTA === 'accesso'
@@ -110,6 +122,7 @@ function demoApi(path, method, body) {
   }
   if (path === '/api/home') return demoHome();
   if (path === '/api/stato') return demoHome().stato;
+  if (path === '/api/squadra/stato') return DEMO_STATO === 'senzasquadra' ? { presente: false } : demoSquadra();
   if (path === '/api/video' && method === 'GET') return { video: demoElenco() };
   if (path.startsWith('/api/video/') && method === 'GET') return demoDettaglio();
   if (path.startsWith('/api/video/') && method === 'POST') {
@@ -496,11 +509,53 @@ function htmlOggi() {
   const aperto = stato.home?.upload && !stato.home.upload.avviato && !pronto && !occupato;
   return `${htmlBarra('Oggi', { destra: htmlChipRete() })}
     <div data-vivo data-firma="${esc(firmaStato(s))}">${vivo}</div>
+    <div data-squadra-box data-firma="${esc(firmaSquadra())}">${htmlSquadra()}</div>
     ${sotto}
     ${aperto ? '<p class="nota">C’è un caricamento aperto. I pezzi già arrivati restano. <button type="button" class="btn quiet" data-azione="apri-carica">Apri</button></p>' : ''}
     ${video.length ? `<h2 class="sezione">Ultimi montaggi</h2><div class="carosello">${video.map((v) => htmlLocandina(v, video)).join('')}</div>` : (lavori ? '' : '<p class="vuoto">Nessun montaggio ancora.</p>')}
     ${lavori ? '' : '<p class="meta-3">Lo stato si aggiorna da solo mentre l’app è aperta. Nessun montaggio parte da solo.</p>'}`;
 }
+// 👥 La Squadra (Mini App passo 4): quello che fanno le catene dei bot, come lo spinge il bot Squadra (già ridotto ai campi
+// sicuri: nomi, passi, stati, testi corti). Se la Squadra non ha mai mandato niente la scheda non c'è.
+const PASSI_SQUADRA = ['Archivista', 'Cartelle', 'Foto', 'Montaggio', 'Testi', 'Pronto'];
+function firmaSquadra() {
+  const q = stato.squadra;
+  return q?.presente ? JSON.stringify([q.vecchio, q.stato?.lavori, q.stato?.adesso]) : '';
+}
+function htmlSquadra() {
+  const q = stato.squadra;
+  if (!q?.presente) return '';
+  const s = q.stato || {};
+  const lavori = s.lavori || [];
+  const adesso = (s.adesso || []).slice(0, 5);
+  const inCorso = lavori.filter((l) => l.stato === 'lavora').length;
+  const rotto = lavori.some((l) => l.stato === 'errore');
+  const punto = rotto ? 'err' : inCorso || adesso.length ? '' : 'warn';
+  const rail = (l) => PASSI_SQUADRA.map((_, k) => `<i class="${l.stato === 'fatto' || k < l.passo ? 'done' : ''} ${k === l.passo && l.stato === 'lavora' ? 'now' : ''} ${k === l.passo && l.stato === 'errore' ? 'ko' : ''}"></i>`).join('');
+  const catena = (l) => `<div class="squadra-riga" data-squadra-lavoro>
+      <p class="meta"><strong>${esc(l.id)}</strong>${l.stile ? ` · ${esc(l.stile)}` : ''}</p>
+      <div class="rail" style="grid-template-columns:repeat(${PASSI_SQUADRA.length},1fr)" aria-hidden="true">${rail(l)}</div>
+      <p class="meta-3">${esc(l.stato === 'errore' ? [PASSI_SQUADRA[l.passo], l.testo].filter(Boolean).join(' · ') : l.testo || PASSI_SQUADRA[l.passo] || '')}</p>
+    </div>`;
+  const cosa = (a) => `<p class="meta-3">${esc(a.testo)}${a.coda ? ' · in coda' : ''}${a.min ? ` · ${a.min} min` : ''}</p>`;
+  return `<article class="card squadra" aria-label="La Squadra">
+    <div class="fase-riga"><i class="live-dot ${punto}" aria-hidden="true"></i><h2 class="fase-nome">Squadra</h2><span class="numeri">${inCorso ? `${inCorso} in corso` : 'libera'}</span></div>
+    ${lavori.map(catena).join('')}
+    ${adesso.length ? `<div class="squadra-adesso">${adesso.map(cosa).join('')}</div>` : ''}
+    ${!lavori.length && !adesso.length ? '<p class="meta">Nessun lavoro adesso.</p>' : ''}
+    ${q.vecchio ? '<p class="meta-3">La Squadra non risponde da più di 45 minuti: quello che vedi può essere vecchio.</p>' : ''}
+  </article>`;
+}
+async function aggiornaSquadra() {
+  if (DEMO || Date.now() - (stato._squadraT || 0) < 12000) return;
+  stato._squadraT = Date.now();
+  try { stato.squadra = await api('/api/squadra/stato'); } catch { return; }
+  const box = document.querySelector('[data-squadra-box]');
+  if (!box || stato.schermo !== 'oggi') return;
+  const firma = firmaSquadra();
+  if (box.dataset.firma !== firma) { box.dataset.firma = firma; box.innerHTML = htmlSquadra(); }
+}
+
 function htmlVivo(s) {
   const attivi = s?.attivi || [];
   const pendenti = (s?.pendenti || []).map((p) => ({
@@ -1043,6 +1098,7 @@ async function cicloPoll() {
       else { box.dataset.firma = firma; box.innerHTML = htmlVivo(s); }
     }
     aggiornaBadge();
+    await aggiornaSquadra();
     if (stato.foglio?.tipo === 'fasi') {
       const sheet = document.getElementById('sheet');
       if (sheet && !sheet.contains(document.activeElement)) sheet.innerHTML = htmlFoglioFasi();
@@ -2127,6 +2183,7 @@ async function caricaHome() {
     stato.carica.pezziFatti = (aperti.file || []).reduce((t, f) => t + (f.fatte || 0), 0);
     stato.carica.pezziTotali = (aperti.file || []).reduce((t, f) => t + (f.totale || 0), 0);
   }
+  try { stato.squadra = await api('/api/squadra/stato'); stato._squadraT = Date.now(); } catch { stato.squadra = null; /* la scheda Squadra non c'è */ }
   try { stato.stili = (await api('/api/stili')).stili || []; } catch { /* home basta */ }
   try { stato.cartelle = await api('/api/cartelle'); } catch { /* elenco vecchio */ }
   try {

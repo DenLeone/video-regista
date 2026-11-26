@@ -948,3 +948,11 @@ html[data-motion="off"] *, html[data-motion="off"] *::before, html[data-motion="
 @media (min-width: 900px) {
   body { background-color: #000; }
 }
+
+/* 👥 scheda Squadra (Mini App passo 4) */
+.squadra .squadra-riga { margin-top: 12px; }
+.squadra .squadra-riga .meta strong { font-weight: 600; color: var(--ink); }
+.squadra .squadra-riga .rail { margin: 8px 0 6px; }
+.squadra .squadra-adesso { margin-top: 12px; padding-top: 10px; border-top: 1px solid rgba(255, 255, 255, .08); display: grid; gap: 4px; }
+.squadra .squadra-adesso .meta-3 { margin: 0; }
+[data-squadra-box]:empty { display: none; }
