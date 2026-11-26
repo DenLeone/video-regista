@@ -6,7 +6,7 @@
 import path from 'node:path';
 
 export const VIDEO_EXT = ['.mp4', '.mov', '.m4v', '.mkv', '.webm'];
-export const IMAGE_EXT = ['.jpg', '.jpeg', '.png', '.heic', '.webp'];
+export const IMAGE_EXT = ['.jpg', '.jpeg', '.png', '.heic', '.webp', '.jfif'];
 export const AUDIO_EXT = ['.wav', '.mp3', '.m4a', '.aac', '.flac', '.aif', '.aiff', '.ogg'];
 
 export const NOMI_DISPOSITIVO = { mic: 'mic esterno', insta: 'Insta360', iphone: 'iPhone', altro: 'camera', sony: 'Sony' };
