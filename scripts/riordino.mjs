@@ -313,10 +313,13 @@ async function avvisa(testo) {
 }
 
 export async function main() {
-  const modo = String(process.env.MODO || 'continua').toLowerCase(); // vai | prova | continua | annulla | ferma
+  let modo = String(process.env.MODO || 'continua').toLowerCase(); // vai | prova | continua | annulla | ferma
   const t0 = Date.now();
   const scadenza = t0 + (Number(process.env.BUDGET_MINUTI) || 300) * 60_000;
   const stato = leggiJson(`${STATO_DIR}/stato.json`, {});
+  // «annulla» chiesto dal bot (segna fermato + annulla su Drive): se il giro «annulla» è stato scavalcato in coda dal giro
+  // automatico delle 3 ore (GitHub tiene un solo giro in attesa), lo fa questo
+  if (modo === 'continua' && stato.fase === 'fermato' && stato.annulla) modo = 'annulla';
   if (modo === 'ferma') { scriviJson(`${STATO_DIR}/stato.json`, { ...stato, fase: 'fermato', fermato: new Date().toISOString() }); await avvisa('🔎 Ispettore: fermato. Quello che ha già spostato resta com\'è (si rimette con «annulla»).'); return; }
   const giornale = leggiJson(`${STATO_DIR}/giornale.json`, []);
   const deps = {
@@ -329,13 +332,14 @@ export async function main() {
   };
   if (modo === 'annulla') {
     const r = await annulla(giornale, deps);
-    scriviJson(`${STATO_DIR}/stato.json`, { ...stato, fase: 'annullato', annullato: new Date().toISOString() });
+    scriviJson(`${STATO_DIR}/stato.json`, { ...stato, fase: 'annullato', annulla: false, annullato: new Date().toISOString() });
     await avvisa(`🔎 Ispettore: rimessi a posto ${r.rimessi} file${r.saltati ? ` (${r.saltati} non si potevano: già spostati da te o spariti)` : ''}.`);
     return;
   }
-  // quando c'è già un giro finito e non è ora di ricontrollare, «continua» non fa niente
-  if (modo === 'continua' && (!stato.fase || ['fermato', 'annullato'].includes(stato.fase) || (stato.fase === 'finito' && Date.now() < Date.parse(stato.prossimo || 0)))) { log(`niente da fare (${stato.fase || 'mai avviato'})`); return; }
-  if (modo === 'vai' || modo === 'prova') scriviJson(`${STATO_DIR}/stato.json`, { ...stato, fase: 'scansione', avviato: new Date().toISOString(), prova: modo === 'prova' });
+  // quando c'è già un giro finito e non è ora di ricontrollare, «continua» non fa niente; dopo una prova finita
+  // aspetta ▶️ Riordina (prima la rifaceva ogni giorno, con lo stesso messaggio)
+  if (modo === 'continua' && (!stato.fase || ['fermato', 'annullato'].includes(stato.fase) || (stato.fase === 'finito' && (stato.prova || Date.now() < Date.parse(stato.prossimo || 0))))) { log(`niente da fare (${stato.fase || 'mai avviato'}${stato.prova ? ', prova' : ''})`); return; }
+  if (modo === 'vai' || modo === 'prova') scriviJson(`${STATO_DIR}/stato.json`, { ...stato, fase: 'scansione', avviato: new Date().toISOString(), prova: modo === 'prova', annulla: false });
   const prova = modo === 'prova' || (modo === 'continua' && stato.prova);
   const stop = () => leggiJson(`${STATO_DIR}/stato.json`, {}).fase === 'fermato';
 
@@ -382,8 +386,8 @@ export async function main() {
   scriviJson(`${STATO_DIR}/piano.json`, { quando: new Date().toISOString(), prodotti, dubbie: piano.dubbie.slice(0, 300), saltate: piano.saltate.slice(0, 300), aPosto: piano.aPosto, mosse: piano.mosse.length });
   const righe = prodotti.slice(0, 12).map((p) => `• ${p.prodotto}: ${p.cartelleUnite} cartelle → «${p.cartella}» · ${p.parlato} parlato, ${p.broll} B-roll`);
   if (prova) {
-    scriviJson(`${STATO_DIR}/stato.json`, { fase: 'finito', prova: true, finito: new Date().toISOString(), prossimo: new Date(Date.now() + 24 * 3600_000).toISOString() });
-    await avvisa(`🔎 Ispettore (prova, non ho spostato niente): ${piano.mosse.length} file da riordinare, ${prodotti.length} prodotti.\n${righe.join('\n')}${piano.dubbie.length ? `\n${piano.dubbie.length} clip dal prodotto non chiaro restano dove sono.` : ''}`);
+    scriviJson(`${STATO_DIR}/stato.json`, { fase: 'finito', prova: true, finito: new Date().toISOString() });
+    await avvisa(`🔎 Ispettore (prova, non ho spostato niente): ${piano.mosse.length} file da riordinare, ${prodotti.length} prodotti.\n${righe.join('\n')}${piano.dubbie.length ? `\n${piano.dubbie.length} clip dal prodotto non chiaro restano dove sono.` : ''}\nPer spostarli davvero: 🔎 Ispettore → ▶️ Riordina nel bot Squadra.`);
     return;
   }
   // «ferma» premuto mentre si raggruppava e si preparava il piano: qui sotto lo stato si riscrive, quindi si guarda prima

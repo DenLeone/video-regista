@@ -154,6 +154,15 @@ test('«prova»: dice cosa farebbe e non sposta niente', async () => {
   assert.match(avvisi.at(-1), /prova, non ho spostato niente/);
 });
 
+test('dopo una prova finita, il giro automatico non la rifà (aspetta ▶️ Riordina)', async () => {
+  const n = avvisi.length;
+  const r = await lancia('continua');
+  assert.equal(r.codice, 0, r.err);
+  assert.match(r.out, /niente da fare \(finito, prova\)/);
+  assert.equal(avvisi.length, n);
+  assert.deepEqual(albero(A), prima);
+});
+
 test('«ferma» segna lo stato e il «continua» dopo non riprende', async () => {
   await lancia('ferma');
   const n = avvisi.length;
@@ -171,6 +180,21 @@ test('«ferma» premuto mentre prepara il piano: non sposta niente', async () =>
   assert.match(r.out, /fermato da Denis prima degli spostamenti/);
   assert.ok(!/comincio a riordinare/.test(avvisi.at(-1)));
   assert.equal(JSON.parse(fs.readFileSync(path.join(drive, '00 · Preparazione/_riordino/stato.json'), 'utf8')).fase, 'fermato');
+});
+
+test('«annulla» scavalcato in coda dal giro automatico: lo fa il «continua»', async () => {
+  assert.equal((await lancia('vai')).codice, 0);
+  assert.notDeepEqual(albero(A), prima);
+  // come il bot: fermato + annulla su Drive; il giro «annulla» si perde, arriva il «continua» delle 3 ore
+  const f = path.join(drive, '00 · Preparazione/_riordino/stato.json');
+  fs.writeFileSync(f, JSON.stringify({ ...JSON.parse(fs.readFileSync(f, 'utf8')), fase: 'fermato', annulla: true }));
+  const r = await lancia('continua');
+  assert.equal(r.codice, 0, r.err);
+  assert.deepEqual(albero(A), prima);
+  assert.match(avvisi.at(-1), /rimessi a posto 5 file/);
+  const stato = JSON.parse(fs.readFileSync(f, 'utf8'));
+  assert.deepEqual([stato.fase, stato.annulla], ['annullato', false]);
+  assert.match((await lancia('continua')).out, /niente da fare/); // e non lo rifà
 });
 
 test('fine', () => { gemini.close(); bot.close(); fs.rmSync(radice, { recursive: true, force: true }); });
