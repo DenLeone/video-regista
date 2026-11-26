@@ -2,7 +2,7 @@
 // sovrascritto, tolte solo cartelle vuote, tutto si rimette con l'annulla.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { annulla, cartellaDelProdotto, chiaveClip, esegui, esitoPerFabbrica, inventario, pianifica, perProdotto, raggruppa, riconosci, togliVecchie } from './riordino.mjs';
+import { annulla, cartellaDelProdotto, messaggioInizio, chiaveClip, esegui, esitoPerFabbrica, inventario, pianifica, perProdotto, raggruppa, riconosci, togliVecchie } from './riordino.mjs';
 
 const ORA = Date.UTC(2026, 10, 26, 12, 0, 0);
 const VECCHIO = '2026-11-20T10:00:00Z';
@@ -96,6 +96,19 @@ test('riconosci: salva a intervalli (cache e avanzamento), così un giro interro
   const cache = {};
   await riconosci(inv, cache, deps, { lotto: 2, ogni: 2, checkpoint: async (n) => visti.push([n, Object.keys(cache).length]) });
   assert.deepEqual(visti, [[4, 4], [8, 8]]); // 4 lotti da 2 clip: un salvataggio dopo il secondo e uno dopo il quarto
+});
+
+test('messaggio di partenza: quante clip, quante da riconoscere e una stima del tempo', () => {
+  const m = messaggioInizio({ clip: 2400, cartelle: 85, nuove: 2000, note: 400, budgetMinuti: 300 });
+  assert.match(m, /ho trovato <b>2400<\/b> file in <b>85<\/b> cartelle/);
+  assert.match(m, /Da riconoscere ora: <b>2000<\/b> clip \(altre 400 le conosco già/);
+  assert.match(m, /tra 2,8 ore e 5,6 ore, in circa 2 giri/); // 2000 clip × 5–10 s
+  assert.match(messaggioInizio({ clip: 10, cartelle: 2, nuove: 6, note: 0 }), /tra 1 minuto e 1 minuto/);
+  assert.match(messaggioInizio({ clip: 100, cartelle: 2, nuove: 60, note: 0 }), /tra 5 minuti e 10 minuti/);
+  const tutte = messaggioInizio({ clip: 50, cartelle: 4, nuove: 0, note: 30, prova: true });
+  assert.match(tutte, /\(prova\)/);
+  assert.match(tutte, /Le conosco già tutte \(30\)/);
+  assert.doesNotMatch(tutte, /Tempo, a occhio/);
 });
 
 test('raggruppa: stesso nome scritto in modo diverso si unisce da solo; il resto lo decide Gemini; nel dubbio niente', async () => {

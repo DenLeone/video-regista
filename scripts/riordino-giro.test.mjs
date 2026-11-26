@@ -120,7 +120,9 @@ test('«vai»: riunisce lo stesso prodotto, divide parlato e B-roll, toglie le c
   assert.deepEqual({ c: esito.cartelle['Anker powerbank'].colore, t: esito.cartelle['Anker powerbank'].tipo, n: esito.cartelle['Anker powerbank'].clip }, { c: 'verde', t: 'recensione', n: 4 });
   assert.equal(esito.cartelle.Moero.colore, 'verde');
   // avvisi su Telegram: partenza e fine
-  assert.match(avvisi[0], /comincio a riordinare/);
+  assert.match(avvisi[0], /ho trovato <b>\d+<\/b> file in <b>\d+<\/b> cartelle di 05/); // quante clip, subito
+  assert.match(avvisi[0], /Da riconoscere ora: <b>10<\/b> clip/);
+  assert.ok(avvisi.some((a) => /comincio a riordinare/.test(a)));
   assert.match(avvisi.at(-1), /finito\. 5 file riordinati/);
   assert.match(avvisi.at(-1), /cestino/);
 });

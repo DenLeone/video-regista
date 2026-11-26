@@ -99,6 +99,18 @@ export async function riconosci(clips, cache, deps, { lotto = 6, scadenza = Infi
   return { fatti, finito: true };
 }
 
+// ───────────── messaggio di partenza ─────────────
+export const SECONDI_A_CLIP = [5, 10]; // stima grossolana: fotogramma e audio letti da Drive, richiesta a Gemini, pausa tra i lotti
+const durataTxt = (sec) => (sec < 5400 ? (Math.round(sec / 60) <= 1 ? '1 minuto' : `${Math.round(sec / 60)} minuti`) : `${(sec / 3600).toFixed(sec < 36000 ? 1 : 0).replace('.', ',')} ore`);
+/** quante clip ci sono e quanto ci vorrà: dato appena finito l'inventario, prima del lavoro lungo */
+export function messaggioInizio({ clip, cartelle, nuove, note, prova = false, budgetMinuti = 300 }) {
+  const [min, max] = SECONDI_A_CLIP.map((s) => nuove * s);
+  const giri = Math.ceil(max / 60 / budgetMinuti);
+  return [`🔎 Ispettore${prova ? ' (prova)' : ''}: ho trovato <b>${clip}</b> file in <b>${cartelle}</b> cartelle di 05.`,
+    nuove ? `Da riconoscere ora: <b>${nuove}</b> clip${note ? ` (altre ${note} le conosco già dai giri di prima)` : ''}.` : `Le conosco già tutte (${note}): passo subito al piano.`,
+    ...(nuove ? [`Tempo, a occhio: tra ${durataTxt(min)} e ${durataTxt(max)}${giri > 1 ? `, in circa ${giri} giri (ognuno riprende da dove era arrivato)` : ''}. Non devi fare niente: 📊 Stato quando vuoi, ⛔ per fermarlo.`] : [])].join('\n');
+}
+
 // ───────────── 3. raggruppamento dei nomi ─────────────
 /** nomi → { nome → canonico }. deps.chiedi(text) → { gruppi: [{ canonico, nomi: [...] }] }. Senza dubbi non si unisce niente. */
 export async function raggruppa(conteggi, deps) {
@@ -340,6 +352,12 @@ export async function main() {
     if (attuale.fase === 'fermato') return; // Denis ha detto «ferma»: non si sovrascrive
     scriviJson(`${STATO_DIR}/stato.json`, { ...attuale, fase: 'riconoscimento', aggiornato: new Date().toISOString(), riconosciute: clips.filter((c) => !c.giaPosto && c.tipo !== 'audio' && cache[chiaveClip(c)]).length, totali: daFare, prova });
   };
+  // quante clip e quanto tempo: subito, prima del lavoro lungo (non a ogni ripresa di un giro già avviato, né per i piccoli controlli di ogni giorno)
+  const candidate = clips.filter((c) => !c.giaPosto && c.tipo !== 'audio');
+  const nuove = candidate.filter((c) => !cache[chiaveClip(c)]).length;
+  const riprende = modo === 'continua' && stato.fase === 'riconoscimento';
+  if (!riprende && (modo !== 'continua' || nuove >= 30)) await avvisa(messaggioInizio({ clip: clips.length, cartelle: new Set(clips.filter((c) => !c.giaPosto).map((c) => c.dir)).size, nuove, note: candidate.length - nuove, prova }));
+  if (nuove) await checkpoint(); // i numeri nello stato da subito: «Ispettore, stato» li mostra
   try {
     esito = await riconosci(clips.filter((c) => !c.giaPosto), cache, { ...deps, estrai: estraiVero(tmp), chiedi: chiediGeminiVero }, { scadenza, pausaMs: Number(process.env.PAUSA_MS) || 4000, stop, checkpoint });
   } finally { server.kill(); scriviJson(`${STATO_DIR}/clip.json`, cache); }
