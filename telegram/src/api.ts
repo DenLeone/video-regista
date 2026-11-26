@@ -9,6 +9,7 @@ import {
 import { verificaAccesso, verificaRegistrazione, type Passkey } from './webauthn';
 import { pushAttivo } from './push';
 import { verificaInitData } from './tg-login';
+import { K_STATO_SQUADRA, perLApp, type StatoSalvato } from './squadra-stato';
 import { gestisciStile } from './stile-api';
 import { FASI_APP, faseAttuale, minutiMancanti, motivoChiaro, nomeRiprovabile, schedaFasi, testoMancano } from './stato-giro';
 
@@ -597,6 +598,8 @@ export async function gestisciApp(
   }
 
   if (req.method === 'GET' && path === '/api/stato') return json(await inCorso(env, ops));
+  // 📱 lo stato della Squadra, come l'ha spinto il bot Squadra (già ridotto ai campi sicuri); vecchio = non arriva da più di 45 minuti
+  if (req.method === 'GET' && path === '/api/squadra/stato') return json(perLApp(await ops.leggi<StatoSalvato>(env, K_STATO_SQUADRA)));
   if (req.method === 'GET' && path === '/api/video') {
     const elenco = await ops.video(env);
     const conMemo = [];

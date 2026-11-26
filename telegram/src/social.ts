@@ -28,7 +28,7 @@ export type DepsSocial = {
   anthropicKey?: string;
 };
 
-const K_TT = 'tt_token';
+export const K_TT = 'tt_token';
 const K_TT_STATO = 'tt_stato';
 export const K_GIORNI = 'social:giorni';
 const K_PIANI = 'social:piani';

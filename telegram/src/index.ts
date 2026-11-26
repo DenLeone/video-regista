@@ -26,7 +26,10 @@ import type { Ops, Segreti } from './ops';
 import { unisciNomi } from './stile-studio';
 import { briefVocale, capisciVocale, riepilogoVocale, trascriviVocale, type Comando } from './vocale';
 import { commentiNuovi, controllaEsplosioni, K_RADAR, kCommento, nascondiCommento, proposte, reportSettimana, rispondiCommento, testoCommento, type CommentoSalvato } from './crescita';
-import { PAGINA_PRIVACY, PAGINA_TERMINI, chiaveCaricamentoTikTok, chiaveFacebook, completaLoginTikTok, fotografa, linkLoginTikTok, pianoDelGiorno, statoTikTok, type DepsSocial } from './social';
+import type { ChiaveTikTok } from './social';
+import { LIMITE_BYTE, K_STATO_SQUADRA, leggiInvio, type StatoSalvato } from './squadra-stato';
+import { sha256Hex, timingSafeEqual } from './b64';
+import { PAGINA_PRIVACY, PAGINA_TERMINI, chiaveCaricamentoTikTok, chiaveFacebook, completaLoginTikTok, fotografa, K_TT, linkLoginTikTok, pianoDelGiorno, statoTikTok, type DepsSocial } from './social';
 
 export interface Env {
   TELEGRAM_BOT_TOKEN: string;
@@ -35,6 +38,7 @@ export interface Env {
   GITHUB_TOKEN: string;      // fine-grained, Actions read & write sul repo
   GITHUB_REPO: string;       // "DenLeone/video-regista"
   NOTIFY_TOKEN: string;      // condiviso con il workflow
+  STATO_APP_CHIAVE?: string; // chiave SOLO per scrivere lo stato della Squadra (POST /squadra-stato): la stessa nei secret di Den
   IG_TOKEN?: string;         // chiave Instagram (secret): IGAA… dura 60 giorni e la rinnova il bot, EAA… non scade
   IG_USER_ID?: string;       // id dell'account Instagram, per la chiave del login unificato (EAA…)
   APP_SETUP_CODE?: string;   // codice segreto per registrare o sostituire la passkey dell'app
@@ -323,7 +327,7 @@ type Card = {
 // pubblicato: 'in corso' o il riepilogo con i link
 type Pubblica = {
   fileId: string; file?: string; didascalia: string; copertina?: number; copertinaId?: string; youtube?: { titolo?: string; descrizione?: string } | null;
-  ig?: boolean; yt?: boolean;
+  ig?: boolean; yt?: boolean; tt?: boolean;
 };
 // azione/secondi: com'era partito il giro (🔁 Riprova di un render di prova rifà la prova, non un montaggio)
 type RunMemo = {
@@ -502,10 +506,13 @@ async function schermoImpostazioni(env: Env): Promise<Schermo> {
 // ---------- collegamenti per 📤 Pubblica ----------
 // Instagram: la chiave la custodisce il bot (secret IG_TOKEN, poi rinnovata ogni settimana).
 // YouTube: i secret sono su GitHub, il workflow dice a ogni giro se ci sono (undefined = non ancora saputo).
-type Collegamenti = { ig: boolean; igRinnovata?: number; yt?: boolean };
+type Collegamenti = { ig: boolean; igRinnovata?: number; yt?: boolean; tt?: boolean };
 async function collegamenti(env: Env): Promise<Collegamenti> {
   const chiave = await leggi<ChiaveIg>(env, 'ig_token');
-  return { ig: Boolean(chiave?.token || env.IG_TOKEN), igRinnovata: chiave?.rinnovata, yt: await leggi<boolean>(env, 'yt_pronto') };
+  // TikTok: collegato con il permesso di caricare (video.upload) e con l'accesso non scaduto
+  const tt = await leggi<ChiaveTikTok>(env, K_TT);
+  const ttPronto = Boolean(tt && String(tt.scope || '').split(',').includes('video.upload') && tt.refreshScade > Date.now());
+  return { ig: Boolean(chiave?.token || env.IG_TOKEN), igRinnovata: chiave?.rinnovata, yt: await leggi<boolean>(env, 'yt_pronto'), tt: ttPronto };
 }
 const statoIg = (c: Collegamenti) => (c.ig ? '✅' : '⚠️ da collegare');
 const statoYt = (c: Collegamenti) => (c.yt ? '✅' : c.yt === false ? '⚠️ da collegare' : '❔ da verificare');
@@ -516,7 +523,7 @@ async function schermoCollegamenti(env: Env, runId?: string): Promise<Schermo> {
   const verifica = Date.now() - richiesto < 3 * 60000 ? '\n⏳ <i>Controllo i secret su GitHub (≈1 min)…</i>' : '';
   return {
     testo: [
-      '🔗 <b>Collegare Instagram e YouTube</b> · una volta sola', LINEA,
+      '🔗 <b>Collegare Instagram, YouTube e TikTok</b> · una volta sola', LINEA,
       `📸 <b>Instagram</b> · ${c.ig ? `✅ collegato${c.igRinnovata ? ` (chiave rinnovata il ${ora(c.igRinnovata).split(',')[0]})` : ''}` : '⚠️ da collegare'}`,
       '1. Account Instagram <b>professionale</b> (creator o business).',
       '2. developers.facebook.com → la tua app → Instagram → <i>API setup with Instagram business login</i> → <b>Generate token</b>.',
@@ -528,7 +535,8 @@ async function schermoCollegamenti(env: Env, runId?: string): Promise<Schermo> {
       '3. Credenziali → ID client OAuth <i>Applicazione web</i>, URI di reindirizzamento <code>https://developers.google.com/oauthplayground</code>.',
       '4. OAuth Playground → ⚙️ <i>Use your own OAuth credentials</i> → scope <code>https://www.googleapis.com/auth/youtube.upload</code> → Authorize → <i>Exchange authorization code for tokens</i> → copia il <b>refresh token</b>.',
       '5. GitHub → Settings → Secrets → Actions: <code>YT_CLIENT_ID</code>, <code>YT_CLIENT_SECRET</code>, <code>YT_REFRESH_TOKEN</code>.',
-      `<i>Finché Google non verifica l'app, YouTube tiene i video privati: li rendi pubblici da YouTube Studio.</i>${verifica}`,
+      `<i>Finché Google non verifica l'app, YouTube tiene i video privati: li rendi pubblici da YouTube Studio.</i>`, '',
+      `🎵 <b>TikTok</b> · ${c.tt ? '✅ collegato (le bozze arrivano nella posta della tua app)' : '⚠️ da collegare: scrivi /tiktok e usa il link (serve il permesso di caricare video)'}${verifica}`,
     ].join('\n'),
     tasti: [
       [link('📸 Meta for Developers', 'https://developers.facebook.com/apps/'), link('☁️ Cloudflare', 'https://dash.cloudflare.com/')],
@@ -1719,27 +1727,32 @@ function schermoProvaStile(runId: string, memo: RunMemo, stile: string): Schermo
 const PUB_WORKFLOW = 'pubblica.yml';
 
 // dove si pubblica davvero: scelto da Denis e collegato (YouTube non ancora saputo = si prova)
-const destinazioni = (p: Pubblica, c: Collegamenti) => ({ ig: p.ig !== false && c.ig, yt: p.yt !== false && c.yt !== false });
+const destinazioni = (p: Pubblica, c: Collegamenti) => ({ ig: p.ig !== false && c.ig, yt: p.yt !== false && c.yt !== false, tt: p.tt !== false && Boolean(c.tt) });
+const elencoDest = (d: { ig: boolean; yt: boolean; tt: boolean }) => [d.ig && 'Instagram', d.yt && 'YouTube', d.tt && 'TikTok'].filter(Boolean) as string[];
 
 async function schermoPubblica(env: Env, runId: string, memo: RunMemo): Promise<Schermo> {
   const p = memo.pubblica!;
   const imp = await impostazioni(env);
   const c = await collegamenti(env);
-  const { ig, yt } = destinazioni(p, c);
+  const { ig, yt, tt } = destinazioni(p, c);
   const titolo = p.youtube?.titolo || memo.nome;
-  const daCollegare = !c.ig || c.yt === false;
+  const daCollegare = !c.ig || c.yt === false || !c.tt;
+  const scelte = elencoDest({ ig, yt, tt });
+  const collegate = [c.ig && 'Instagram', c.yt !== false && 'YouTube', c.tt && 'TikTok'].filter(Boolean);
   return {
     testo: [
       `📤 <b>Pubblico ${esc(memo.nome)}</b>`, LINEA,
       `📸 Instagram: ${!c.ig ? '⚠️ <i>da collegare</i>' : ig ? esc(PROVA[imp.prova].nome) : '<i>no</i>'}`,
       `▶️ YouTube Shorts: ${c.yt === false ? '⚠️ <i>da collegare</i>' : yt ? `«${esc(titolo)}»` : '<i>no</i>'}`,
+      `🎵 TikTok: ${!c.tt ? '⚠️ <i>da collegare (/tiktok)</i>' : tt ? '<i>bozza nella tua app: testo e copertina li metti tu</i>' : '<i>no</i>'}`,
       p.didascalia ? `<blockquote expandable>${esc(p.didascalia)}</blockquote>` : '<i>Nessuna didascalia: scrivila con ✏️ (o pubblica senza).</i>',
       '<i>La didascalia vale anche come descrizione su YouTube. Per cambiarla (o aggiungere un link) premi ✏️ e mandami il testo nuovo.</i>',
       ...(daCollegare ? ['🔗 <i>Per collegare quello che manca (una volta sola): tasto qui sotto.</i>'] : []),
+      ...(tt ? ['<i>🎵 TikTok: il video arriva come bozza nella posta della tua app (l\'API non accetta testo né copertina): ti mando il testo da incollare.</i>'] : []),
     ].join('\n'),
     tasti: [
-      ...(ig || yt ? [[tasto(`✅ Pubblica${ig && yt ? '' : ig ? ' su Instagram' : ' su YouTube'}`, `pub!:${runId}`)]] : []),
-      [...(c.ig ? [tasto(`${ig ? '✅' : '⬜️'} Instagram`, `pubig:${runId}`)] : []), ...(c.yt !== false ? [tasto(`${yt ? '✅' : '⬜️'} YouTube`, `pubyt:${runId}`)] : [])],
+      ...(ig || yt || tt ? [[tasto(`✅ Pubblica${scelte.length === collegate.length ? '' : ` su ${scelte.join(' e ')}`}`, `pub!:${runId}`)]] : []),
+      [...(c.ig ? [tasto(`${ig ? '✅' : '⬜️'} Instagram`, `pubig:${runId}`)] : []), ...(c.yt !== false ? [tasto(`${yt ? '✅' : '⬜️'} YouTube`, `pubyt:${runId}`)] : []), ...(c.tt ? [tasto(`${tt ? '✅' : '⬜️'} TikTok`, `pubtt:${runId}`)] : [])],
       [tasto('✏️ Didascalia', `pubm:${runId}`), tasto('✏️ Titolo YouTube', `pubt:${runId}`)],
       [...(daCollegare ? [tasto('🔗 Collega', `pubguida:${runId}`)] : []), tasto('✖️ Annulla', 'annulla')],
     ],
@@ -1753,17 +1766,17 @@ async function confermaPubblicazione(env: Env, chat: string, runId: string, memo
   const imp = await impostazioni(env);
   const p = memo.pubblica;
   const dest = destinazioni(p, await collegamenti(env));
-  if (!dest.ig && !dest.yt) return p.ig === false && p.yt === false ? 'Scegli almeno Instagram o YouTube' : 'Prima collega Instagram o YouTube';
+  if (!dest.ig && !dest.yt && !dest.tt) return p.ig === false && p.yt === false && p.tt === false ? 'Scegli almeno una piattaforma' : 'Prima collega Instagram, YouTube o TikTok';
   const nonce = crypto.randomUUID().replace(/-/g, '');
   const dati = {
     nonce, nome: memo.nome, file: p.file, fileId: p.fileId, didascalia: p.didascalia, titolo: p.youtube?.titolo || memo.nome,
-    copertina: p.copertina ?? 0, ...(p.copertinaId ? { copertinaId: p.copertinaId } : {}), ig: dest.ig, yt: dest.yt, prova: PROVA[imp.prova].api,
+    copertina: p.copertina ?? 0, ...(p.copertinaId ? { copertinaId: p.copertinaId } : {}), ig: dest.ig, yt: dest.yt, tt: dest.tt, prova: PROVA[imp.prova].api,
   };
   const r = await gh(env, `/actions/workflows/${PUB_WORKFLOW}/dispatches`, { method: 'POST', body: JSON.stringify({ ref: 'main', inputs: { dati: JSON.stringify(dati) } }) });
   if (r.status !== 204) return `GitHub ${r.status}: ${(await r.text()).slice(0, 300)}`;
   await mem(env).scrivi(`run:${runId}`, { ...memo, pubblicato: 'in corso' } satisfies RunMemo);
   await mem(env).scrivi(`pub:${nonce}`, { runId, chat, msg: msgId });
-  const dove = [dati.ig ? `📸 Instagram (${PROVA[imp.prova].nome})` : '', dati.yt ? '▶️ YouTube Shorts' : ''].filter(Boolean).join('\n');
+  const dove = [dati.ig ? `📸 Instagram (${PROVA[imp.prova].nome})` : '', dati.yt ? '▶️ YouTube Shorts' : '', dati.tt ? '🎵 TikTok (bozza nella tua app)' : ''].filter(Boolean).join('\n');
   await mostra(env, chat, { testo: `⏳ <b>Pubblico ${esc(memo.nome)}</b>\n${dove}\n<i>2–4 minuti: ti scrivo qui i link appena è online.</i>` }, msgId);
   return null;
 }
@@ -1781,8 +1794,8 @@ async function tastoPubblica(env: Env, chat: string, azione: string, runId: stri
   if (azione === 'pub') { await avviso(); return invia(env, chat, await schermoPubblica(env, runId, memo)); }
   if (azione === 'pubr') { await avviso(); return mostra(env, chat, await schermoPubblica(env, runId, memo), msgId); }
   if (azione === 'pubguida') { await avviso(); return mostra(env, chat, await schermoCollegamenti(env, runId), msgId); }
-  if (azione === 'pubig' || azione === 'pubyt') {
-    const k = azione === 'pubig' ? 'ig' : 'yt';
+  if (azione === 'pubig' || azione === 'pubyt' || azione === 'pubtt') {
+    const k = azione === 'pubig' ? 'ig' : azione === 'pubyt' ? 'yt' : 'tt';
     const nuovo = { ...memo, pubblica: { ...memo.pubblica, [k]: memo.pubblica[k] === false } } satisfies RunMemo;
     await mem(env).scrivi(`run:${runId}`, nuovo);
     await avviso();
@@ -1804,8 +1817,8 @@ async function tastoPubblica(env: Env, chat: string, azione: string, runId: stri
   if (err) return mostra(env, chat, { testo: `⚠️ <b>Non sono riuscito ad avviare la pubblicazione</b>\n<code>${esc(tronca(err, 400))}</code>`, tasti: [[tasto('🔁 Riprova', `pub!:${runId}`), MENU_TASTO]] }, msgId);
 }
 
-type EsitoPiattaforma = { ok: boolean; link?: string; errore?: string; saltato?: boolean; prova?: boolean; privato?: boolean };
-async function onPubblicato(env: Env, n: { nonce?: string; nome?: string; instagram?: EsitoPiattaforma; youtube?: EsitoPiattaforma; spostato?: boolean; errore?: string; run_url?: string }) {
+type EsitoPiattaforma = { ok: boolean; link?: string; errore?: string; saltato?: boolean; prova?: boolean; privato?: boolean; bozza?: boolean; inAttesa?: boolean };
+async function onPubblicato(env: Env, n: { nonce?: string; nome?: string; instagram?: EsitoPiattaforma; youtube?: EsitoPiattaforma; tiktok?: EsitoPiattaforma; spostato?: boolean; errore?: string; run_url?: string }) {
   const k = `pub:${String(n.nonce || '').replace(/[^0-9a-f]/gi, '')}`;
   const p = n.nonce ? await leggi<{ runId: string; chat: string; msg?: number }>(env, k) : undefined;
   if (!p) return;
@@ -1813,25 +1826,27 @@ async function onPubblicato(env: Env, n: { nonce?: string; nome?: string; instag
   const memo = await leggi<RunMemo>(env, `run:${p.runId}`);
   const nome = memo?.nome || n.nome || 'Il video';
   const riga = (icona: string, chi: string, e?: EsitoPiattaforma, extra = '') => !e ? ''
+    : e.inAttesa ? `${icona} ${chi}: ⏳ <i>${esc(tronca(e.errore || 'TikTok sta ancora elaborando', 300))}</i>`
     : e.ok ? `${icona} ${chi}: ✅ online${extra}` : e.saltato ? `${icona} ${chi}: <i>${esc(e.errore || 'saltato')}</i>` : `${icona} ${chi}: ❌ ${esc(tronca(e.errore || 'errore', 300))}`;
   const righe = [
     riga('📸', 'Instagram', n.instagram, n.instagram?.prova ? ' come reel di prova (lo vedono prima i non follower)' : ''),
     riga('▶️', 'YouTube', n.youtube, n.youtube?.privato ? '\n<i>⚠️ YouTube lo tiene privato finché il collegamento non è verificato: rendilo pubblico da YouTube Studio.</i>' : ''),
+    riga('🎵', 'TikTok', n.tiktok, ' · 📥 <b>bozza pronta</b> nella posta della tua app TikTok: aprila, aggiungi testo e copertina e pubblica tu'),
     n.errore ? `⚠️ ${esc(tronca(n.errore, 300))}` : '',
     n.spostato ? '<i>Il video è in 03 · Da pubblicare.</i>' : '',
   ].filter(Boolean);
-  const riuscito = Boolean(n.instagram?.ok || n.youtube?.ok);
+  const riuscito = Boolean(n.instagram?.ok || n.youtube?.ok || n.tiktok?.ok);
   const links = [
     ...(n.instagram?.ok && n.instagram.link ? [link('📸 Apri su Instagram', n.instagram.link)] : []),
     ...(n.youtube?.ok && n.youtube.link ? [link('▶️ Apri su YouTube', n.youtube.link)] : []),
   ];
   if (memo) {
-    const fatto = [n.instagram?.ok ? `📸 ${n.instagram.link}` : '', n.youtube?.ok ? `▶️ ${n.youtube.link}` : ''].filter(Boolean).join('\n');
+    const fatto = [n.instagram?.ok ? `📸 ${n.instagram.link}` : '', n.youtube?.ok ? `▶️ ${n.youtube.link}` : '', n.tiktok?.ok ? '🎵 TikTok: bozza nella tua app' : ''].filter(Boolean).join('\n');
     // pubblicato da una parte sola: l'altra si può ritentare (il video è già in 99, quindi solo da qui)
     await mem(env).scrivi(`run:${p.runId}`, { ...memo, pubblicato: riuscito ? fatto : undefined } satisfies RunMemo);
   }
   await mostra(env, p.chat, {
-    testo: `${riuscito ? '✅' : '❌'} <b>${esc(nome)}</b>\n${righe.join('\n')}`,
+    testo: `${riuscito ? '✅' : '❌'} <b>${esc(nome)}</b>\n${righe.join('\n')}${n.tiktok?.ok && memo?.pubblica?.didascalia ? `\n\n🎵 <b>Testo per la bozza TikTok</b> (tocca per copiare):\n<pre>${esc(tronca(memo.pubblica.didascalia, 2000))}</pre>` : ''}`,
     tasti: [
       ...(links.length ? [links] : []),
       [...(!riuscito ? [tasto('🔁 Riprova', `pub!:${p.runId}`)] : []), ...(n.run_url ? [link('🔧 Log', n.run_url)] : []), MENU_TASTO],
@@ -2545,6 +2560,20 @@ export default {
       return new Response('ok');
     }
 
+    // 📱 lo stato della Squadra per la Mini App: scrive solo chi ha la chiave (secret STATO_APP_CHIAVE, la stessa nei due repo)
+    if (req.method === 'POST' && url.pathname === '/squadra-stato') {
+      if (!env.STATO_APP_CHIAVE) return new Response('non attivo: manca il secret STATO_APP_CHIAVE', { status: 503 });
+      const data = req.headers.get('x-squadra-chiave') || '';
+      if (!data || !timingSafeEqual(await sha256Hex(data), await sha256Hex(env.STATO_APP_CHIAVE))) return new Response('no', { status: 401 });
+      const testo = await req.text();
+      if (testo.length > LIMITE_BYTE) return new Response('troppo grande', { status: 413 });
+      let corpo: unknown = null;
+      try { corpo = JSON.parse(testo); } catch { /* resta null */ }
+      const r = leggiInvio(corpo);
+      if (!r.ok) return new Response(r.messaggio, { status: r.stato });
+      await mem(env).scrivi(K_STATO_SQUADRA, r.salvato satisfies StatoSalvato);
+      return new Response('ok');
+    }
     if (req.method === 'POST' && (url.pathname === '/notify' || url.pathname === '/video' || url.pathname === '/foto-profilo' || url.pathname === '/copertina' || url.pathname === '/stile-esito' || url.pathname === '/stile-correggi')) {
       if (req.headers.get('x-regista-token') !== env.NOTIFY_TOKEN) return new Response('no', { status: 401 });
       if (url.pathname === '/notify') { await onNotify(env, (await req.json()) as Notify); return new Response('ok'); }
