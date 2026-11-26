@@ -25,7 +25,9 @@ export async function verificaInitData(initData: string, tokenBot: string, perme
   const hash = params.get('hash') || '';
   if (!/^[0-9a-f]{64}$/.test(hash)) return { ok: false, motivo: 'firma assente' };
   params.delete('hash');
-  const controllo = [...params.entries()].sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0)).map(([k, v]) => `${k}=${v}`).join('\n');
+  const coppie: [string, string][] = [];
+  params.forEach((v, k) => coppie.push([k, v]));
+  const controllo = coppie.sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0)).map(([k, v]) => `${k}=${v}`).join('\n');
   const segreto = await hmac('WebAppData', tokenBot);
   if (!uguali(esa(await hmac(segreto, controllo)), hash)) return { ok: false, motivo: 'firma non valida' };
   const quando = Number(params.get('auth_date'));
