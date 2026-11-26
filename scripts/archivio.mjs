@@ -261,10 +261,13 @@ if (process.argv[2] === 'collega' && process.argv[1] && path.resolve(process.arg
   }
   // già pronta in 01 (c'è la mappa): rilancio, niente da fare. Senza mappa = giro interrotto, si completa
   const giaPronta = (() => { try { return JSON.parse(rclone('lsjson', `${R}:${DIR_EDITARE}/${nome}/${MAPPA}`)).length > 0; } catch { return false; } })();
-  if (giaPronta) { console.log('la cartella c\'è già in 01: niente collegamenti nuovi (rilancio)'); process.exit(0); }
+  // rilancio: i file arrivati dopo il primo giro (es. il video caricato dopo) si collegano ora; i collegamenti già fatti restano.
+  // Se qualcosa non va non si ferma il rilancio: resta quello che c'era.
+  if (giaPronta) console.log('la cartella c\'è già in 01 (rilancio): aggiungo solo i collegamenti mancanti');
+  const esceRilancio = (t) => { if (giaPronta) { console.log(`rilancio: ${t}; resta com'è`); process.exit(0); } esce(t); };
   // il nome della cartella di 05: simile basta (maiuscole, spazi, 2 lettere sbagliate), primo livello o uno sotto
   let in05 = [];
-  try { in05 = JSON.parse(rclone('lsjson', `${R}:${DIR_ARCHIVIO}`, '--dirs-only')).map((x) => x.Name).filter((x) => !x.startsWith('_')); } catch { esce(`non riesco a leggere ${DIR_ARCHIVIO}`); }
+  try { in05 = JSON.parse(rclone('lsjson', `${R}:${DIR_ARCHIVIO}`, '--dirs-only')).map((x) => x.Name).filter((x) => !x.startsWith('_')); } catch { esceRilancio(`non riesco a leggere ${DIR_ARCHIVIO}`); }
   let sotto = [];
   let { trovata, quante } = cartellaSimile(sorgente, in05);
   if (!trovata && !quante) {
@@ -273,7 +276,7 @@ if (process.argv[2] === 'collega' && process.argv[1] && path.resolve(process.arg
   }
   if (!trovata && !quante) console.log(`cartelle guardate: ${in05.length} al primo livello, ${sotto.length} un livello sotto; la più simile ha ${piuVicina(sorgente, [...in05, ...sotto])} lettere diverse`);
   if (!trovata && !quante && auto) { console.log(`non è né in 01 né in ${DIR_ARCHIVIO}: decide il controllo di 01`); process.exit(0); }
-  if (!trovata) esce(quante > 1 ? `in ${DIR_ARCHIVIO} ci sono ${quante} cartelle con un nome simile: scrivi il nome preciso` : `non trovo la cartella in ${DIR_ARCHIVIO}, nemmeno con un nome simile`);
+  if (!trovata) esceRilancio(quante > 1 ? `in ${DIR_ARCHIVIO} ci sono ${quante} cartelle con un nome simile: scrivi il nome preciso` : `non trovo la cartella in ${DIR_ARCHIVIO}, nemmeno con un nome simile`);
   if (chiave(trovata) !== chiave(sorgente)) console.log(`cartella di 05 trovata con un nome simile${trovata.includes('/') ? ', dentro un\'altra cartella' : ''}`);
   const daUsare = trovata;
   const isMedia = (f) => VIDEO_EXT.concat(IMAGE_EXT, AUDIO_EXT).includes(path.extname(f.Name).toLowerCase());
@@ -285,5 +288,5 @@ if (process.argv[2] === 'collega' && process.argv[1] && path.resolve(process.arg
   };
   try { collegaDaArchivio({ rclone, R, sorgente: daUsare, dir: DIR_EDITARE, nome, isMedia, scrivi, log: console.log }); }
   // repo pubblico: i messaggi di rclone contengono nomi di file, qui solo il nostro
-  catch (e) { esce(/^(nella cartella di 05|non riesco|Drive non mi lascia)/.test(e.message) ? e.message : 'dall\'archivio: collegamenti non creati'); }
+  catch (e) { esceRilancio(/^(nella cartella di 05|non riesco|Drive non mi lascia)/.test(e.message) ? e.message : 'dall\'archivio: collegamenti non creati'); }
 }
