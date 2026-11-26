@@ -41,6 +41,7 @@ import { progettoDaVinci } from './davinci.mjs';
 import { filtroRampa, grigliaBattute, motoRipresa, pianoBeat, scegliTratto } from './beat.mjs';
 import { analizzaBrano, descriviCatalogo, DIR_MUSICA, ESTENSIONI_MUSICA, momentiParlati, richiestaMusica, scegliBrano } from './musica.mjs';
 import { AUDIO_EXT, IMAGE_EXT, NOMI_DISPOSITIVO, VIDEO_EXT, dispositivo, prioritaAudio, tagsPiatti } from './sorgenti.mjs';
+import { filtroRitaglioVolto, tracciaVolto, vuoleVerticale } from './volto.mjs';
 import { regolaStile } from './regolatore.mjs';
 import { REGOLA_ZONE, filtroZone } from './zone.mjs';
 import { vuoleCarrello, applicaCarrello } from './carrello.mjs';
@@ -634,7 +635,8 @@ function misuraPerLook(s, start, dur) {
 // `rampa` (stile Beat): `dur` = durata in uscita, della sorgente se ne usano rampa.fonte secondi a velocità variabile
 export function comandiTaglio(s, start, dur, out, conAudio, senzaLook = false, zoom = 1, lento = 1, fps = 30, rampa = null) {
   // repertorio orizzontale: ritaglio centrale 9:16, poi lo zoom
-  const ritaglio = (s.ritaglia916 ? 'crop=trunc(ih*9/16/2)*2:ih,' : '') + (zoom > 1 ? `crop=trunc(iw/${zoom}/2)*2:trunc(ih/${zoom}/2)*2,` : '');
+  // girato orizzontale in verticale (brief «Formato: verticale»): il ritaglio segue il viso; senza viso, al centro
+  const ritaglio = (s.ritaglia916 ? (s.volto ? filtroRitaglioVolto(s.volto, start, dur, dur * lento) : 'crop=trunc(ih*9/16/2)*2:ih,') : '') + (zoom > 1 ? `crop=trunc(iw/${zoom}/2)*2:trunc(ih/${zoom}/2)*2,` : '');
   const rallenta = rampa ? `${filtroRampa(rampa, dur)},` : lento > 1 ? `setpts=${lento}*PTS,` : '';
   let curva = null;
   // REGOLA DI DENIS (19/11, «NO COLOR CORRECTION»): l'esposizione si corregge SOLO sul girato in log dichiarato nel
@@ -2534,9 +2536,12 @@ export async function analizza(nome, brief, cache) {
       // `file` è il nome logico usato dalla regia; i pezzi veri si tagliano dall'originale dopo la regia
       // registrazione dello schermo (nome tipico o formato da telefono più stretto di 9:16): ottima come inserto
       const schermo = /screen|registraz|rpreplay|schermo|scherm/i.test(f) || (info.h > info.w && info.w / info.h < 0.5);
+      // brief «Formato: verticale»: un girato orizzontale (es. Sony dietro il teleprompter) si ritaglia in 9:16 seguendo il viso
+      const daVerticale = vuoleVerticale(brief) && info.w > info.h && !schermo;
+      const volto = daVerticale ? tracciaVolto(src, info.durata, log) : null;
       sorgenti.push({ id, file: `${id}.mp4`, originale: src, byte: fs.statSync(src).size, tipo: 'video', dispositivo: disp, nomeDispositivo: NOMI_DISPOSITIVO[disp],
         durata: +info.durata.toFixed(2), orient: info.w > info.h ? 'h' : 'v', haAudio: info.audio, colore: info.colore, data: dataRipresa(info.tags, f), ora: oraRipresa(info.tags), fps: info.fps,
-        ...(schermo ? { schermo: true } : {}) });
+        ...(schermo ? { schermo: true } : {}), ...(daVerticale ? { orient: 'v', ritaglia916: true, ...(volto ? { volto } : {}) } : {}) });
     } else if (AUDIO_EXT.includes(ext)) {
       const info = probe(src);
       log(`audio ${f} (mic esterno, ${info.durata.toFixed(1)} s)`);
