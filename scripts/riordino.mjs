@@ -65,9 +65,9 @@ Per OGNI clip dimmi:
 Rispondi SOLO con JSON: {"clip":[{"k":1,"prodotto":"…","parlato":true,"conf":0.9}]}`;
 
 /** deps.estrai(clip) → { jpg: base64, wav: base64|null }, deps.chiedi(parts) → oggetto JSON, deps.pausa(ms) */
-export async function riconosci(clips, cache, deps, { lotto = 6, scadenza = Infinity, pausaMs = 4000, stop = () => false } = {}) {
+export async function riconosci(clips, cache, deps, { lotto = 6, scadenza = Infinity, pausaMs = 4000, stop = () => false, checkpoint = null, ogni = 5 } = {}) {
   const nuovi = clips.filter((c) => c.tipo !== 'audio' && !cache[chiaveClip(c)]);
-  let fatti = 0;
+  let fatti = 0, lotti = 0;
   for (let i = 0; i < nuovi.length; i += lotto) {
     if (deps.adesso() > scadenza || (await stop())) return { fatti, finito: false };
     const gruppo = nuovi.slice(i, i + lotto);
@@ -93,6 +93,8 @@ export async function riconosci(clips, cache, deps, { lotto = 6, scadenza = Infi
       fatti++;
     }
     await deps.pausa(pausaMs);
+    // ogni tanto si salva quello che si è capito: un giro di ore interrotto non perde il lavoro e lo stato mostra l'avanzamento
+    if (checkpoint && ++lotti % ogni === 0) await checkpoint(fatti);
   }
   return { fatti, finito: true };
 }
@@ -331,8 +333,15 @@ export async function main() {
   const tmp = fs.mkdtempSync(path.join(process.env.RUNNER_TEMP || '/tmp', 'riordino-'));
   const server = await servi();
   let esito;
+  const daFare = clips.filter((c) => !c.giaPosto && c.tipo !== 'audio').length;
+  const checkpoint = async () => {
+    scriviJson(`${STATO_DIR}/clip.json`, cache);
+    const attuale = leggiJson(`${STATO_DIR}/stato.json`, {});
+    if (attuale.fase === 'fermato') return; // Denis ha detto «ferma»: non si sovrascrive
+    scriviJson(`${STATO_DIR}/stato.json`, { ...attuale, fase: 'riconoscimento', aggiornato: new Date().toISOString(), riconosciute: clips.filter((c) => !c.giaPosto && c.tipo !== 'audio' && cache[chiaveClip(c)]).length, totali: daFare, prova });
+  };
   try {
-    esito = await riconosci(clips.filter((c) => !c.giaPosto), cache, { ...deps, estrai: estraiVero(tmp), chiedi: chiediGeminiVero }, { scadenza, pausaMs: Number(process.env.PAUSA_MS) || 4000, stop });
+    esito = await riconosci(clips.filter((c) => !c.giaPosto), cache, { ...deps, estrai: estraiVero(tmp), chiedi: chiediGeminiVero }, { scadenza, pausaMs: Number(process.env.PAUSA_MS) || 4000, stop, checkpoint });
   } finally { server.kill(); scriviJson(`${STATO_DIR}/clip.json`, cache); }
   const da = clips.filter((c) => !c.giaPosto && c.tipo !== 'audio').length;
   const fatte = clips.filter((c) => !c.giaPosto && c.tipo !== 'audio' && cache[chiaveClip(c)]).length;

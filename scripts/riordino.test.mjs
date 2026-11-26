@@ -88,6 +88,16 @@ test('riconosci: si ferma tra un lotto e l\'altro se Denis dice «ferma»', asyn
   assert.equal(chiamate, 1); // un lotto, poi lo stop
 });
 
+test('riconosci: salva a intervalli (cache e avanzamento), così un giro interrotto non perde il lavoro', async () => {
+  const inv = inventario(RIGHE).filter((c) => !c.giaPosto && c.tipo !== 'audio').slice(0, 8);
+  const visti = [];
+  const deps = { adesso: () => ORA, log: () => {}, pausa: async () => {}, estrai: async () => ({ jpg: 'A', wav: null }),
+    chiedi: async (parts) => ({ clip: parts.filter((p) => p.inline_data).map((_, k) => ({ k: k + 1, prodotto: 'X', parlato: true, conf: 0.9 })) }) };
+  const cache = {};
+  await riconosci(inv, cache, deps, { lotto: 2, ogni: 2, checkpoint: async (n) => visti.push([n, Object.keys(cache).length]) });
+  assert.deepEqual(visti, [[4, 4], [8, 8]]); // 4 lotti da 2 clip: un salvataggio dopo il secondo e uno dopo il quarto
+});
+
 test('raggruppa: stesso nome scritto in modo diverso si unisce da solo; il resto lo decide Gemini; nel dubbio niente', async () => {
   const chiedi = async () => ({ gruppi: [{ canonico: 'Anker Powerbank', nomi: ['Anker powerbank', 'Anker powerbank 27650', 'Inventato'] }, { canonico: 'X', nomi: ['Ajazz AK820'] }] });
   const m = await raggruppa({ 'Anker powerbank': 5, 'Anker Powerbank': 2, 'Anker powerbank 27650': 3, 'Ajazz AK820': 4 }, { chiedi, log: () => {} });
