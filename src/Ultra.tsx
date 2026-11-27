@@ -88,7 +88,8 @@ const BloccoUltra: React.FC<{ b: BloccoM; len: number; g: GraficaStile; colore: 
     const num = grande && /\d/.test(testo);
     const ft = grande && corsivo && !num ? g.fontCorsivo : grande ? g.fontTitoli : g.fontSottotitoli;
     const fs = grande ? (corsivo && !num ? misura(testo, ft) : fsGrande) : Math.min(fsPiccola, dentro(testo, ft, fsPiccola));
-    return { r, grande, ft, fs, h: Math.ceil(grande ? fs * 0.92 : fs * 1.18) };
+    const conMedia = !grande && Boolean(medie) && r.parole.some((x) => medie!.has(normMedia(x.w)));
+    return { r, grande, ft, fs, h: Math.ceil(grande ? fs * 0.92 : fs * (conMedia ? 1.75 : 1.18)) };
   });
   const dalBasso: number[] = [];
   let acc = 0;

@@ -388,7 +388,6 @@ export const SuMisura: React.FC<Piano> = (piano) => {
       <ScalaVideo piano={piano}>
         <Clips piano={piano} fondo="#0B0B0B" filtro={LOOK[g.look]} />
         {g.vignetta > 0 ? <AbsoluteFill style={{ background: `radial-gradient(ellipse 100% 80% at 50% 50%, rgba(0,0,0,0) 60%, rgba(0,0,0,${g.vignetta.toFixed(2)}) 100%)` }} /> : null}
-      </ScalaVideo>
       {g.rivela ? <Sequence durationInFrames={RIVELA.fine + 1}><Rivela piano={piano} /></Sequence> : null}
 
       {aperture.map((b, i) => (
@@ -415,6 +414,7 @@ export const SuMisura: React.FC<Piano> = (piano) => {
       {g.fumo && g.transizione !== 'sfocata' && !(g.transizione === 'pellicola' && g.pellicola) ? <Fumi piano={piano} /> : null}
       {g.fumo && g.transizione === 'sfocata' ? <Sfocature piano={piano} /> : null}
       {strati ? <BlocchiUltra blocchi={blocchi} g={g} medie={g.paroleMedie ? piano.enfasiMedia : undefined} solo={g.dietro ? 'piccole' : 'tutte'} /> : <BlocchiMotion blocchi={blocchi} g={g} />}
+      </ScalaVideo>
       {g.tessere ? <TessereVetro /> : null}
       {g.cornicePellicola ? <CornicePellicola file={g.cornicePellicola.file} durata={g.cornicePellicola.durata} totale={totale} /> : null}
       {cartelli.map((k, i) => (
