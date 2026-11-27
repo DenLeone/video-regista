@@ -3,7 +3,7 @@ import { AbsoluteFill, Audio, continueRender, delayRender, Easing, interpolate, 
 import { Clips, f, Inserti, Ritagli, Sfx, usaFps, volumeSfx, Icone, MusicaSotto } from './comune';
 import { IconeConcetto } from './iconeConcetto';
 import { PaginaProfiloFondo, ScalaVideo, SchedaEditorFondo } from './schedaEditor';
-import { MosaicoSagoma, TessereVetro } from './tessere';
+import { AloneEPuntini, MosaicoSagoma, TessereVetro } from './tessere';
 import { SchermateSopra } from './SchermateSopra';
 import { gruppiParole } from './Cinematico';
 import { durataTotale, FontStile, GraficaStile, Keyword, Piano, Posizione, W } from './piano';
@@ -401,7 +401,7 @@ export const SuMisura: React.FC<Piano> = (pianoIn) => {
   return (
     <AbsoluteFill style={{ backgroundColor: '#0B0B0B' }}>
       <SchedaEditorFondo piano={piano} sfx={sfx} />
-      <PaginaProfiloFondo piano={piano} nome={g.nomeProfilo} visibile={g.nomeVisibile} numeri={g.numeriProfilo} sfx={sfx} />
+      <PaginaProfiloFondo piano={piano} nome={g.nomeProfilo} visibile={g.nomeVisibile} numeri={g.numeriProfilo} foto={g.fotoProfilo} sfx={sfx} />
       <ScalaVideo piano={piano}>
         <Clips piano={piano} fondo="#0B0B0B" filtro={LOOK[g.look]} />
         {g.vignetta > 0 ? <AbsoluteFill style={{ background: `radial-gradient(ellipse 100% 80% at 50% 50%, rgba(0,0,0,0) 60%, rgba(0,0,0,${g.vignetta.toFixed(2)}) 100%)` }} /> : null}
@@ -433,6 +433,7 @@ export const SuMisura: React.FC<Piano> = (pianoIn) => {
       {strati ? <BlocchiUltra blocchi={blocchi} g={g} medie={piano.enfasiMedia} solo={g.dietro ? 'piccole' : 'tutte'} /> : <BlocchiMotion blocchi={blocchi} g={g} />}
       </ScalaVideo>
       {g.tessere ? (g.dietro ? <MosaicoSagoma piano={piano} filtro={LOOK[g.look]} /> : <TessereVetro />) : null}
+      {g.tessere ? <AloneEPuntini /> : null}
       {g.cornicePellicola ? <CornicePellicola file={g.cornicePellicola.file} durata={g.cornicePellicola.durata} totale={totale} /> : null}
       {cartelli.map((k, i) => (
         <Sequence key={`ca${i}`} from={f(k.at)} durationInFrames={Math.max(8, f(k.dur))}>

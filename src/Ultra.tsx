@@ -66,7 +66,7 @@ const normMedia = (w: string) => w.toLowerCase().normalize('NFD').replace(/[\u03
 const ANCORA_SPALLE = 1020;
 // sul petto («Parole sul petto: sì»): il blocco finisce a y 1220, due righe arrivano a circa y 1100: sotto il mento, dentro la zona sicura
 const ANCORA_PETTO = 700;
-const GRANDI_Y = 720; // con «Parole sul petto»: dove finisce (dall'alto) la riga più bassa delle parole giganti: sulla parte alta della testa, così si leggono ai lati
+const GRANDI_Y = 650; // con «Parole sul petto»: dove finisce (dall'alto) la riga più bassa delle parole giganti: sulla parte alta della testa, così si leggono ai lati
 
 const BloccoUltra: React.FC<{ b: BloccoM; len: number; g: GraficaStile; colore: (k: number) => string; solo?: 'tutte' | 'grandi' | 'piccole'; medie?: Set<string> }> = ({ b, len, g, colore, solo = 'tutte', medie }) => {
   const fr = useCurrentFrame();
@@ -105,7 +105,7 @@ const BloccoUltra: React.FC<{ b: BloccoM; len: number; g: GraficaStile; colore: 
   // lasciata in basso sale alle spalle: è lì che la persona copre le parole grosse.
   const ANCORA: Record<string, number> = { alto: 1180, centro: 900, basso: 1920 - Math.min(1330, SICURA.basso) };
   const ancoraBase = g.sulPetto && g.dietro ? ANCORA_PETTO : g.dietro && g.posizione === 'basso' ? ANCORA_SPALLE : (ANCORA[g.posizione] ?? ANCORA.basso);
-  // «Parole sul petto»: le parole piccole scendono sotto il mento, ma le GIGANTI restano dietro la testa (la riga più bassa finisce a y 720, sulla parte alta della testa):
+  // «Parole sul petto»: le parole piccole scendono sotto il mento, ma le GIGANTI restano dietro la testa (la riga più bassa finisce a y 650: coperta solo dalla punta della testa):
   // più in basso il busto le copre e non si leggono (Denis, 27/11)
   const rifGrandi = Math.min(...righe.map((x, i) => (x.grande ? dalBasso[i] : Infinity)));
   const ancora = g.sulPetto && g.dietro && solo === 'grandi' && Number.isFinite(rifGrandi) ? 1920 - GRANDI_Y - rifGrandi : ancoraBase;

@@ -30,3 +30,16 @@ test('video troppo corto: nessuna scheda', () => {
   assert.equal(p.paginaProfilo, undefined);
   assert.equal(p.schedeEditor, undefined);
 });
+
+test('icone automatiche dal parlato: sinonimi, distanza, niente sotto le schede', () => {
+  const parole = [['sponsor', 10], ['albero', 4.6], ['regali', 5.5], ['doni', 7.2], ['piace', 9.2], ['mondo', 12], ['storia', 14.5], ['ciao', 3], ['alberi', 18.5], ['telefoni', 22]].map(([w, at]) => ({ w, at, dur: 0.4 }));
+  const p = { clips, parole, grafica: { iconeConcetto: true, paginaProfilo: true, schedaEditor: true }, iconeConcetto: [] };
+  const riga = completaPianoElaborato(p);
+  const nomi = p.iconeConcetto.map((i) => i.nome);
+  assert.ok(nomi.includes('soldi'), 'sponsor → soldi');
+  assert.ok(!p.iconeConcetto.some((i) => i.at > 2.3 && i.at < 5.3), 'niente sotto la pagina profilo (2,5–4,9 s)');
+  assert.ok(nomi.includes('albero') && nomi.includes('telefono'), 'alberi → albero, telefoni → telefono');
+  assert.ok(!p.iconeConcetto.some((i) => i.at > 5.4 && i.at < 9), 'niente sotto la scheda editor (6–8,8 s)');
+  for (let i = 1; i < p.iconeConcetto.length; i++) assert.ok(p.iconeConcetto[i].at - p.iconeConcetto[i - 1].at >= 3, 'almeno 3 s tra due icone');
+  assert.match(riga, /automatiche/);
+});

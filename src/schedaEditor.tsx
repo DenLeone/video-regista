@@ -1,5 +1,5 @@
 import React from 'react';
-import { AbsoluteFill, Easing, interpolate, Sequence, useCurrentFrame } from 'remotion';
+import { AbsoluteFill, Easing, Img, interpolate, Sequence, staticFile, useCurrentFrame } from 'remotion';
 import { IconCrop, IconHandStop, IconPencil, IconPointer, IconScissors, IconTypography, IconZoomIn } from '@tabler/icons-react';
 import { f, Sfx } from './comune';
 import type { Piano } from './piano';
@@ -130,7 +130,7 @@ const MINIATURE: [string, string, string][] = [
   ['#233E66', '#0B1830', '126K'], ['#6A3B3B', '#241313', '88K'], ['#3E4A3A', '#141A12', '98K'],
 ];
 
-const FondoProfilo: React.FC<{ len: number; nome: string; visibile?: string; numeri?: [string, string, string] }> = ({ len, nome, visibile, numeri = ['258', '97K', '146'] }) => {
+const FondoProfilo: React.FC<{ len: number; nome: string; visibile?: string; numeri?: [string, string, string]; foto?: string; miniature?: string[] }> = ({ len, nome, visibile, numeri = ['258', '97K', '146'], foto, miniature = [] }) => {
   const fr = useCurrentFrame();
   const p = faseScheda(fr, 0, len);
   // lampo bianco all'entrata, poi la pagina grigio-azzurra
@@ -145,7 +145,9 @@ const FondoProfilo: React.FC<{ len: number; nome: string; visibile?: string; num
         <div style={{ position: 'absolute', left: 0, top: 200, right: 0, height: 360, opacity: fascio * 0.95,
           background: 'linear-gradient(90deg, rgba(235,243,255,0) 0%, rgba(235,243,255,0.92) 100%)', clipPath: 'polygon(0 22%, 100% 0, 100% 100%, 0 78%)' }} />
         <div style={{ position: 'absolute', left: 60, top: 250, display: 'flex', alignItems: 'center', gap: 36 }}>
-          <div style={{ width: 170, height: 170, borderRadius: 85, background: 'linear-gradient(135deg,#E3B341,#C9632B)', border: '6px solid #FFFFFF', display: 'flex', alignItems: 'center', justifyContent: 'center', fontFamily: 'Inter, sans-serif', fontWeight: 800, fontSize: 80, color: '#FFFFFF' }}>{iniziale}</div>
+          <div style={{ width: 170, height: 170, borderRadius: 85, overflow: 'hidden', background: 'linear-gradient(135deg,#E3B341,#C9632B)', border: '6px solid #FFFFFF', display: 'flex', alignItems: 'center', justifyContent: 'center', fontFamily: 'Inter, sans-serif', fontWeight: 800, fontSize: 80, color: '#FFFFFF' }}>
+            {foto ? <Img src={staticFile(foto)} style={{ width: '100%', height: '100%', objectFit: 'cover' }} /> : iniziale}
+          </div>
           <div style={{ fontFamily: 'Inter, sans-serif', color: '#101828' }}>
             <div style={{ fontSize: 46, fontWeight: 800 }}>{visibile || nome}</div>
             {visibile ? <div style={{ fontSize: 26, opacity: 0.65, marginTop: 4 }}>{nome}</div> : null}
@@ -164,8 +166,9 @@ const FondoProfilo: React.FC<{ len: number; nome: string; visibile?: string; num
           const c = k % 3, r = Math.floor(k / 3);
           if (c === 1 && r === 0) return null; // qui sta il video
           return (
-            <div key={k} style={{ position: 'absolute', left: 40 + c * 340, top: TESSERA.y + r * 590, width: 320, height: 569, borderRadius: 22, background: `linear-gradient(160deg, ${c1}, ${c2})`, opacity: 0.92 }}>
-              <div style={{ position: 'absolute', left: 18, bottom: 16, fontFamily: 'Inter, sans-serif', fontWeight: 700, fontSize: 26, color: '#FFFFFFB0' }}>▶ {n}</div>
+            <div key={k} style={{ position: 'absolute', left: 40 + c * 340, top: TESSERA.y + r * 590, width: 320, height: 569, borderRadius: 22, overflow: 'hidden', background: `linear-gradient(160deg, ${c1}, ${c2})`, opacity: 0.92 }}>
+              {miniature.length ? <Img src={staticFile(`media/${miniature[(k - (k > 1 ? 1 : 0)) % miniature.length]}`)} style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover' }} /> : null}
+              <div style={{ position: 'absolute', left: 18, bottom: 16, fontFamily: 'Inter, sans-serif', fontWeight: 700, fontSize: 26, color: '#FFFFFFD0', textShadow: '0 2px 8px rgba(0,0,0,0.6)' }}>▶ {n}</div>
             </div>
           );
         })}
@@ -176,13 +179,13 @@ const FondoProfilo: React.FC<{ len: number; nome: string; visibile?: string; num
   );
 };
 
-export const PaginaProfiloFondo: React.FC<{ piano: Piano; nome?: string; visibile?: string; numeri?: [string, string, string]; sfx?: number }> = ({ piano, nome = '@tuoprofilo', visibile, numeri, sfx = 0 }) => (
+export const PaginaProfiloFondo: React.FC<{ piano: Piano; nome?: string; visibile?: string; numeri?: [string, string, string]; foto?: string; sfx?: number }> = ({ piano, nome = '@tuoprofilo', visibile, numeri, foto, sfx = 0 }) => (
   <>
     {(piano.paginaProfilo || []).map((s, i) => {
       const len = lunghezza(s.dur);
       return (
         <Sequence key={`pp${i}`} from={f(s.at)} durationInFrames={len}>
-          <FondoProfilo len={len} nome={nome} visibile={visibile} numeri={numeri} />
+          <FondoProfilo len={len} nome={nome} visibile={visibile} numeri={numeri} foto={foto} miniature={piano.miniatureProfilo} />
           {sfx > 0 ? <Sfx nome="whoosh" da={0} volume={0.5 * sfx} /> : null}
         </Sequence>
       );

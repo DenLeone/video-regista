@@ -1856,6 +1856,14 @@ function caricaStile(nome) {
       ft.file = `stili/corrente/${dest}`;
     }
   }
+  // foto profilo di Denis per la pagina profilo (stile Elaborato): propic.jpg/png nella cartella dello stile su Drive, mai nel repo
+  const propic = tutti.find((p) => /^propic\.(jpe?g|png|webp)$/i.test(path.basename(p)));
+  if (propic) {
+    const dest = `propic${path.extname(propic).toLowerCase()}`;
+    fs.copyFileSync(propic, path.join(pub, dest));
+    grafica.fotoProfilo = `stili/corrente/${dest}`;
+    log(`stile ${nome}: foto profilo ${path.basename(propic)}`);
+  }
   // musica: un brano a caso tra quelli in asset/, o quello indicato
   const brani = tutti.filter((p) => /\.(mp3|m4a|aac|wav|ogg)$/i.test(p) && !/\/suoni\//i.test(p.replace(/\\/g, '/')));
   if (musica) {
@@ -3050,7 +3058,7 @@ async function rifinisciPiano(regia, risultato, analisi, avvisoStile) {
   const livelloVoce = Math.max(-60, ...analisi.sorgenti.filter((s) => s.principale && s.livello != null).map((s) => s.livello));
   piano.sfx = process.env.REGISTA_SFX === '0' ? false
     : { volume: +Math.min(0.6, Math.max(0.1, livelloVoce > -60 ? 10 ** ((livelloVoce + 2) / 20) : 0.25)).toFixed(3) };
-  if (stileSuMisura) { piano.grafica = stileSuMisura.grafica; DIAG_ELABORATO = completaPianoElaborato(piano); log(DIAG_ELABORATO); }
+  if (stileSuMisura) { piano.grafica = stileSuMisura.grafica; piano.miniatureProfilo = (analisi.immagini || []).filter((im) => !im.icona && !/^copertina\b/i.test(im.id)).map((im) => im.file).slice(0, 5); if (!piano.miniatureProfilo.length) delete piano.miniatureProfilo; DIAG_ELABORATO = completaPianoElaborato(piano); log(DIAG_ELABORATO); }
   piano.fps = analisi.fps || 30;
   if (!stileSuMisura || stileSuMisura.grafica.biancoNero === 'no') for (const c of piano.clips) delete c.bn;
   regolaPiano(piano);
@@ -3471,7 +3479,7 @@ async function main() {
       const livelloVoce = Math.max(-60, ...analisi.sorgenti.filter((s) => s.principale && s.livello != null).map((s) => s.livello));
       piano.sfx = process.env.REGISTA_SFX === '0' ? false
         : { volume: +Math.min(0.6, Math.max(0.1, livelloVoce > -60 ? 10 ** ((livelloVoce + 2) / 20) : 0.25)).toFixed(3) };
-      if (stileSuMisura) { piano.grafica = stileSuMisura.grafica; DIAG_ELABORATO = completaPianoElaborato(piano); log(DIAG_ELABORATO); }
+      if (stileSuMisura) { piano.grafica = stileSuMisura.grafica; piano.miniatureProfilo = (analisi.immagini || []).filter((im) => !im.icona && !/^copertina\b/i.test(im.id)).map((im) => im.file).slice(0, 5); if (!piano.miniatureProfilo.length) delete piano.miniatureProfilo; DIAG_ELABORATO = completaPianoElaborato(piano); log(DIAG_ELABORATO); }
       piano.fps = analisi.fps || 30;
       if (piano.fps !== 30) log(`video a ${piano.fps} fps (come la camera principale)`);
       // b/n solo se lo stile lo prevede: con "Bianco e nero: no" (o uno stile pronto) i "bn" della regia

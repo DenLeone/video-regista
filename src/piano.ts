@@ -68,6 +68,8 @@ export type Piano = {
   paginaProfilo?: { at: number; dur: number }[];
   // parole medie in grassetto (Ultra/Elaborato): un po' più grosse delle piccole, non giganti
   enfasiMedia?: string[];
+  // immagini della cartella (nomi in public/media) usate come anteprime dei post nella pagina profilo
+  miniatureProfilo?: string[];
   // musica sotto la voce, solo se Denis la chiede (scripts/musica.mjs): da = secondo del brano da cui
   // partire, volume = nelle pause; mentre parla (parlato, sulla timeline) scende
   musica?: { file: string; nome?: string; da: number; volume: number; parlato: [number, number][] };
@@ -107,6 +109,7 @@ export type Posizione = 'alto' | 'centro' | 'basso';
 export type GraficaStile = {
   paginaProfilo?: boolean; // «Pagina profilo: sì»
   nomeProfilo?: string;    // «Nome profilo: @nome»
+  fotoProfilo?: string;    // la foto profilo di Denis: propic.jpg nella cartella dello stile su Drive (mai nel repo), copiata in stili/corrente
   nomeVisibile?: string;   // «Nome visibile: Black Den» (sotto la @, vicino ai numeri)
   numeriProfilo?: [string, string, string]; // «Numeri profilo: 420 post, 11 mila follower, 346 seguiti»
   paroleMedie?: boolean;   // «Parole medie: sì»
