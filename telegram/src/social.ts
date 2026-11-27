@@ -11,6 +11,7 @@ export type Video = {
   id: string; p: Piattaforma; data: string; titolo: string; link?: string;
   views: number; like: number; commenti: number; condivisioni: number;
   salvati?: number; reach?: number; visioneMedia?: number; durata?: number; // secondi
+  salto?: number; // % di visualizzazioni in cui si scorre via nei primi 3 s (Instagram, reels_skip_rate)
 };
 export type Fotografia = { giorno: string; quando: number; video: Video[]; errori: string[]; tiktok: boolean };
 export type ChiaveTikTok = { access: string; scade: number; refresh: string; refreshScade: number; openId?: string; scope?: string };
@@ -79,17 +80,26 @@ async function igJson<T>(d: DepsSocial, url: string): Promise<T> {
 
 // ig_reels_avg_watch_time non c'è su tutti i reel: se la richiesta intera viene rifiutata, senza
 const METRICHE_IG = ['views', 'reach', 'saved', 'shares', 'ig_reels_avg_watch_time'];
-async function insightsIg(d: DepsSocial, base: string, id: string, t: string): Promise<Record<string, number>> {
-  for (const metriche of [METRICHE_IG, METRICHE_IG.slice(0, 4)]) {
+// 27/11: reels_skip_rate (Meta, dicembre 2025) = % di visualizzazioni in cui si scorre via nei primi 3 secondi, la forza
+// del gancio. Si prova sul primo reel: se l'API non la dà, gli altri non la chiedono (piano gratuito di Cloudflare: ~50
+// richieste a giro, oggi una per reel)
+const SALTO_IG = 'reels_skip_rate';
+const BASE_IG = METRICHE_IG.slice(0, 4);
+async function insightsIg(d: DepsSocial, base: string, id: string, t: string, conSalto = false): Promise<Record<string, number>> {
+  const prove = conSalto ? [[...METRICHE_IG, SALTO_IG], [...BASE_IG, SALTO_IG], METRICHE_IG, BASE_IG] : [METRICHE_IG, BASE_IG];
+  for (const [k, metriche] of prove.entries()) {
     try {
       const j = await igJson<{ data?: IgInsight[] }>(d, `${base}/${id}/insights?metric=${metriche.join(',')}&access_token=${t}`);
-      return Object.fromEntries((j.data || []).map((x) => [x.name, Number(x.total_value?.value ?? x.values?.[0]?.value ?? 0)]));
+      // un valore che manca resta fuori (il salto senza abbastanza visualizzazioni non è 0%)
+      return Object.fromEntries((j.data || []).map((x) => [x.name, Number(x.total_value?.value ?? x.values?.[0]?.value ?? (x.name === SALTO_IG ? NaN : 0))]).filter(([n, v]) => n !== SALTO_IG || Number.isFinite(v)));
     } catch (e) {
-      if (metriche.length === 4) throw e;
+      if (k === prove.length - 1) throw e;
     }
   }
   return {};
 }
+// in percentuale, anche se l'API la desse come frazione
+const salto = (v?: number) => (v === undefined || !Number.isFinite(v) || v <= 0 ? undefined : Math.round((v <= 1 ? v * 100 : v) * 10) / 10);
 
 export async function videoInstagram(d: DepsSocial, quanti = 15): Promise<Video[]> {
   if (!d.igToken) throw new Error('Instagram: manca la chiave (secret IG_TOKEN)');
@@ -97,15 +107,20 @@ export async function videoInstagram(d: DepsSocial, quanti = 15): Promise<Video[
   const { base, io } = await accountIg(d.fetch, d.igToken, d.igUtente);
   const lista = await igJson<{ data?: IgMedia[] }>(d, `${base}/${io}/media?fields=id,caption,media_product_type,timestamp,like_count,comments_count,permalink&limit=${quanti}&access_token=${t}`);
   const reel = (lista.data || []).filter((m) => m.media_product_type === 'REELS');
-  return Promise.all(reel.map(async (m): Promise<Video> => {
-    const i = await insightsIg(d, base, m.id, t);
+  // il primo reel da solo: dice se l'API dà il salto nei primi 3 s; solo allora lo chiedono anche gli altri
+  const primo = reel.length ? await insightsIg(d, base, reel[0].id, t, true) : null;
+  const conSalto = Boolean(primo && SALTO_IG in primo);
+  const tutti = [primo, ...(await Promise.all(reel.slice(1).map((m) => insightsIg(d, base, m.id, t, conSalto))))];
+  return reel.map((m, k): Video => {
+    const i = tutti[k] || {};
     return {
       id: m.id, p: 'ig', data: m.timestamp || '', titolo: (m.caption || '').replace(/\s+/g, ' ').slice(0, 100), link: m.permalink,
       views: i.views || 0, like: m.like_count || 0, commenti: m.comments_count || 0, condivisioni: i.shares || 0,
       salvati: i.saved || 0, reach: i.reach || 0,
       ...(i.ig_reels_avg_watch_time ? { visioneMedia: Math.round(i.ig_reels_avg_watch_time / 100) / 10 } : {}),
+      ...(salto(i[SALTO_IG]) !== undefined ? { salto: salto(i[SALTO_IG]) } : {}),
     };
-  }));
+  });
 }
 
 // ---------- TikTok ----------

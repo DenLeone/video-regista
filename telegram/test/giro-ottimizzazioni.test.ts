@@ -6,7 +6,7 @@ import {
 } from '../../scripts/studia-stile.mjs';
 import {
   DIDASCALIE_MODELLI, GEMINI_TENTATIVI, GEMINI_TIMEOUT_MS, MOTIVO_CREDITO,
-  azzeraQuoteGiorno, chiamaGemini, quotaGiornoFinita, scriviDidascalie,
+  azzeraQuoteGiorno, chiamaGemini, chiediRegia, quotaGiornoFinita, scriviDidascalie, serveChiaveGratuita,
 } from '../../scripts/regista.mjs';
 
 test('lo spazio in fondo non è un\'altra cartella, un nome inesistente non si indovina', () => {
@@ -93,6 +93,39 @@ test('credito Gemini finito: si riconosce subito e vale solo per quella chiave',
     assert.equal(minuto.credito, undefined);
   } finally {
     globalThis.fetch = prima;
+    azzeraQuoteGiorno();
+  }
+});
+
+// 27/11: chiave a pagamento senza credito → la regia la fa Gemini con la chiave gratuita (stessi Flash), non Claude.
+// PATH che non esiste: se la prova arrivasse a Claude (o a npm per installarlo), fallisce invece di chiamarlo davvero
+test('regia: senza credito sulla chiave a pagamento passa alla gratuita prima di Claude', async () => {
+  assert.equal(serveChiaveGratuita(`Gemini: ${MOTIVO_CREDITO} su tutti i modelli (2.5 Flash)`), true);
+  assert.equal(serveChiaveGratuita('Gemini: limite al minuto su tutti i modelli (2.5 Flash)'), true);
+  assert.equal(serveChiaveGratuita('Gemini: regia inutilizzabile (frasi inesistenti) su tutti i modelli (2.5 Flash)'), false);
+  assert.equal(serveChiaveGratuita('Gemini: tempo massimo del giro finito su tutti i modelli (2.5 Flash)'), false);
+  azzeraQuoteGiorno();
+  const env = (globalThis as unknown as { process: { env: Record<string, string | undefined> } }).process.env;
+  const salva = { fetch: globalThis.fetch, env: { ...env } };
+  const chiavi: string[] = [];
+  const regia = { titolo: 'Prova', sequenza: [{ frase: 'Ciao a tutti.' }] };
+  try {
+    Object.assign(env, { GEMINI_API_KEY: 'paga', GEMINI_API_KEY_GRATIS: 'gratis', GEMINI_MODELLI: 'gemini-2.5-flash', PATH: '/percorso-che-non-esiste' });
+    delete env.REGISTA_AI; delete env.NOTIFY_URL;
+    globalThis.fetch = (async (u: unknown, init?: RequestInit) => {
+      if (String(u).includes(':countTokens')) return Response.json({ totalTokens: 10 });
+      const k = (init?.headers as Record<string, string>)['x-goog-api-key'];
+      chiavi.push(k);
+      if (k === 'paga') return new Response('{"error":{"code":429,"message":"Your prepayment credits are depleted.","status":"RESOURCE_EXHAUSTED"}}', { status: 429 });
+      return Response.json({ candidates: [{ content: { parts: [{ text: JSON.stringify(regia) }] } }] });
+    }) as typeof fetch;
+    const r = await chiediRegia('materiale finto', [], null, (x: unknown) => x);
+    assert.deepEqual(r.regia, regia);
+    assert.deepEqual(chiavi, ['paga', 'gratis']); // una richiesta a pagamento (rifiutata), una gratuita (buona)
+  } finally {
+    globalThis.fetch = salva.fetch;
+    for (const k of Object.keys(env)) if (!(k in salva.env)) delete env[k];
+    Object.assign(env, salva.env);
     azzeraQuoteGiorno();
   }
 });

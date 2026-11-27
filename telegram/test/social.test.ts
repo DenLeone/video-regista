@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { completaLoginTikTok, confronta, htmlSicuro, linkLoginTikTok, pianoDelGiorno, type DepsSocial, type Fotografia } from '../src/social';
+import { completaLoginTikTok, confronta, htmlSicuro, linkLoginTikTok, pianoDelGiorno, videoInstagram, type DepsSocial, type Fotografia } from '../src/social';
 
 function finto(rispondi: (url: string, init?: RequestInit) => unknown, extra: Partial<DepsSocial> = {}) {
   const db = new Map<string, unknown>();
@@ -47,6 +47,32 @@ test('il secondo giorno misura la crescita e manda all’AI i dati veri', async 
   assert.match(secondo, /\+150 views/);
   assert.match(secondo, /<b>Oggi<\/b> rifai la tastiera/);
   assert.ok(!chiamate.some((u) => u.includes('/2/insights')), 'i post che non sono reel non chiedono statistiche');
+});
+
+// 27/11: reels_skip_rate = % che scorre via nei primi 3 s (la forza del gancio). Si prova sul primo reel; se l'API non la dà,
+// gli altri non la chiedono: le richieste restano quelle di prima (tetto di ~50 a giro del piano gratuito di Cloudflare)
+const tre = { data: ['1', '3', '4'].map((id) => ({ id, caption: `reel ${id}`, media_product_type: 'REELS', timestamp: '2026-11-20T10:00:00Z', like_count: 1, comments_count: 0 })) };
+const dati = (conSalto: boolean, valore = 41.46) => ({ data: [{ name: 'views', values: [{ value: 500 }] }, { name: 'reach', total_value: { value: 400 } }, { name: 'saved', values: [{ value: 3 }] },
+  { name: 'shares', values: [{ value: 2 }] }, { name: 'ig_reels_avg_watch_time', values: [{ value: 7300 }] }, ...(conSalto ? [{ name: 'reels_skip_rate', values: [{ value: valore }] }] : [])] });
+test('Instagram: il salto nei primi 3 s arriva quando l\'API lo dà, con una richiesta per reel', async () => {
+  const { d, chiamate } = finto((url) => (url.includes('/me/media') ? tre : url.includes('/insights') ? dati(url.includes('reels_skip_rate')) : undefined));
+  const v = await videoInstagram(d);
+  assert.deepEqual(v.map((x) => x.salto), [41.5, 41.5, 41.5]);
+  assert.deepEqual(v.map((x) => x.visioneMedia), [7.3, 7.3, 7.3]);
+  assert.equal(chiamate.filter((u) => u.includes('/insights')).length, 3);
+});
+test('Instagram: se l\'API rifiuta il salto, solo il primo reel lo prova (niente richieste in più per gli altri)', async () => {
+  const { d, chiamate } = finto((url) => (url.includes('/me/media') ? tre : url.includes('reels_skip_rate') ? undefined : url.includes('/insights') ? dati(false) : undefined));
+  const v = await videoInstagram(d);
+  assert.deepEqual(v.map((x) => x.salto), [undefined, undefined, undefined]);
+  assert.deepEqual(v.map((x) => x.visioneMedia), [7.3, 7.3, 7.3]);
+  const ins = chiamate.filter((u) => u.includes('/insights'));
+  assert.equal(ins.length, 5); // il primo: 2 rifiutate + 1 buona; gli altri 2: una a testa, come prima
+  assert.ok(!ins.slice(3).some((u) => u.includes('reels_skip_rate')));
+});
+test('Instagram: un salto senza valore (poche visualizzazioni) non diventa 0%', async () => {
+  const { d } = finto((url) => (url.includes('/me/media') ? { data: tre.data.slice(0, 1) } : url.includes('/insights') ? { data: [...dati(false).data, { name: 'reels_skip_rate', values: [{}] }] } : undefined));
+  assert.equal((await videoInstagram(d))[0].salto, undefined);
 });
 
 test('un errore di Instagram arriva nel messaggio senza bloccare tutto', async () => {
