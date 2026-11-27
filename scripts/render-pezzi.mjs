@@ -14,6 +14,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { combineChunks, renderMedia, selectComposition } from '@remotion/renderer';
 import { dividi } from './pezzi.mjs';
+import { QUALITA } from './qualita.mjs';
 
 const QUI = fileURLToPath(import.meta.url);
 const browserExecutable = process.env.REMOTION_BROWSER || null;
@@ -25,7 +26,7 @@ async function unPezzo(serveUrl, stile, filePiano, da, a, video, audio, schede) 
     composition, serveUrl, inputProps, browserExecutable, logLevel: 'error',
     codec: 'h264-ts', audioCodec: 'aac', outputLocation: video, separateAudioTo: audio,
     forSeamlessAacConcatenation: true, enforceAudioTrack: true, frameRange: [da, a],
-    videoBitrate: '15M', encodingMaxRate: '16M', encodingBufferSize: '32M', audioBitrate: '320k',
+    videoBitrate: QUALITA.videoBitrate, encodingMaxRate: QUALITA.maxRate, encodingBufferSize: QUALITA.buffer, x264Preset: QUALITA.x264Preset, audioBitrate: QUALITA.audio,
     imageFormat: 'png', colorSpace: 'bt709', concurrency: schede, overwrite: true,
   });
 }
@@ -70,7 +71,7 @@ async function main() {
     await combineChunks({
       outputLocation: path.resolve(uscita), videoFiles: video, audioFiles: audio, codec: 'h264', audioCodec: 'aac',
       fps: composition.fps, framesPerChunk: passo, preferLossless: false, compositionDurationInFrames: composition.durationInFrames,
-      audioBitrate: '320k', logLevel: 'error',
+      audioBitrate: QUALITA.audio, logLevel: 'error',
     });
     console.log(`[render] ${path.basename(uscita)} pronto in ${Math.round((Date.now() - t0) / 1000)} s`);
   } finally {

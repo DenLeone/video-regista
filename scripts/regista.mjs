@@ -35,6 +35,7 @@ import { chiaveStock, materialePerAI, normFrase, RIMANDO, risolviRegia, senzaBuc
 import { movimento, syncMovimento } from './sync-visivo.mjs';
 import { CATENA_PODCAST, LOOK_FFMPEG, leggiStile, promptSuMisura } from './stile-su-misura.mjs';
 import { completaPianoElaborato } from './piano-elaborato.mjs';
+import { QUALITA } from './qualita.mjs';
 import { chiaveStileR2, preparaStileApp } from './stile-app.mjs';
 import { bloccoRemoteR2, comandiCancellaR2, comandiCopiaDrive, comandiScaricoR2, comandiCopiaPezzoR2, comandiScaricaPezziR2, comandiCancellaPezziR2 } from './rete.mjs';
 import { scegliCartella } from './scegli-cartella.mjs';
@@ -657,8 +658,8 @@ export function comandiTaglio(s, start, dur, out, conAudio, senzaLook = false, z
     '-vf', `${rallenta}${ritaglio}scale='if(gt(iw,ih),1920,1080)':-2:flags=lanczos,${senzaLook ? filtroTecnico(s.colore) : filtroColore(s.colore, curva)}`,
     ...(lento > 1 || rampa ? ['-r', String(fps)] : []),
     '-threads', '2',
-    '-c:v', 'libx264', '-preset', 'veryfast', '-crf', '16', '-pix_fmt', 'yuv420p', ...TAG_709,
-    ...(conAudio && lento === 1 && !rampa ? ['-c:a', 'aac', '-b:a', '160k'] : ['-an']), '-movflags', '+faststart', out];
+    '-c:v', 'libx264', '-preset', QUALITA.masterPreset, '-crf', QUALITA.masterCrf, '-pix_fmt', 'yuv420p', ...TAG_709,
+    ...(conAudio && lento === 1 && !rampa ? ['-c:a', 'aac', '-b:a', QUALITA.masterAudio] : ['-an']), '-movflags', '+faststart', out];
 }
 function eseguiUno(cmd, args) {
   return new Promise((ok, ko) => {
@@ -2052,14 +2053,14 @@ function renderizza(out, stile = STILI[0]) {
   // (visto nel test del 16/10): fino a 3 tentativi.
   for (let tentativo = 1; ; tentativo++) {
     try {
-      // 1080×1920 a ~15 Mbps: il formato che TikTok/Instagram caricano meglio (meglio di un 4K pesante).
+      // 1080×1920 ad alto bitrate (scripts/qualita.mjs, 40 Mbps dal 27/11; prima 15): il formato che TikTok/Instagram caricano meglio (meglio di un 4K pesante).
       // Fotogrammi PNG (senza perdite: col JPEG 80 di default si perdeva dettaglio nelle ombre) e
       // colori BT.709 a gamma limitata: prima usciva "yuvj420p" BT.601 a gamma piena, che app e
       // lettori possono leggere con neri grigi o colori spostati (prova del 20/10: col JPEG 100 +
       // BT.709 Remotion sbaglia i colori, col PNG sono esatti)
       INSIEME['render dal pacchetto pronto'] = PACCHETTO ? 1 : 0;
       run('npx', ['remotion', 'render', ingressoRemotion(), stile, out, `--props=${path.join(WORK, 'piano.json')}`,
-        '--codec=h264', '--video-bitrate=15M', '--max-rate=16M', '--buffer-size=32M', '--audio-bitrate=320k', '--concurrency=100%',
+        '--codec=h264', `--video-bitrate=${QUALITA.videoBitrate}`, `--max-rate=${QUALITA.maxRate}`, `--buffer-size=${QUALITA.buffer}`, `--x264-preset=${QUALITA.x264Preset}`, `--audio-bitrate=${QUALITA.audio}`, '--concurrency=100%',
         '--image-format=png', '--color-space=bt709',
         // browser già installato (es. Chrome sul PC) invece di quello che Remotion scarica
         ...(process.env.REMOTION_BROWSER ? [`--browser-executable=${process.env.REMOTION_BROWSER}`] : [])],
