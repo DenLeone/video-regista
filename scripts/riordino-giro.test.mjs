@@ -68,9 +68,11 @@ fs.writeFileSync(path.join(bin, 'ffmpeg'), '#!/bin/bash\nout="${@: -1}"\nif [[ "
 // Gemini finto: il prodotto lo dice la cartella, il parlato il nome del file («p_…»)
 const richieste = [];
 let fermaAlRaggruppa = false; // il bot che segna «fermato» su Drive mentre il giro raggruppa i prodotti
+let senzaCredito = false; // la chiave con il credito finito: 429 «prepayment credits are depleted» a ogni richiesta
 const gemini = http.createServer((q, r) => {
   let b = ''; q.on('data', (d) => (b += d));
   q.on('end', () => {
+    if (senzaCredito) { r.statusCode = 429; r.end('{"error":{"code":429,"message":"Your prepayment credits are depleted.","status":"RESOURCE_EXHAUSTED"}}'); return; }
     const parts = JSON.parse(b).contents[0].parts;
     richieste.push(parts.length);
     const testi = parts.filter((p) => p.text).map((p) => p.text);
@@ -195,6 +197,30 @@ test('«annulla» scavalcato in coda dal giro automatico: lo fa il «continua»'
   const stato = JSON.parse(fs.readFileSync(f, 'utf8'));
   assert.deepEqual([stato.fase, stato.annulla], ['annullato', false]);
   assert.match((await lancia('continua')).out, /niente da fare/); // e non lo rifà
+});
+
+test('credito Gemini finito: si ferma subito, avvisa una volta al giorno, riprende da solo quando torna', async () => {
+  const fStato = path.join(drive, '00 · Preparazione/_riordino/stato.json');
+  scrivi(`${A}/Moero/p_nuova.mp4`); // una clip nuova da riconoscere
+  senzaCredito = true;
+  const n = avvisi.length, inizio = Date.now();
+  const r = await lancia('vai');
+  assert.equal(r.codice, 0, r.err);
+  assert.ok(Date.now() - inizio < 30_000, 'non si è fermato subito'); // prima: 4 minuti di attese a lotto, per ore
+  assert.match(r.out, /Gemini senza credito: mi fermo/);
+  assert.equal(avvisi.length, n + 2); // partenza + pausa
+  assert.match(avvisi.at(-1), /credito di Gemini/);
+  assert.equal(JSON.parse(fs.readFileSync(fStato, 'utf8')).fase, 'riconoscimento');
+  // il giro automatico dopo, lo stesso giorno: si ferma di nuovo, senza un altro avviso
+  const r2 = await lancia('continua');
+  assert.match(r2.out, /mi fermo/);
+  assert.equal(avvisi.length, n + 2);
+  // il credito torna: il giro dopo riprende e finisce
+  senzaCredito = false;
+  const r3 = await lancia('continua');
+  assert.equal(r3.codice, 0, r3.err);
+  assert.ok(!/mi fermo/.test(r3.out));
+  assert.equal(JSON.parse(fs.readFileSync(fStato, 'utf8')).fase, 'finito');
 });
 
 test('fine', () => { gemini.close(); bot.close(); fs.rmSync(radice, { recursive: true, force: true }); });

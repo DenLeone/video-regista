@@ -15,8 +15,11 @@ export function giudicaClaude({ status, stdout = '', stderr = '' }) {
   if (/limit|quota|usage/i.test(t)) return { ok: false, limite: true };
   return { ok: false, scaduto: true };
 }
-export function giudicaGemini(stato) {
+export function giudicaGemini(stato, testo = '') {
   if (stato === 200) return { ok: true };
+  // credito prepagato finito (27/11: 429 «prepayment credits are depleted» per un giorno intero, letto come limite e quindi
+  // senza avviso): non si azzera da solo, Denis deve ricaricarlo
+  if (stato === 402 || (stato === 429 && /prepay|credits? (are|is|have been) depleted/i.test(testo))) return { ok: false, credito: true };
   if (stato === 429 || stato === 503 || stato === 500) return { ok: false, limite: true };
   return { ok: false, rifiutata: true };
 }
@@ -25,8 +28,8 @@ async function provaGemini(chiave) {
   const r = await fetch('https://generativelanguage.googleapis.com/v1beta/models/gemini-flash-lite-latest:generateContent', {
     method: 'POST', headers: { 'content-type': 'application/json', 'x-goog-api-key': chiave }, signal: AbortSignal.timeout(60_000),
     body: JSON.stringify({ contents: [{ role: 'user', parts: [{ text: 'Rispondi solo: OK' }] }] }),
-  }).catch(() => ({ status: 0 }));
-  return r.status;
+  }).catch(() => null);
+  return { stato: r?.status ?? 0, testo: r && !r.ok ? await r.text().catch(() => '') : '' };
 }
 
 if (import.meta.url === pathToFileURL(process.argv[1] || '').href) {
@@ -40,8 +43,9 @@ if (import.meta.url === pathToFileURL(process.argv[1] || '').href) {
   } else azioni.push('🤖 Manca il segreto <code>CLAUDE_CODE_OAUTH_TOKEN</code> su video-regista.');
   for (const [nome, chiave] of [['gratuita', process.env.GEMINI_API_KEY_GRATIS], ['a pagamento', process.env.GEMINI_API_KEY]]) {
     if (!chiave) continue;
-    const s = await provaGemini(chiave), g = giudicaGemini(s);
-    console.log(`Gemini ${nome}: ${g.ok ? 'ok' : g.limite ? `limite o server occupato (${s})` : `rifiutata (${s})`}`);
+    const { stato: s, testo } = await provaGemini(chiave), g = giudicaGemini(s, testo);
+    console.log(`Gemini ${nome}: ${g.ok ? 'ok' : g.credito ? `credito finito (${s})` : g.limite ? `limite o server occupato (${s})` : `rifiutata (${s})`}`);
+    if (g.credito) azioni.push(`💳 <b>Gemini ${nome}: credito finito</b>. Ricaricalo su Google AI Studio (Fatturazione). Intanto la regia dei montaggi la fa Claude e il riordino dell'archivio aspetta.`);
     if (g.rifiutata) azioni.push(`🔑 <b>La chiave Gemini ${nome} è rifiutata</b> (${s}). Controlla su Google AI Studio e aggiorna il segreto ${nome === 'gratuita' ? '<code>GEMINI_API_KEY_GRATIS</code>' : '<code>GEMINI_API_KEY</code>'} su video-regista.`);
   }
   if (!azioni.length) { console.log('chiavi: tutto a posto'); process.exit(0); }
