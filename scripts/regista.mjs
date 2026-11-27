@@ -2018,6 +2018,11 @@ function salvaTempi(dir, nome) {
 process.on('exit', () => { if (TAPPE.length > 1) console.log(`[regista] tempi: ${rigaTempi()}`); });
 
 function renderizza(out, stile = STILI[0]) {
+  // controllo (27/11): cosa arriva davvero al render dello stile Elaborato (solo numeri, il log è pubblico)
+  try {
+    const pc = JSON.parse(fs.readFileSync(path.join(WORK, 'piano.json'), 'utf8'));
+    log(`render: parole medie ${pc.grafica?.paroleMedie ? 'sì' : 'no'} (${(pc.enfasiMedia || []).length}), parole grandi ${(pc.enfasi || []).length}, schede editor ${(pc.schedeEditor || []).length}, pagina profilo ${(pc.paginaProfilo || []).length}, icone ${(pc.iconeConcetto || []).length}`);
+  } catch { /* nessun piano da controllare */ }
   // A pezzi in parallelo (scripts/render-pezzi.mjs, 10/11), solo con REGISTA_RENDER_PEZZI=1. Su un PC
   // con processore libero rende (in prova 61–75 s contro 95); sul runner di GitHub no: tre giri di
   // prova di 20 s, intero 135 s, a pezzi 151 e 164 s (i 4 processori sono già pieni). Resta spento
