@@ -30,10 +30,18 @@ const Scia: React.FC<{ v: number; children: React.ReactNode }> = ({ v, children 
   );
 };
 
-const Parola: React.FC<{ testo: string; da: number; stile: React.CSSProperties; grande: boolean; pop?: boolean }> = ({ testo, da, stile, grande, pop }) => {
+const Parola: React.FC<{ testo: string; da: number; stile: React.CSSProperties; grande: boolean; pop?: boolean; dolce?: boolean }> = ({ testo, da, stile, grande, pop, dolce }) => {
   const fr = useCurrentFrame();
   const v = interpolate(fr, [da, da + ENTRATA], [0, 1], { ...clamp, easing: Easing.out(Easing.cubic) });
   if (fr < da) return <span style={{ ...stile, visibility: 'hidden' }}>{testo}</span>;
+  if (dolce && !grande) {
+    const d = interpolate(fr, [da, da + 7], [0, 1], { ...clamp, easing: Easing.out(Easing.cubic) });
+    return (
+      <span style={{ ...stile, display: 'inline-block', opacity: d, filter: `blur(${((1 - d) * 7).toFixed(1)}px)`, transform: `translateY(${((1 - d) * 14).toFixed(1)}px)` }}>
+        {testo}
+      </span>
+    );
+  }
   if (pop) {
     const scala = 0.86 + v * 0.14;
     return (
@@ -53,6 +61,8 @@ const Parola: React.FC<{ testo: string; da: number; stile: React.CSSProperties; 
 
 // dietro la persona il blocco sale alle spalle; altrimenti resta sopra la zona di TikTok, all'altezza delle gambe in un piano intero
 const ANCORA_SPALLE = 1020;
+// sul petto («Parole sul petto: sì»): il blocco finisce a y 1220, due righe arrivano a circa y 1100: sotto il mento, dentro la zona sicura
+const ANCORA_PETTO = 700;
 
 const BloccoUltra: React.FC<{ b: BloccoM; len: number; g: GraficaStile; colore: (k: number) => string; solo?: 'tutte' | 'grandi' | 'piccole' }> = ({ b, len, g, colore, solo = 'tutte' }) => {
   const fr = useCurrentFrame();
@@ -83,7 +93,7 @@ const BloccoUltra: React.FC<{ b: BloccoM; len: number; g: GraficaStile; colore: 
   // alto = terzo alto, centro = petto, basso = sopra i tasti. «Dietro» con la posizione
   // lasciata in basso sale alle spalle: è lì che la persona copre le parole grosse.
   const ANCORA: Record<string, number> = { alto: 1180, centro: 900, basso: 1920 - Math.min(1330, SICURA.basso) };
-  const ancora = g.dietro && g.posizione === 'basso' ? ANCORA_SPALLE : (ANCORA[g.posizione] ?? ANCORA.basso);
+  const ancora = g.sulPetto && g.dietro ? ANCORA_PETTO : g.dietro && g.posizione === 'basso' ? ANCORA_SPALLE : (ANCORA[g.posizione] ?? ANCORA.basso);
   const pop = g.entrata === 'pop';
   const scritto = (w: string, grande: boolean) => {
     if (grande && g.maiuscoloGrandi) return w.toUpperCase();
@@ -110,7 +120,7 @@ const BloccoUltra: React.FC<{ b: BloccoM; len: number; g: GraficaStile; colore: 
             <div key={i} style={{ position: 'absolute', left: 0, right: 0, bottom: dalBasso[i], textAlign: 'center', whiteSpace: 'nowrap' }}>
               {x.r.parole.map((p, j) => (
                 <React.Fragment key={j}>
-                  <Parola testo={scritto(p.w, x.grande)} da={f(p.da)} stile={stile} grande={x.grande} pop={pop} />
+                  <Parola testo={scritto(p.w, x.grande)} da={f(p.da)} stile={stile} grande={x.grande} pop={pop} dolce={g.entrataPiccole === 'dolce'} />
                   {j < x.r.parole.length - 1 ? <span style={stile}> </span> : null}
                 </React.Fragment>
               ))}

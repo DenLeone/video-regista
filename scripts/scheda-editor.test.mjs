@@ -21,3 +21,12 @@ test('scheda editor: campo di stile', () => {
   const no = leggiStile('Nome X\n');
   assert.doesNotMatch(promptSuMisura(no.grafica, no.testoAI), /scheda_editor/);
 });
+
+test('campi Elaborato: parole sul petto, entrata dolce, tessere', () => {
+  const s = leggiStile('Nome X\nSottotitoli: strati\nParole sul petto: sì\nEntrata parole piccole: dolce\nApertura tessere: sì\n');
+  assert.equal(s.grafica.sulPetto, true);
+  assert.equal(s.grafica.entrataPiccole, 'dolce');
+  assert.equal(s.grafica.tessere, true);
+  const no = leggiStile('Nome X\n');
+  assert.ok(!no.grafica.sulPetto && !no.grafica.entrataPiccole && !no.grafica.tessere);
+});

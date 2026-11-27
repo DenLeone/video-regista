@@ -3,6 +3,7 @@ import { AbsoluteFill, Audio, continueRender, delayRender, Easing, interpolate, 
 import { Clips, f, Inserti, Ritagli, Sfx, usaFps, volumeSfx, Icone, MusicaSotto } from './comune';
 import { IconeConcetto } from './iconeConcetto';
 import { ScalaVideo, SchedaEditorFondo } from './schedaEditor';
+import { TessereVetro } from './tessere';
 import { SchermateSopra } from './SchermateSopra';
 import { gruppiParole } from './Cinematico';
 import { durataTotale, FontStile, GraficaStile, Keyword, Piano, Posizione, W } from './piano';
@@ -413,6 +414,7 @@ export const SuMisura: React.FC<Piano> = (piano) => {
       {g.fumo && g.transizione !== 'sfocata' && !(g.transizione === 'pellicola' && g.pellicola) ? <Fumi piano={piano} /> : null}
       {g.fumo && g.transizione === 'sfocata' ? <Sfocature piano={piano} /> : null}
       {strati ? <BlocchiUltra blocchi={blocchi} g={g} solo={g.dietro ? 'piccole' : 'tutte'} /> : <BlocchiMotion blocchi={blocchi} g={g} />}
+      {g.tessere ? <TessereVetro /> : null}
       {g.cornicePellicola ? <CornicePellicola file={g.cornicePellicola.file} durata={g.cornicePellicola.durata} totale={totale} /> : null}
       {cartelli.map((k, i) => (
         <Sequence key={`ca${i}`} from={f(k.at)} durationInFrames={Math.max(8, f(k.dur))}>

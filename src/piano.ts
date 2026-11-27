@@ -118,6 +118,9 @@ export type GraficaStile = {
   // dette, una parola alla volta enormi al centro, mentre il resto va piccolo in basso (Esplicativo)
   // cartelli = 1–3 scritte a tutto schermo su fondo scurito, lettere battute a macchina (Motion)
   tipoTitoli: 'titoli' | 'frasi' | 'parole' | 'cartelli';
+  sulPetto?: boolean;                        // strati con «Scritte dietro di me»: le parole piccole stanno sotto il mento, all'altezza del petto (non alle spalle, che nel mezzo busto è la faccia)
+  entrataPiccole?: 'dolce';                  // le parole piccole entrano con dissolvenza, sfocatura e una piccola salita (come nel riferimento)
+  tessere?: boolean;                         // apertura a tessere di vetro (src/tessere.tsx)
   entrata?: 'sfocata' | 'scramble' | 'pop';   // come entrano le parole grandi; pop = comparsa sul posto, senza scivolata
   righe?: number;                            // strati: quante righe restano insieme prima di chiudere il blocco (1–4)
   maiuscoloGrandi?: boolean;                 // solo le parole grosse in maiuscolo, il resto come è detto
