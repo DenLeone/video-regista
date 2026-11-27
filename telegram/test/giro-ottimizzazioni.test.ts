@@ -6,7 +6,7 @@ import {
 } from '../../scripts/studia-stile.mjs';
 import {
   DIDASCALIE_MODELLI, GEMINI_TENTATIVI, GEMINI_TIMEOUT_MS, MOTIVO_CREDITO,
-  azzeraQuoteGiorno, chiamaGemini, chiediRegia, quotaGiornoFinita, scriviDidascalie, serveChiaveGratuita,
+  WORK, azzeraQuoteGiorno, chiamaGemini, chiediRegia, quotaGiornoFinita, scriviDidascalie, serveChiaveGratuita,
 } from '../../scripts/regista.mjs';
 
 test('lo spazio in fondo non è un\'altra cartella, un nome inesistente non si indovina', () => {
@@ -109,6 +109,13 @@ test('regia: senza credito sulla chiave a pagamento passa alla gratuita prima di
   const salva = { fetch: globalThis.fetch, env: { ...env } };
   const chiavi: string[] = [];
   const regia = { titolo: 'Prova', sequenza: [{ frase: 'Ciao a tutti.' }] };
+  // la regia si salva in work/regia.json: sulla macchina di GitHub work/ non c'è (27/11: la prova finiva su Claude).
+  // import dinamico: il controllo dei tipi del bot gira senza node_modules, quindi senza i tipi di node:fs
+  const modFs: string = 'node:fs';
+  const fs = await import(modFs);
+  const fileRegia = `${WORK}/regia.json`;
+  const primaRegia = fs.existsSync(fileRegia) ? fs.readFileSync(fileRegia, 'utf8') : null;
+  fs.mkdirSync(WORK, { recursive: true });
   try {
     Object.assign(env, { GEMINI_API_KEY: 'paga', GEMINI_API_KEY_GRATIS: 'gratis', GEMINI_MODELLI: 'gemini-2.5-flash', PATH: '/percorso-che-non-esiste' });
     delete env.REGISTA_AI; delete env.NOTIFY_URL;
@@ -126,6 +133,7 @@ test('regia: senza credito sulla chiave a pagamento passa alla gratuita prima di
     globalThis.fetch = salva.fetch;
     for (const k of Object.keys(env)) if (!(k in salva.env)) delete env[k];
     Object.assign(env, salva.env);
+    if (primaRegia === null) fs.rmSync(fileRegia, { force: true }); else fs.writeFileSync(fileRegia, primaRegia);
     azzeraQuoteGiorno();
   }
 });
