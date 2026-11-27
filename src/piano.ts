@@ -60,6 +60,8 @@ export type Piano = {
   flickers: Flicker[];
   // loghi di app e marche (PNG trasparenti in public/media) che entrano con bagliore quando Denis li nomina
   icone?: { file: string; at: number; dur: number }[];
+  // icone di concetto (stile «Elaborato»): quadratino bianco con icona Tabler che entra a «pop» vicino alle mani (src/iconeConcetto.tsx)
+  iconeConcetto?: { nome: string; at: number; dur: number; lato: 'sinistra' | 'destra' }[];
   // musica sotto la voce, solo se Denis la chiede (scripts/musica.mjs): da = secondo del brano da cui
   // partire, volume = nelle pause; mentre parla (parlato, sulla timeline) scende
   musica?: { file: string; nome?: string; da: number; volume: number; parlato: [number, number][] };
@@ -97,6 +99,7 @@ export type Piano = {
 export type FontStile = { famiglia: string; peso: number; corsivo?: boolean; file?: string };
 export type Posizione = 'alto' | 'centro' | 'basso';
 export type GraficaStile = {
+  iconeConcetto?: boolean; // «Icone concetto: sì»: l'AI può chiedere icone di concetto (icone_concetto nella regia)
   nome: string;
   apertura: 'normale' | 'grande';           // grande = prima frase a lettere enormi, parola per parola
   fontApertura: FontStile; coloreApertura: string;

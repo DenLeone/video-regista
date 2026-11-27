@@ -12,6 +12,7 @@ import { MotionCollage } from './MotionCollage';
 import { ListaUI, Pezzo } from './ListaUI';
 import { Focus } from './Focus';
 import { SuMisura } from './SuMisura';
+import { ProvaIcone } from './iconeConcetto';
 import { ProvaFont } from './presentazione/ProvaFont';
 import { ProvaScene } from './presentazione/ProvaScene';
 import { Presentazione, PropsPresentazione } from './presentazione/Presentazione';
@@ -44,6 +45,7 @@ const metadati = ({ props }: { props: Piano }) => ({
 
 export const Root: React.FC = () => (
   <>
+    <Composition id="IconeProva" component={ProvaIcone} fps={30} width={1080} height={1920} durationInFrames={54} />
     <Still id="PresentazioneFont" component={ProvaFont} width={2160} height={3840} />
     <Composition id="PresentazioneProva" component={ProvaScene} fps={30} width={2160} height={3840} durationInFrames={480} />
     {/* stile Presentazione del flusso locale: livello trasparente sopra il video vero (pc/locale/presentazione.mjs) */}

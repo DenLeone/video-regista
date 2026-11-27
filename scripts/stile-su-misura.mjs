@@ -6,6 +6,7 @@
 // Il render usa la composizione SuMisura (src/SuMisura.tsx) con la grafica letta da qui.
 
 /** @typedef {import('../src/piano').GraficaStile} GraficaStile */
+import { NOMI_ICONE } from './icone-concetto.mjs';
 
 export const MODELLO = `STILE SU MISURA — compila i campi e salva. Le righe con # sono note.
 Per usarlo: "Stile: <nome della cartella>" nel brief, oppure scegli lo stile dal bot.
@@ -53,6 +54,7 @@ Invito a commentare: no       # sì = finale «COMMENTA: PAROLA» + «CHE TI MAN
 Chiusura: no                  # no | il tuo nome Instagram (es. @itsblackden): finale scurito con logo e nome
 Firma: no                     # no | il tuo nome Instagram: logo e nome fissi in basso a sinistra per tutto il video
 Transizioni: no               # no | fumo (nuvola che copre il taglio nei cambi di scena scelti dall'AI) | sfocata (scia sfocata veloce sul taglio) | pellicola (bruciatura di pellicola, lampo caldo arancione sul taglio: film burn / light leak)
+Icone concetto: no            # sì = quadratini bianchi arrotondati con una piccola icona (corsa, diamante, messaggio…) che entrano a «pop» vicino alle mani quando nomini la cosa (al massimo 5, mai sul volto)
 Cornice pellicola: no         # no | super 8 (bordo nero da pellicola Super 8 con i fori, fisso per tutto il video: look vintage/analogico)
 Inserti: scheda               # scheda (arrotondata, tipo telefono) | laterale (piccola e inclinata accanto a te, al massimo una ogni 10 s: Ultra) | tv (televisore anni '70 con barre colorate all'accensione) | reazione (le clip di un altro in una scheda in prospettiva dietro di te, con la sua voce più bassa; schede informative di vetro scritte dall'AI: Blackden)
 B-roll stock: no              # sì = l'AI può coprire alcune frasi con B-roll: prima i video e le foto di Assets/Sfondi e B-roll, poi Pixabay/Pexels (secret PIXABAY_API_KEY)
@@ -119,7 +121,7 @@ const GRAFICA = ['nome', 'apertura', 'font apertura', 'colore apertura', 'sottot
   'colore accento', 'posizione titoli', 'look', 'bianco e nero', 'vignettatura', 'effetti sonori', 'musica', 'volume musica',
   'font corsivo', 'enfasi corsivo', 'scritte dietro di me', 'soggetto in risalto', 'sfondo sfocato', 'inizio', 'chiusura', 'tagli dentro le frasi',
   'entrata parole grandi', 'firma', 'transizioni', 'cornice pellicola', 'inserti', 'b-roll stock', 'colori parole grandi', 'montaggio',
-  'maiuscolo parole grandi', 'righe', 'titolo prodotto', 'etichette tecniche', 'invito a commentare', 'colore su misura', 'voce', 'schermate'];
+  'maiuscolo parole grandi', 'righe', 'titolo prodotto', 'etichette tecniche', 'invito a commentare', 'colore su misura', 'voce', 'schermate', 'icone concetto'];
 
 /** stile.txt → { grafica, testoAI, musica, campi } */
 export function leggiStile(testo, nomeCartella) {
@@ -195,6 +197,7 @@ export function leggiStile(testo, nomeCartella) {
   if (palette?.length) g.palette = palette.map((c) => colore(c, '#FFFFFF'));
   if (campi.inserti) g.cornice = /tv|telev/.test(norm(campi.inserti)) ? 'tv' : /reaz|rispost|blackden/.test(norm(campi.inserti)) ? 'reazione' : /lato|later|piccol/.test(norm(campi.inserti)) ? 'laterale' : 'scheda';
   if (campi['b-roll stock']) g.stock = si(campi['b-roll stock']);
+  if (campi['icone concetto']) g.iconeConcetto = si(campi['icone concetto']);
   // mattoni del 13/11 (src/Mattoni.tsx)
   if (campi['titolo prodotto']) g.titoloProdotto = !/^no\b/.test(norm(campi['titolo prodotto']));
   if (campi['etichette tecniche']) g.etichette = si(campi['etichette tecniche']);
@@ -305,6 +308,9 @@ export function promptSuMisura(g, testoAI, disponibili = {}) {
       '  - Il contenuto viene SOLO da quello che Denis dice nel video e da fatti certi e generali: niente numeri, articoli di legge o date che Denis non dice e di cui non sei sicuro. Meglio una scheda in meno che un dato inventato.',
       '  - Mai due schede a meno di 15 s una dall\'altra; mai sopra una clip con la voce dell\'altro.');
   }
+  if (g.iconeConcetto) righe.push(
+    `- **Icone di concetto**: campo \`icone_concetto\` in cima alla regia (accanto a \`keywords\`): una lista di \`{"frase": "F012", "icona": "<nome>", "dette": "<parola detta>", "lato": "destra"}\`. Un quadratino bianco con una piccola icona entra a «pop» vicino alle mani sulla parola che nomina la cosa. Nomi ammessi (solo questi): ${NOMI_ICONE.join(', ')}.`,
+    '  - Poche: 3–5 in tutto il video, almeno 3 secondi una dall\'altra, solo quando Denis nomina una cosa concreta che l\'icona rappresenta (una corsa, un diamante, un messaggio…); mai una per ogni frase. `dette` = la parola precisa. `lato`: `destra` o `sinistra`, alternali.');
   if (g.cornice === 'laterale') righe.push('- **Inserti piccoli di lato** (foto, schermate, B-roll come `inserto`): una scheda piccola e inclinata accanto a Denis, mai sopra di lui. Pochi: al massimo uno ogni 10 s (2–3 in 30 s), ognuno su una frase da 1,5–3 s che nomina proprio quella cosa. Lo script toglie quelli in più.');
   if (g.cornice === 'tv') righe.push('- Gli inserti compaiono dentro un televisore anni \'70 (barre colorate all\'accensione): perfetti per filmati, schermate e foto di cui Denis parla.');
   // 📱 documentario verticale (16/11): schermate animate nella fascia alta, sopra la testa (src/SchermateSopra.tsx)
