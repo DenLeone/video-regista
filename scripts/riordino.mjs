@@ -64,10 +64,14 @@ Per OGNI clip dimmi:
 - "conf": da 0 a 1, quanto sei sicuro del prodotto.
 Rispondi SOLO con JSON: {"clip":[{"k":1,"prodotto":"…","parlato":true,"conf":0.9}]}`;
 
+// Gemini fermo per 3 lotti di fila (o credito finito): si smette fino al giro dopo. Il 26-27/11 il giro ha insistito per
+// 10 ore con 101 errori e zero clip in più, mentre la stessa chiave serviva alla regia dei montaggi
+export const LOTTI_FALLITI_DI_FILA = 3;
+
 /** deps.estrai(clip) → { jpg: base64, wav: base64|null }, deps.chiedi(parts) → oggetto JSON, deps.pausa(ms) */
 export async function riconosci(clips, cache, deps, { lotto = 6, scadenza = Infinity, pausaMs = 4000, stop = () => false, checkpoint = null, ogni = 5 } = {}) {
   const nuovi = clips.filter((c) => c.tipo !== 'audio' && !cache[chiaveClip(c)]);
-  let fatti = 0, lotti = 0;
+  let fatti = 0, lotti = 0, falliti = 0;
   for (let i = 0; i < nuovi.length; i += lotto) {
     if (deps.adesso() > scadenza || (await stop())) return { fatti, finito: false };
     const gruppo = nuovi.slice(i, i + lotto);
@@ -84,7 +88,12 @@ export async function riconosci(clips, cache, deps, { lotto = 6, scadenza = Infi
     if (!ok.length) continue;
     const parts = [{ text: PROMPT_LOTTO(ok.length) }, ...corpo];
     let r = null;
-    try { r = await deps.chiedi(parts); } catch (err) { deps.log(`Gemini non ha risposto (${String(err.message).split('\n')[0]}): riprovo al prossimo giro`); continue; }
+    try { r = await deps.chiedi(parts); } catch (err) {
+      deps.log(`Gemini non ha risposto (${String(err.message).split('\n')[0]}): riprovo al prossimo giro`);
+      if (err.credito || ++falliti >= LOTTI_FALLITI_DI_FILA) return { fatti, finito: false, gemini: err.credito ? 'credito' : 'fermo' };
+      continue;
+    }
+    falliti = 0;
     const per = new Map((r?.clip || []).map((x) => [Number(x.k) - 1, x]));
     for (const [k, c] of ok.entries()) {
       const x = per.get(k);
@@ -280,6 +289,8 @@ async function chiediGeminiVero(parts) {
     const r = await fetch(`${base}/models/${modello}:generateContent`, { method: 'POST', headers: { 'content-type': 'application/json', 'x-goog-api-key': chiave },
       body: JSON.stringify({ contents: [{ role: 'user', parts }], generationConfig: { responseMimeType: 'application/json', temperature: 0.1 } }), signal: AbortSignal.timeout(180_000) }).catch(() => null);
     if (r?.ok) { const j = await r.json(); return JSON.parse((j.candidates?.[0]?.content?.parts || []).map((x) => x.text || '').join('').replace(/^```(?:json)?\s*|\s*```$/g, '')); }
+    // credito prepagato finito (429 «prepayment credits are depleted», o 402): aspettare non serve
+    if (r && (r.status === 402 || (r.status === 429 && /prepay|credits? (are|is|have been) depleted/i.test(await r.text().catch(() => ''))))) throw Object.assign(new Error('credito Gemini finito'), { credito: true });
     if (r && r.status !== 429 && r.status < 500) throw new Error(`Gemini HTTP ${r.status}`);
   }
   throw new Error('Gemini non risponde (limiti o sovraccarico)');
@@ -313,10 +324,13 @@ async function avvisa(testo) {
 }
 
 export async function main() {
-  const modo = String(process.env.MODO || 'continua').toLowerCase(); // vai | prova | continua | annulla | ferma
+  let modo = String(process.env.MODO || 'continua').toLowerCase(); // vai | prova | continua | annulla | ferma
   const t0 = Date.now();
   const scadenza = t0 + (Number(process.env.BUDGET_MINUTI) || 300) * 60_000;
   const stato = leggiJson(`${STATO_DIR}/stato.json`, {});
+  // «annulla» chiesto dal bot (segna fermato + annulla su Drive): se il giro «annulla» è stato scavalcato in coda dal giro
+  // automatico delle 3 ore (GitHub tiene un solo giro in attesa), lo fa questo
+  if (modo === 'continua' && stato.fase === 'fermato' && stato.annulla) modo = 'annulla';
   if (modo === 'ferma') { scriviJson(`${STATO_DIR}/stato.json`, { ...stato, fase: 'fermato', fermato: new Date().toISOString() }); await avvisa('🔎 Ispettore: fermato. Quello che ha già spostato resta com\'è (si rimette con «annulla»).'); return; }
   const giornale = leggiJson(`${STATO_DIR}/giornale.json`, []);
   const deps = {
@@ -329,13 +343,14 @@ export async function main() {
   };
   if (modo === 'annulla') {
     const r = await annulla(giornale, deps);
-    scriviJson(`${STATO_DIR}/stato.json`, { ...stato, fase: 'annullato', annullato: new Date().toISOString() });
+    scriviJson(`${STATO_DIR}/stato.json`, { ...stato, fase: 'annullato', annulla: false, annullato: new Date().toISOString() });
     await avvisa(`🔎 Ispettore: rimessi a posto ${r.rimessi} file${r.saltati ? ` (${r.saltati} non si potevano: già spostati da te o spariti)` : ''}.`);
     return;
   }
-  // quando c'è già un giro finito e non è ora di ricontrollare, «continua» non fa niente
-  if (modo === 'continua' && (!stato.fase || ['fermato', 'annullato'].includes(stato.fase) || (stato.fase === 'finito' && Date.now() < Date.parse(stato.prossimo || 0)))) { log(`niente da fare (${stato.fase || 'mai avviato'})`); return; }
-  if (modo === 'vai' || modo === 'prova') scriviJson(`${STATO_DIR}/stato.json`, { ...stato, fase: 'scansione', avviato: new Date().toISOString(), prova: modo === 'prova' });
+  // quando c'è già un giro finito e non è ora di ricontrollare, «continua» non fa niente; dopo una prova finita
+  // aspetta ▶️ Riordina (prima la rifaceva ogni giorno, con lo stesso messaggio)
+  if (modo === 'continua' && (!stato.fase || ['fermato', 'annullato'].includes(stato.fase) || (stato.fase === 'finito' && (stato.prova || Date.now() < Date.parse(stato.prossimo || 0))))) { log(`niente da fare (${stato.fase || 'mai avviato'}${stato.prova ? ', prova' : ''})`); return; }
+  if (modo === 'vai' || modo === 'prova') scriviJson(`${STATO_DIR}/stato.json`, { ...stato, fase: 'scansione', avviato: new Date().toISOString(), prova: modo === 'prova', annulla: false });
   const prova = modo === 'prova' || (modo === 'continua' && stato.prova);
   const stop = () => leggiJson(`${STATO_DIR}/stato.json`, {}).fase === 'fermato';
 
@@ -364,7 +379,15 @@ export async function main() {
   const da = clips.filter((c) => !c.giaPosto && c.tipo !== 'audio').length;
   const fatte = clips.filter((c) => !c.giaPosto && c.tipo !== 'audio' && cache[chiaveClip(c)]).length;
   if (!esito.finito && (await stop())) { log('fermato da Denis durante il riconoscimento'); return; }
-  if (!esito.finito) { scriviJson(`${STATO_DIR}/stato.json`, { ...stato, fase: 'riconoscimento', avviato: stato.avviato || new Date().toISOString(), aggiornato: new Date().toISOString(), riconosciute: fatte, totali: da, prova }); log(`tempo finito: ${fatte}/${da} clip riconosciute, riprendo al prossimo giro`); return; }
+  if (!esito.finito) {
+    // Gemini fermo: un avviso al giorno (il giro riparte ogni 3 ore), poi si riprende da solo
+    const oggi = new Date().toISOString().slice(0, 10);
+    const avvisare = esito.gemini && stato.avvisoGemini !== oggi;
+    scriviJson(`${STATO_DIR}/stato.json`, { ...stato, fase: 'riconoscimento', avviato: stato.avviato || new Date().toISOString(), aggiornato: new Date().toISOString(), riconosciute: fatte, totali: da, prova, ...(avvisare ? { avvisoGemini: oggi } : {}) });
+    log(esito.gemini ? `Gemini ${esito.gemini === 'credito' ? 'senza credito' : 'non risponde'}: mi fermo con ${fatte}/${da} clip riconosciute, riprendo al prossimo giro` : `tempo finito: ${fatte}/${da} clip riconosciute, riprendo al prossimo giro`);
+    if (avvisare) await avvisa(`⚠️ Ispettore in pausa: ${esito.gemini === 'credito' ? 'il credito di Gemini (chiave del Regista) è finito. Ricaricalo su AI Studio: serve anche alla regia dei montaggi' : 'Gemini non risponde da un po\''}. Riprendo da solo al prossimo giro (${fatte}/${da} clip riconosciute).`);
+    return;
+  }
 
   const conteggi = {};
   for (const c of clips) { const r = cache[chiaveClip(c)]; if (r?.p && r.c >= SOGLIA_CONFIDENZA) conteggi[r.p] = (conteggi[r.p] || 0) + 1; }
@@ -382,10 +405,12 @@ export async function main() {
   scriviJson(`${STATO_DIR}/piano.json`, { quando: new Date().toISOString(), prodotti, dubbie: piano.dubbie.slice(0, 300), saltate: piano.saltate.slice(0, 300), aPosto: piano.aPosto, mosse: piano.mosse.length });
   const righe = prodotti.slice(0, 12).map((p) => `• ${p.prodotto}: ${p.cartelleUnite} cartelle → «${p.cartella}» · ${p.parlato} parlato, ${p.broll} B-roll`);
   if (prova) {
-    scriviJson(`${STATO_DIR}/stato.json`, { fase: 'finito', prova: true, finito: new Date().toISOString(), prossimo: new Date(Date.now() + 24 * 3600_000).toISOString() });
-    await avvisa(`🔎 Ispettore (prova, non ho spostato niente): ${piano.mosse.length} file da riordinare, ${prodotti.length} prodotti.\n${righe.join('\n')}${piano.dubbie.length ? `\n${piano.dubbie.length} clip dal prodotto non chiaro restano dove sono.` : ''}`);
+    scriviJson(`${STATO_DIR}/stato.json`, { fase: 'finito', prova: true, finito: new Date().toISOString() });
+    await avvisa(`🔎 Ispettore (prova, non ho spostato niente): ${piano.mosse.length} file da riordinare, ${prodotti.length} prodotti.\n${righe.join('\n')}${piano.dubbie.length ? `\n${piano.dubbie.length} clip dal prodotto non chiaro restano dove sono.` : ''}\nPer spostarli davvero: 🔎 Ispettore → ▶️ Riordina nel bot Squadra.`);
     return;
   }
+  // «ferma» premuto mentre si raggruppava e si preparava il piano: qui sotto lo stato si riscrive, quindi si guarda prima
+  if (await stop()) { log('fermato da Denis prima degli spostamenti'); return; }
   if (piano.mosse.length) await avvisa(`🔎 Ispettore: comincio a riordinare in background (${piano.mosse.length} file, ${prodotti.length} prodotti). Lo fa con calma; ⛔ per fermarlo, «annulla» per rimettere tutto.\n${righe.join('\n')}`);
   scriviJson(`${STATO_DIR}/stato.json`, { fase: 'riordino', avviato: stato.avviato || new Date().toISOString(), aggiornato: new Date().toISOString(), mosse: piano.mosse.length });
   const fine = await esegui(piano.mosse, giornale, deps, { scadenza, stop });

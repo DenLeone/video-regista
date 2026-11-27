@@ -48,6 +48,7 @@ import { regolaStile } from './regolatore.mjs';
 import { REGOLA_ZONE, filtroZone } from './zone.mjs';
 import { vuoleCarrello, applicaCarrello } from './carrello.mjs';
 import { cacheSorgente, improntaMateriale, riusoAnalisiIntera, scegliCacheAnalisi } from './cache-analisi.mjs';
+import { chiedeVocePulita, pulisciVoce, volumeFinale } from './voce-pulita.mjs';
 
 const REMOTE = process.env.REGISTA_REMOTE || 'gdrive';
 const IN_DIR = DIR_EDITARE;
@@ -1010,11 +1011,15 @@ function preparaMediaPipe() {
 // 🎙 voce «da podcast» (stili su misura con «Voce: podcast», 16/11): la traccia della voce di ogni pezzo
 // (media/*.voce.wav, quella che Remotion mette sotto le clip) passa da CATENA_PODCAST prima del render.
 // Una volta sola per file (segno «.podcast» accanto): le macchine dei pezzi la rifanno uguale sulla loro copia.
+// 🎙️ «Voce: pulita» (27/11, nel brief o nello stile): prima rumore e rimbombo via (scripts/voce-pulita.mjs), poi l'eventuale podcast
 function voceStile(piano) {
-  if (piano.grafica?.voce !== 'podcast') return;
+  const pulita = piano.grafica?.voce === 'pulita' || chiedeVocePulita(BRIEF_PIENO);
+  if (piano.grafica?.voce !== 'podcast' && !pulita) return;
   // video già montato da Denis con l'audio finito («audio pronto», «già montato da me» nel brief, 19/11): la voce non si tocca
-  if (/(audio|voce)\s+(già\s+)?pront|già montato da me/i.test(BRIEF_PIENO)) { log('voce già pronta (brief): niente catena podcast'); return; }
+  if (/(audio|voce)\s+(già\s+)?pront|già montato da me/i.test(BRIEF_PIENO)) { log('voce già pronta (brief): la voce non si tocca'); return; }
   for (const f of new Set(piano.clips.map((c) => c.audio?.file).filter(Boolean))) {
+    if (pulita) pulisciVoce(path.join(MEDIA, f), { run, log, dir: WORK });
+    if (piano.grafica?.voce !== 'podcast') continue;
     const p = path.join(MEDIA, f), segno = `${p}.podcast`;
     if (!fs.existsSync(p) || fs.existsSync(segno)) continue;
     const tmp = p.replace(/\.wav$/i, '') + '.podcast-tmp.wav';
@@ -1380,15 +1385,21 @@ export function sceltaDurata(brief = '', { stile = '', formula = '' } = {}) {
 }
 export const briefPerAI = (brief = '') => { const { proprio, numeri } = separaNumeri(brief); return numeri ? `${proprio}${senzaDurate(numeri)}` : String(brief); };
 
+// 27/11: una formula da 1-2 video è un caso, non una regola, e guida OGNI montaggio dello stile (durata compresa: per
+// Kal, Ultra e Cinematico vince su tutto tranne il brief). L'Analista scrive in testa «Da N video»: sotto 3 si ignora
+export const VIDEO_PER_FORMULA = 3;
+export const formulaDaPochi = (testo = '') => { const n = Number((/^Da (\d+) video/m.exec(String(testo)) || [])[1]); return n > 0 && n < VIDEO_PER_FORMULA; };
 const formule = new Map();
 function formulaStile() {
   const chiave = stileSuMisura?.nome || stileCorrente || '';
   if (!chiave) return '';
   if (!formule.has(chiave)) {
     const locale = path.join(WORK, 'stile', '_formula.md');
-    formule.set(chiave, stileSuMisura && fs.existsSync(locale) ? fs.readFileSync(locale, 'utf8').trim().slice(0, 2500)
-      : stileSuMisura ? '' : leggiDrive(`${DIR_STILI}/_formule/${chiave}.md`));
-    if (formule.get(chiave)) log(`formula dello stile dai numeri (${chiave}): sì`);
+    const testo = stileSuMisura && fs.existsSync(locale) ? fs.readFileSync(locale, 'utf8').trim().slice(0, 2500)
+      : stileSuMisura ? '' : leggiDrive(`${DIR_STILI}/_formule/${chiave}.md`);
+    formule.set(chiave, formulaDaPochi(testo) ? '' : testo);
+    if (formulaDaPochi(testo)) log(`formula dello stile dai numeri (${chiave}): ignorata, viene da meno di ${VIDEO_PER_FORMULA} video`);
+    else if (testo) log(`formula dello stile dai numeri (${chiave}): sì`);
   }
   return formule.get(chiave);
 }
@@ -1538,10 +1549,18 @@ const TETTO_REGIA_MS = 8 * 60 * 1000;
 const TETTO_DIDASCALIE_MS = 4 * 60 * 1000;
 export const DIDASCALIE_MODELLI = 4;
 const modelliGiornoFinito = new Set();
-export function azzeraQuoteGiorno() { modelliGiornoFinito.clear(); }
+// credito prepagato finito (27/11: 429 «Your prepayment credits are depleted» su tutti i modelli per un giorno intero,
+// letto come «limite al minuto»: ogni regia aspettava e riprovava 6 modelli, poi Claude). Vale per tutta la chiave
+// (quella a pagamento), non per la gratuita: si ricorda la chiave, non il modello.
+export const CREDITO_FINITO = /prepay|credits? (are|is|have been) depleted/i;
+export const MOTIVO_CREDITO = 'credito finito (ricaricalo su AI Studio)';
+const chiaviSenzaCredito = new Set();
+export function azzeraQuoteGiorno() { modelliGiornoFinito.clear(); chiaviSenzaCredito.clear(); }
 export function segnaQuotaGiorno(modello) { if (modello) modelliGiornoFinito.add(modello); }
 export function quotaGiornoFinita(modello) { return modelliGiornoFinito.has(modello); }
 export async function chiamaGemini(modello, body, headers, opzioni = {}) {
+  const chiave = headers?.['x-goog-api-key'] || '';
+  if (chiaviSenzaCredito.has(chiave)) return { motivo: MOTIVO_CREDITO, credito: true };
   if (quotaGiornoFinita(modello)) return { motivo: 'richieste del giorno finite' };
   const url = `${GEMINI_BASE()}/models/${modello}:generateContent`;
   const scadenza = opzioni.scadenza || 0;
@@ -1557,6 +1576,7 @@ export async function chiamaGemini(modello, body, headers, opzioni = {}) {
     }
     if (r.ok) return { risposta: r };
     const testo = await r.text();
+    if (r.status === 402 || (r.status === 429 && CREDITO_FINITO.test(testo))) { chiaviSenzaCredito.add(chiave); return { motivo: MOTIVO_CREDITO, credito: true }; }
     if (r.status === 429) {
       if (/PerDay/i.test(testo)) { segnaQuotaGiorno(modello); return { motivo: 'richieste del giorno finite' }; }
       const ritardo = Number((/"retryDelay":\s*"(\d+(?:\.\d+)?)s"/.exec(testo) || [])[1] || 20);
@@ -1573,14 +1593,14 @@ export async function chiamaGemini(modello, body, headers, opzioni = {}) {
   return { motivo: 'non risponde' };
 }
 
-async function regiaConGemini(prompt, fogli, valida) {
+async function regiaConGemini(prompt, fogli, valida, chiave = process.env.GEMINI_API_KEY) {
   const parts = [{ text: prompt }];
   for (const f of fogli) {
     parts.push({ text: `Foglio provino ${f}:` });
     parts.push({ inline_data: { mime_type: 'image/jpeg', data: fs.readFileSync(path.join(ROOT, f)).toString('base64') } });
   }
   const contents = [{ role: 'user', parts }];
-  const headers = { 'content-type': 'application/json', 'x-goog-api-key': process.env.GEMINI_API_KEY };
+  const headers = { 'content-type': 'application/json', 'x-goog-api-key': chiave };
   const modelli = await modelliGemini(headers);
   log(`Gemini: modelli in ordine ${modelli.join(', ')}`);
   // conteggio esatto prima dell'invio: countTokens non consuma le richieste di generazione
@@ -1656,6 +1676,7 @@ async function regiaConGemini(prompt, fogli, valida) {
       } catch (e) { esito.motivo = `regia inutilizzabile (${e.message.slice(0, 120)})`; }
     }
     motivo = esito.motivo;
+    if (esito.credito) { log(`Gemini: ${motivo}, salto tutti i modelli`); break; }
     const dopo = coda[i + 1];
     log(`Gemini ${modello}: ${motivo}${dopo ? ` → provo ${dopo}` : ''}`);
     if (dopo) await fase(job.nome, `⏳ Gemini ${nomeBreveGemini(modello)}: ${motivo}, uso ${nomeBreveGemini(dopo)}`, 'regia');
@@ -1665,23 +1686,29 @@ async function regiaConGemini(prompt, fogli, valida) {
 
 // AI principale (default Gemini se c'è la chiave) e l'altra come riserva automatica.
 // `valida` controlla la regia: se è inutilizzabile si prova il modello o l'AI successiva.
+// 27/11: la chiave gratuita (stessi Flash, un altro progetto Google) serve alla regia solo se quella a pagamento si è
+// fermata per il credito o per il limite al minuto: con una regia sbagliata o Gemini lento rifarebbe lo stesso
+export const serveChiaveGratuita = (messaggio = '') => /credito|limite al minuto/i.test(messaggio);
 async function chiediRegia(testoMateriale, fogli, regiaPrecedente, valida = (r) => r) {
   const scelta = (process.env.REGISTA_AI || 'gemini').toLowerCase();
   const haGemini = Boolean(process.env.GEMINI_API_KEY);
-  const ordine = scelta === 'claude' || !haGemini ? ['claude', ...(haGemini ? ['gemini'] : [])] : ['gemini', 'claude'];
-  const nomi = { gemini: 'Gemini', claude: 'Claude' };
+  const gratis = process.env.GEMINI_API_KEY_GRATIS !== process.env.GEMINI_API_KEY ? process.env.GEMINI_API_KEY_GRATIS || '' : '';
+  const ordine = scelta === 'claude' || !haGemini ? ['claude', ...(haGemini ? ['gemini'] : [])] : ['gemini', ...(gratis ? ['gratis'] : []), 'claude'];
+  const nomi = { gemini: 'Gemini', gratis: 'Gemini con la chiave gratuita', claude: 'Claude' };
   let errore;
-  for (const [i, chi] of ordine.entries()) {
+  for (let i = 0; i < ordine.length; i++) {
+    const chi = ordine[i];
     try {
-      const prompt = promptRegia({ modo: chi, testoMateriale, regiaPrecedente });
-      if (chi === 'gemini') return await regiaConGemini(prompt, fogli, valida);
+      const prompt = promptRegia({ modo: chi === 'gratis' ? 'gemini' : chi, testoMateriale, regiaPrecedente });
+      if (chi === 'gemini' || chi === 'gratis') return await regiaConGemini(prompt, fogli, valida, chi === 'gratis' ? gratis : undefined);
       const regia = regiaConClaude(prompt);
       return { regia, risultato: valida(regia) };
     } catch (e) {
       errore = e;
+      if (chi === 'gemini' && ordine[i + 1] === 'gratis' && !serveChiaveGratuita(e.message)) ordine.splice(i + 1, 1);
       if (i === ordine.length - 1) break;
       log(`${e.message}\n→ passo a ${nomi[ordine[i + 1]]}`);
-      const motivo = chi === 'gemini' ? e.message.replace(/^Gemini: /, '') : /regia|frasi|clip/.test(e.message) ? 'ha scritto una regia inutilizzabile' : 'non ha risposto';
+      const motivo = chi === 'gemini' || chi === 'gratis' ? e.message.replace(/^Gemini: /, '') : /regia|frasi|clip/.test(e.message) ? 'ha scritto una regia inutilizzabile' : 'non ha risposto';
       await fase(job.nome, `🔁 ${nomi[chi]}: ${motivo}. Uso ${nomi[ordine[i + 1]]}`, 'regia');
     }
   }
@@ -2251,6 +2278,7 @@ Regole:
 - Italiano, in prima persona come se scrivesse Denis; mai "Denis" in terza persona.
 - Solo cose dette nel video o scritte nel brief: niente prezzi, dati tecnici o giudizi inventati. Se dà un giudizio, usa le sue parole.
 - descrizione (per Instagram e TikTok): prima riga = gancio breve (massimo 70 caratteri) che fa fermare chi scorre; poi 1–3 righe brevi su cosa si vede e cosa ne pensa. Senza hashtag. Al massimo 3 emoji. Niente link, niente "link in bio".
+- Ricerca: Instagram e TikTok si usano anche per cercare. Nelle righe dopo il gancio metti, in modo naturale, le parole con cui la gente cercherebbe questo video (marca e modello per intero se ci sono, e una parola come «recensione», «prova», «vale la pena», «come funziona»). Niente elenchi di parole chiave.
 - hashtag: ESATTAMENTE 5, pertinenti al video (argomento, prodotto, categoria), soprattutto italiani, ognuno con # e senza spazi; niente hashtag generici come #fyp o #viral.
 - Se il brief parla di sponsor o collaborazione pagata: "#adv" all'inizio della prima riga.
 - youtube_titolo: massimo 70 caratteri, chiaro e cercabile (prodotto + cosa succede), senza hashtag.
@@ -3659,9 +3687,13 @@ async function main() {
 
     const durataN = probe(outFile).durata;
     const durata = durataN.toFixed(1);
+    // 🔊 27/11: il volume del video finito, solo misurato (i social stanno intorno a −14 LUFS): per vedere i video troppo bassi
+    const volume = volumeFinale(outFile);
+    if (volume) log(`volume finale: ${volume.lufs} LUFS, picco ${volume.picco} dBTP`);
     const note = [
       `${CORREZIONE ? `Correzione (“${CORREZIONE}”)` : 'Montato automaticamente'} il ${new Date().toLocaleString('it-IT', { timeZone: 'Europe/Rome' })} in ${trascorso()}`,
       `Durata: ${durata} s · ${stile === 'Blueprint' ? piano.tavola : `stile ${nomeStile}`} · ${piano.clips.length} tagli da ${camereUsate} sorgenti · voce: ${voci || 'audio delle clip'}`,
+      volume ? `Volume: ${volume.lufs} LUFS · picco ${volume.picco} dBTP${volume.lufs < -18 ? ' (basso: con «Voce: pulita» nel brief la voce si livella)' : ''}` : '',
       `Parole chiave: ${piano.keywords.map((k) => `${k.word} @${k.at.toFixed(1)}s`).join(', ') || '—'}`,
       motionFatte ? `Motion graphic (Ultron): ${motionFatte.map((m) => `${m.tipo} @${m.at.toFixed(1)}s`).join(', ')}` : '',
       piano.testo ? `Testo: ${piano.testo}` : '',

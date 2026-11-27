@@ -239,6 +239,8 @@ export function leggiStile(testo, nomeCartella) {
   const volumeMusica = numero(campi['volume musica'], 12, 0, 100) / 100;
   // voce «da podcast» sulla traccia della voce (regista.mjs voceStile)
   if (/podcast|radio|piena/.test(norm(campi.voce || ''))) g.voce = 'podcast';
+  // «Voce: pulita» (27/11): rumore e rimbombo via (scripts/voce-pulita.mjs)
+  else if (/pulit/.test(norm(campi.voce || ''))) g.voce = 'pulita';
   // schermate animate nella fascia alta, sopra la persona (documentario verticale, 16/11)
   if (campi.schermate && !/^no\b/.test(norm(campi.schermate))) g.schermate = 'sopra';
   // colori sempre naturali, qualunque cosa dica lo stile (Denis, 25/10: "non voglio modifiche"):
