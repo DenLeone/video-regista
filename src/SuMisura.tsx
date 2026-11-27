@@ -3,7 +3,7 @@ import { AbsoluteFill, Audio, continueRender, delayRender, Easing, interpolate, 
 import { Clips, f, Inserti, Ritagli, Sfx, usaFps, volumeSfx, Icone, MusicaSotto } from './comune';
 import { IconeConcetto } from './iconeConcetto';
 import { PaginaProfiloFondo, ScalaVideo, SchedaEditorFondo } from './schedaEditor';
-import { TessereVetro } from './tessere';
+import { MosaicoSagoma, TessereVetro } from './tessere';
 import { SchermateSopra } from './SchermateSopra';
 import { gruppiParole } from './Cinematico';
 import { durataTotale, FontStile, GraficaStile, Keyword, Piano, Posizione, W } from './piano';
@@ -415,7 +415,7 @@ export const SuMisura: React.FC<Piano> = (piano) => {
       {g.fumo && g.transizione === 'sfocata' ? <Sfocature piano={piano} /> : null}
       {strati ? <BlocchiUltra blocchi={blocchi} g={g} medie={g.paroleMedie ? piano.enfasiMedia : undefined} solo={g.dietro ? 'piccole' : 'tutte'} /> : <BlocchiMotion blocchi={blocchi} g={g} />}
       </ScalaVideo>
-      {g.tessere ? <TessereVetro /> : null}
+      {g.tessere ? (g.dietro ? <MosaicoSagoma piano={piano} filtro={LOOK[g.look]} /> : <TessereVetro />) : null}
       {g.cornicePellicola ? <CornicePellicola file={g.cornicePellicola.file} durata={g.cornicePellicola.durata} totale={totale} /> : null}
       {cartelli.map((k, i) => (
         <Sequence key={`ca${i}`} from={f(k.at)} durationInFrames={Math.max(8, f(k.dur))}>

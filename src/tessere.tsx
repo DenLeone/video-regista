@@ -1,5 +1,7 @@
 import React from 'react';
-import { AbsoluteFill, Easing, interpolate, useCurrentFrame } from 'remotion';
+import { AbsoluteFill, Easing, interpolate, Sequence, useCurrentFrame } from 'remotion';
+import { Ritagli } from './comune';
+import type { Piano } from './piano';
 
 // Apertura a tessere di vetro (stile «Elaborato», dal riferimento di Imran Edits): nei primi ~0,8 s il quadro è coperto da
 // quadrati traslucidi smerigliati che si spengono uno a uno, a caso, e scoprono il video. Nessun dato nel piano: dipende solo dal fotogramma.
@@ -34,3 +36,34 @@ export const TessereVetro: React.FC = () => {
   }
   return <AbsoluteFill style={{ pointerEvents: 'none' }}>{celle}</AbsoluteFill>;
 };
+
+// Mosaico sulla sola sagoma (Denis, 27/11): nel riferimento i quadrati di vetro stanno solo sulla persona, non su tutto il quadro.
+// Si prende lo stesso ritaglio con trasparenza che serve alle parole dietro la testa, lo si riduce a blocchi (filtro SVG: ogni blocco
+// prende il colore di un punto) e lo si schiarisce come vetro smerigliato; i blocchi diventano sempre più piccoli e svaniscono.
+const FINE_MOSAICO = 26;
+export const Pixelata: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+  const fr = useCurrentFrame();
+  const lato = Math.max(2, Math.round(interpolate(fr, [0, FINE_MOSAICO], [120, 20], { extrapolateLeft: 'clamp', extrapolateRight: 'clamp', easing: Easing.out(Easing.quad) })));
+  const opacita = interpolate(fr, [4, FINE_MOSAICO], [0.92, 0], { extrapolateLeft: 'clamp', extrapolateRight: 'clamp' });
+  const id = `pix${lato}`;
+  return (
+    <AbsoluteFill style={{ opacity: opacita }}>
+      <svg width={0} height={0} style={{ position: 'absolute' }}>
+        <filter id={id} filterUnits="userSpaceOnUse" x={0} y={0} width={1080} height={1920} colorInterpolationFilters="sRGB">
+          <feFlood x={lato / 2} y={lato / 2} width={1} height={1} />
+          <feComposite width={lato} height={lato} />
+          <feTile result="punti" />
+          <feComposite in="SourceGraphic" in2="punti" operator="in" />
+          <feMorphology operator="dilate" radius={lato / 2} />
+        </filter>
+      </svg>
+      <AbsoluteFill style={{ filter: `url(#${id}) brightness(1.35) saturate(0.75)` }}>{children}</AbsoluteFill>
+    </AbsoluteFill>
+  );
+};
+
+export const MosaicoSagoma: React.FC<{ piano: Piano; filtro?: string }> = ({ piano, filtro }) => (
+  <Sequence from={0} durationInFrames={FINE_MOSAICO + 2}>
+    <Pixelata><Ritagli piano={piano} filtro={filtro} /></Pixelata>
+  </Sequence>
+);
