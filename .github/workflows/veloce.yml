@@ -81,7 +81,7 @@ jobs:
         uses: actions/cache@v5
         with:
           path: ~/.cache/regista-pacchetto
-          key: pacchetto-v1-${{ hashFiles('src/**', 'package-lock.json', 'tsconfig.json') }}
+          key: pacchetto-v2-${{ hashFiles('src/**', 'package-lock.json', 'tsconfig.json') }}
       - &dipendenze
         name: Dipendenze
         timeout-minutes: 16

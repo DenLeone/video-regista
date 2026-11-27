@@ -34,6 +34,7 @@ import { HDR, curvaChiara, curvaEsposizione, filtroTecnico, misuraPezzo, perFilt
 import { chiaveStock, materialePerAI, normFrase, RIMANDO, risolviRegia, senzaBuchi, sequenzaDiscorso, successiva, usaTuttoIlMateriale } from './regia.mjs';
 import { movimento, syncMovimento } from './sync-visivo.mjs';
 import { CATENA_PODCAST, LOOK_FFMPEG, leggiStile, promptSuMisura } from './stile-su-misura.mjs';
+import { completaPianoElaborato } from './piano-elaborato.mjs';
 import { chiaveStileR2, preparaStileApp } from './stile-app.mjs';
 import { bloccoRemoteR2, comandiCancellaR2, comandiCopiaDrive, comandiScaricoR2, comandiCopiaPezzoR2, comandiScaricaPezziR2, comandiCancellaPezziR2 } from './rete.mjs';
 import { scegliCartella } from './scegli-cartella.mjs';
@@ -1744,6 +1745,7 @@ function validaPiano(p, solo = null) {
 // renderizzata dalla composizione SuMisura (scripts/stile-su-misura.mjs, src/SuMisura.tsx).
 const STILI = JSON.parse(fs.readFileSync(new URL('./stili-base.json', import.meta.url), 'utf8')).map((s) => s.nome);
 let stileCorrente = STILI[0];
+let DIAG_ELABORATO = ''; // numeri di controllo dello stile Elaborato, anche in _regista/tempi.json
 let stileSuMisura = null; // { nome, grafica, testoAI, avvisi }
 // ✨ Ultron: «Motion graphic: sì» nello stile o nel brief; motionFatte = quelle messe (per le note)
 export const vuoleMotion = (t) => /motion\s*graphics?\s*:\s*s[iì](?!\p{L})/iu.test(String(t || ''));
@@ -2010,7 +2012,7 @@ function rigaTempi() {
 }
 function salvaTempi(dir, nome) {
   try {
-    const t = { ...tempiGiro(), quando: new Date().toISOString(), azione: process.env.AZIONE || 'monta', stile: stileCorrente || '', prova: PROVA_SECONDI || 0 };
+    const t = { ...tempiGiro(), quando: new Date().toISOString(), azione: process.env.AZIONE || 'monta', stile: stileCorrente || '', prova: PROVA_SECONDI || 0, ...(DIAG_ELABORATO ? { diag: DIAG_ELABORATO } : {}) };
     fs.writeFileSync(path.join(WORK, 'tempi.json'), JSON.stringify(t, null, 1));
     rclone('copyto', path.join(WORK, 'tempi.json'), remote(dir, nome, CACHE, 'tempi.json'));
   } catch (e) { log('tempi non salvati', String(e.message).split('\n')[0]); }
@@ -3048,7 +3050,7 @@ async function rifinisciPiano(regia, risultato, analisi, avvisoStile) {
   const livelloVoce = Math.max(-60, ...analisi.sorgenti.filter((s) => s.principale && s.livello != null).map((s) => s.livello));
   piano.sfx = process.env.REGISTA_SFX === '0' ? false
     : { volume: +Math.min(0.6, Math.max(0.1, livelloVoce > -60 ? 10 ** ((livelloVoce + 2) / 20) : 0.25)).toFixed(3) };
-  if (stileSuMisura) piano.grafica = stileSuMisura.grafica;
+  if (stileSuMisura) { piano.grafica = stileSuMisura.grafica; DIAG_ELABORATO = completaPianoElaborato(piano); log(DIAG_ELABORATO); }
   piano.fps = analisi.fps || 30;
   if (!stileSuMisura || stileSuMisura.grafica.biancoNero === 'no') for (const c of piano.clips) delete c.bn;
   regolaPiano(piano);
@@ -3469,7 +3471,7 @@ async function main() {
       const livelloVoce = Math.max(-60, ...analisi.sorgenti.filter((s) => s.principale && s.livello != null).map((s) => s.livello));
       piano.sfx = process.env.REGISTA_SFX === '0' ? false
         : { volume: +Math.min(0.6, Math.max(0.1, livelloVoce > -60 ? 10 ** ((livelloVoce + 2) / 20) : 0.25)).toFixed(3) };
-      if (stileSuMisura) piano.grafica = stileSuMisura.grafica;
+      if (stileSuMisura) { piano.grafica = stileSuMisura.grafica; DIAG_ELABORATO = completaPianoElaborato(piano); log(DIAG_ELABORATO); }
       piano.fps = analisi.fps || 30;
       if (piano.fps !== 30) log(`video a ${piano.fps} fps (come la camera principale)`);
       // b/n solo se lo stile lo prevede: con "Bianco e nero: no" (o uno stile pronto) i "bn" della regia
