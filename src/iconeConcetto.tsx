@@ -1,23 +1,12 @@
 import React from 'react';
 import { AbsoluteFill, Easing, interpolate, Sequence, useCurrentFrame } from 'remotion';
-import {
-  IconBolt, IconBulb, IconCamera, IconChartLine, IconCheck, IconClock, IconCoin, IconDiamond, IconEye, IconFlame, IconGift, IconHeart,
-  IconLock, IconMessageCircle, IconMusic, IconPhone, IconRocket, IconRun, IconShield, IconShoppingCart, IconStar, IconTarget,
-  IconTrophy, IconUsers, IconWorld,
-} from '@tabler/icons-react';
 import { f, Sfx } from './comune';
+import { ICONE_CONCETTO } from './iconeConcettoElenco';
 import type { Piano } from './piano';
 
 // Icone di concetto (stile «Elaborato»): quadratino bianco arrotondato con una piccola icona che entra con un «pop» vicino
 // alle mani quando la persona nomina la cosa, resta ferma un attimo e sparisce. Le icone sono di Tabler.
-// L'elenco dei nomi deve restare uguale a scripts/icone-concetto.mjs (un test lo controlla).
-export const ICONE_CONCETTO: Record<string, React.ComponentType<{ size?: number; stroke?: number; color?: string }>> = {
-  corsa: IconRun, diamante: IconDiamond, messaggio: IconMessageCircle, idea: IconBulb, cuore: IconHeart,
-  stella: IconStar, spunta: IconCheck, fulmine: IconBolt, razzo: IconRocket, orologio: IconClock,
-  soldi: IconCoin, scudo: IconShield, camera: IconCamera, musica: IconMusic, telefono: IconPhone,
-  carrello: IconShoppingCart, regalo: IconGift, bersaglio: IconTarget, trofeo: IconTrophy, fuoco: IconFlame,
-  utenti: IconUsers, grafico: IconChartLine, lucchetto: IconLock, mondo: IconWorld, occhio: IconEye,
-};
+// L'elenco (src/iconeConcettoElenco.tsx) è generato da scripts/icone-concetto.mjs.
 
 // Zone del verticale (zone.json): dentro x 60–1020, y 240–1530; sotto y 970 non oltre x 920. L'icona sta all'altezza delle mani,
 // ai lati, sempre dentro la zona sicura.

@@ -4,12 +4,9 @@ import { test } from 'node:test';
 import { ICONE_CONCETTO, NOMI_ICONE, iconeConcettoDa } from './icone-concetto.mjs';
 import { leggiStile, promptSuMisura } from './stile-su-misura.mjs';
 
-test('l\'elenco delle icone è uguale in scripts/ e in src/iconeConcetto.tsx', () => {
-  const tsx = fs.readFileSync(new URL('../src/iconeConcetto.tsx', import.meta.url), 'utf8');
-  const blocco = /export const ICONE_CONCETTO[^=]*=\s*\{([\s\S]*?)\n\};/.exec(tsx)[1];
-  const coppie = [...blocco.matchAll(/(\w+):\s*(Icon\w+)/g)].map((m) => [m[1], m[2]]);
-  assert.deepEqual(Object.fromEntries(coppie), ICONE_CONCETTO);
-  for (const [, comp] of coppie) assert.match(tsx.split("from '@tabler/icons-react'")[0], new RegExp(`\\b${comp}\\b`), `${comp} non importata`);
+test('src/iconeConcettoElenco.tsx è aggiornato rispetto a scripts/icone-concetto.mjs', async () => {
+  const { contenuto } = await import('./genera-icone-concetto.mjs');
+  assert.equal(fs.readFileSync(new URL('../src/iconeConcettoElenco.tsx', import.meta.url), 'utf8'), contenuto(), 'rigenera con: node scripts/genera-icone-concetto.mjs');
 });
 
 test('icone di concetto: lista chiusa, frase usata, distanza, massimo 5, lati alternati', () => {
@@ -38,7 +35,8 @@ test('stile: «Icone concetto: sì» entra nella grafica e nelle istruzioni all\
   assert.equal(grafica.iconeConcetto, true);
   const prompt = promptSuMisura(grafica, testoAI);
   assert.match(prompt, /icone_concetto/);
-  assert.match(prompt, /corsa, diamante/);
+  assert.match(prompt, /corsa, camminata/);
+  assert.match(prompt, /soldi/);
   const no = leggiStile('Nome: P\nSottotitoli: frase\nIcone concetto: no\n', 'P');
   assert.ok(!no.grafica.iconeConcetto);
   assert.doesNotMatch(promptSuMisura(no.grafica, no.testoAI), /icone_concetto/);

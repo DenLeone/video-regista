@@ -3,6 +3,7 @@
 // cosa mostrare, i secondi li calcola questo file.
 
 import { iconeConcettoDa } from './icone-concetto.mjs';
+import { schedeEditorDa } from './scheda-editor.mjs';
 
 // tempi allineati ai fotogrammi del video (analisi.fps: quelli della camera principale, 30 se manca)
 let fpsRegia = 30;
@@ -471,6 +472,9 @@ export function risolviRegia(regia, analisi) {
   }
   // icone di concetto (stile «Elaborato»): quadratino bianco con icona Tabler a «pop» vicino alle mani
   const iconeConcetto = iconeConcettoDa(regia.icone_concetto, { inizio: inizioFrase, trova: (d, b) => trovaDette(d, parole, b), totale, avvisi });
+  // scheda da editor: l'icona di concetto non sta mai sopra la finestra
+  const schedeEditor = schedeEditorDa(regia.scheda_editor, { inizio: inizioFrase, trova: (d, b) => trovaDette(d, parole, b), totale, avvisi });
+  for (let i = iconeConcetto.length - 1; i >= 0; i--) if (schedeEditor.some((s) => iconeConcetto[i].at < s.at + s.dur + 0.3 && iconeConcetto[i].at + iconeConcetto[i].dur > s.at - 0.3)) iconeConcetto.splice(i, 1);
 
   const flickers = [];
   for (const fl of regia.flickers || []) {
@@ -537,6 +541,7 @@ export function risolviRegia(regia, analisi) {
       clips, keywords, flickers,
       ...(icone.length ? { icone } : {}),
       ...(iconeConcetto.length ? { iconeConcetto } : {}),
+      ...(schedeEditor.length ? { schedeEditor } : {}),
       ...(schede.length ? { schede } : {}),
       ...(schermate.length ? { schermate } : {}),
       ...(titoloProdotto ? { titoloProdotto } : {}),

@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { AbsoluteFill, Audio, continueRender, delayRender, Easing, interpolate, Sequence, staticFile, useCurrentFrame } from 'remotion';
 import { Clips, f, Inserti, Ritagli, Sfx, usaFps, volumeSfx, Icone, MusicaSotto } from './comune';
 import { IconeConcetto } from './iconeConcetto';
+import { ScalaVideo, SchedaEditorFondo } from './schedaEditor';
 import { SchermateSopra } from './SchermateSopra';
 import { gruppiParole } from './Cinematico';
 import { durataTotale, FontStile, GraficaStile, Keyword, Piano, Posizione, W } from './piano';
@@ -381,8 +382,11 @@ export const SuMisura: React.FC<Piano> = (piano) => {
 
   return (
     <AbsoluteFill style={{ backgroundColor: '#0B0B0B' }}>
-      <Clips piano={piano} fondo="#0B0B0B" filtro={LOOK[g.look]} />
-      {g.vignetta > 0 ? <AbsoluteFill style={{ background: `radial-gradient(ellipse 100% 80% at 50% 50%, rgba(0,0,0,0) 60%, rgba(0,0,0,${g.vignetta.toFixed(2)}) 100%)` }} /> : null}
+      <SchedaEditorFondo piano={piano} sfx={sfx} />
+      <ScalaVideo piano={piano}>
+        <Clips piano={piano} fondo="#0B0B0B" filtro={LOOK[g.look]} />
+        {g.vignetta > 0 ? <AbsoluteFill style={{ background: `radial-gradient(ellipse 100% 80% at 50% 50%, rgba(0,0,0,0) 60%, rgba(0,0,0,${g.vignetta.toFixed(2)}) 100%)` }} /> : null}
+      </ScalaVideo>
       {g.rivela ? <Sequence durationInFrames={RIVELA.fine + 1}><Rivela piano={piano} /></Sequence> : null}
 
       {aperture.map((b, i) => (
