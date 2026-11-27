@@ -21,6 +21,10 @@ test('guardia: avvisa solo quando Denis deve fare qualcosa', () => {
   assert.equal(giudicaGemini(200).ok, true);
   assert.equal(giudicaGemini(429).limite, true);
   assert.equal(giudicaGemini(403).rifiutata, true);
+  // 27/11: credito prepagato finito = da ricaricare (avviso), non un limite che si azzera da solo
+  assert.equal(giudicaGemini(429, '{"error":{"code":429,"message":"Your prepayment credits are depleted.","status":"RESOURCE_EXHAUSTED"}}').credito, true);
+  assert.equal(giudicaGemini(402, '').credito, true);
+  assert.equal(giudicaGemini(429, '{"error":{"message":"You exceeded your current quota, please check your plan and billing details."}}').limite, true);
 });
 
 test('guardia: giro vero su un repo finto (troncato → esce 1, «guardia: ok» → passa)', () => {
