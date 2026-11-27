@@ -137,8 +137,9 @@ export function leggiStile(testo, nomeCartella) {
   const campi = {};
   const perAI = [];
   let continua = false; // una riga senza "Chiave:" prosegue il campo di regia sopra
+  let inRegia = false;  // dopo «# --- REGIA»: le righe che hanno il nome di un campo già impostato sono indicazioni per l'AI e non lo cambiano
   for (const riga of String(testo || '').split(/\r?\n/)) {
-    if (/^\s*#/.test(riga)) continue;
+    if (/^\s*#/.test(riga)) { if (/^\s*#\s*-+\s*REGIA/i.test(riga)) inRegia = true; else if (/^\s*#\s*-+\s*\S/.test(riga)) inRegia = false; continue; }
     const m = /^\s*([^:\d][^:]{1,39}):\s*(.*)$/.exec(riga);
     if (!m) {
       // le righe numerate («1) 0,00–1,33 s · …», la Sequenza dell'originale) restano una per riga
@@ -149,7 +150,7 @@ export function leggiStile(testo, nomeCartella) {
     const chiave = norm(m[1]);
     const valore = m[2].replace(/\s+#(?![0-9a-f]{6}\b).*$/i, '').replace(/\s*\([^)]*\)\s*$/, '').trim();
     continua = false;
-    if (GRAFICA.includes(chiave)) campi[chiave] = valore;
+    if (GRAFICA.includes(chiave) && !(inRegia && chiave in campi)) campi[chiave] = valore;
     // un campo di regia col valore sulle righe sotto (es. «Sequenza dell'originale:») non va perso
     else if (!/^per usarlo$/.test(chiave)) { perAI.push(`${m[1].trim()}: ${valore}`.trimEnd()); continua = true; }
   }

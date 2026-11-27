@@ -54,3 +54,12 @@ test('profilo: nome visibile e numeri', () => {
   assert.equal(s.grafica.nomeVisibile, 'Black Den');
   assert.deepEqual(s.grafica.numeriProfilo, ['420', '11 mila', '346']);
 });
+
+test('riga di regia con il nome di un campo non lo cancella', () => {
+  const t = 'Nome X\nScheda editor: sì\nPagina profilo: sì\nParole medie: sì\n# --- REGIA ---\nScheda editor: 2-3 volte nel video\nPagina profilo: una sola, entro 6 secondi\nParole medie: oltre alle giganti\n';
+  const s = leggiStile(t);
+  assert.equal(s.grafica.schedaEditor, true);
+  assert.equal(s.grafica.paginaProfilo, true);
+  assert.equal(s.grafica.paroleMedie, true);
+  assert.match(s.testoAI, /Scheda editor: 2-3 volte/);
+});
