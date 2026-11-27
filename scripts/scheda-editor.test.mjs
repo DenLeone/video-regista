@@ -47,3 +47,10 @@ test('pagina profilo: una sola, tempi da 2 s', () => {
   const r = schedeEditorDa([{ frase: 'F2' }, { frase: 'F4' }], { inizio, totale: 43, dur: 2.4, max: 1, nome: 'pagina profilo' });
   assert.deepEqual(r, [{ at: 5, dur: 2.4 }]);
 });
+
+test('profilo: nome visibile e numeri', () => {
+  const s = leggiStile('Nome X\nNome profilo: @itsblackden\nNome visibile: Black Den\nNumeri profilo: 420 post, 11 mila follower, 346 seguiti\n');
+  assert.equal(s.grafica.nomeProfilo, '@itsblackden');
+  assert.equal(s.grafica.nomeVisibile, 'Black Den');
+  assert.deepEqual(s.grafica.numeriProfilo, ['420', '11 mila', '346']);
+});

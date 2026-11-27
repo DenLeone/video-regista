@@ -384,7 +384,7 @@ export const SuMisura: React.FC<Piano> = (piano) => {
   return (
     <AbsoluteFill style={{ backgroundColor: '#0B0B0B' }}>
       <SchedaEditorFondo piano={piano} sfx={sfx} />
-      <PaginaProfiloFondo piano={piano} nome={g.nomeProfilo} sfx={sfx} />
+      <PaginaProfiloFondo piano={piano} nome={g.nomeProfilo} visibile={g.nomeVisibile} numeri={g.numeriProfilo} sfx={sfx} />
       <ScalaVideo piano={piano}>
         <Clips piano={piano} fondo="#0B0B0B" filtro={LOOK[g.look]} />
         {g.vignetta > 0 ? <AbsoluteFill style={{ background: `radial-gradient(ellipse 100% 80% at 50% 50%, rgba(0,0,0,0) 60%, rgba(0,0,0,${g.vignetta.toFixed(2)}) 100%)` }} /> : null}

@@ -126,7 +126,7 @@ export const ProvaScheda: React.FC = () => (
 const GRIGLIA = [0, 1, 2, 3, 4, 5, 6, 7, 8];
 const COLORI = ['#2B3A55', '#5A3E36', '#1F4B4A', '#4B3B63', '#58463A', '#2E4F3D'];
 
-const FondoProfilo: React.FC<{ len: number; nome: string }> = ({ len, nome }) => {
+const FondoProfilo: React.FC<{ len: number; nome: string; visibile?: string; numeri?: [string, string, string] }> = ({ len, nome, visibile, numeri = ['258', '97K', '146'] }) => {
   const fr = useCurrentFrame();
   const p = faseScheda(fr, 0, len);
   const zoom = interpolate(fr, [ENTRA, len - ESCE], [1, 1], { extrapolateLeft: 'clamp', extrapolateRight: 'clamp' });
@@ -138,9 +138,10 @@ const FondoProfilo: React.FC<{ len: number; nome: string }> = ({ len, nome }) =>
         <div style={{ position: 'absolute', left: 60, top: 250, display: 'flex', alignItems: 'center', gap: 36 }}>
           <div style={{ width: 170, height: 170, borderRadius: 85, background: 'linear-gradient(135deg,#E3B341,#C9632B)', border: '6px solid #FFFFFF', display: 'flex', alignItems: 'center', justifyContent: 'center', fontFamily: 'Inter, sans-serif', fontWeight: 800, fontSize: 80, color: '#FFFFFF' }}>{iniziale}</div>
           <div style={{ fontFamily: 'Inter, sans-serif', color: '#FFFFFF' }}>
-            <div style={{ fontSize: 46, fontWeight: 800 }}>{nome}</div>
+            <div style={{ fontSize: 46, fontWeight: 800 }}>{visibile || nome}</div>
+            {visibile ? <div style={{ fontSize: 26, opacity: 0.65, marginTop: 4 }}>{nome}</div> : null}
             <div style={{ display: 'flex', gap: 40, marginTop: 18, fontSize: 30 }}>
-              {[['258', 'post'], ['97K', 'follower'], ['146', 'seguiti']].map(([n, e]) => (
+              {[[numeri[0], 'post'], [numeri[1], 'follower'], [numeri[2], 'seguiti']].map(([n, e]) => (
                 <div key={e}><div style={{ fontWeight: 800 }}>{n}</div><div style={{ fontSize: 22, opacity: 0.7 }}>{e}</div></div>
               ))}
             </div>
@@ -160,13 +161,13 @@ const FondoProfilo: React.FC<{ len: number; nome: string }> = ({ len, nome }) =>
   );
 };
 
-export const PaginaProfiloFondo: React.FC<{ piano: Piano; nome?: string; sfx?: number }> = ({ piano, nome = '@tuoprofilo', sfx = 0 }) => (
+export const PaginaProfiloFondo: React.FC<{ piano: Piano; nome?: string; visibile?: string; numeri?: [string, string, string]; sfx?: number }> = ({ piano, nome = '@tuoprofilo', visibile, numeri, sfx = 0 }) => (
   <>
     {(piano.paginaProfilo || []).map((s, i) => {
       const len = lunghezza(s.dur);
       return (
         <Sequence key={`pp${i}`} from={f(s.at)} durationInFrames={len}>
-          <FondoProfilo len={len} nome={nome} />
+          <FondoProfilo len={len} nome={nome} visibile={visibile} numeri={numeri} />
           {sfx > 0 ? <Sfx nome="whoosh" da={0} volume={0.5 * sfx} /> : null}
         </Sequence>
       );

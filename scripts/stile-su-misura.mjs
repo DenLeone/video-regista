@@ -60,6 +60,8 @@ Entrata parole piccole: no    # dolce = dissolvenza + sfocatura + piccola salita
 Apertura tessere: no          # sì = i primi 0,8 s il quadro è coperto da quadrati di vetro smerigliato che si spengono a caso
 Pagina profilo: no            # sì = 1 volta il video diventa la miniatura di una pagina profilo social finta e poi torna a tutto schermo (~2,4 s)
 Nome profilo: @tuoprofilo     # il nome che si legge sulla pagina profilo (con la @)
+Nome visibile: Il Tuo Nome    # facoltativo: il nome esteso sotto la @
+Numeri profilo: 420 post, 11 mila follower, 346 seguiti   # facoltativo: i numeri sulla pagina profilo
 Parole medie: no              # sì = con gli strati, alcune parole piccole (scelte dall'AI) escono più grosse e in grassetto
 Scheda editor: no             # sì = 1–2 volte il video si rimpicciolisce dentro una finestra bianca da programma di montaggio (strumenti a sinistra, timeline sotto) per ~2,5 s
 Cornice pellicola: no         # no | super 8 (bordo nero da pellicola Super 8 con i fori, fisso per tutto il video: look vintage/analogico)
@@ -128,7 +130,7 @@ const GRAFICA = ['nome', 'apertura', 'font apertura', 'colore apertura', 'sottot
   'colore accento', 'posizione titoli', 'look', 'bianco e nero', 'vignettatura', 'effetti sonori', 'musica', 'volume musica',
   'font corsivo', 'enfasi corsivo', 'scritte dietro di me', 'soggetto in risalto', 'sfondo sfocato', 'inizio', 'chiusura', 'tagli dentro le frasi',
   'entrata parole grandi', 'firma', 'transizioni', 'cornice pellicola', 'inserti', 'b-roll stock', 'colori parole grandi', 'montaggio',
-  'maiuscolo parole grandi', 'righe', 'titolo prodotto', 'etichette tecniche', 'invito a commentare', 'colore su misura', 'voce', 'schermate', 'icone concetto', 'scheda editor', 'parole sul petto', 'entrata parole piccole', 'apertura tessere', 'pagina profilo', 'nome profilo', 'parole medie'];
+  'maiuscolo parole grandi', 'righe', 'titolo prodotto', 'etichette tecniche', 'invito a commentare', 'colore su misura', 'voce', 'schermate', 'icone concetto', 'scheda editor', 'parole sul petto', 'entrata parole piccole', 'apertura tessere', 'pagina profilo', 'nome profilo', 'nome visibile', 'numeri profilo', 'parole medie'];
 
 /** stile.txt → { grafica, testoAI, musica, campi } */
 export function leggiStile(testo, nomeCartella) {
@@ -211,6 +213,11 @@ export function leggiStile(testo, nomeCartella) {
   if (campi['apertura tessere']) g.tessere = si(campi['apertura tessere']);
   if (campi['pagina profilo']) g.paginaProfilo = si(campi['pagina profilo']);
   { const n = /@[\w.]+/.exec(campi['nome profilo'] || ''); if (n) g.nomeProfilo = n[0]; }
+  if (campi['nome visibile']) g.nomeVisibile = String(campi['nome visibile']).trim().slice(0, 30);
+  { // «420 post, 11 mila follower, 346 seguiti»: i tre numeri nell'ordine post, follower, seguiti
+    const m = /^\s*(\S+(?:\s+mila|\s*K|\s+mln)?)\s*post\W+(\S+(?:\s+mila|\s*K|\s+mln)?)\s*follower\W+(\S+(?:\s+mila|\s*K|\s+mln)?)\s*seguiti/i.exec(campi['numeri profilo'] || '');
+    if (m) g.numeriProfilo = [m[1], m[2], m[3]];
+  }
   if (campi['parole medie']) g.paroleMedie = si(campi['parole medie']);
   // mattoni del 13/11 (src/Mattoni.tsx)
   if (campi['titolo prodotto']) g.titoloProdotto = !/^no\b/.test(norm(campi['titolo prodotto']));

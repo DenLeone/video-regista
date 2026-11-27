@@ -107,6 +107,8 @@ export type Posizione = 'alto' | 'centro' | 'basso';
 export type GraficaStile = {
   paginaProfilo?: boolean; // «Pagina profilo: sì»
   nomeProfilo?: string;    // «Nome profilo: @nome»
+  nomeVisibile?: string;   // «Nome visibile: Black Den» (sotto la @, vicino ai numeri)
+  numeriProfilo?: [string, string, string]; // «Numeri profilo: 420 post, 11 mila follower, 346 seguiti»
   paroleMedie?: boolean;   // «Parole medie: sì»
   schedaEditor?: boolean; // «Scheda editor: sì»: l'AI può chiedere la scheda da editor (scheda_editor nella regia)
   iconeConcetto?: boolean; // «Icone concetto: sì»: l'AI può chiedere icone di concetto (icone_concetto nella regia)
