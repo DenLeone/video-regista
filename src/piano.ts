@@ -64,6 +64,10 @@ export type Piano = {
   iconeConcetto?: { nome: string; at: number; dur: number; lato: 'sinistra' | 'destra' }[];
   // scheda da editor (stile «Elaborato»): il video si rimpicciolisce in una finestra bianca da programma di montaggio (src/schedaEditor.tsx)
   schedeEditor?: { at: number; dur: number }[];
+  // pagina profilo social finta (stile «Elaborato»): il video diventa la miniatura della griglia e poi torna a tutto schermo
+  paginaProfilo?: { at: number; dur: number }[];
+  // parole medie in grassetto (Ultra/Elaborato): un po' più grosse delle piccole, non giganti
+  enfasiMedia?: string[];
   // musica sotto la voce, solo se Denis la chiede (scripts/musica.mjs): da = secondo del brano da cui
   // partire, volume = nelle pause; mentre parla (parlato, sulla timeline) scende
   musica?: { file: string; nome?: string; da: number; volume: number; parlato: [number, number][] };
@@ -101,6 +105,9 @@ export type Piano = {
 export type FontStile = { famiglia: string; peso: number; corsivo?: boolean; file?: string };
 export type Posizione = 'alto' | 'centro' | 'basso';
 export type GraficaStile = {
+  paginaProfilo?: boolean; // «Pagina profilo: sì»
+  nomeProfilo?: string;    // «Nome profilo: @nome»
+  paroleMedie?: boolean;   // «Parole medie: sì»
   schedaEditor?: boolean; // «Scheda editor: sì»: l'AI può chiedere la scheda da editor (scheda_editor nella regia)
   iconeConcetto?: boolean; // «Icone concetto: sì»: l'AI può chiedere icone di concetto (icone_concetto nella regia)
   nome: string;

@@ -30,3 +30,20 @@ test('campi Elaborato: parole sul petto, entrata dolce, tessere', () => {
   const no = leggiStile('Nome X\n');
   assert.ok(!no.grafica.sulPetto && !no.grafica.entrataPiccole && !no.grafica.tessere);
 });
+
+test('pagina profilo e parole medie: campi di stile e prompt', () => {
+  const s = leggiStile('Nome X\nSottotitoli: strati\nPagina profilo: sì\nNome profilo: @denleone\nParole medie: sì\n');
+  assert.equal(s.grafica.paginaProfilo, true);
+  assert.equal(s.grafica.nomeProfilo, '@denleone');
+  assert.equal(s.grafica.paroleMedie, true);
+  const prompt = promptSuMisura(s.grafica, s.testoAI);
+  assert.match(prompt, /pagina_profilo/);
+  assert.match(prompt, /enfasi_media/);
+  const no = leggiStile('Nome X\n');
+  assert.doesNotMatch(promptSuMisura(no.grafica, no.testoAI), /pagina_profilo|enfasi_media/);
+});
+
+test('pagina profilo: una sola, tempi da 2 s', () => {
+  const r = schedeEditorDa([{ frase: 'F2' }, { frase: 'F4' }], { inizio, totale: 43, dur: 2.4, max: 1, nome: 'pagina profilo' });
+  assert.deepEqual(r, [{ at: 5, dur: 2.4 }]);
+});

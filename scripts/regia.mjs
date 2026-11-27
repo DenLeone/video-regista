@@ -474,7 +474,11 @@ export function risolviRegia(regia, analisi) {
   const iconeConcetto = iconeConcettoDa(regia.icone_concetto, { inizio: inizioFrase, trova: (d, b) => trovaDette(d, parole, b), totale, avvisi });
   // scheda da editor: l'icona di concetto non sta mai sopra la finestra
   const schedeEditor = schedeEditorDa(regia.scheda_editor, { inizio: inizioFrase, trova: (d, b) => trovaDette(d, parole, b), totale, avvisi });
-  for (let i = iconeConcetto.length - 1; i >= 0; i--) if (schedeEditor.some((s) => iconeConcetto[i].at < s.at + s.dur + 0.3 && iconeConcetto[i].at + iconeConcetto[i].dur > s.at - 0.3)) iconeConcetto.splice(i, 1);
+  // pagina profilo social: una sola, mai sopra una scheda editor
+  const paginaProfilo = schedeEditorDa(regia.pagina_profilo, { inizio: inizioFrase, trova: (d, b) => trovaDette(d, parole, b), totale, avvisi, dur: 2.4, max: 1, nome: 'pagina profilo' })
+    .filter((p) => !schedeEditor.some((s) => p.at < s.at + s.dur + 0.5 && p.at + p.dur > s.at - 0.5));
+  const occupati = [...schedeEditor, ...paginaProfilo];
+  for (let i = iconeConcetto.length - 1; i >= 0; i--) if (occupati.some((s) => iconeConcetto[i].at < s.at + s.dur + 0.3 && iconeConcetto[i].at + iconeConcetto[i].dur > s.at - 0.3)) iconeConcetto.splice(i, 1);
 
   const flickers = [];
   for (const fl of regia.flickers || []) {
@@ -542,6 +546,7 @@ export function risolviRegia(regia, analisi) {
       ...(icone.length ? { icone } : {}),
       ...(iconeConcetto.length ? { iconeConcetto } : {}),
       ...(schedeEditor.length ? { schedeEditor } : {}),
+      ...(paginaProfilo.length ? { paginaProfilo } : {}),
       ...(schede.length ? { schede } : {}),
       ...(schermate.length ? { schermate } : {}),
       ...(titoloProdotto ? { titoloProdotto } : {}),
@@ -554,6 +559,7 @@ export function risolviRegia(regia, analisi) {
       parole: parole.filter((w) => w.at < totale - 0.05),
       // Motion: le parole chiave di tutto il video (una ogni 2–3 s), non solo dell'apertura
       ...(Array.isArray(regia.enfasi) && regia.enfasi.length ? { enfasi: regia.enfasi.map(String).slice(0, 80) } : {}),
+      ...(Array.isArray(regia.enfasi_media) && regia.enfasi_media.length ? { enfasiMedia: regia.enfasi_media.map(String).slice(0, 80) } : {}),
     },
     avvisi,
     durata: totale,

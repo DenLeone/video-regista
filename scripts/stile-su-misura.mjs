@@ -58,6 +58,9 @@ Icone concetto: no            # sì = quadratini bianchi arrotondati con una pic
 Parole sul petto: no          # sì = con gli strati e «Scritte dietro di me», le parole piccole stanno sotto il mento (all'altezza del petto) e non sulla faccia
 Entrata parole piccole: no    # dolce = dissolvenza + sfocatura + piccola salita (invece dello scatto)
 Apertura tessere: no          # sì = i primi 0,8 s il quadro è coperto da quadrati di vetro smerigliato che si spengono a caso
+Pagina profilo: no            # sì = 1 volta il video diventa la miniatura di una pagina profilo social finta e poi torna a tutto schermo (~2,4 s)
+Nome profilo: @tuoprofilo     # il nome che si legge sulla pagina profilo (con la @)
+Parole medie: no              # sì = con gli strati, alcune parole piccole (scelte dall'AI) escono più grosse e in grassetto
 Scheda editor: no             # sì = 1–2 volte il video si rimpicciolisce dentro una finestra bianca da programma di montaggio (strumenti a sinistra, timeline sotto) per ~2,5 s
 Cornice pellicola: no         # no | super 8 (bordo nero da pellicola Super 8 con i fori, fisso per tutto il video: look vintage/analogico)
 Inserti: scheda               # scheda (arrotondata, tipo telefono) | laterale (piccola e inclinata accanto a te, al massimo una ogni 10 s: Ultra) | tv (televisore anni '70 con barre colorate all'accensione) | reazione (le clip di un altro in una scheda in prospettiva dietro di te, con la sua voce più bassa; schede informative di vetro scritte dall'AI: Blackden)
@@ -125,7 +128,7 @@ const GRAFICA = ['nome', 'apertura', 'font apertura', 'colore apertura', 'sottot
   'colore accento', 'posizione titoli', 'look', 'bianco e nero', 'vignettatura', 'effetti sonori', 'musica', 'volume musica',
   'font corsivo', 'enfasi corsivo', 'scritte dietro di me', 'soggetto in risalto', 'sfondo sfocato', 'inizio', 'chiusura', 'tagli dentro le frasi',
   'entrata parole grandi', 'firma', 'transizioni', 'cornice pellicola', 'inserti', 'b-roll stock', 'colori parole grandi', 'montaggio',
-  'maiuscolo parole grandi', 'righe', 'titolo prodotto', 'etichette tecniche', 'invito a commentare', 'colore su misura', 'voce', 'schermate', 'icone concetto', 'scheda editor', 'parole sul petto', 'entrata parole piccole', 'apertura tessere'];
+  'maiuscolo parole grandi', 'righe', 'titolo prodotto', 'etichette tecniche', 'invito a commentare', 'colore su misura', 'voce', 'schermate', 'icone concetto', 'scheda editor', 'parole sul petto', 'entrata parole piccole', 'apertura tessere', 'pagina profilo', 'nome profilo', 'parole medie'];
 
 /** stile.txt → { grafica, testoAI, musica, campi } */
 export function leggiStile(testo, nomeCartella) {
@@ -206,6 +209,9 @@ export function leggiStile(testo, nomeCartella) {
   if (campi['parole sul petto']) g.sulPetto = si(campi['parole sul petto']);
   if (campi['entrata parole piccole']) g.entrataPiccole = /dolc|sfoc|salit|dissolv/.test(norm(campi['entrata parole piccole'])) ? 'dolce' : undefined;
   if (campi['apertura tessere']) g.tessere = si(campi['apertura tessere']);
+  if (campi['pagina profilo']) g.paginaProfilo = si(campi['pagina profilo']);
+  { const n = /@[\w.]+/.exec(campi['nome profilo'] || ''); if (n) g.nomeProfilo = n[0]; }
+  if (campi['parole medie']) g.paroleMedie = si(campi['parole medie']);
   // mattoni del 13/11 (src/Mattoni.tsx)
   if (campi['titolo prodotto']) g.titoloProdotto = !/^no\b/.test(norm(campi['titolo prodotto']));
   if (campi['etichette tecniche']) g.etichette = si(campi['etichette tecniche']);
@@ -316,6 +322,10 @@ export function promptSuMisura(g, testoAI, disponibili = {}) {
       '  - Il contenuto viene SOLO da quello che Denis dice nel video e da fatti certi e generali: niente numeri, articoli di legge o date che Denis non dice e di cui non sei sicuro. Meglio una scheda in meno che un dato inventato.',
       '  - Mai due schede a meno di 15 s una dall\'altra; mai sopra una clip con la voce dell\'altro.');
   }
+  if (g.paginaProfilo) righe.push(
+    '- **Pagina profilo social**: campo `pagina_profilo` in cima alla regia (accanto a `keywords`): una lista di UN solo `{"frase": "F004", "dette": "<parola detta>"}`. Per circa 2,4 secondi il video diventa la miniatura di una pagina profilo social finta (foto, numeri, griglia) e poi torna a tutto schermo. Mettila entro i primi 6 secondi, dopo la frase d\'apertura; mai insieme a un\'icona, a una scheda editor o a una parola gigante.');
+  if (g.paroleMedie && g.sottotitoli === 'strati') righe.push(
+    '- **Parole medie**: campo `enfasi_media` in cima alla regia (accanto a `enfasi`): una lista di parole singole (come le dice, max ~14 lettere) che escono un po\' più grosse e in grassetto, senza essere giganti: una ogni ~3 secondi di parlato (circa 15–20 al minuto), diverse da quelle di `enfasi` (esempi: «soldi», «sponsor», «albero»). Sono i sostantivi e i verbi che pesano, mai articoli o preposizioni.');
   if (g.schedaEditor) righe.push(
     '- **Scheda da editor**: campo `scheda_editor` in cima alla regia (accanto a `keywords`): una lista di `{"frase": "F010", "dette": "<parola detta>"}`. Per circa 2,5 secondi il video si rimpicciolisce dentro una finestra bianca da programma di montaggio (strumenti a sinistra, timeline sotto) e poi torna a tutto schermo.',
     '  - 1 o 2 in tutto il video, almeno 8 secondi una dall\'altra, mai nei primi 2 secondi né alla fine; falla su un cambio di argomento o su una frase sul montaggio, il lavoro, il metodo. Non mettere nello stesso momento un inserto, un\'icona o una parola gigante.');

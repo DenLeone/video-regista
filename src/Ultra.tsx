@@ -59,12 +59,15 @@ const Parola: React.FC<{ testo: string; da: number; stile: React.CSSProperties; 
   );
 };
 
+// parole medie (grassetto, un po' più grosse): si confrontano senza maiuscole, accenti e punteggiatura
+const normMedia = (w: string) => w.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9]/g, '');
+
 // dietro la persona il blocco sale alle spalle; altrimenti resta sopra la zona di TikTok, all'altezza delle gambe in un piano intero
 const ANCORA_SPALLE = 1020;
 // sul petto («Parole sul petto: sì»): il blocco finisce a y 1220, due righe arrivano a circa y 1100: sotto il mento, dentro la zona sicura
 const ANCORA_PETTO = 700;
 
-const BloccoUltra: React.FC<{ b: BloccoM; len: number; g: GraficaStile; colore: (k: number) => string; solo?: 'tutte' | 'grandi' | 'piccole' }> = ({ b, len, g, colore, solo = 'tutte' }) => {
+const BloccoUltra: React.FC<{ b: BloccoM; len: number; g: GraficaStile; colore: (k: number) => string; solo?: 'tutte' | 'grandi' | 'piccole'; medie?: Set<string> }> = ({ b, len, g, colore, solo = 'tutte', medie }) => {
   const fr = useCurrentFrame();
   const esce = interpolate(fr, [len - 4, len], [0, 1], clamp);
   const testoRiga = (r: BloccoM['righe'][number]) => r.parole.map((x) => x.w).join(' ');
@@ -120,7 +123,9 @@ const BloccoUltra: React.FC<{ b: BloccoM; len: number; g: GraficaStile; colore: 
             <div key={i} style={{ position: 'absolute', left: 0, right: 0, bottom: dalBasso[i], textAlign: 'center', whiteSpace: 'nowrap' }}>
               {x.r.parole.map((p, j) => (
                 <React.Fragment key={j}>
-                  <Parola testo={scritto(p.w, x.grande)} da={f(p.da)} stile={stile} grande={x.grande} pop={pop} dolce={g.entrataPiccole === 'dolce'} />
+                  <Parola testo={scritto(p.w, x.grande)} da={f(p.da)}
+                    stile={!x.grande && medie?.has(normMedia(p.w)) ? { ...stile, fontSize: Math.round(Number(stile.fontSize) * 1.55), fontWeight: 900, letterSpacing: '-0.02em' } : stile}
+                    grande={x.grande} pop={pop} dolce={g.entrataPiccole === 'dolce'} />
                   {j < x.r.parole.length - 1 ? <span style={stile}> </span> : null}
                 </React.Fragment>
               ))}
@@ -132,7 +137,8 @@ const BloccoUltra: React.FC<{ b: BloccoM; len: number; g: GraficaStile; colore: 
   );
 };
 
-export const BlocchiUltra: React.FC<{ blocchi: BloccoM[]; g: GraficaStile; solo?: 'tutte' | 'grandi' | 'piccole' }> = ({ blocchi, g, solo = 'tutte' }) => {
+export const BlocchiUltra: React.FC<{ blocchi: BloccoM[]; g: GraficaStile; solo?: 'tutte' | 'grandi' | 'piccole'; medie?: string[] }> = ({ blocchi, g, solo = 'tutte', medie }) => {
+  const setMedie = medie && medie.length ? new Set(medie.map(normMedia)) : undefined;
   const palette = g.palette && g.palette.length ? g.palette : PALETTE_ULTRA;
   // il colore gira su tutte le parole grandi del video, non riparte a ogni blocco
   const primo: number[] = [];
@@ -144,7 +150,7 @@ export const BlocchiUltra: React.FC<{ blocchi: BloccoM[]; g: GraficaStile; solo?
         const len = Math.max(2, f(b.fine) - f(b.at));
         return (
           <Sequence key={`u${i}`} from={f(b.at)} durationInFrames={len}>
-            <BloccoUltra b={b} len={len} g={g} solo={solo} colore={(k) => palette[(primo[i] + k) % palette.length]} />
+            <BloccoUltra b={b} len={len} g={g} solo={solo} medie={setMedie} colore={(k) => palette[(primo[i] + k) % palette.length]} />
           </Sequence>
         );
       })}

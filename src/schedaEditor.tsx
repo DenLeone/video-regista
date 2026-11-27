@@ -23,17 +23,26 @@ export const faseScheda = (fr: number, da: number, len: number) => {
   return Math.min(su, giu);
 };
 
-const fasePiano = (piano: Piano, fr: number) => Math.max(0, ...(piano.schedeEditor || []).map((s) => faseScheda(fr, f(s.at), Math.max(ENTRA + ESCE + 4, f(s.dur)))));
+// pagina profilo social finta: il video diventa la miniatura al centro della griglia, poi si ingrandisce di nuovo a tutto schermo
+const TESSERA = { x: 380, y: 720, w: 320 };
+const SCALA_TESSERA = TESSERA.w / 1080;
+const lunghezza = (dur: number) => Math.max(ENTRA + ESCE + 4, f(dur));
+
+const fasePiano = (piano: Piano, fr: number) => {
+  const e = Math.max(0, ...(piano.schedeEditor || []).map((s) => faseScheda(fr, f(s.at), lunghezza(s.dur))));
+  const p = Math.max(0, ...(piano.paginaProfilo || []).map((s) => faseScheda(fr, f(s.at), lunghezza(s.dur))));
+  return p > e ? { p, box: TESSERA, scala: SCALA_TESSERA, tessera: true } : { p: e, box: BOX, scala: SCALA, tessera: false };
+};
 
 export const ScalaVideo: React.FC<{ piano: Piano; children: React.ReactNode }> = ({ piano, children }) => {
   const fr = useCurrentFrame();
-  const p = fasePiano(piano, fr);
+  const { p, box, scala, tessera } = fasePiano(piano, fr);
   if (p <= 0) return <>{children}</>;
-  const s = 1 - (1 - SCALA) * p;
+  const s = 1 - (1 - scala) * p;
   return (
     <AbsoluteFill style={{
-      transformOrigin: '0 0', transform: `translate(${(BOX.x * p).toFixed(2)}px, ${(BOX.y * p).toFixed(2)}px) scale(${s.toFixed(4)})`,
-      borderRadius: 16 * p / s, overflow: 'hidden', boxShadow: p > 0.5 ? '0 10px 40px rgba(0,0,0,0.25)' : undefined,
+      transformOrigin: '0 0', transform: `translate(${(box.x * p).toFixed(2)}px, ${(box.y * p).toFixed(2)}px) scale(${s.toFixed(4)})`,
+      borderRadius: (tessera ? 22 : 16) * p / s, overflow: 'hidden', boxShadow: p > 0.5 ? '0 10px 40px rgba(0,0,0,0.25)' : undefined,
     }}>
       {children}
     </AbsoluteFill>
@@ -90,7 +99,7 @@ const FondoScheda: React.FC<{ len: number }> = ({ len }) => {
 export const SchedaEditorFondo: React.FC<{ piano: Piano; sfx?: number }> = ({ piano, sfx = 0 }) => (
   <>
     {(piano.schedeEditor || []).map((s, i) => {
-      const len = Math.max(ENTRA + ESCE + 4, f(s.dur));
+      const len = lunghezza(s.dur);
       return (
         <Sequence key={`se${i}`} from={f(s.at)} durationInFrames={len}>
           <FondoScheda len={len} />
@@ -111,4 +120,56 @@ export const ProvaScheda: React.FC = () => (
       </AbsoluteFill>
     </ScalaVideo>
   </AbsoluteFill>
+);
+
+// ---- Pagina profilo social ----
+const GRIGLIA = [0, 1, 2, 3, 4, 5, 6, 7, 8];
+const COLORI = ['#2B3A55', '#5A3E36', '#1F4B4A', '#4B3B63', '#58463A', '#2E4F3D'];
+
+const FondoProfilo: React.FC<{ len: number; nome: string }> = ({ len, nome }) => {
+  const fr = useCurrentFrame();
+  const p = faseScheda(fr, 0, len);
+  const zoom = interpolate(fr, [ENTRA, len - ESCE], [1, 1], { extrapolateLeft: 'clamp', extrapolateRight: 'clamp' });
+  const ui = interpolate(fr, [3, 12], [0, 1], { extrapolateLeft: 'clamp', extrapolateRight: 'clamp' }) * interpolate(fr, [len - 8, len - 2], [1, 0], { extrapolateLeft: 'clamp', extrapolateRight: 'clamp' });
+  const iniziale = (nome.replace(/^@/, '')[0] || 'D').toUpperCase();
+  return (
+    <AbsoluteFill style={{ background: '#0F1624', opacity: Math.min(1, p * 2.2) }}>
+      <AbsoluteFill style={{ opacity: ui, transformOrigin: '50% 30%', transform: `scale(${zoom.toFixed(3)})` }}>
+        <div style={{ position: 'absolute', left: 60, top: 250, display: 'flex', alignItems: 'center', gap: 36 }}>
+          <div style={{ width: 170, height: 170, borderRadius: 85, background: 'linear-gradient(135deg,#E3B341,#C9632B)', border: '6px solid #FFFFFF', display: 'flex', alignItems: 'center', justifyContent: 'center', fontFamily: 'Inter, sans-serif', fontWeight: 800, fontSize: 80, color: '#FFFFFF' }}>{iniziale}</div>
+          <div style={{ fontFamily: 'Inter, sans-serif', color: '#FFFFFF' }}>
+            <div style={{ fontSize: 46, fontWeight: 800 }}>{nome}</div>
+            <div style={{ display: 'flex', gap: 40, marginTop: 18, fontSize: 30 }}>
+              {[['258', 'post'], ['97K', 'follower'], ['146', 'seguiti']].map(([n, e]) => (
+                <div key={e}><div style={{ fontWeight: 800 }}>{n}</div><div style={{ fontSize: 22, opacity: 0.7 }}>{e}</div></div>
+              ))}
+            </div>
+          </div>
+        </div>
+        <div style={{ position: 'absolute', left: 60, top: 520, width: 960, display: 'flex', gap: 20, fontFamily: 'Inter, sans-serif', fontWeight: 700, fontSize: 30 }}>
+          <div style={{ flex: 1, textAlign: 'center', padding: '18px 0', borderRadius: 14, background: '#2F5BEA', color: '#FFFFFF' }}>Segui</div>
+          <div style={{ flex: 1, textAlign: 'center', padding: '18px 0', borderRadius: 14, background: '#232C3F', color: '#FFFFFF' }}>Messaggio</div>
+        </div>
+        {GRIGLIA.map((k) => {
+          const c = k % 3, r = Math.floor(k / 3);
+          if (c === 1 && r === 0) return null; // qui sta il video
+          return <div key={k} style={{ position: 'absolute', left: 40 + c * 340, top: TESSERA.y + r * 590, width: 320, height: 569, borderRadius: 22, background: COLORI[k % COLORI.length], opacity: 0.85 }} />;
+        })}
+      </AbsoluteFill>
+    </AbsoluteFill>
+  );
+};
+
+export const PaginaProfiloFondo: React.FC<{ piano: Piano; nome?: string; sfx?: number }> = ({ piano, nome = '@tuoprofilo', sfx = 0 }) => (
+  <>
+    {(piano.paginaProfilo || []).map((s, i) => {
+      const len = lunghezza(s.dur);
+      return (
+        <Sequence key={`pp${i}`} from={f(s.at)} durationInFrames={len}>
+          <FondoProfilo len={len} nome={nome} />
+          {sfx > 0 ? <Sfx nome="whoosh" da={0} volume={0.5 * sfx} /> : null}
+        </Sequence>
+      );
+    })}
+  </>
 );

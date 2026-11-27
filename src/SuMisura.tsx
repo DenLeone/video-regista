@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { AbsoluteFill, Audio, continueRender, delayRender, Easing, interpolate, Sequence, staticFile, useCurrentFrame } from 'remotion';
 import { Clips, f, Inserti, Ritagli, Sfx, usaFps, volumeSfx, Icone, MusicaSotto } from './comune';
 import { IconeConcetto } from './iconeConcetto';
-import { ScalaVideo, SchedaEditorFondo } from './schedaEditor';
+import { PaginaProfiloFondo, ScalaVideo, SchedaEditorFondo } from './schedaEditor';
 import { TessereVetro } from './tessere';
 import { SchermateSopra } from './SchermateSopra';
 import { gruppiParole } from './Cinematico';
@@ -384,6 +384,7 @@ export const SuMisura: React.FC<Piano> = (piano) => {
   return (
     <AbsoluteFill style={{ backgroundColor: '#0B0B0B' }}>
       <SchedaEditorFondo piano={piano} sfx={sfx} />
+      <PaginaProfiloFondo piano={piano} nome={g.nomeProfilo} sfx={sfx} />
       <ScalaVideo piano={piano}>
         <Clips piano={piano} fondo="#0B0B0B" filtro={LOOK[g.look]} />
         {g.vignetta > 0 ? <AbsoluteFill style={{ background: `radial-gradient(ellipse 100% 80% at 50% 50%, rgba(0,0,0,0) 60%, rgba(0,0,0,${g.vignetta.toFixed(2)}) 100%)` }} /> : null}
@@ -413,7 +414,7 @@ export const SuMisura: React.FC<Piano> = (piano) => {
       {g.fumo && g.transizione === 'pellicola' && g.pellicola ? <Pellicole piano={piano} file={g.pellicola.file} durata={g.pellicola.durata} /> : null}
       {g.fumo && g.transizione !== 'sfocata' && !(g.transizione === 'pellicola' && g.pellicola) ? <Fumi piano={piano} /> : null}
       {g.fumo && g.transizione === 'sfocata' ? <Sfocature piano={piano} /> : null}
-      {strati ? <BlocchiUltra blocchi={blocchi} g={g} solo={g.dietro ? 'piccole' : 'tutte'} /> : <BlocchiMotion blocchi={blocchi} g={g} />}
+      {strati ? <BlocchiUltra blocchi={blocchi} g={g} medie={g.paroleMedie ? piano.enfasiMedia : undefined} solo={g.dietro ? 'piccole' : 'tutte'} /> : <BlocchiMotion blocchi={blocchi} g={g} />}
       {g.tessere ? <TessereVetro /> : null}
       {g.cornicePellicola ? <CornicePellicola file={g.cornicePellicola.file} durata={g.cornicePellicola.durata} totale={totale} /> : null}
       {cartelli.map((k, i) => (
