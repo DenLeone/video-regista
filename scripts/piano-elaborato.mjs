@@ -36,6 +36,86 @@ function aggiungiIcone(piano, durata, occupati) {
   return scelte.length;
 }
 
+// Parole giganti in più (Denis, 27/11: «aumenta il numero»): l'AI ne sceglie una ogni 5-6 s, qui si aggiungono parole «piene» (≥6 lettere o numeri)
+// a distanza di almeno 2,6 s dalle altre, mai dove sta una scheda, la pagina profilo o la scheda editor (lì le giganti non si vedrebbero).
+// `enfasi` si legge nell'ordine del parlato (come src/Motion.tsx, segnaGrandi): la lista si rifà in ordine di tempo e una parola entra solo
+// se non è già stata detta tra la precedente e lei (altrimenti il render la metterebbe sulla prima volta).
+const RACCORDI = new Set(['quindi', 'perche', 'perché', 'allora', 'comunque', 'dunque', 'tuttavia', 'sempre', 'ancora', 'questo', 'questa', 'questi', 'queste', 'quello', 'quella', 'quelli', 'quelle', 'cosa', 'cose', 'molto', 'anche', 'dentro', 'invece', 'durante', 'quando', 'siamo', 'stato', 'stata', 'hanno', 'fatto', 'essere', 'veramente', 'diciamo', 'praticamente', 'proprio', 'adesso', 'quasi', 'tutto', 'tutti', 'tutte', 'nostro', 'nostra', 'vostro', 'quanto', 'prima', 'dopo', 'sotto', 'sopra', 'vedere', 'vediamo', 'faccio', 'faccia']);
+export const MIN_DISTANZA_GIGANTI = 2.6;
+function aggiungiGiganti(piano, occupati, durata) {
+  const parole = piano.parole || [];
+  const n = parole.map((p) => norm(p.w));
+  const items = [];
+  let cursore = 0;
+  const usate = new Set();
+  for (const e of piano.enfasi || []) {
+    const pezzi = String(e).split(/\s+/).map(norm).filter(Boolean);
+    if (!pezzi.length) continue;
+    const trova = (da) => { for (let i = da; i + pezzi.length <= n.length; i++) if (pezzi.every((x, k) => n[i + k] === x) && !usate.has(i)) return i; return -1; };
+    let i = trova(cursore);
+    if (i < 0) i = trova(0);
+    if (i < 0) continue;
+    pezzi.forEach((_, k) => usate.add(i + k));
+    cursore = i + pezzi.length;
+    items.push({ idx: i, len: pezzi.length, testo: String(e) });
+  }
+  let aggiunte = 0;
+  for (let i = 0; i < parole.length; i++) {
+    const w = parole[i];
+    if (usate.has(i) || w.at < 0.4 || w.at > durata - 1.2) continue;
+    if (!(n[i].length >= 6 || /\d/.test(n[i])) || RACCORDI.has(n[i]) || RACCORDI.has(String(w.w).toLowerCase())) continue;
+    if (occupati.some((s) => w.at < s.at + s.dur + 0.3 && w.at + 1.6 > s.at - 0.3)) continue;
+    if (items.some((it) => Math.abs(parole[it.idx].at - w.at) < MIN_DISTANZA_GIGANTI)) continue;
+    const prec = items.filter((it) => it.idx < i).sort((a, b) => b.idx - a.idx)[0];
+    let doppia = false;
+    for (let k = prec ? prec.idx + prec.len : 0; k < i; k++) if (n[k] === n[i] && !usate.has(k)) { doppia = true; break; }
+    if (doppia) continue;
+    usate.add(i);
+    items.push({ idx: i, len: 1, testo: String(w.w).replace(/^[^\p{L}\p{N}]+|[^\p{L}\p{N}]+$/gu, '') });
+    aggiunte++;
+  }
+  if (aggiunte) piano.enfasi = items.sort((a, b) => a.idx - b.idx).map((it) => it.testo);
+  return aggiunte;
+}
+
+// Tagli più veloci (Denis, 27/11: «velocizza zoom e tagli»): un pezzo di Denis lungo più di 2,8 s si divide in pezzi di ~1,8 s, sulle pause tra le
+// parole, e lo zoom (punch-in) alterna a ogni taglio. Il parlato resta continuo (stessa sorgente, un pezzo comincia dove finisce l'altro).
+// L'ultimo pezzo tiene lo zoom che aveva il pezzo intero, così l'alternanza con quello dopo resta quella decisa dalla regia.
+export const PEZZO_TARGET = 1.8;
+export const PEZZO_MIN = 1.0;
+function dividiPezzi(piano) {
+  const parole = piano.parole || [];
+  const nuove = [];
+  let t = 0, tagli = 0;
+  for (const c of piano.clips || []) {
+    const d = c.end - c.start;
+    const intera = !c.inserto && !c.broll && !c.muto && !c.audio && !c.lento && !c.rampa && !c.bn && !c.telefono && d > PEZZO_TARGET * 1.55;
+    if (!intera) { nuove.push(c); t += Math.max(0, d); continue; }
+    const k = Math.max(2, Math.round(d / PEZZO_TARGET));
+    const punti = [];
+    for (let j = 1; j < k; j++) {
+      const ideale = t + (d * j) / k;
+      const vicina = parole.filter((w) => Math.abs(w.at - ideale) <= 0.5).sort((a, b) => Math.abs(a.at - ideale) - Math.abs(b.at - ideale))[0];
+      const taglio = vicina ? vicina.at - 0.05 : ideale;
+      const prec = punti.length ? punti[punti.length - 1] : t;
+      if (taglio - prec >= PEZZO_MIN && t + d - taglio >= PEZZO_MIN) punti.push(taglio);
+    }
+    if (!punti.length) { nuove.push(c); t += d; continue; }
+    const estremi = [t, ...punti, t + d];
+    const pezzi = estremi.slice(0, -1).map((da, i) => {
+      const pezzo = { ...c, start: +(c.start + (da - t)).toFixed(3), end: +(c.start + (estremi[i + 1] - t)).toFixed(3) };
+      if (i > 0) { delete pezzo.fumo; delete pezzo.transizione; }
+      pezzo.punch = Boolean(c.punch) !== ((estremi.length - 2 - i) % 2 === 1);
+      return pezzo;
+    });
+    tagli += punti.length;
+    nuove.push(...pezzi);
+    t += d;
+  }
+  piano.clips = nuove;
+  return tagli;
+}
+
 export function completaPianoElaborato(piano) {
   const g = piano?.grafica || {};
   const durata = (piano?.clips || []).reduce((s, c) => s + Math.max(0, c.end - c.start), 0);
@@ -52,6 +132,8 @@ export function completaPianoElaborato(piano) {
   if (piano.iconeConcetto?.length) piano.iconeConcetto = piano.iconeConcetto.filter((i) => !occupati.some((s) => i.at < s.at + s.dur + 0.3 && i.at + i.dur > s.at - 0.3));
   let nuove = 0;
   if (g.iconeConcetto) nuove = aggiungiIcone(piano, durata, occupati);
+  const tagliNuovi = g.sulPetto ? dividiPezzi(piano) : 0;
+  const gigantiNuovi = g.sulPetto && g.dietro ? aggiungiGiganti(piano, occupati, durata) : 0;
   // numeri soltanto (il log è pubblico): cosa arriva davvero al render
-  return `elaborato: flag pagina ${g.paginaProfilo ? 'sì' : 'no'}, scheda ${g.schedaEditor ? 'sì' : 'no'}, medie ${g.paroleMedie ? 'sì' : 'no'}, petto ${g.sulPetto ? 'sì' : 'no'}, tessere ${g.tessere ? 'sì' : 'no'} · piano: pagine ${(piano.paginaProfilo || []).length}, schede ${(piano.schedeEditor || []).length}, icone ${(piano.iconeConcetto || []).length} (${nuove} automatiche), miniature ${(piano.miniatureProfilo || []).length}, giganti ${(piano.enfasi || []).length}, medie AI ${(piano.enfasiMedia || []).length} · ${durata.toFixed(1)} s`;
+  return `elaborato: flag pagina ${g.paginaProfilo ? 'sì' : 'no'}, scheda ${g.schedaEditor ? 'sì' : 'no'}, medie ${g.paroleMedie ? 'sì' : 'no'}, petto ${g.sulPetto ? 'sì' : 'no'}, tessere ${g.tessere ? 'sì' : 'no'} · piano: pagine ${(piano.paginaProfilo || []).length}, schede ${(piano.schedeEditor || []).length}, icone ${(piano.iconeConcetto || []).length} (${nuove} automatiche), miniature ${(piano.miniatureProfilo || []).length}, giganti ${(piano.enfasi || []).length} (${gigantiNuovi} aggiunte), pezzi ${(piano.clips || []).length} (${tagliNuovi} tagli in più), medie AI ${(piano.enfasiMedia || []).length} · ${durata.toFixed(1)} s`;
 }

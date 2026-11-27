@@ -53,3 +53,40 @@ test('icone automatiche: mai sotto una scheda immagine (pezzo con inserto)', () 
   completaPianoElaborato(p);
   assert.deepEqual(p.iconeConcetto.map((i) => i.nome), ['soldi']);
 });
+
+test('Elaborato: pezzi lunghi divisi sulle pause con zoom alternato; l\'ultimo tiene lo zoom del pezzo intero', () => {
+  const parole = Array.from({ length: 24 }, (_, i) => ({ w: `parola${i}`, at: i * 0.5 + 0.2, dur: 0.3 }));
+  const p = { clips: [{ file: 'a.mp4', start: 100, end: 112, punch: true }, { file: 'a.mp4', start: 112, end: 114, punch: false }], parole, grafica: { sulPetto: true } };
+  completaPianoElaborato(p);
+  const tot = p.clips.reduce((s, c) => s + c.end - c.start, 0);
+  assert.ok(Math.abs(tot - 14) < 0.01, 'durata totale invariata');
+  assert.ok(p.clips.length >= 7, 'molti più pezzi');
+  for (let i = 1; i < p.clips.length; i++) assert.ok(Math.abs(p.clips[i].start - p.clips[i - 1].end) < 0.001 || p.clips[i].start === 112, 'il parlato prosegue senza buchi');
+  for (let i = 1; i < 6; i++) assert.notEqual(p.clips[i].punch, p.clips[i - 1].punch, 'zoom alternato a ogni taglio');
+  assert.ok(p.clips.slice(0, -1).every((c) => c.end - c.start >= 1.0), 'nessun pezzo sotto 1 s');
+  const ultimo = p.clips.filter((c) => c.start < 112).pop();
+  assert.equal(ultimo.punch, true, 'ultimo pezzo = zoom del pezzo intero');
+});
+
+test('Elaborato: schede immagine, b-roll e senza il flag non si dividono', () => {
+  const base = [{ file: 'a.mp4', start: 0, end: 12 }, { file: 'a.mp4', start: 12, end: 20, inserto: { file: 'x.jpg', tipo: 'immagine' } }];
+  const a = { clips: structuredClone(base), parole: [], grafica: { sulPetto: true } };
+  completaPianoElaborato(a);
+  assert.ok(a.clips.some((c) => c.inserto && c.end - c.start === 8), 'la scheda resta intera');
+  const b = { clips: structuredClone(base), parole: [], grafica: {} };
+  completaPianoElaborato(b);
+  assert.equal(b.clips.length, 2);
+});
+
+test('Elaborato: parole giganti in più, lontane dalle altre e dalle schede, in ordine di parlato', () => {
+  const nomi = ['sinceramente', 'telefono', 'lavorare', 'moltissimo', 'ciao', 'regalo', 'creatore', 'strategia', 'mattina', 'quarantacinque'];
+  const parole = nomi.map((w, i) => ({ w, at: 2 + i * 3, dur: 0.5 }));
+  const p = { clips: [{ file: 'a', start: 0, end: 20, inserto: { file: 'x.jpg', tipo: 'immagine' } }, { file: 'a', start: 20, end: 40 }], parole, enfasi: ['strategia'], grafica: { sulPetto: true, dietro: true } };
+  const riga = completaPianoElaborato(p);
+  assert.ok(p.enfasi.length >= 3, 'più giganti');
+  assert.ok(!p.enfasi.includes('sinceramente') && !p.enfasi.includes('telefono'), 'niente sotto la scheda (0–20 s)');
+  const tempi = p.enfasi.map((e) => parole.find((w) => w.w === e).at).sort((a, b) => a - b);
+  for (let i = 1; i < tempi.length; i++) assert.ok(tempi[i] - tempi[i - 1] >= 2.6, 'distanza minima');
+  assert.deepEqual(p.enfasi.map((e) => parole.findIndex((w) => w.w === e)), p.enfasi.map((e) => parole.findIndex((w) => w.w === e)).sort((a, b) => a - b), 'ordine del parlato');
+  assert.match(riga, /aggiunte/);
+});
