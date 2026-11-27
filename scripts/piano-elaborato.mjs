@@ -47,6 +47,8 @@ export function completaPianoElaborato(piano) {
   if (pagina.length) piano.paginaProfilo = pagina;
   if (editor.length) piano.schedeEditor = editor;
   const occupati = [...pagina, ...editor];
+  // schede immagine: i pezzi con un inserto (immagine o video) stanno sopra la testa; le icone automatiche non ci vanno sotto
+  { let t = 0; for (const c of piano.clips || []) { const d = Math.max(0, c.end - c.start); if (c.inserto) occupati.push({ at: t, dur: d }); t += d; } }
   if (piano.iconeConcetto?.length) piano.iconeConcetto = piano.iconeConcetto.filter((i) => !occupati.some((s) => i.at < s.at + s.dur + 0.3 && i.at + i.dur > s.at - 0.3));
   let nuove = 0;
   if (g.iconeConcetto) nuove = aggiungiIcone(piano, durata, occupati);

@@ -43,3 +43,13 @@ test('icone automatiche dal parlato: sinonimi, distanza, niente sotto le schede'
   for (let i = 1; i < p.iconeConcetto.length; i++) assert.ok(p.iconeConcetto[i].at - p.iconeConcetto[i - 1].at >= 3, 'almeno 3 s tra due icone');
   assert.match(riga, /automatiche/);
 });
+
+test('icone automatiche: mai sotto una scheda immagine (pezzo con inserto)', () => {
+  const p = {
+    clips: [{ start: 0, end: 10 }, { start: 10, end: 16, inserto: { file: 'x.jpg', tipo: 'immagine' } }, { start: 16, end: 40 }],
+    parole: [['mondo', 12], ['storia', 14], ['sponsor', 20]].map(([w, at]) => ({ w, at, dur: 0.4 })),
+    grafica: { iconeConcetto: true }, iconeConcetto: [],
+  };
+  completaPianoElaborato(p);
+  assert.deepEqual(p.iconeConcetto.map((i) => i.nome), ['soldi']);
+});

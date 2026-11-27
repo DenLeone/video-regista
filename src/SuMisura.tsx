@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { AbsoluteFill, Audio, continueRender, delayRender, Easing, interpolate, Sequence, staticFile, useCurrentFrame } from 'remotion';
-import { Clips, f, Inserti, Ritagli, Sfx, usaFps, volumeSfx, Icone, MusicaSotto } from './comune';
+import { Clips, f, Inserti, Ritagli, schedeInserti, Sfx, usaFps, volumeSfx, Icone, MusicaSotto } from './comune';
 import { IconeConcetto } from './iconeConcetto';
 import { PaginaProfiloFondo, ScalaVideo, SchedaEditorFondo } from './schedaEditor';
 import { AloneEPuntini, MosaicoSagoma, TessereVetro } from './tessere';
@@ -362,6 +362,11 @@ function conSchedeDiDefault(piano: Piano): Piano {
   if (g?.paginaProfilo && !pagina.length && durata >= 9 && libero(2.5, 2.4)) pagina = [{ at: 2.5, dur: 2.4 }];
   if (g?.schedaEditor && !editor.length && durata >= 12 && libero(6, 2.8)) editor = [{ at: 6, dur: 2.8 }];
   const occupati = [...pagina, ...editor];
+  // schede immagine (stile Elaborato, parole sul petto): stanno sopra la testa, nessuna icona sotto di loro
+  if ((piano.grafica as { sulPetto?: boolean } | undefined)?.sulPetto) {
+    usaFps(piano);
+    for (const c of schedeInserti(piano)) occupati.push({ at: c.from / f(1), dur: c.len / f(1) });
+  }
   const icone = (piano.iconeConcetto || []).filter((i) => !occupati.some((s) => i.at < s.at + s.dur + 0.3 && i.at + i.dur > s.at - 0.3));
   if (pagina === piano.paginaProfilo && editor === piano.schedeEditor && icone.length === (piano.iconeConcetto || []).length) return piano;
   return { ...piano, paginaProfilo: pagina, schedeEditor: editor, iconeConcetto: icone };
@@ -387,6 +392,8 @@ export const SuMisura: React.FC<Piano> = (pianoIn) => {
   const cartelli = g.titoli && g.tipoTitoli === 'cartelli' ? scritte : [];
   // Motion: tutto il parlato a blocchi (le parole chiave dell'AI enormi), tranne dove c'è un cartello
   const strati = g.sottotitoli === 'strati';
+  // stile Elaborato: le schede immagine stanno sopra la testa (mai sul viso), non nei primi 3 s; lì giganti e icone restano alla larga
+  const carteAlte = Boolean(g.sulPetto && g.dietro);
   const reazione = g.cornice === 'reazione';
   const blocchi = g.sottotitoli === 'blocchi' || strati ? blocchiParlato(piano.parole, piano.enfasi, cartelli, strati, Boolean(strati && g.enfasiCorsivo), strati && g.righe ? g.righe : 4) : [];
   const grandi = paroleGrandi(piano.parole, forti);
@@ -418,15 +425,15 @@ export const SuMisura: React.FC<Piano> = (pianoIn) => {
         </Sequence>
       ))}
       {/* le parole grosse degli strati stanno sotto il ritaglio: i numeri passano dietro il busto */}
-      {strati && g.dietro ? <BlocchiUltra blocchi={blocchi} g={g} solo="grandi" /> : null}
+      {strati && g.dietro ? <BlocchiUltra blocchi={blocchi} g={g} solo="grandi" evita={carteAlte ? schedeInserti(piano).filter((c) => c.from >= f(3)) : undefined} /> : null}
       {/* stile reazione: le clip dell'altro dietro a Denis (la persona ritagliata va sopra) */}
       {reazione ? <InsertiReazione piano={piano} g={g} sfx={sfx} /> : null}
       {g.dietro || reazione ? <Ritagli piano={piano} filtro={LOOK[g.look]} /> : null}
       {reazione ? <SchedeInfo piano={piano} g={g} sfx={sfx} /> : <Inserti piano={piano} sfx={sfx} cornice={g.cornice}
         // Ultron (zone.json, 19/11): le schede stanno sopra la testa come le schermate (y 240–640), mai sulla faccia,
         // e non quando c'è già una schermata
-        sopra={g.schermate === 'sopra' ? 640 : strati && g.posizione === 'basso' && !g.dietro ? 920 : undefined}
-        evita={g.schermate === 'sopra' ? (piano.schermate || []).map((x) => ({ from: f(x.at), len: f(x.dur || 3) })) : []} />}
+        sopra={g.schermate === 'sopra' ? 640 : g.sulPetto && g.dietro ? 600 : strati && g.posizione === 'basso' && !g.dietro ? 920 : undefined}
+        evita={g.schermate === 'sopra' ? (piano.schermate || []).map((x) => ({ from: f(x.at), len: f(x.dur || 3) })) : carteAlte ? [{ from: 0, len: f(3) }] : []} />}
       {g.fumo && g.transizione === 'pellicola' && g.pellicola ? <Pellicole piano={piano} file={g.pellicola.file} durata={g.pellicola.durata} /> : null}
       {g.fumo && g.transizione !== 'sfocata' && !(g.transizione === 'pellicola' && g.pellicola) ? <Fumi piano={piano} /> : null}
       {g.fumo && g.transizione === 'sfocata' ? <Sfocature piano={piano} /> : null}

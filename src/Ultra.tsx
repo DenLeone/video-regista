@@ -149,7 +149,7 @@ const BloccoUltra: React.FC<{ b: BloccoM; len: number; g: GraficaStile; colore: 
   );
 };
 
-export const BlocchiUltra: React.FC<{ blocchi: BloccoM[]; g: GraficaStile; solo?: 'tutte' | 'grandi' | 'piccole'; medie?: string[] }> = ({ blocchi, g, solo = 'tutte', medie }) => {
+export const BlocchiUltra: React.FC<{ blocchi: BloccoM[]; g: GraficaStile; solo?: 'tutte' | 'grandi' | 'piccole'; medie?: string[]; evita?: { from: number; len: number }[] }> = ({ blocchi, g, solo = 'tutte', medie, evita = [] }) => {
   const setMedie = new Set((medie || []).map(normMedia));
   const palette = g.palette && g.palette.length ? g.palette : PALETTE_ULTRA;
   // il colore gira su tutte le parole grandi del video, non riparte a ogni blocco
@@ -160,6 +160,8 @@ export const BlocchiUltra: React.FC<{ blocchi: BloccoM[]; g: GraficaStile; solo?
     <>
       {blocchi.map((b, i) => {
         const len = Math.max(2, f(b.fine) - f(b.at));
+        // le parole giganti non stanno dietro una scheda immagine (non si leggerebbero): quel blocco, solo per le giganti, salta
+        if (solo === 'grandi' && evita.some((e) => f(b.at) < e.from + e.len && e.from < f(b.fine))) return null;
         return (
           <Sequence key={`u${i}`} from={f(b.at)} durationInFrames={len}>
             <BloccoUltra b={b} len={len} g={g} solo={solo} medie={setMedie} colore={(k) => palette[(primo[i] + k) % palette.length]} />
