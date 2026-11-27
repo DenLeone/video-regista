@@ -6,6 +6,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { comandiTaglio, eseguiFfmpeg } from './regista.mjs';
+import { QUALITA } from './qualita.mjs';
 
 /** Il job che pubblica il bot non ha ffmpeg. Senza libx264 la prova non parte. */
 export function ffmpegDiProva() {
@@ -32,8 +33,8 @@ export async function confrontaTagliParalleli() {
   fs.mkdirSync(par);
   const argomenti = lista(seq)[0];
   if (argomenti[argomenti.indexOf('-threads') + 1] !== '2') throw new Error('manca -threads 2');
-  if (argomenti[argomenti.indexOf('-crf') + 1] !== '16') throw new Error('il crf del taglio è cambiato');
-  if (!argomenti.includes('veryfast')) throw new Error('il preset del taglio è cambiato');
+  if (argomenti[argomenti.indexOf('-crf') + 1] !== QUALITA.masterCrf) throw new Error('il crf del taglio è cambiato');
+  if (!argomenti.includes(QUALITA.masterPreset)) throw new Error('il preset del taglio è cambiato');
   await eseguiFfmpeg(lista(seq), 1);
   await eseguiFfmpeg(lista(par), 4);
   for (let i = 0; i < 4; i++) {
