@@ -77,19 +77,18 @@ const FondoScheda: React.FC<{ len: number }> = ({ len }) => {
             </div>
           ))}
         </div>
-        {/* timeline */}
-        <div style={{ position: 'absolute', left: tl.x, top: tl.y, width: tl.w, height: 230, borderRadius: 18, background: '#FFFFFF', border: '2px solid #E4E5E8', overflow: 'hidden' }}>
-          <div style={{ position: 'absolute', left: 0, right: 0, top: 0, height: 34, background: '#F0F1F3', borderBottom: '2px solid #E4E5E8' }}>
-            {Array.from({ length: 19 }).map((_, i) => <div key={i} style={{ position: 'absolute', left: `${i * 5.5 + 2}%`, bottom: 0, width: 2, height: i % 3 === 0 ? 16 : 9, background: '#B9BDC4' }} />)}
+        {/* controlli sottili sotto il video, poi la striscia scura del montaggio con il blocco dorato che scorre (come nel riferimento) */}
+        <div style={{ position: 'absolute', left: tl.x, top: tl.y - 14, width: tl.w, height: 70, borderRadius: 10, background: '#F1F2F4', border: '2px solid #E4E5E8', overflow: 'hidden' }}>
+          <div style={{ position: 'absolute', left: 16, right: 16, top: 14, height: 4, borderRadius: 2, background: '#D5D8DD' }} />
+          <div style={{ position: 'absolute', left: 16, top: 11, width: `${cursore}%`, maxWidth: 'calc(100% - 32px)', height: 10, borderRadius: 5, background: '#E3B341', opacity: 0.0 }} />
+          <div style={{ position: 'absolute', left: 16, right: 16, top: 34, display: 'flex', justifyContent: 'space-between' }}>
+            {Array.from({ length: 22 }).map((_, i) => <div key={i} style={{ width: 14, height: 14, borderRadius: 3, background: i % 5 === 0 ? '#9AA0AA' : '#C9CCD2' }} />)}
           </div>
-          {PEZZI.map((pista, k) => (
-            <div key={k} style={{ position: 'absolute', left: 0, right: 0, top: 54 + k * 82, height: 66 }}>
-              {pista.map(([a, b, c], j) => <div key={j} style={{ position: 'absolute', left: `${a}%`, width: `${b - a}%`, top: 0, bottom: 0, borderRadius: 10, background: c }} />)}
-            </div>
-          ))}
-          <div style={{ position: 'absolute', left: `${cursore}%`, top: 0, bottom: 0, width: 4, background: '#FF3B30', borderRadius: 2 }}>
-            <div style={{ position: 'absolute', left: -9, top: 0, width: 22, height: 26, background: '#FF3B30', borderRadius: '4px 4px 11px 11px' }} />
-          </div>
+          <div style={{ position: 'absolute', left: `${cursore}%`, top: 0, bottom: 0, width: 3, background: '#FF3B30' }} />
+        </div>
+        <div style={{ position: 'absolute', left: tl.x, top: tl.y + 64, width: tl.w, height: 96, borderRadius: 8, background: '#15120E', overflow: 'hidden' }}>
+          <div style={{ position: 'absolute', left: `${Math.max(2, Math.min(60, cursore * 0.62))}%`, top: 12, width: '34%', height: 72, borderRadius: 6,
+            background: 'linear-gradient(180deg,#F0CB5A,#C99A22)', border: '2px solid #F7DE8C' }} />
         </div>
       </div>
     </AbsoluteFill>
@@ -126,18 +125,28 @@ export const ProvaScheda: React.FC = () => (
 const GRIGLIA = [0, 1, 2, 3, 4, 5, 6, 7, 8];
 const COLORI = ['#2B3A55', '#5A3E36', '#1F4B4A', '#4B3B63', '#58463A', '#2E4F3D'];
 
+const MINIATURE: [string, string, string][] = [
+  ['#3B2F4A', '#14101C', '453K'], ['#', '#', ''], ['#1F2A44', '#0C1020', '125K'],
+  ['#233E66', '#0B1830', '126K'], ['#6A3B3B', '#241313', '88K'], ['#3E4A3A', '#141A12', '98K'],
+];
+
 const FondoProfilo: React.FC<{ len: number; nome: string; visibile?: string; numeri?: [string, string, string] }> = ({ len, nome, visibile, numeri = ['258', '97K', '146'] }) => {
   const fr = useCurrentFrame();
   const p = faseScheda(fr, 0, len);
-  const zoom = interpolate(fr, [ENTRA, len - ESCE], [1, 1], { extrapolateLeft: 'clamp', extrapolateRight: 'clamp' });
-  const ui = interpolate(fr, [3, 12], [0, 1], { extrapolateLeft: 'clamp', extrapolateRight: 'clamp' }) * interpolate(fr, [len - 8, len - 2], [1, 0], { extrapolateLeft: 'clamp', extrapolateRight: 'clamp' });
-  const iniziale = (nome.replace(/^@/, '')[0] || 'D').toUpperCase();
+  // lampo bianco all'entrata, poi la pagina grigio-azzurra
+  const lampo = interpolate(fr, [0, 4, 11], [1, 1, 0], { extrapolateLeft: 'clamp', extrapolateRight: 'clamp' });
+  const ui = interpolate(fr, [6, 14], [0, 1], { extrapolateLeft: 'clamp', extrapolateRight: 'clamp' }) * interpolate(fr, [len - 8, len - 2], [1, 0], { extrapolateLeft: 'clamp', extrapolateRight: 'clamp' });
+  // il fascio di luce sull'intestazione arriva a metà
+  const fascio = interpolate(fr, [ENTRA + 2, ENTRA + 12], [0, 1], { extrapolateLeft: 'clamp', extrapolateRight: 'clamp' });
+  const iniziale = ((visibile || nome.replace(/^@/, ''))[0] || 'D').toUpperCase();
   return (
-    <AbsoluteFill style={{ background: '#0F1624', opacity: Math.min(1, p * 2.2) }}>
-      <AbsoluteFill style={{ opacity: ui, transformOrigin: '50% 30%', transform: `scale(${zoom.toFixed(3)})` }}>
+    <AbsoluteFill style={{ background: '#4F5870', opacity: Math.min(1, p * 2.2) }}>
+      <AbsoluteFill style={{ opacity: ui }}>
+        <div style={{ position: 'absolute', left: 0, top: 200, right: 0, height: 360, opacity: fascio * 0.95,
+          background: 'linear-gradient(90deg, rgba(235,243,255,0) 0%, rgba(235,243,255,0.92) 100%)', clipPath: 'polygon(0 22%, 100% 0, 100% 100%, 0 78%)' }} />
         <div style={{ position: 'absolute', left: 60, top: 250, display: 'flex', alignItems: 'center', gap: 36 }}>
           <div style={{ width: 170, height: 170, borderRadius: 85, background: 'linear-gradient(135deg,#E3B341,#C9632B)', border: '6px solid #FFFFFF', display: 'flex', alignItems: 'center', justifyContent: 'center', fontFamily: 'Inter, sans-serif', fontWeight: 800, fontSize: 80, color: '#FFFFFF' }}>{iniziale}</div>
-          <div style={{ fontFamily: 'Inter, sans-serif', color: '#FFFFFF' }}>
+          <div style={{ fontFamily: 'Inter, sans-serif', color: '#101828' }}>
             <div style={{ fontSize: 46, fontWeight: 800 }}>{visibile || nome}</div>
             {visibile ? <div style={{ fontSize: 26, opacity: 0.65, marginTop: 4 }}>{nome}</div> : null}
             <div style={{ display: 'flex', gap: 40, marginTop: 18, fontSize: 30 }}>
@@ -148,15 +157,21 @@ const FondoProfilo: React.FC<{ len: number; nome: string; visibile?: string; num
           </div>
         </div>
         <div style={{ position: 'absolute', left: 60, top: 520, width: 960, display: 'flex', gap: 20, fontFamily: 'Inter, sans-serif', fontWeight: 700, fontSize: 30 }}>
-          <div style={{ flex: 1, textAlign: 'center', padding: '18px 0', borderRadius: 14, background: '#2F5BEA', color: '#FFFFFF' }}>Segui</div>
-          <div style={{ flex: 1, textAlign: 'center', padding: '18px 0', borderRadius: 14, background: '#232C3F', color: '#FFFFFF' }}>Messaggio</div>
+          <div style={{ flex: 1, textAlign: 'center', padding: '18px 0', borderRadius: 14, background: '#2F4FD8', color: '#DCE6FF' }}>Segui</div>
+          <div style={{ flex: 1, textAlign: 'center', padding: '18px 0', borderRadius: 14, background: '#3A4260', color: '#E8ECF8' }}>Messaggio</div>
         </div>
-        {GRIGLIA.map((k) => {
+        {MINIATURE.map(([c1, c2, n], k) => {
           const c = k % 3, r = Math.floor(k / 3);
           if (c === 1 && r === 0) return null; // qui sta il video
-          return <div key={k} style={{ position: 'absolute', left: 40 + c * 340, top: TESSERA.y + r * 590, width: 320, height: 569, borderRadius: 22, background: COLORI[k % COLORI.length], opacity: 0.85 }} />;
+          return (
+            <div key={k} style={{ position: 'absolute', left: 40 + c * 340, top: TESSERA.y + r * 590, width: 320, height: 569, borderRadius: 22, background: `linear-gradient(160deg, ${c1}, ${c2})`, opacity: 0.92 }}>
+              <div style={{ position: 'absolute', left: 18, bottom: 16, fontFamily: 'Inter, sans-serif', fontWeight: 700, fontSize: 26, color: '#FFFFFFB0' }}>▶ {n}</div>
+            </div>
+          );
         })}
+        <AbsoluteFill style={{ background: 'rgba(14,20,40,0.28)', opacity: 1 - fascio * 0.5, pointerEvents: 'none' }} />
       </AbsoluteFill>
+      <AbsoluteFill style={{ background: '#F4F8FF', opacity: lampo }} />
     </AbsoluteFill>
   );
 };

@@ -83,13 +83,19 @@ const BloccoUltra: React.FC<{ b: BloccoM; len: number; g: GraficaStile; colore: 
   const righePiccole = b.righe.filter((r) => r.tipo === 'piccolo');
   const fsPiccola = righePiccole.length ? Math.min(base, ...righePiccole.map((r) => dentro(testoRiga(r), g.fontSottotitoli, base))) : base;
   const corsivo = Boolean(g.enfasiCorsivo);
+  // parole medie (grassetto, più grosse): quelle scelte dall'AI e, da sole, i numeri e le parole lunghe (≥ 8 lettere): sono quasi sempre i nomi e i verbi che pesano
+  const eMedia = (w: string) => {
+    if (!g.paroleMedie) return false;
+    const n = normMedia(w);
+    return Boolean(medie?.has(n)) || /\d/.test(n) || n.length >= 8;
+  };
   const righe = b.righe.map((r) => {
     const testo = testoRiga(r);
     const grande = r.tipo === 'grande';
     const num = grande && /\d/.test(testo);
     const ft = grande && corsivo && !num ? g.fontCorsivo : grande ? g.fontTitoli : g.fontSottotitoli;
     const fs = grande ? (corsivo && !num ? misura(testo, ft) : fsGrande) : Math.min(fsPiccola, dentro(testo, ft, fsPiccola));
-    const conMedia = !grande && Boolean(medie) && r.parole.some((x) => medie!.has(normMedia(x.w)));
+    const conMedia = !grande && Boolean(g.paroleMedie) && r.parole.some((x) => medie?.has(normMedia(x.w)) || /\d/.test(x.w) || normMedia(x.w).length >= 8);
     return { r, grande, ft, fs, h: Math.ceil(grande ? fs * 0.92 : fs * (conMedia ? 1.75 : 1.18)) };
   });
   const dalBasso: number[] = [];
@@ -130,7 +136,7 @@ const BloccoUltra: React.FC<{ b: BloccoM; len: number; g: GraficaStile; colore: 
               {x.r.parole.map((p, j) => (
                 <React.Fragment key={j}>
                   <Parola testo={scritto(p.w, x.grande)} da={f(p.da)}
-                    stile={!x.grande && medie?.has(normMedia(p.w)) ? { ...stile, fontSize: Math.round(Number(stile.fontSize) * 1.55), fontWeight: 900, letterSpacing: '-0.02em' } : stile}
+                    stile={!x.grande && eMedia(p.w) ? { ...stile, fontSize: Math.round(Number(stile.fontSize) * 1.55), fontWeight: 900, letterSpacing: '-0.02em', textShadow: '0 0 22px rgba(255,255,255,0.55), 0 0 6px rgba(255,255,255,0.35)' } : x.grande ? { ...stile, textShadow: '0 0 34px rgba(255,255,255,0.45)' } : stile}
                     grande={x.grande} pop={pop} dolce={g.entrataPiccole === 'dolce'} />
                   {j < x.r.parole.length - 1 ? <span style={stile}> </span> : null}
                 </React.Fragment>
@@ -144,7 +150,7 @@ const BloccoUltra: React.FC<{ b: BloccoM; len: number; g: GraficaStile; colore: 
 };
 
 export const BlocchiUltra: React.FC<{ blocchi: BloccoM[]; g: GraficaStile; solo?: 'tutte' | 'grandi' | 'piccole'; medie?: string[] }> = ({ blocchi, g, solo = 'tutte', medie }) => {
-  const setMedie = medie && medie.length ? new Set(medie.map(normMedia)) : undefined;
+  const setMedie = new Set((medie || []).map(normMedia));
   const palette = g.palette && g.palette.length ? g.palette : PALETTE_ULTRA;
   // il colore gira su tutte le parole grandi del video, non riparte a ogni blocco
   const primo: number[] = [];

@@ -351,7 +351,24 @@ const Chiusura: React.FC<{ nome: string; g: GraficaStile }> = ({ nome, g }) => {
   );
 };
 
-export const SuMisura: React.FC<Piano> = (piano) => {
+// Pagina profilo e scheda editor: se lo stile le vuole e l'AI non le ha piazzate (frasi tolte dal montaggio), vanno dove stanno nel riferimento:
+// pagina profilo a 2,5 s, scheda editor a 6 s. Le icone di concetto che cadono sotto una scheda si tolgono.
+function conSchedeDiDefault(piano: Piano): Piano {
+  const g = piano.grafica as { paginaProfilo?: boolean; schedaEditor?: boolean } | undefined;
+  const durata = durataTotale(piano) / 1; // secondi
+  let pagina = piano.paginaProfilo || [];
+  let editor = piano.schedeEditor || [];
+  const libero = (at: number, dur: number) => ![...pagina, ...editor].some((s) => at < s.at + s.dur + 0.6 && at + dur > s.at - 0.6);
+  if (g?.paginaProfilo && !pagina.length && durata >= 9 && libero(2.5, 2.4)) pagina = [{ at: 2.5, dur: 2.4 }];
+  if (g?.schedaEditor && !editor.length && durata >= 12 && libero(6, 2.8)) editor = [{ at: 6, dur: 2.8 }];
+  const occupati = [...pagina, ...editor];
+  const icone = (piano.iconeConcetto || []).filter((i) => !occupati.some((s) => i.at < s.at + s.dur + 0.3 && i.at + i.dur > s.at - 0.3));
+  if (pagina === piano.paginaProfilo && editor === piano.schedeEditor && icone.length === (piano.iconeConcetto || []).length) return piano;
+  return { ...piano, paginaProfilo: pagina, schedeEditor: editor, iconeConcetto: icone };
+}
+
+export const SuMisura: React.FC<Piano> = (pianoIn) => {
+  const piano = conSchedeDiDefault(pianoIn);
   usaFps(piano);
   // stile Beat: tutt'altro montaggio, a tempo di musica (piano.beat non cambia durante il render)
   if (piano.beat) return <Beat piano={piano} />;
@@ -413,7 +430,7 @@ export const SuMisura: React.FC<Piano> = (piano) => {
       {g.fumo && g.transizione === 'pellicola' && g.pellicola ? <Pellicole piano={piano} file={g.pellicola.file} durata={g.pellicola.durata} /> : null}
       {g.fumo && g.transizione !== 'sfocata' && !(g.transizione === 'pellicola' && g.pellicola) ? <Fumi piano={piano} /> : null}
       {g.fumo && g.transizione === 'sfocata' ? <Sfocature piano={piano} /> : null}
-      {strati ? <BlocchiUltra blocchi={blocchi} g={g} medie={g.paroleMedie ? piano.enfasiMedia : undefined} solo={g.dietro ? 'piccole' : 'tutte'} /> : <BlocchiMotion blocchi={blocchi} g={g} />}
+      {strati ? <BlocchiUltra blocchi={blocchi} g={g} medie={piano.enfasiMedia} solo={g.dietro ? 'piccole' : 'tutte'} /> : <BlocchiMotion blocchi={blocchi} g={g} />}
       </ScalaVideo>
       {g.tessere ? (g.dietro ? <MosaicoSagoma piano={piano} filtro={LOOK[g.look]} /> : <TessereVetro />) : null}
       {g.cornicePellicola ? <CornicePellicola file={g.cornicePellicola.file} durata={g.cornicePellicola.durata} totale={totale} /> : null}

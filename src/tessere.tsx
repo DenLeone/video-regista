@@ -40,7 +40,7 @@ export const TessereVetro: React.FC = () => {
 // Mosaico sulla sola sagoma (Denis, 27/11): nel riferimento i quadrati di vetro stanno solo sulla persona, non su tutto il quadro.
 // Si prende lo stesso ritaglio con trasparenza che serve alle parole dietro la testa, lo si riduce a blocchi (filtro SVG: ogni blocco
 // prende il colore di un punto) e lo si schiarisce come vetro smerigliato; i blocchi diventano sempre più piccoli e svaniscono.
-const FINE_MOSAICO = 26;
+const FINE_MOSAICO = 16;
 export const Pixelata: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const fr = useCurrentFrame();
   const lato = Math.max(2, Math.round(interpolate(fr, [0, FINE_MOSAICO], [120, 20], { extrapolateLeft: 'clamp', extrapolateRight: 'clamp', easing: Easing.out(Easing.quad) })));
