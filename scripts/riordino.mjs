@@ -64,10 +64,14 @@ Per OGNI clip dimmi:
 - "conf": da 0 a 1, quanto sei sicuro del prodotto.
 Rispondi SOLO con JSON: {"clip":[{"k":1,"prodotto":"…","parlato":true,"conf":0.9}]}`;
 
+// Gemini fermo per 3 lotti di fila (o credito finito): si smette fino al giro dopo. Il 26-27/11 il giro ha insistito per
+// 10 ore con 101 errori e zero clip in più, mentre la stessa chiave serviva alla regia dei montaggi
+export const LOTTI_FALLITI_DI_FILA = 3;
+
 /** deps.estrai(clip) → { jpg: base64, wav: base64|null }, deps.chiedi(parts) → oggetto JSON, deps.pausa(ms) */
 export async function riconosci(clips, cache, deps, { lotto = 6, scadenza = Infinity, pausaMs = 4000, stop = () => false, checkpoint = null, ogni = 5 } = {}) {
   const nuovi = clips.filter((c) => c.tipo !== 'audio' && !cache[chiaveClip(c)]);
-  let fatti = 0, lotti = 0;
+  let fatti = 0, lotti = 0, falliti = 0;
   for (let i = 0; i < nuovi.length; i += lotto) {
     if (deps.adesso() > scadenza || (await stop())) return { fatti, finito: false };
     const gruppo = nuovi.slice(i, i + lotto);
@@ -84,7 +88,12 @@ export async function riconosci(clips, cache, deps, { lotto = 6, scadenza = Infi
     if (!ok.length) continue;
     const parts = [{ text: PROMPT_LOTTO(ok.length) }, ...corpo];
     let r = null;
-    try { r = await deps.chiedi(parts); } catch (err) { deps.log(`Gemini non ha risposto (${String(err.message).split('\n')[0]}): riprovo al prossimo giro`); continue; }
+    try { r = await deps.chiedi(parts); } catch (err) {
+      deps.log(`Gemini non ha risposto (${String(err.message).split('\n')[0]}): riprovo al prossimo giro`);
+      if (err.credito || ++falliti >= LOTTI_FALLITI_DI_FILA) return { fatti, finito: false, gemini: err.credito ? 'credito' : 'fermo' };
+      continue;
+    }
+    falliti = 0;
     const per = new Map((r?.clip || []).map((x) => [Number(x.k) - 1, x]));
     for (const [k, c] of ok.entries()) {
       const x = per.get(k);
@@ -280,6 +289,8 @@ async function chiediGeminiVero(parts) {
     const r = await fetch(`${base}/models/${modello}:generateContent`, { method: 'POST', headers: { 'content-type': 'application/json', 'x-goog-api-key': chiave },
       body: JSON.stringify({ contents: [{ role: 'user', parts }], generationConfig: { responseMimeType: 'application/json', temperature: 0.1 } }), signal: AbortSignal.timeout(180_000) }).catch(() => null);
     if (r?.ok) { const j = await r.json(); return JSON.parse((j.candidates?.[0]?.content?.parts || []).map((x) => x.text || '').join('').replace(/^```(?:json)?\s*|\s*```$/g, '')); }
+    // credito prepagato finito (429 «prepayment credits are depleted», o 402): aspettare non serve
+    if (r && (r.status === 402 || (r.status === 429 && /prepay|credits? (are|is|have been) depleted/i.test(await r.text().catch(() => ''))))) throw Object.assign(new Error('credito Gemini finito'), { credito: true });
     if (r && r.status !== 429 && r.status < 500) throw new Error(`Gemini HTTP ${r.status}`);
   }
   throw new Error('Gemini non risponde (limiti o sovraccarico)');
@@ -368,7 +379,15 @@ export async function main() {
   const da = clips.filter((c) => !c.giaPosto && c.tipo !== 'audio').length;
   const fatte = clips.filter((c) => !c.giaPosto && c.tipo !== 'audio' && cache[chiaveClip(c)]).length;
   if (!esito.finito && (await stop())) { log('fermato da Denis durante il riconoscimento'); return; }
-  if (!esito.finito) { scriviJson(`${STATO_DIR}/stato.json`, { ...stato, fase: 'riconoscimento', avviato: stato.avviato || new Date().toISOString(), aggiornato: new Date().toISOString(), riconosciute: fatte, totali: da, prova }); log(`tempo finito: ${fatte}/${da} clip riconosciute, riprendo al prossimo giro`); return; }
+  if (!esito.finito) {
+    // Gemini fermo: un avviso al giorno (il giro riparte ogni 3 ore), poi si riprende da solo
+    const oggi = new Date().toISOString().slice(0, 10);
+    const avvisare = esito.gemini && stato.avvisoGemini !== oggi;
+    scriviJson(`${STATO_DIR}/stato.json`, { ...stato, fase: 'riconoscimento', avviato: stato.avviato || new Date().toISOString(), aggiornato: new Date().toISOString(), riconosciute: fatte, totali: da, prova, ...(avvisare ? { avvisoGemini: oggi } : {}) });
+    log(esito.gemini ? `Gemini ${esito.gemini === 'credito' ? 'senza credito' : 'non risponde'}: mi fermo con ${fatte}/${da} clip riconosciute, riprendo al prossimo giro` : `tempo finito: ${fatte}/${da} clip riconosciute, riprendo al prossimo giro`);
+    if (avvisare) await avvisa(`⚠️ Ispettore in pausa: ${esito.gemini === 'credito' ? 'il credito di Gemini (chiave del Regista) è finito. Ricaricalo su AI Studio: serve anche alla regia dei montaggi' : 'Gemini non risponde da un po\''}. Riprendo da solo al prossimo giro (${fatte}/${da} clip riconosciute).`);
+    return;
+  }
 
   const conteggi = {};
   for (const c of clips) { const r = cache[chiaveClip(c)]; if (r?.p && r.c >= SOGLIA_CONFIDENZA) conteggi[r.p] = (conteggi[r.p] || 0) + 1; }

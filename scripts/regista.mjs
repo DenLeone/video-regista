@@ -1378,15 +1378,21 @@ export function sceltaDurata(brief = '', { stile = '', formula = '' } = {}) {
 }
 export const briefPerAI = (brief = '') => { const { proprio, numeri } = separaNumeri(brief); return numeri ? `${proprio}${senzaDurate(numeri)}` : String(brief); };
 
+// 27/11: una formula da 1-2 video è un caso, non una regola, e guida OGNI montaggio dello stile (durata compresa: per
+// Kal, Ultra e Cinematico vince su tutto tranne il brief). L'Analista scrive in testa «Da N video»: sotto 3 si ignora
+export const VIDEO_PER_FORMULA = 3;
+export const formulaDaPochi = (testo = '') => { const n = Number((/^Da (\d+) video/m.exec(String(testo)) || [])[1]); return n > 0 && n < VIDEO_PER_FORMULA; };
 const formule = new Map();
 function formulaStile() {
   const chiave = stileSuMisura?.nome || stileCorrente || '';
   if (!chiave) return '';
   if (!formule.has(chiave)) {
     const locale = path.join(WORK, 'stile', '_formula.md');
-    formule.set(chiave, stileSuMisura && fs.existsSync(locale) ? fs.readFileSync(locale, 'utf8').trim().slice(0, 2500)
-      : stileSuMisura ? '' : leggiDrive(`${DIR_STILI}/_formule/${chiave}.md`));
-    if (formule.get(chiave)) log(`formula dello stile dai numeri (${chiave}): sì`);
+    const testo = stileSuMisura && fs.existsSync(locale) ? fs.readFileSync(locale, 'utf8').trim().slice(0, 2500)
+      : stileSuMisura ? '' : leggiDrive(`${DIR_STILI}/_formule/${chiave}.md`);
+    formule.set(chiave, formulaDaPochi(testo) ? '' : testo);
+    if (formulaDaPochi(testo)) log(`formula dello stile dai numeri (${chiave}): ignorata, viene da meno di ${VIDEO_PER_FORMULA} video`);
+    else if (testo) log(`formula dello stile dai numeri (${chiave}): sì`);
   }
   return formule.get(chiave);
 }
@@ -1536,10 +1542,18 @@ const TETTO_REGIA_MS = 8 * 60 * 1000;
 const TETTO_DIDASCALIE_MS = 4 * 60 * 1000;
 export const DIDASCALIE_MODELLI = 4;
 const modelliGiornoFinito = new Set();
-export function azzeraQuoteGiorno() { modelliGiornoFinito.clear(); }
+// credito prepagato finito (27/11: 429 «Your prepayment credits are depleted» su tutti i modelli per un giorno intero,
+// letto come «limite al minuto»: ogni regia aspettava e riprovava 6 modelli, poi Claude). Vale per tutta la chiave
+// (quella a pagamento), non per la gratuita: si ricorda la chiave, non il modello.
+export const CREDITO_FINITO = /prepay|credits? (are|is|have been) depleted/i;
+export const MOTIVO_CREDITO = 'credito finito (ricaricalo su AI Studio)';
+const chiaviSenzaCredito = new Set();
+export function azzeraQuoteGiorno() { modelliGiornoFinito.clear(); chiaviSenzaCredito.clear(); }
 export function segnaQuotaGiorno(modello) { if (modello) modelliGiornoFinito.add(modello); }
 export function quotaGiornoFinita(modello) { return modelliGiornoFinito.has(modello); }
 export async function chiamaGemini(modello, body, headers, opzioni = {}) {
+  const chiave = headers?.['x-goog-api-key'] || '';
+  if (chiaviSenzaCredito.has(chiave)) return { motivo: MOTIVO_CREDITO, credito: true };
   if (quotaGiornoFinita(modello)) return { motivo: 'richieste del giorno finite' };
   const url = `${GEMINI_BASE()}/models/${modello}:generateContent`;
   const scadenza = opzioni.scadenza || 0;
@@ -1555,6 +1569,7 @@ export async function chiamaGemini(modello, body, headers, opzioni = {}) {
     }
     if (r.ok) return { risposta: r };
     const testo = await r.text();
+    if (r.status === 402 || (r.status === 429 && CREDITO_FINITO.test(testo))) { chiaviSenzaCredito.add(chiave); return { motivo: MOTIVO_CREDITO, credito: true }; }
     if (r.status === 429) {
       if (/PerDay/i.test(testo)) { segnaQuotaGiorno(modello); return { motivo: 'richieste del giorno finite' }; }
       const ritardo = Number((/"retryDelay":\s*"(\d+(?:\.\d+)?)s"/.exec(testo) || [])[1] || 20);
@@ -1654,6 +1669,7 @@ async function regiaConGemini(prompt, fogli, valida) {
       } catch (e) { esito.motivo = `regia inutilizzabile (${e.message.slice(0, 120)})`; }
     }
     motivo = esito.motivo;
+    if (esito.credito) { log(`Gemini: ${motivo}, salto tutti i modelli`); break; }
     const dopo = coda[i + 1];
     log(`Gemini ${modello}: ${motivo}${dopo ? ` → provo ${dopo}` : ''}`);
     if (dopo) await fase(job.nome, `⏳ Gemini ${nomeBreveGemini(modello)}: ${motivo}, uso ${nomeBreveGemini(dopo)}`, 'regia');

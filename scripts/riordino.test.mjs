@@ -2,7 +2,7 @@
 // sovrascritto, tolte solo cartelle vuote, tutto si rimette con l'annulla.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { annulla, cartellaDelProdotto, messaggioInizio, chiaveClip, esegui, esitoPerFabbrica, inventario, pianifica, perProdotto, raggruppa, riconosci, togliVecchie } from './riordino.mjs';
+import { annulla, cartellaDelProdotto, messaggioInizio, chiaveClip, esegui, esitoPerFabbrica, inventario, LOTTI_FALLITI_DI_FILA, pianifica, perProdotto, raggruppa, riconosci, togliVecchie } from './riordino.mjs';
 
 const ORA = Date.UTC(2026, 10, 26, 12, 0, 0);
 const VECCHIO = '2026-11-20T10:00:00Z';
@@ -77,6 +77,22 @@ test('riconosci: solo le clip nuove, a lotti, con la cache; una clip illeggibile
   assert.equal(Object.keys(cache).length, 7);
   const tardi = await riconosci(inv, {}, { ...deps, adesso: () => ORA + 10 }, { lotto: 3, scadenza: ORA });
   assert.deepEqual(tardi, { fatti: 0, finito: false }); // tempo finito: si riprende al giro dopo
+});
+
+test('riconosci: con Gemini fermo smette dopo 3 lotti falliti di fila, con il credito finito subito; un errore ogni tanto no', async () => {
+  const inv = inventario(RIGHE).filter((c) => !c.giaPosto && c.tipo !== 'audio').slice(0, 8);
+  const base = { adesso: () => ORA, log: () => {}, pausa: async () => {}, estrai: async () => ({ jpg: 'A', wav: null }) };
+  let chiamate = 0;
+  const fermo = await riconosci(inv, {}, { ...base, chiedi: async () => { chiamate++; throw new Error('Gemini non risponde (limiti o sovraccarico)'); } }, { lotto: 1 });
+  assert.deepEqual([fermo.finito, fermo.gemini, chiamate], [false, 'fermo', LOTTI_FALLITI_DI_FILA]);
+  chiamate = 0;
+  const credito = await riconosci(inv, {}, { ...base, chiedi: async () => { chiamate++; throw Object.assign(new Error('credito Gemini finito'), { credito: true }); } }, { lotto: 1 });
+  assert.deepEqual([credito.finito, credito.gemini, chiamate], [false, 'credito', 1]);
+  chiamate = 0;
+  const cache = {};
+  const aTratti = await riconosci(inv, cache, { ...base, chiedi: async () => { chiamate++; if (chiamate % 2) throw new Error('sovraccarico'); return { clip: [{ k: 1, prodotto: 'X', parlato: true, conf: 0.9 }] }; } }, { lotto: 1 });
+  assert.equal(aTratti.finito, true); // il contatore riparte a ogni risposta buona
+  assert.equal(Object.keys(cache).length, 4); // le clip dei lotti falliti restano per il giro dopo
 });
 
 test('riconosci: si ferma tra un lotto e l\'altro se Denis dice «ferma»', async () => {

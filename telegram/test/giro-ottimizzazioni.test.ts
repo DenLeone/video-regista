@@ -5,7 +5,7 @@ import {
   ATTESE_STILE, TETTO_STILE_MS, azzeraQuoteStile, quotaGiornoDaTesto, quotaStileFinita, ricordaQuotaStile,
 } from '../../scripts/studia-stile.mjs';
 import {
-  DIDASCALIE_MODELLI, GEMINI_TENTATIVI, GEMINI_TIMEOUT_MS,
+  DIDASCALIE_MODELLI, GEMINI_TENTATIVI, GEMINI_TIMEOUT_MS, MOTIVO_CREDITO,
   azzeraQuoteGiorno, chiamaGemini, quotaGiornoFinita, scriviDidascalie,
 } from '../../scripts/regista.mjs';
 
@@ -54,6 +54,43 @@ test('un modello oltre il tetto non viene nemmeno chiamato', async () => {
     const esito = await chiamaGemini('gemini-2.5-flash', '{}', {}, { scadenza: Date.now() - 5 });
     assert.equal(chiamate, 0);
     assert.equal(esito.motivo, 'tempo massimo del giro finito');
+  } finally {
+    globalThis.fetch = prima;
+    azzeraQuoteGiorno();
+  }
+});
+
+// 27/11: credito prepagato finito = 429 «prepayment credits are depleted» su tutti i modelli, per ore. Non è un limite
+// al minuto: niente attese né altri modelli con quella chiave; la chiave gratuita (un'altra) resta buona
+test('credito Gemini finito: si riconosce subito e vale solo per quella chiave', async () => {
+  azzeraQuoteGiorno();
+  const prima = globalThis.fetch;
+  const chiamate: string[] = [];
+  try {
+    globalThis.fetch = (async (_u: unknown, init?: RequestInit) => {
+      const k = (init?.headers as Record<string, string>)['x-goog-api-key'];
+      chiamate.push(k);
+      if (k === 'paga') return new Response('{"error":{"code":429,"message":"Your prepayment credits are depleted. Please go to AI Studio at https://ai.studio/projects to manage your project and billing.","status":"RESOURCE_EXHAUSTED"}}', { status: 429 });
+      return new Response('{}', { status: 200 });
+    }) as typeof fetch;
+    const inizio = Date.now();
+    const esito = await chiamaGemini('gemini-2.5-flash', '{}', { 'x-goog-api-key': 'paga' });
+    assert.equal(esito.motivo, MOTIVO_CREDITO);
+    assert.equal(esito.credito, true);
+    assert.ok(Date.now() - inizio < 2000, 'non aspetta come per il limite al minuto');
+    assert.equal((await chiamaGemini('gemini-2.5-flash-lite', '{}', { 'x-goog-api-key': 'paga' })).motivo, MOTIVO_CREDITO);
+    assert.deepEqual(chiamate, ['paga']); // l'altro modello non si chiama nemmeno
+    assert.ok((await chiamaGemini('gemini-2.5-flash', '{}', { 'x-goog-api-key': 'gratis' })).risposta, 'la chiave gratuita resta buona');
+    // 402 è la stessa cosa
+    azzeraQuoteGiorno();
+    globalThis.fetch = (async () => new Response('{"error":{"code":402,"message":"Your prepayment credits are depleted."}}', { status: 402 })) as typeof fetch;
+    assert.equal((await chiamaGemini('gemini-2.5-flash', '{}', { 'x-goog-api-key': 'paga' })).motivo, MOTIVO_CREDITO);
+    // un 429 qualunque («check your plan and billing details») resta un limite al minuto
+    azzeraQuoteGiorno();
+    globalThis.fetch = (async () => new Response('{"error":{"code":429,"message":"You exceeded your current quota, please check your plan and billing details.","details":[{"retryDelay":"0s"}]}}', { status: 429 })) as typeof fetch;
+    const minuto = await chiamaGemini('gemini-2.5-flash', '{}', { 'x-goog-api-key': 'paga' });
+    assert.equal(minuto.motivo, 'limite al minuto');
+    assert.equal(minuto.credito, undefined);
   } finally {
     globalThis.fetch = prima;
     azzeraQuoteGiorno();
