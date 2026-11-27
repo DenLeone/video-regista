@@ -2,6 +2,8 @@
 // esegue (tempi esatti). L'AI non fa mai conti sui tempi: sceglie cosa dire e
 // cosa mostrare, i secondi li calcola questo file.
 
+import { iconeConcettoDa } from './icone-concetto.mjs';
+
 // tempi allineati ai fotogrammi del video (analisi.fps: quelli della camera principale, 30 se manca)
 let fpsRegia = 30;
 const q = (s) => +(Math.round(s * fpsRegia) / fpsRegia).toFixed(4);
@@ -467,6 +469,8 @@ export function risolviRegia(regia, analisi) {
     const p = icone[i - 1];
     if (p.at + p.dur > icone[i].at - 0.1) p.dur = q(Math.max(0.8, icone[i].at - p.at - 0.1));
   }
+  // icone di concetto (stile «Elaborato»): quadratino bianco con icona Tabler a «pop» vicino alle mani
+  const iconeConcetto = iconeConcettoDa(regia.icone_concetto, { inizio: inizioFrase, trova: (d, b) => trovaDette(d, parole, b), totale, avvisi });
 
   const flickers = [];
   for (const fl of regia.flickers || []) {
@@ -532,6 +536,7 @@ export function risolviRegia(regia, analisi) {
       soggetto: regia.soggetto || String(analisi.cartella).toUpperCase(),
       clips, keywords, flickers,
       ...(icone.length ? { icone } : {}),
+      ...(iconeConcetto.length ? { iconeConcetto } : {}),
       ...(schede.length ? { schede } : {}),
       ...(schermate.length ? { schermate } : {}),
       ...(titoloProdotto ? { titoloProdotto } : {}),
