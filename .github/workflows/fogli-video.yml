@@ -1,0 +1,55 @@
+name: fogli-video
+
+# «Guardare» un video di Drive: fogli di fotogrammi + copia leggera in 12 · Risorse/_registri/fogli/<giro>.
+# Serve a chi controlla un montaggio e non può scaricare file grossi dal connettore Drive (scripts/fogli-video.mjs).
+run-name: ${{ format('fogli · {0}', inputs.chi || 'Claude') }}
+on:
+  workflow_dispatch:
+    inputs:
+      percorso:
+        description: 'Percorso del video su Drive (es. 02 · Fatti/Cartella/video.mp4)'
+        required: true
+      passo:
+        description: 'Secondi tra un fotogramma e l''altro (default 0.5)'
+        required: false
+        default: '0.5'
+      chi:
+        description: 'Chi lo lancia (solo per il nome del giro)'
+        required: false
+        default: 'Claude'
+
+concurrency:
+  group: fogli-video
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  fogli:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Collego Drive
+        env:
+          RCLONE_CONF: ${{ secrets.RCLONE_CONF }}
+        run: |
+          curl -fsSL https://rclone.org/install.sh | sudo bash > /dev/null
+          mkdir -p ~/.config/rclone
+          printf '%s\n' "$RCLONE_CONF" | tr -d '\r' | sed -e '1s/^\xEF\xBB\xBF//' -e 's/^[[:space:]]*//' > ~/.config/rclone/rclone.conf
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+
+      - name: Strumenti (ffmpeg)
+        run: |
+          command -v ffmpeg >/dev/null || { sudo apt-get update -qq && sudo apt-get install -y -qq ffmpeg fonts-dejavu-core > /dev/null; }
+
+      - name: Fogli
+        env:
+          PERCORSO: ${{ inputs.percorso }}
+          PASSO: ${{ inputs.passo }}
+        run: node scripts/fogli-video.mjs
