@@ -80,7 +80,7 @@ export type Piano = {
   // schermate animate dello stile ListaUI (vedi scripts/stili/ListaUI.md); media = file in public/media
   // + quelle del documentario verticale (src/SchermateSopra.tsx): chat con `risposta`, terminale, numeri, titolo, repo, immagine
   schermate?: { at: number; dur: number; tipo: 'capitolo' | 'chat' | 'finestra' | 'griglia' | 'app' | 'pillola' | 'terminale' | 'numeri' | 'titolo' | 'repo' | 'immagine'
-      | 'lista' | 'primadopo' | 'logo' | 'parola' | 'animazione';
+      | 'lista' | 'primadopo' | 'logo' | 'parola' | 'animazione' | 'chatlunga' | 'documento';
     titolo?: string; testo?: string; risposta?: string; numero?: number; voci?: string[]; media?: string[]; prompt?: string }[];
   sponsor?: { material: string; test: string } | null;
   sponsorAt?: number;       // da quando mostrare il cartiglio

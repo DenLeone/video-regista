@@ -16,7 +16,7 @@ const { fontFamily: SANS } = loadFont('normal', { weights: ['600', '700', '800',
 const { fontFamily: MONO } = loadMono('normal', { weights: ['500', '700'], subsets: ['latin'] });
 
 export type SchermataSopra = NonNullable<Piano['schermate']>[number];
-export const TIPI_SOPRA = new Set(['chat', 'terminale', 'numeri', 'titolo', 'repo', 'immagine', 'lista', 'primadopo', 'logo', 'parola']);
+export const TIPI_SOPRA = new Set(['chat', 'terminale', 'numeri', 'titolo', 'repo', 'immagine', 'lista', 'primadopo', 'logo', 'parola', 'chatlunga', 'documento']);
 // ✨ Ultron 2 (18/11): «animazione» = spazio lasciato vuoto nel render; dopo, Ultron ci mette l'animazione scritta da Claude
 // fascia delle schermate: da 240 px (zone.json, Denis 19/11: sopra è fuori dalla zona sicura) fino a ~1/3 dell'altezza, larghe 940 px
 const AREA = { top: 240, bottom: 640, left: 70, larghezza: 940 };
@@ -109,6 +109,111 @@ const Chat: React.FC<{ s: SchermataSopra; len: number }> = ({ s, len }) => {
           <div style={{ width: 54, height: 54, borderRadius: 16, flex: 'none', background: pronto ? CORALLO : '#E7E3D8', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', fontSize: 32, fontWeight: 900,
             transform: `scale(${pronto ? 1 + 0.1 * Math.max(0, Math.sin(frame / 2.5)) : inviato && frame < invio + 5 ? 0.86 : 1})` }}>↑</div>
         </div>
+      </div>
+    </Scheda>
+  );
+};
+
+
+// chat lunghissima (Elaborato, 27/11): i fumetti scorrono veloci verso l'alto e sotto cresce il «costo di ogni risposta».
+// Solo forme (barre grigie al posto delle parole): niente testi né numeri inventati
+const FUMETTI = Array.from({ length: 16 }, (_, i) => (i % 2 ? { lato: 'sx' as const, righe: 2 + (i % 3), larg: [88, 70, 94, 60][i % 4] } : { lato: 'dx' as const, righe: 1 + (i % 2), larg: [58, 74, 46][i % 3] }));
+const ChatLunga: React.FC<{ s: SchermataSopra; len: number }> = ({ s, len }) => {
+  const frame = useCurrentFrame();
+  const altezze = FUMETTI.map((b) => b.righe * 21 + 7 + (b.lato === 'dx' ? 28 : 4)); // righe da 14 con margini da 7 che si fondono (21 a riga + 7); il fumetto a destra ha 2×14 di spazio
+  const totale = altezze.reduce((x, h) => x + h + 16, 0);
+  const vista = 250;
+  const t = interpolate(frame, [6, len * 0.88], [0, 1], { extrapolateLeft: 'clamp', extrapolateRight: 'clamp', easing: (x) => x * x * (3 - 2 * x) });
+  const costo = interpolate(frame, [6, len * 0.88], [0.07, 1], { extrapolateLeft: 'clamp', extrapolateRight: 'clamp' });
+  return (
+    <Scheda len={len} sfondo="#FAF9F5">
+      <div style={{ padding: '20px 30px 22px', fontFamily: SANS }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 12 }}>
+          <Stella size={30} frame={frame} />
+          <span style={{ fontSize: 30, fontWeight: 700, color: '#3D3929' }}>{s.titolo || 'Claude'}</span>
+        </div>
+        <div style={{ height: vista, overflow: 'hidden', position: 'relative', WebkitMaskImage: 'linear-gradient(transparent 0, #000 14%, #000 100%)', maskImage: 'linear-gradient(transparent 0, #000 14%, #000 100%)' }}>
+          <div style={{ transform: `translateY(${-(totale - vista) * t}px)` }}>
+            {FUMETTI.map((b, i) => (
+              <div key={i} style={{ display: 'flex', justifyContent: b.lato === 'dx' ? 'flex-end' : 'flex-start', marginBottom: 16 }}>
+                <div style={{ width: `${b.larg}%`, background: b.lato === 'dx' ? '#EFECE3' : 'transparent', borderRadius: 20, padding: b.lato === 'dx' ? '14px 20px' : '2px 0', boxSizing: 'border-box' }}>
+                  {Array.from({ length: b.righe }, (_, r) => (
+                    <div key={r} style={{ height: 14, borderRadius: 7, background: b.lato === 'dx' ? '#CFC9B8' : '#E3DFD3', width: r === b.righe - 1 ? '62%' : '100%', margin: '7px 0' }} />
+                  ))}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+        <div style={{ marginTop: 14, display: 'flex', alignItems: 'center', gap: 16 }}>
+          <span style={{ fontSize: 24, fontWeight: 700, color: '#6B6656', flex: 'none' }}>Costo di ogni risposta</span>
+          <div style={{ flex: 1, height: 22, borderRadius: 11, background: '#E7E3D8', overflow: 'hidden' }}>
+            <div style={{ width: `${costo * 100}%`, height: '100%', borderRadius: 11, background: `linear-gradient(90deg, ${CORALLO}, #E5372B)` }} />
+          </div>
+        </div>
+      </div>
+    </Scheda>
+  );
+};
+
+// icona documento (pagina azzurra con l'angolo piegato e le righe), come quelle dei file di Google
+const IconaDocumento: React.FC<{ size: number }> = ({ size }) => (
+  <svg width={size} height={size * 1.25} viewBox="0 0 80 100" style={{ display: 'block', filter: 'drop-shadow(0 6px 10px rgba(0,0,0,0.35))' }}>
+    <path d="M8 6a6 6 0 0 1 6-6h36l22 22v72a6 6 0 0 1-6 6H14a6 6 0 0 1-6-6z" fill="#4A8BF5" />
+    <path d="M50 0l22 22H56a6 6 0 0 1-6-6z" fill="#A9C9FA" />
+    {[46, 60, 74].map((y) => <rect key={y} x={22} y={y} width={36} height={6} rx={3} fill="#fff" />)}
+  </svg>
+);
+
+// documento trascinato nella chat («incolla su Claude»): l'icona parte da destra, atterra sulla barra e diventa un allegato; invio; Claude pensa
+const Documento: React.FC<{ s: SchermataSopra; len: number }> = ({ s, len }) => {
+  const frame = useCurrentFrame();
+  const { fps } = useVideoConfig();
+  const nome = s.testo || 'regole.md';
+  const parte = 6, atterra = Math.round(len * 0.46), invio = Math.round(len * 0.68);
+  const corsa = interpolate(frame, [parte, atterra], [0, 1], { extrapolateLeft: 'clamp', extrapolateRight: 'clamp', easing: (x) => 1 - Math.pow(1 - x, 3) });
+  const allegato = frame >= atterra;
+  const inviato = frame >= invio;
+  const sale = molla(frame, fps, invio);
+  const pulsa = allegato && !inviato ? 1 + 0.1 * Math.max(0, Math.sin(frame / 2.5)) : 1;
+  const puntini = '.'.repeat(1 + (Math.floor(frame / 6) % 3));
+  const chip = (
+    <div style={{ display: 'flex', alignItems: 'center', gap: 10, background: '#EFECE3', borderRadius: 16, padding: '8px 16px 8px 10px', fontSize: 26, fontWeight: 700, color: '#3D3929' }}>
+      <IconaDocumento size={24} />{nome}
+    </div>
+  );
+  return (
+    <Scheda len={len} sfondo="#FAF9F5">
+      <div style={{ padding: '22px 30px 24px', fontFamily: SANS, display: 'flex', flexDirection: 'column', minHeight: 430, boxSizing: 'border-box', position: 'relative' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 14 }}>
+          <Stella size={30} frame={frame} />
+          <span style={{ fontSize: 30, fontWeight: 700, color: '#3D3929' }}>{s.titolo || 'Claude'}</span>
+        </div>
+        <div style={{ flex: 1 }}>
+          {inviato ? (
+            <>
+              <div style={{ display: 'flex', justifyContent: 'flex-end', opacity: Math.min(1, sale * 1.5), transform: `translateY(${(1 - sale) * 70}px)` }}>{chip}</div>
+              <div style={{ marginTop: 18, display: 'flex', gap: 14, alignItems: 'center' }}>
+                <Stella size={34} frame={frame} gira />
+                <span style={{ fontSize: 30, fontWeight: 600, color: '#8A8577' }}>Sto leggendo{puntini}</span>
+              </div>
+            </>
+          ) : null}
+        </div>
+        <div style={{ marginTop: 16, display: 'flex', alignItems: 'center', gap: 14, background: '#FFFFFF', border: `2px solid ${allegato && !inviato ? CORALLO : '#DEDACF'}`, borderRadius: 24, padding: '14px 14px 14px 22px', boxShadow: '0 4px 14px rgba(60,50,30,0.08)' }}>
+          <span style={{ fontSize: 28, fontWeight: 600, color: '#B5B0A3' }}>+</span>
+          <div style={{ flex: 1, minHeight: 46, display: 'flex', alignItems: 'center' }}>
+            {allegato && !inviato ? <div style={{ transform: `scale(${0.7 + 0.3 * molla(frame, fps, atterra)})`, transformOrigin: '0 50%' }}>{chip}</div>
+              : !allegato ? <span style={{ fontSize: 30, fontWeight: 600, color: '#B5B0A3' }}>Rispondi a Claude…</span>
+              : <span style={{ fontSize: 30, fontWeight: 600, color: '#B5B0A3' }}>Rispondi a Claude…</span>}
+          </div>
+          <div style={{ width: 54, height: 54, borderRadius: 16, flex: 'none', background: allegato && !inviato ? CORALLO : '#E7E3D8', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', fontSize: 32, fontWeight: 900, transform: `scale(${pulsa})` }}>↑</div>
+        </div>
+        {!allegato && frame >= parte ? (
+          <div style={{ position: 'absolute', left: `${78 - corsa * 62}%`, top: `${6 + corsa * 70}%`, transform: `translate(-50%, -50%) rotate(${(1 - corsa) * 14}deg) scale(${1.5 - 0.5 * corsa})`, opacity: Math.min(1, (frame - parte) / 4) }}>
+            <IconaDocumento size={70} />
+          </div>
+        ) : null}
       </div>
     </Scheda>
   );
@@ -362,10 +467,13 @@ const Una: React.FC<{ s: SchermataSopra; len: number }> = ({ s, len }) => {
   if (s.tipo === 'primadopo') return <PrimaDopo s={s} len={len} />;
   if (s.tipo === 'logo') return <Logo s={s} len={len} />;
   if (s.tipo === 'parola') return <Parola s={s} len={len} />;
+  if (s.tipo === 'chatlunga') return <ChatLunga s={s} len={len} />;
+  if (s.tipo === 'documento') return <Documento s={s} len={len} />;
   return null;
 };
 
-export const SchermateSopra: React.FC<{ piano: Piano; sfx: number }> = ({ piano, sfx }) => {
+// `compatta` (Elaborato): le schermate più piccole (×0,82, ancorate in alto), così restano sopra il berretto
+export const SchermateSopra: React.FC<{ piano: Piano; sfx: number; compatta?: boolean }> = ({ piano, sfx, compatta }) => {
   const schermate = (piano.schermate || []).filter((s) => TIPI_SOPRA.has(s.tipo));
   return (
     <AbsoluteFill style={{ pointerEvents: 'none' }}>
@@ -373,7 +481,7 @@ export const SchermateSopra: React.FC<{ piano: Piano; sfx: number }> = ({ piano,
         const len = Math.max(12, f(s.dur));
         return (
           <Sequence key={`ss${i}`} from={f(s.at)} durationInFrames={len}>
-            <Una s={s} len={len} />
+            {compatta ? <div style={{ position: 'absolute', inset: 0, transform: 'scale(0.82)', transformOrigin: `50% ${AREA.top}px` }}><Una s={s} len={len} /></div> : <Una s={s} len={len} />}
           </Sequence>
         );
       })}

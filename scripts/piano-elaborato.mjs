@@ -116,6 +116,30 @@ function dividiPezzi(piano) {
   return tagli;
 }
 
+// Schermate animate (Denis, 27/11: chat lunghissima, documento trascinato nella chat, /clear come nello stile Ultron): compaiono sopra la testa,
+// nello stesso posto delle schede immagine, quando Denis dice la parola giusta. Una volta ciascuna, mai su una scheda, la pagina profilo o la scheda editor.
+// parola → animazione: «conversazione» = chat lunga che scorre, «clear» = il comando battuto nel terminale, «incollare/incolla» = il file trascinato nella chat
+export const TRIGGER_SCHERMATE = [
+  { parole: ['conversazione'], anticipo: 0.2, dur: 3.4, schermata: { tipo: 'chatlunga', titolo: 'Claude' } },
+  { parole: ['clear'], anticipo: 0.2, dur: 2.6, schermata: { tipo: 'terminale', titolo: 'Claude Code', voci: ['/clear'] } },
+  { parole: ['incollare', 'incolla'], anticipo: 0.9, dur: 3.2, schermata: { tipo: 'documento', titolo: 'Claude', testo: 'regole.md' } },
+];
+function aggiungiSchermate(piano, durata, occupati) {
+  const esistenti = [...(piano.schermate || [])];
+  const nuove = [];
+  const finestre = () => [...occupati, ...esistenti, ...nuove].map((x) => ({ at: x.at, dur: x.dur }));
+  for (const t of TRIGGER_SCHERMATE) {
+    const w = (piano.parole || []).find((p) => t.parole.includes(norm(p.w)));
+    if (!w) continue;
+    const at = Math.round(Math.max(1.2, w.at - t.anticipo) * 100) / 100;
+    if (at + t.dur > durata - 0.8) continue;
+    if (finestre().some((s) => at < s.at + s.dur + 0.4 && at + t.dur > s.at - 0.4)) continue;
+    nuove.push({ at, dur: t.dur, ...t.schermata });
+  }
+  if (nuove.length) piano.schermate = [...esistenti, ...nuove].sort((a, b) => a.at - b.at);
+  return nuove.length;
+}
+
 export function completaPianoElaborato(piano) {
   const g = piano?.grafica || {};
   const durata = (piano?.clips || []).reduce((s, c) => s + Math.max(0, c.end - c.start), 0);
@@ -129,11 +153,13 @@ export function completaPianoElaborato(piano) {
   const occupati = [...pagina, ...editor];
   // schede immagine: i pezzi con un inserto (immagine o video) stanno sopra la testa; le icone automatiche non ci vanno sotto
   { let t = 0; for (const c of piano.clips || []) { const d = Math.max(0, c.end - c.start); if (c.inserto) occupati.push({ at: t, dur: d }); t += d; } }
+  const schermateNuove = g.sulPetto && g.dietro ? aggiungiSchermate(piano, durata, occupati) : 0;
+  occupati.push(...(piano.schermate || []).map((x) => ({ at: x.at, dur: x.dur })));
   if (piano.iconeConcetto?.length) piano.iconeConcetto = piano.iconeConcetto.filter((i) => !occupati.some((s) => i.at < s.at + s.dur + 0.3 && i.at + i.dur > s.at - 0.3));
   let nuove = 0;
   if (g.iconeConcetto) nuove = aggiungiIcone(piano, durata, occupati);
   const tagliNuovi = g.sulPetto ? dividiPezzi(piano) : 0;
   const gigantiNuovi = g.sulPetto && g.dietro ? aggiungiGiganti(piano, occupati, durata) : 0;
   // numeri soltanto (il log è pubblico): cosa arriva davvero al render
-  return `elaborato: flag pagina ${g.paginaProfilo ? 'sì' : 'no'}, scheda ${g.schedaEditor ? 'sì' : 'no'}, medie ${g.paroleMedie ? 'sì' : 'no'}, petto ${g.sulPetto ? 'sì' : 'no'}, tessere ${g.tessere ? 'sì' : 'no'} · piano: pagine ${(piano.paginaProfilo || []).length}, schede ${(piano.schedeEditor || []).length}, icone ${(piano.iconeConcetto || []).length} (${nuove} automatiche), miniature ${(piano.miniatureProfilo || []).length}, giganti ${(piano.enfasi || []).length} (${gigantiNuovi} aggiunte), pezzi ${(piano.clips || []).length} (${tagliNuovi} tagli in più), medie AI ${(piano.enfasiMedia || []).length} · ${durata.toFixed(1)} s`;
+  return `elaborato: flag pagina ${g.paginaProfilo ? 'sì' : 'no'}, scheda ${g.schedaEditor ? 'sì' : 'no'}, medie ${g.paroleMedie ? 'sì' : 'no'}, petto ${g.sulPetto ? 'sì' : 'no'}, tessere ${g.tessere ? 'sì' : 'no'} · piano: pagine ${(piano.paginaProfilo || []).length}, schede ${(piano.schedeEditor || []).length}, icone ${(piano.iconeConcetto || []).length} (${nuove} automatiche), miniature ${(piano.miniatureProfilo || []).length}, giganti ${(piano.enfasi || []).length} (${gigantiNuovi} aggiunte), schermate ${(piano.schermate || []).length} (${schermateNuove} nuove), pezzi ${(piano.clips || []).length} (${tagliNuovi} tagli in più), medie AI ${(piano.enfasiMedia || []).length} · ${durata.toFixed(1)} s`;
 }

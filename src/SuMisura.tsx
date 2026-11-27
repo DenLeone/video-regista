@@ -394,6 +394,8 @@ export const SuMisura: React.FC<Piano> = (pianoIn) => {
   const strati = g.sottotitoli === 'strati';
   // stile Elaborato: le schede immagine stanno sopra la testa (mai sul viso), non nei primi 3 s; lì giganti e icone restano alla larga
   const carteAlte = Boolean(g.sulPetto && g.dietro);
+  // Elaborato: schermate animate (chat lunga, documento nella chat, /clear) nello stesso posto delle schede immagine, più piccole
+  const animate = carteAlte ? (piano.schermate || []).map((x) => ({ from: f(x.at), len: f(x.dur || 3) })) : [];
   const reazione = g.cornice === 'reazione';
   const blocchi = g.sottotitoli === 'blocchi' || strati ? blocchiParlato(piano.parole, piano.enfasi, cartelli, strati, Boolean(strati && g.enfasiCorsivo), strati && g.righe ? g.righe : 4) : [];
   const grandi = paroleGrandi(piano.parole, forti);
@@ -425,7 +427,7 @@ export const SuMisura: React.FC<Piano> = (pianoIn) => {
         </Sequence>
       ))}
       {/* le parole grosse degli strati stanno sotto il ritaglio: i numeri passano dietro il busto */}
-      {strati && g.dietro ? <BlocchiUltra blocchi={blocchi} g={g} solo="grandi" evita={carteAlte ? schedeInserti(piano).filter((c) => c.from >= f(3)) : undefined} /> : null}
+      {strati && g.dietro ? <BlocchiUltra blocchi={blocchi} g={g} solo="grandi" evita={carteAlte ? [...schedeInserti(piano).filter((c) => c.from >= f(3)), ...animate] : undefined} /> : null}
       {/* stile reazione: le clip dell'altro dietro a Denis (la persona ritagliata va sopra) */}
       {reazione ? <InsertiReazione piano={piano} g={g} sfx={sfx} /> : null}
       {g.dietro || reazione ? <Ritagli piano={piano} filtro={LOOK[g.look]} /> : null}
@@ -433,7 +435,7 @@ export const SuMisura: React.FC<Piano> = (pianoIn) => {
         // Ultron (zone.json, 19/11): le schede stanno sopra la testa come le schermate (y 240–640), mai sulla faccia,
         // e non quando c'è già una schermata
         sopra={g.schermate === 'sopra' ? 640 : g.sulPetto && g.dietro ? 600 : strati && g.posizione === 'basso' && !g.dietro ? 920 : undefined}
-        evita={g.schermate === 'sopra' ? (piano.schermate || []).map((x) => ({ from: f(x.at), len: f(x.dur || 3) })) : carteAlte ? [{ from: 0, len: f(3) }] : []} />}
+        evita={g.schermate === 'sopra' ? (piano.schermate || []).map((x) => ({ from: f(x.at), len: f(x.dur || 3) })) : carteAlte ? [{ from: 0, len: f(3) }, ...animate] : []} />}
       {g.fumo && g.transizione === 'pellicola' && g.pellicola ? <Pellicole piano={piano} file={g.pellicola.file} durata={g.pellicola.durata} /> : null}
       {g.fumo && g.transizione !== 'sfocata' && !(g.transizione === 'pellicola' && g.pellicola) ? <Fumi piano={piano} /> : null}
       {g.fumo && g.transizione === 'sfocata' ? <Sfocature piano={piano} /> : null}
@@ -449,7 +451,7 @@ export const SuMisura: React.FC<Piano> = (pianoIn) => {
       ))}
       {g.firma ? <Firma nome={g.firma} g={g} /> : null}
       {/* documentario verticale: schermate animate nella fascia alta, sopra la persona */}
-      {g.schermate === 'sopra' ? <SchermateSopra piano={piano} sfx={sfx} /> : null}
+      {g.schermate === 'sopra' ? <SchermateSopra piano={piano} sfx={sfx} /> : animate.length ? <SchermateSopra piano={piano} sfx={sfx} compatta /> : null}
 
       {pezzi.map((p, i) => (
         <Sequence key={`s${i}`} from={f(p.at)} durationInFrames={len(p.at, p.fine)}>

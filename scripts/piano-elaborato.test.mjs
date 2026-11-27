@@ -90,3 +90,19 @@ test('Elaborato: parole giganti in più, lontane dalle altre e dalle schede, in 
   assert.deepEqual(p.enfasi.map((e) => parole.findIndex((w) => w.w === e)), p.enfasi.map((e) => parole.findIndex((w) => w.w === e)).sort((a, b) => a - b), 'ordine del parlato');
   assert.match(riga, /aggiunte/);
 });
+
+test('Elaborato: schermate animate sulle parole giuste, una volta sola, mai sulle schede', () => {
+  const parole = [['ciao', 0.5], ['conversazione', 8], ['clear', 14], ['clear', 30], ['incollare', 34], ['altro', 36]].map(([w, at]) => ({ w, at, dur: 0.4 }));
+  const p = { clips: [{ file: 'a', start: 0, end: 40 }], parole, grafica: { sulPetto: true, dietro: true } };
+  const riga = completaPianoElaborato(p);
+  assert.deepEqual(p.schermate.map((x) => x.tipo), ['chatlunga', 'terminale', 'documento']);
+  assert.deepEqual(p.schermate[1].voci, ['/clear']);
+  for (let i = 1; i < p.schermate.length; i++) assert.ok(p.schermate[i].at >= p.schermate[i - 1].at + p.schermate[i - 1].dur, 'senza sovrapposizioni');
+  assert.match(riga, /schermate 3 \(3 nuove\)/);
+  const sotto = { clips: [{ file: 'a', start: 0, end: 40 }], parole, grafica: { sulPetto: true, dietro: true, paginaProfilo: true } };
+  completaPianoElaborato(sotto);
+  assert.ok(!sotto.schermate.some((x) => x.at < 4.9 && x.at + x.dur > 2.1), 'niente sotto la pagina profilo (2,5–4,9 s)');
+  const senza = { clips: [{ file: 'a', start: 0, end: 40 }], parole, grafica: { sulPetto: true } };
+  completaPianoElaborato(senza);
+  assert.equal(senza.schermate, undefined, 'senza «dietro» niente schermate');
+});
