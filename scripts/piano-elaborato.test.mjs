@@ -106,3 +106,20 @@ test('Elaborato: schermate animate sulle parole giuste, una volta sola, mai sull
   completaPianoElaborato(senza);
   assert.equal(senza.schermate, undefined, 'senza «dietro» niente schermate');
 });
+
+test('Elaborato: la voce di un\'altra sorgente (discorso) segue i pezzi; schermata sulla prima occasione libera', () => {
+  const parole = [['slash', 40.4], ['clear', 41.33], ['consuma', 47.6], ['rileggere', 44.1]].map(([w, at]) => ({ w, at, dur: 0.4 }));
+  const p = {
+    clips: [{ file: 'a.mp4', start: 10, end: 40, orient: 'v', punch: false, audio: { file: 'v.wav', start: 10 } }, { file: 'a.mp4', start: 40, end: 70, punch: false, audio: { file: 'v.wav', start: 40 } }],
+    parole, grafica: { sulPetto: true, dietro: true }, schedeEditor: [{ at: 44.03, dur: 2.6 }],
+  };
+  completaPianoElaborato(p);
+  assert.ok(p.clips.length > 8, 'i pezzi con la voce separata si dividono');
+  for (let i = 1; i < p.clips.length; i++) {
+    const a = p.clips[i - 1], b = p.clips[i];
+    if (a.end === b.start) assert.ok(Math.abs(b.audio.start - (a.audio.start + (a.end - a.start))) < 0.01, 'la voce prosegue senza buchi');
+  }
+  assert.deepEqual(p.schermate.map((x) => x.tipo), ['terminale', 'chatlunga']);
+  assert.ok(p.schermate[0].at < 41.0, '«slash clear»: la schermata parte da «slash»');
+  assert.ok(p.schermate[1].at > 47, 'la chat lunga salta la scheda editor e sceglie «consuma»');
+});

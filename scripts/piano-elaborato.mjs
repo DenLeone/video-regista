@@ -89,7 +89,7 @@ function dividiPezzi(piano) {
   let t = 0, tagli = 0;
   for (const c of piano.clips || []) {
     const d = c.end - c.start;
-    const intera = !c.inserto && !c.broll && !c.muto && !c.audio && !c.lento && !c.rampa && !c.bn && !c.telefono && d > PEZZO_TARGET * 1.55;
+    const intera = !c.inserto && !c.broll && !c.muto && (!c.audio || typeof c.audio === 'object') && !c.lento && !c.rampa && !c.bn && !c.telefono && d > PEZZO_TARGET * 1.55;
     if (!intera) { nuove.push(c); t += Math.max(0, d); continue; }
     const k = Math.max(2, Math.round(d / PEZZO_TARGET));
     const punti = [];
@@ -105,6 +105,8 @@ function dividiPezzi(piano) {
     const pezzi = estremi.slice(0, -1).map((da, i) => {
       const pezzo = { ...c, start: +(c.start + (da - t)).toFixed(3), end: +(c.start + (estremi[i + 1] - t)).toFixed(3) };
       if (i > 0) { delete pezzo.fumo; delete pezzo.transizione; }
+      // voce da un'altra sorgente (modalità discorso): comincia dove comincia il pezzo
+      if (c.audio && typeof c.audio === 'object') pezzo.audio = { ...c.audio, start: +(c.audio.start + (da - t)).toFixed(3) };
       pezzo.punch = Boolean(c.punch) !== ((estremi.length - 2 - i) % 2 === 1);
       return pezzo;
     });
@@ -120,21 +122,23 @@ function dividiPezzi(piano) {
 // nello stesso posto delle schede immagine, quando Denis dice la parola giusta. Una volta ciascuna, mai su una scheda, la pagina profilo o la scheda editor.
 // parola → animazione: «conversazione» = chat lunga che scorre, «clear» = il comando battuto nel terminale, «incollare/incolla» = il file trascinato nella chat
 export const TRIGGER_SCHERMATE = [
-  { parole: ['conversazione'], anticipo: 0.2, dur: 3.4, schermata: { tipo: 'chatlunga', titolo: 'Claude' } },
-  { parole: ['clear'], anticipo: 0.2, dur: 2.6, schermata: { tipo: 'terminale', titolo: 'Claude Code', voci: ['/clear'] } },
-  { parole: ['incollare', 'incolla'], anticipo: 0.9, dur: 3.2, schermata: { tipo: 'documento', titolo: 'Claude', testo: 'regole.md' } },
+  { parole: ['conversazione', 'rileggere', 'rilegge', 'consuma'], anticipo: 0.2, dur: 3.4, schermata: { tipo: 'chatlunga', titolo: 'Claude' } },
+  { parole: ['clear'], anticipo: 1.0, dur: 2.6, schermata: { tipo: 'terminale', titolo: 'Claude Code', voci: ['/clear'] } }, // «slash clear»: parte da «slash»
+  { parole: ['incollare', 'incolla', 'incolli', 'incollo', 'incollate'], anticipo: 0.9, dur: 3.2, schermata: { tipo: 'documento', titolo: 'Claude', testo: 'regole.md' } },
 ];
 function aggiungiSchermate(piano, durata, occupati) {
   const esistenti = [...(piano.schermate || [])];
   const nuove = [];
   const finestre = () => [...occupati, ...esistenti, ...nuove].map((x) => ({ at: x.at, dur: x.dur }));
   for (const t of TRIGGER_SCHERMATE) {
-    const w = (piano.parole || []).find((p) => t.parole.includes(norm(p.w)));
-    if (!w) continue;
-    const at = Math.round(Math.max(1.2, w.at - t.anticipo) * 100) / 100;
-    if (at + t.dur > durata - 0.8) continue;
-    if (finestre().some((s) => at < s.at + s.dur + 0.4 && at + t.dur > s.at - 0.4)) continue;
-    nuove.push({ at, dur: t.dur, ...t.schermata });
+    // la prima occasione libera: se la parola cade su una scheda si prova con la successiva
+    for (const w of (piano.parole || []).filter((p) => t.parole.includes(norm(p.w)))) {
+      const at = Math.round(Math.max(1.2, w.at - t.anticipo) * 100) / 100;
+      if (at + t.dur > durata - 0.8) continue;
+      if (finestre().some((s) => at < s.at + s.dur + 0.4 && at + t.dur > s.at - 0.4)) continue;
+      nuove.push({ at, dur: t.dur, ...t.schermata });
+      break;
+    }
   }
   if (nuove.length) piano.schermate = [...esistenti, ...nuove].sort((a, b) => a.at - b.at);
   return nuove.length;
