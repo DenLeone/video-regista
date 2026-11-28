@@ -64,8 +64,9 @@ const normMedia = (w: string) => w.toLowerCase().normalize('NFD').replace(/[\u03
 
 // dietro la persona il blocco sale alle spalle; altrimenti resta sopra la zona di TikTok, all'altezza delle gambe in un piano intero
 const ANCORA_SPALLE = 1020;
-// sul petto («Parole sul petto: sì»): il blocco finisce a y 1220, due righe arrivano a circa y 1100: sotto il mento, dentro la zona sicura
-const ANCORA_PETTO = 700;
+// sul petto («Parole sul petto: sì»): il blocco finisce a y 1450 (1920 − 470), due o tre righe arrivano a circa y 1210: sotto il mento anche con un'inquadratura stretta
+// (Denis, 28/11: «le scritte mi coprono sempre il volto»; a 700 finivano a y 1220 e il mento è a ~1080-1100), sopra il limite di y 1530
+const ANCORA_PETTO = 470;
 const GRANDI_Y = 585; // con «Parole sul petto»: dove finisce (dall'alto) la riga più bassa delle parole giganti: sulla parte alta della testa, così si leggono ai lati
 
 const BloccoUltra: React.FC<{ b: BloccoM; len: number; g: GraficaStile; colore: (k: number) => string; solo?: 'tutte' | 'grandi' | 'piccole'; medie?: Set<string> }> = ({ b, len, g, colore, solo = 'tutte', medie }) => {
